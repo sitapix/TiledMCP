@@ -137,6 +137,14 @@ export type ObjectDraft =
     })
   | (ObjectCommonInput & {
       shape: "point";
+    })
+  | (ObjectCommonInput & {
+      shape: "ellipse" | "capsule";
+      /**
+       * Like rectangles, omitted dimensions default to zero in Tiled.
+       */
+      width?: number;
+      height?: number;
     });
 
 export interface CreateObjectOperation {

@@ -326,6 +326,12 @@ interface ObjectEditIndex {
   maximumId: number;
 }
 
+type BasicEditableObjectShape =
+  | "rectangle"
+  | "point"
+  | "ellipse"
+  | "capsule";
+
 export interface CreateMapInput {
   mapPath: string;
   width: number;
@@ -4040,7 +4046,15 @@ function validateAndSummarizeOperations(
         ...duplicated,
       });
     } else if (operation.type === "createObject") {
-      assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["layerId", "object", "type"]),
+        `operations[${operationIndex}]`,
+      );
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
       const created = createBasicObject(
         map,
         operation.layerId,
@@ -4054,6 +4068,11 @@ function validateAndSummarizeOperations(
       createdObjectIds.add(expectInteger(created.object.id, "created object id"));
       objectMutations += 1;
     } else if (operation.type === "updateObject") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["objectId", "patch", "type"]),
+        `operations[${operationIndex}]`,
+      );
       assertPositiveInteger(
         operation.objectId,
         `operations[${operationIndex}].objectId`,
@@ -4070,6 +4089,11 @@ function validateAndSummarizeOperations(
       updatedObjectIds.add(operation.objectId);
       objectMutations += 1;
     } else if (operation.type === "deleteObjects") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["objectIds", "type"]),
+        `operations[${operationIndex}]`,
+      );
       if (
         !Array.isArray(operation.objectIds) ||
         operation.objectIds.length === 0
@@ -8075,8 +8099,8 @@ function createBasicObject(
     x: draft.x,
     y: draft.y,
   };
-  if (draft.shape === "point") {
-    object.point = true;
+  if (draft.shape !== "rectangle") {
+    object[draft.shape] = true;
   }
   if (draft.opacity !== undefined) {
     object.opacity = draft.opacity;
@@ -8333,13 +8357,18 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     "visible",
     "opacity",
   ]);
-  if (draft.shape !== "rectangle" && draft.shape !== "point") {
+  if (
+    draft.shape !== "rectangle" &&
+    draft.shape !== "point" &&
+    draft.shape !== "ellipse" &&
+    draft.shape !== "capsule"
+  ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context}.shape must be rectangle or point.`,
+      `${context}.shape must be rectangle, point, ellipse or capsule.`,
     );
   }
-  if (draft.shape === "rectangle") {
+  if (draft.shape !== "point") {
     commonKeys.add("width");
     commonKeys.add("height");
   }
@@ -8352,11 +8381,21 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
   }
   assertObjectNumber(draft.x, `${context}.x`);
   assertObjectNumber(draft.y, `${context}.y`);
-  if (draft.shape === "rectangle") {
-    if (draft.width !== undefined) {
+  if (draft.shape !== "point") {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        draft,
+        "width",
+      )
+    ) {
       assertObjectSize(draft.width, `${context}.width`);
     }
-    if (draft.height !== undefined) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        draft,
+        "height",
+      )
+    ) {
       assertObjectSize(draft.height, `${context}.height`);
     }
   }
@@ -8367,16 +8406,36 @@ function assertObjectPatch(
   patch: Extract<MapEditOperation, { type: "updateObject" }>["patch"],
   context: string,
 ): void {
-  if (patch.x !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "x",
+    )
+  ) {
     assertObjectNumber(patch.x, `${context}.x`);
   }
-  if (patch.y !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "y",
+    )
+  ) {
     assertObjectNumber(patch.y, `${context}.y`);
   }
-  if (patch.width !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "width",
+    )
+  ) {
     assertObjectSize(patch.width, `${context}.width`);
   }
-  if (patch.height !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "height",
+    )
+  ) {
     assertObjectSize(patch.height, `${context}.height`);
   }
   assertOptionalObjectFields(patch, context);
@@ -8392,23 +8451,47 @@ function assertOptionalObjectFields(
   },
   context: string,
 ): void {
-  if (value.name !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      value,
+      "name",
+    )
+  ) {
     assertBoundedString(value.name, `${context}.name`);
   }
-  if (value.className !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      value,
+      "className",
+    )
+  ) {
     assertBoundedString(value.className, `${context}.className`);
   }
-  if (value.rotation !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      value,
+      "rotation",
+    )
+  ) {
     assertObjectNumber(value.rotation, `${context}.rotation`);
   }
-  if (value.visible !== undefined && typeof value.visible !== "boolean") {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      value,
+      "visible",
+    ) &&
+    typeof value.visible !== "boolean"
+  ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
       `${context}.visible must be a boolean.`,
     );
   }
   if (
-    value.opacity !== undefined &&
+    Object.prototype.hasOwnProperty.call(
+      value,
+      "opacity",
+    ) &&
     (typeof value.opacity !== "number" ||
       !Number.isFinite(value.opacity) ||
       value.opacity < 0 ||
@@ -8421,7 +8504,7 @@ function assertOptionalObjectFields(
   }
 }
 
-function assertBoundedString(value: string, context: string): void {
+function assertBoundedString(value: unknown, context: string): void {
   if (typeof value !== "string" || value.length > MAX_OBJECT_STRING_LENGTH) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
@@ -8457,12 +8540,10 @@ function assertBasicEditableObject(
   object: JsonObject,
   objectId: number,
   mapPath: string,
-): "rectangle" | "point" {
+): BasicEditableObjectShape {
   const unsupportedKeys = [
     "template",
     "gid",
-    "ellipse",
-    "capsule",
     "polygon",
     "polyline",
     "text",
@@ -8473,21 +8554,73 @@ function assertBasicEditableObject(
   if (unsupported !== undefined) {
     throw new TiledMcpError(
       "UNSUPPORTED_OBJECT_PROFILE",
-      `Object ${objectId} uses ${unsupported}, which is outside basic rectangle/point editing.`,
+      `Object ${objectId} uses ${unsupported}, which is outside basic rectangle/point/ellipse/capsule editing.`,
       { path: mapPath, objectId, feature: unsupported },
     );
   }
-  if (object.point !== undefined && object.point !== true) {
+  const shapeMarkers = [
+    "point",
+    "ellipse",
+    "capsule",
+  ] as const;
+  const presentShapeMarkers =
+    shapeMarkers.filter((marker) =>
+      Object.prototype.hasOwnProperty.call(
+        object,
+        marker,
+      ),
+    );
+  for (const marker of presentShapeMarkers) {
+    if (object[marker] !== true) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `Object ${objectId}.${marker} must be true when present.`,
+        { path: mapPath, objectId, feature: marker },
+      );
+    }
+  }
+  if (presentShapeMarkers.length > 1) {
     throw new TiledMcpError(
       "INVALID_DOCUMENT",
-      `Object ${objectId}.point must be true when present.`,
-      { path: mapPath, objectId },
+      `Object ${objectId} contains conflicting shape markers.`,
+      {
+        path: mapPath,
+        objectId,
+        shapeMarkers: presentShapeMarkers,
+      },
     );
   }
+  const shape =
+    presentShapeMarkers[0] ?? "rectangle";
   assertObjectNumber(object.x, `object ${objectId}.x`);
   assertObjectNumber(object.y, `object ${objectId}.y`);
-  assertObjectSize(object.width, `object ${objectId}.width`);
-  assertObjectSize(object.height, `object ${objectId}.height`);
+  const dimensionsMayBeOmitted =
+    shape === "ellipse" ||
+    shape === "capsule";
+  if (
+    !dimensionsMayBeOmitted ||
+    Object.prototype.hasOwnProperty.call(
+      object,
+      "width",
+    )
+  ) {
+    assertObjectSize(
+      object.width,
+      `object ${objectId}.width`,
+    );
+  }
+  if (
+    !dimensionsMayBeOmitted ||
+    Object.prototype.hasOwnProperty.call(
+      object,
+      "height",
+    )
+  ) {
+    assertObjectSize(
+      object.height,
+      `object ${objectId}.height`,
+    );
+  }
   if (object.rotation !== undefined) {
     assertObjectNumber(object.rotation, `object ${objectId}.rotation`);
   }
@@ -8525,7 +8658,7 @@ function assertBasicEditableObject(
       { path: mapPath, objectId },
     );
   }
-  return object.point === true ? "point" : "rectangle";
+  return shape;
 }
 
 function summarizeObjectLocation(

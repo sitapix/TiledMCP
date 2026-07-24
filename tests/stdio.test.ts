@@ -164,6 +164,13 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         sourcePatch:
           "destination-tile-layer-data-member-local",
       },
+      objectShapeCapabilities: {
+        creatable: ["rectangle", "point", "ellipse", "capsule"],
+        shapeMutation: false,
+        ellipseAndCapsuleDimensions:
+          "optional-nonnegative-default-zero",
+        sourcePatch: "object-layer-objects-member-local",
+      },
       layerOperations: [
         "updateLayer",
         "deleteLayer",
@@ -238,6 +245,13 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
       },
+    });
+    expect(capabilities?.objectShapeCapabilities).toEqual({
+      creatable: ["rectangle", "point", "ellipse", "capsule"],
+      shapeMutation: false,
+      ellipseAndCapsuleDimensions:
+        "optional-nonnegative-default-zero",
+      sourcePatch: "object-layer-objects-member-local",
     });
 
     const summaryResponse = await client.callTool({
@@ -832,6 +846,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           | {
             result?: {
               revision: string;
+              dependencyRevisions: Record<string, string>;
               layers: Array<Record<string, unknown>>;
             };
           }
@@ -845,12 +860,141 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       }),
     ]);
     expect(layeredSummary?.revision).toBe(createLayerApply.revision);
+    if (layeredSummary === undefined) {
+      throw new Error("Expected the map summary with an object layer.");
+    }
+
+    const objectPreviewResponse = await client.callTool({
+      name: "tiled_preview_edits",
+      arguments: {
+        mapPath: "created.tmj",
+        expectedRevision: layeredSummary.revision,
+        expectedDependencyRevisions:
+          layeredSummary.dependencyRevisions,
+        operations: [
+          {
+            type: "createObject",
+            layerId: 1,
+            object: {
+              shape: "ellipse",
+              x: 8,
+              y: 10,
+              name: "Portal",
+            },
+          },
+          {
+            type: "createObject",
+            layerId: 1,
+            object: {
+              shape: "capsule",
+              x: 24,
+              y: 10,
+              width: 0,
+              height: 0,
+              name: "Trigger",
+            },
+          },
+        ],
+      },
+    });
+    expect(objectPreviewResponse.isError).not.toBe(true);
+    const objectPreview = (
+      objectPreviewResponse.structuredContent as
+        | {
+            result?: {
+              changeSetId: string;
+              expectedRevision: string;
+              operations: Array<Record<string, unknown>>;
+              summary: Record<string, unknown>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(objectPreview).toMatchObject({
+      expectedRevision: layeredSummary.revision,
+      operations: [
+        {
+          type: "createObject",
+          layerId: 1,
+          shape: "ellipse",
+          object: {
+            shape: "ellipse",
+          },
+        },
+        {
+          type: "createObject",
+          layerId: 1,
+          shape: "capsule",
+          object: {
+            shape: "capsule",
+            width: 0,
+            height: 0,
+          },
+        },
+      ],
+      summary: {
+        affectedObjectLayerIds: [1],
+        createdObjectIds: [1, 2],
+      },
+    });
+    if (objectPreview === undefined) {
+      throw new Error("Expected the ellipse/capsule object preview.");
+    }
+    const objectApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: objectPreview.changeSetId,
+        expectedRevision: objectPreview.expectedRevision,
+      },
+    });
+    expect(objectApplyResponse.isError).not.toBe(true);
+    const objectApply = (
+      objectApplyResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              changed: boolean;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(objectApply).toMatchObject({
+      revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      changed: true,
+    });
+    if (objectApply === undefined) {
+      throw new Error("Expected the ellipse/capsule object apply result.");
+    }
+    const objectMap = JSON.parse(
+      await readFile(join(projectRoot, "created.tmj"), "utf8"),
+    ) as {
+      nextobjectid: number;
+      layers: Array<{
+        id: number;
+        objects: Array<Record<string, unknown>>;
+      }>;
+    };
+    expect(objectMap.nextobjectid).toBe(3);
+    expect(objectMap.layers[0]?.objects).toEqual([
+      expect.objectContaining({
+        id: 1,
+        ellipse: true,
+        width: 0,
+        height: 0,
+      }),
+      expect.objectContaining({
+        id: 2,
+        capsule: true,
+        width: 0,
+        height: 0,
+      }),
+    ]);
 
     const restorePreviewResponse = await client.callTool({
       name: "tiled_preview_checkpoint_restore",
       arguments: {
         checkpointId: createLayerApply.checkpointId,
-        expectedRevision: createLayerApply.revision,
+        expectedRevision: objectApply.revision,
       },
     });
     expect(restorePreviewResponse.isError).not.toBe(true);
@@ -877,7 +1021,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       changeSetId: expect.stringMatching(
         /^changeset:[0-9a-f]{64}$/u,
       ),
-      expectedRevision: createLayerApply.revision,
+      expectedRevision: objectApply.revision,
       targetPath: "created.tmj",
       restore: {
         revision: attachedSummary.revision,
@@ -920,7 +1064,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     )?.result;
     expect(restoreApply).toMatchObject({
       path: "created.tmj",
-      beforeRevision: createLayerApply.revision,
+      beforeRevision: objectApply.revision,
       revision: attachedSummary.revision,
       changed: true,
     });

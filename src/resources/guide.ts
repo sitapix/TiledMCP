@@ -23,9 +23,9 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
    map preview path.
 
 The M1 edit profile is intentionally narrow: finite orthogonal TMJ maps,
-external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle or
-point objects. Unsupported Tiled semantics fail closed instead of being
-approximated.
+external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle,
+point, ellipse, or Tiled 1.12 capsule objects. Unsupported Tiled semantics
+fail closed instead of being approximated.
 
 ## Inspect before planning
 
@@ -199,6 +199,24 @@ supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
 \`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; supported map-level
 operations are \`updateMap\` and the exclusive \`removeTilesetFromMap\`.
+
+For \`createObject\`, the nested \`object\` is a strict shape-discriminated
+union. Rectangle keeps optional \`width\` and \`height\`; point accepts no
+dimensions. Ellipse and capsule dimensions are also optional and default to
+zero. Explicit values must be finite, nonnegative, and at most 1,000,000,000.
+They serialize the corresponding \`ellipse:true\` or \`capsule:true\` Tiled
+marker.
+
+All four shapes can be updated or safely deleted. \`updateObject.patch\` has
+no shape field, so an update cannot change shape. Every ellipse or capsule
+update preserves the marker and continues to accept zero dimensions while
+interpreting omitted stored dimensions as zero and rejecting null, negative,
+non-finite, or oversized values. Object edits remain local
+to the owning object layer's \`objects\` member; creation separately advances
+\`nextobjectid\`. Inspect
+\`objectShapeCapabilities\` for the exact create union, shape-mutation policy,
+dimension rule, and source-patch scope. These operations do not add standalone
+tools, so the registry remains 18 core tools or 19 with the rasterizer.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the

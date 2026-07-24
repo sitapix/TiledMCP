@@ -569,6 +569,24 @@ const pointObjectSchema = z
   })
   .strict();
 
+const ellipseObjectSchema = z
+  .object({
+    shape: z.literal("ellipse"),
+    ...objectCommonShape,
+    width: objectExtentSchema.optional(),
+    height: objectExtentSchema.optional(),
+  })
+  .strict();
+
+const capsuleObjectSchema = z
+  .object({
+    shape: z.literal("capsule"),
+    ...objectCommonShape,
+    width: objectExtentSchema.optional(),
+    height: objectExtentSchema.optional(),
+  })
+  .strict();
+
 const createObjectSchema = z
   .object({
     type: z.literal("createObject"),
@@ -576,6 +594,8 @@ const createObjectSchema = z
     object: z.discriminatedUnion("shape", [
       rectangleObjectSchema,
       pointObjectSchema,
+      ellipseObjectSchema,
+      capsuleObjectSchema,
     ]),
   })
   .strict();
@@ -913,6 +933,19 @@ export async function createTiledMcpServer(
           defaultRegion: "target-layer-bounds",
         },
         objectOperations: ["createObject", "updateObject", "deleteObjects"],
+        objectShapeCapabilities: {
+          creatable: [
+            "rectangle",
+            "point",
+            "ellipse",
+            "capsule",
+          ],
+          shapeMutation: false,
+          ellipseAndCapsuleDimensions:
+            "optional-nonnegative-default-zero",
+          sourcePatch:
+            "object-layer-objects-member-local",
+        },
         layerOperations: [
           "updateLayer",
           "deleteLayer",

@@ -4,11 +4,12 @@
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**，接口与磁盘格式在
 > M0 验证完成前不视为冻结。
 
-### 当前落地状态（2026-07-24）
+### 当前落地状态（2026-07-25）
 
 存储沙箱、原始 bytes revision/CAS、两层锁、单文件原子替换、内容寻址 checkpoint、
 启动期 `prepared` 对账、有界 checkpoint 索引、4-bit GID codec、有限正交 TMJ 基础
-tile edits、rectangle/point 对象增删改、stdio MCP 和 `tmxrasterizer` adapter 已经落地
+tile edits、rectangle/point/ellipse/capsule 对象增删改、stdio MCP 和
+`tmxrasterizer` adapter 已经落地
 并有自动化测试。有全局扫描/结果预算的 atlas TSJ semantic projection、显式稀疏
 `tiles[]` semantic search，以及带 ID、分页且有图像预算的 atlas tileset sheet 也已落地。
 tile edits 现包括 `setTiles`、`fillRegion` 与通用 preview union 中的
@@ -917,6 +918,41 @@ layer 才进入 `affectedTileLayerIds`。source writer 仅把这些 destination 
 patch 一处。mixed operations 最终还原原始 destination 时，source diff 会折叠为
 exact-byte net no-op，返回 `changed:false`，不创建无意义 diff。
 
+### 6.15 Strict ellipse/capsule object shapes
+
+对象能力仍属于 `tiled_preview_edits` 的现有 `createObject` / `updateObject` /
+`deleteObjects` operations，不注册 standalone object tools，因此 registry 保持
+18 core / 19 with rasterizer。create wire 的 `object` 使用以 `shape` 判别的 exact-key
+strict union：rectangle 保持可选尺寸，point 不允许尺寸；ellipse/capsule 的 `width`
+和 `height` 也可省略，并按 Tiled 语义规范化为 0，显式提供时必须为有限、非负且不超过
+1,000,000,000 的数。
+
+planner 为新对象分配现有 `nextobjectid` 高水位，并把 wire-only `shape` 转成 Tiled JSON：
+rectangle 不写形状 marker，point 写 `point:true`，ellipse 写 `ellipse:true`，Tiled 1.12
+capsule 写 `capsule:true`。形状 marker 必须唯一且值严格为 `true`；混合 marker、错误
+boolean 或 polygon/polyline/text/tile/template 等不在当前 editable profile 的对象继续
+fail closed。
+
+四类基础对象都可以 update/delete，但 update patch 故意没有 `shape`，因此不能在一次
+普通字段更新中改变对象形状。每次 update/delete 前都重新从 marker 推导现有 shape；
+存量对象缺失的 width/height 按 Tiled 语义解释为 0，显式存在时必须继续为有限非负数，
+即使 patch 只修改 x/name 等其他字段，也不能让已有无效尺寸混入已验证结果。对这两类
+对象把 width/height 更新为 0 是合法 Tiled 语义；null、负数、非有限数和超过 1e9 的值
+在任何 working-copy mutation 前拒绝。rectangle 延续非负尺寸语义，point 延续零尺寸
+语义。
+
+source writer 继续只把实际受影响 object layer 的 `objects` member 作为 patch 候选，
+create 时另做 `nextobjectid` value-local patch。marker、尺寸和其他对象字段一起位于同一
+最小 objects 子树；其他 layers、tilesets、未知 root siblings、BOM/CRLF 与未触及词法
+保持原 bytes。preview/apply 仍重算 shape/profile、summary 与完整 dependency pins，并
+通过 revision CAS、checkpoint 和原子替换提交。
+
+`tiled_get_capabilities.objectShapeCapabilities` 精确固定为
+`{creatable:["rectangle","point","ellipse","capsule"],shapeMutation:false,`
+`ellipseAndCapsuleDimensions:"optional-nonnegative-default-zero",`
+`sourcePatch:"object-layer-objects-member-local"}`。`creatable` 只描述 create wire union；
+四种 shape 都继续支持基础字段 update 和 safe delete。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -1159,7 +1195,7 @@ M0 不追求完整地图 CRUD。验收标准：
 - 已实现基础 tile set/fill、绝对坐标的稠密矩形 `stampPattern`、同 map snapshot/memmove
   语义的绝对矩形 `copyRegion`、按 encoded GID
   精确且 simultaneous single-pass 的 `replaceTiles`，以及从绝对 seed 推导 source 的
-  固定四向 `floodFill`；已实现基础对象
+  固定四向 `floodFill`；已实现 rectangle/point/ellipse/capsule 基础对象
   create/update/delete、map 根级 render/background/class `updateMap`，以及 4 类 layer 的公共字段
   `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
   `moveLayer` 与安全 `duplicateLayer`；duplicate 以 preorder high-water IDs 复制完整

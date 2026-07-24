@@ -321,6 +321,12 @@ describe("createTiledMcpServer", () => {
         defaultRegion: string;
       };
       objectOperations: string[];
+      objectShapeCapabilities: {
+        creatable: string[];
+        shapeMutation: boolean;
+        ellipseAndCapsuleDimensions: string;
+        sourcePatch: string;
+      };
       layerOperations: string[];
       layerUpdateCapabilities: {
         layerTypes: string[];
@@ -610,6 +616,13 @@ describe("createTiledMcpServer", () => {
         defaultRegion: "target-layer-bounds",
       },
       objectOperations: ["createObject", "updateObject", "deleteObjects"],
+      objectShapeCapabilities: {
+        creatable: ["rectangle", "point", "ellipse", "capsule"],
+        shapeMutation: false,
+        ellipseAndCapsuleDimensions:
+          "optional-nonnegative-default-zero",
+        sourcePatch: "object-layer-objects-member-local",
+      },
       layerOperations: [
         "updateLayer",
         "deleteLayer",
@@ -862,6 +875,13 @@ describe("createTiledMcpServer", () => {
         tiled: { available: false },
         rasterizer: { available: false },
       },
+    });
+    expect(capabilities.objectShapeCapabilities).toEqual({
+      creatable: ["rectangle", "point", "ellipse", "capsule"],
+      shapeMutation: false,
+      ellipseAndCapsuleDimensions:
+        "optional-nonnegative-default-zero",
+      sourcePatch: "object-layer-objects-member-local",
     });
 
     const assets = resultOf<Array<{ path: string; kind: string }>>(
@@ -4552,7 +4572,317 @@ describe("createTiledMcpServer", () => {
     ]);
   });
 
-  it("rejects empty updates and duplicate object deletion IDs in the strict schema", async () => {
+  it("creates, preserves, updates and deletes ellipse and capsule objects", async () => {
+    const initial = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+
+    const createPreview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        affectedObjectLayerIds: number[];
+        createdObjectIds: number[];
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: initial.revision,
+          expectedDependencyRevisions: initial.dependencyRevisions,
+          operations: [
+            {
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "ellipse",
+                x: 20,
+                y: 30,
+                name: "Portal",
+              },
+            },
+            {
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "capsule",
+                x: 40,
+                y: 50,
+                width: 18,
+                height: 6,
+                name: "Trigger",
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(createPreview).toMatchObject({
+      expectedRevision: initial.revision,
+      operations: [
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          shape: "ellipse",
+          object: {
+            shape: "ellipse",
+          },
+        },
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          shape: "capsule",
+          object: {
+            shape: "capsule",
+            width: 18,
+            height: 6,
+          },
+        },
+      ],
+      summary: {
+        affectedObjectLayerIds: [OBJECT_LAYER_ID],
+        createdObjectIds: [3, 4],
+      },
+    });
+
+    const createApply = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: createPreview.changeSetId,
+          expectedRevision: createPreview.expectedRevision,
+        },
+      }),
+    );
+    expect(createApply).toMatchObject({
+      changed: true,
+      revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+    });
+
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const createdMap = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    const createdObjectLayer = (createdMap.layers as JsonObject[]).find(
+      (layer) => layer.id === OBJECT_LAYER_ID,
+    );
+    const createdObjects = createdObjectLayer?.objects as JsonObject[];
+    expect(createdObjects.find((object) => object.id === 3)).toMatchObject({
+      id: 3,
+      ellipse: true,
+      width: 0,
+      height: 0,
+    });
+    expect(createdObjects.find((object) => object.id === 3)).not.toHaveProperty(
+      "capsule",
+    );
+    expect(createdObjects.find((object) => object.id === 4)).toMatchObject({
+      id: 4,
+      capsule: true,
+      width: 18,
+      height: 6,
+    });
+    expect(createdObjects.find((object) => object.id === 4)).not.toHaveProperty(
+      "ellipse",
+    );
+
+    const afterCreate = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const updatePreview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: afterCreate.revision,
+          expectedDependencyRevisions: afterCreate.dependencyRevisions,
+          operations: [
+            {
+              type: "updateObject",
+              objectId: 3,
+              patch: {
+                width: 21,
+                height: 13,
+                name: "Wide portal",
+              },
+            },
+            {
+              type: "updateObject",
+              objectId: 4,
+              patch: {
+                x: 44,
+                width: 0,
+                height: 0,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(updatePreview.operations).toEqual([
+      {
+        type: "updateObject",
+        objectId: 3,
+        changedFields: ["height", "name", "width"],
+        patch: {
+          width: 21,
+          height: 13,
+          name: "Wide portal",
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 4,
+        changedFields: ["height", "width", "x"],
+        patch: {
+          x: 44,
+          width: 0,
+          height: 0,
+        },
+      },
+    ]);
+
+    const updateApply = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: updatePreview.changeSetId,
+          expectedRevision: updatePreview.expectedRevision,
+        },
+      }),
+    );
+    expect(updateApply.changed).toBe(true);
+
+    const listed = resultOf<{
+      total: number;
+      objects: Array<{
+        id: number;
+        shape: string;
+        width: number;
+        height: number;
+      }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: { mapPath: MAP_PATH, layerId: OBJECT_LAYER_ID },
+      }),
+    );
+    expect(listed).toMatchObject({
+      total: 4,
+      objects: [
+        { id: RECTANGLE_OBJECT_ID, shape: "rectangle" },
+        { id: POINT_OBJECT_ID, shape: "point" },
+        { id: 3, shape: "ellipse", width: 21, height: 13 },
+        { id: 4, shape: "capsule", width: 0, height: 0 },
+      ],
+    });
+
+    const updatedMap = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    const updatedObjectLayer = (updatedMap.layers as JsonObject[]).find(
+      (layer) => layer.id === OBJECT_LAYER_ID,
+    );
+    const updatedObjects = updatedObjectLayer?.objects as JsonObject[];
+    expect(updatedObjects.find((object) => object.id === 3)).toMatchObject({
+      ellipse: true,
+      width: 21,
+      height: 13,
+    });
+    expect(updatedObjects.find((object) => object.id === 4)).toMatchObject({
+      capsule: true,
+      width: 0,
+      height: 0,
+    });
+
+    const beforeDelete = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const deletePreview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: beforeDelete.revision,
+          expectedDependencyRevisions: beforeDelete.dependencyRevisions,
+          operations: [
+            {
+              type: "deleteObjects",
+              objectIds: [3, 4],
+            },
+          ],
+        },
+      }),
+    );
+    expect(deletePreview.operations).toEqual([
+      expect.objectContaining({
+        type: "deleteObjects",
+        destructive: true,
+        objectCount: 2,
+        objectIdSample: [3, 4],
+      }),
+    ]);
+    await harness.client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: deletePreview.changeSetId,
+        expectedRevision: deletePreview.expectedRevision,
+      },
+    });
+
+    const afterDelete = resultOf<{
+      total: number;
+      objects: Array<{ id: number }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: { mapPath: MAP_PATH, layerId: OBJECT_LAYER_ID },
+      }),
+    );
+    expect(afterDelete).toMatchObject({
+      total: 2,
+      objects: [
+        { id: RECTANGLE_OBJECT_ID },
+        { id: POINT_OBJECT_ID },
+      ],
+    });
+  });
+
+  it("rejects invalid object shapes, empty updates and duplicate deletion IDs in the strict schema", async () => {
     const summary = resultOf<{
       revision: string;
       dependencyRevisions: Record<string, string>;
@@ -4569,8 +4899,68 @@ describe("createTiledMcpServer", () => {
         patch: {},
       },
       {
+        type: "updateObject",
+        objectId: RECTANGLE_OBJECT_ID,
+        patch: { shape: "ellipse" },
+      },
+      {
         type: "deleteObjects",
         objectIds: [POINT_OBJECT_ID, POINT_OBJECT_ID],
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "ellipse",
+          x: 1,
+          y: 2,
+          width: -1,
+          height: 3,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "capsule",
+          x: 1,
+          y: 2,
+          width: 3,
+          height: -1,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "ellipse",
+          x: 1,
+          y: 2,
+          width: 3,
+          height: 1_000_000_001,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "capsule",
+          x: 1,
+          y: 2,
+          width: 3,
+          height: 4,
+          ellipse: true,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "point",
+          x: 1,
+          y: 2,
+          width: 3,
+        },
       },
     ]) {
       const response = asToolResponse(

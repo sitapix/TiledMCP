@@ -13,7 +13,7 @@
 - **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义，由它们生成 MCP JSON Schema、本文的参数表和契约测试 fixture。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
 - **冻结门槛**：所有已注册工具都必须有完整 `inputSchema`、`outputSchema`、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
 
-### 0.1 当前实现切片（2026-07-24）
+### 0.1 当前实现切片（2026-07-25）
 
 当前代码注册 18 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
 索引与单文件恢复预览、地图摘要、whole-map tile usage analysis、有界外部 atlas TSJ
@@ -29,7 +29,8 @@ union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `removeTilesetFromMap`，以及第 15 种、可混批的 `copyRegion`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
-对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
+对象写入暂限基础 rectangle/point/ellipse/capsule；模板、tile object、文本、
+polygon/polyline 等复杂对象会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、结构化输出 envelope、四项 annotations 和 MCP 客户端契约
@@ -663,10 +664,36 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_list_objects` | **已实现基础版**；有界列出全部或指定 object layer，返回精简视图 | `mapPath`, `layerId?`, `limit?` |
-| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，限 rectangle/point | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?`, `height?`, `name?`, `class?`, `rotation?` |
+| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?`, `height?`, `name?`, `class?`, `rotation?` |
 | `tiled_update_object` | 候选独立入口；当前通过 `updateObject` operation 修改基础对象字段 | `mapPath`, `objectId`, `patch` |
 | `tiled_delete_object` | 候选独立入口；当前通过带醒目 destructive 摘要的 `deleteObjects` operation 提供；拒绝留下 object/list 引用，class 属性存在时 fail closed | `mapPath`, `objectIds` |
 | `tiled_instantiate_template` | 从 `.tx`/`.tj` 模板实例化对象（后续候选） | `mapPath`, `layerId`, `templatePath`, `x`, `y`, `overrides?` |
+
+当前 `createObject.object` 是以 `shape` 判别的 exact-key strict union。rectangle 延续
+可选 `width` / `height`，point 禁止尺寸；ellipse 与 Tiled 1.12 capsule 的
+`width` / `height` 同样可省略，省略时按 Tiled 语义序列化为 0。显式尺寸必须有限、
+非负且不超过 1,000,000,000。
+写入 TMJ 时分别只增加 `ellipse:true` 或 `capsule:true` marker，不能同时携带另一种
+shape marker。
+
+这四类基础对象都能使用现有 `updateObject` / `deleteObjects`。update patch 没有
+`shape` 字段，因此不能做 shape mutation；对 ellipse/capsule 更新任意基础字段时，
+planner 继续验证最终 width/height 为有限非负数；存量对象缺失的尺寸按 Tiled 语义解释
+为 0，显式 0 合法，null、负数或超限值会拒绝整个 proposal。对象 patch 继续只替换目标
+object layer 的 `objects` member，create 另以
+value-local patch 推进 `nextobjectid`，未触及 source bytes 保持不变。该扩展不注册
+standalone object tool，registry 仍为 18 core / 19 with rasterizer。
+
+`tiled_get_capabilities.objectShapeCapabilities` 精确为：
+
+```json
+{
+  "creatable": ["rectangle", "point", "ellipse", "capsule"],
+  "shapeMutation": false,
+  "ellipseAndCapsuleDimensions": "optional-nonnegative-default-zero",
+  "sourcePatch": "object-layer-objects-member-local"
+}
+```
 
 ### 3.7 Tileset 管理
 
@@ -1001,7 +1028,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、rectangle/point/ellipse/capsule 基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 
