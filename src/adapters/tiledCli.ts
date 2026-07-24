@@ -1,13 +1,29 @@
 import { execFile, type ExecException, type ExecFileOptionsWithStringEncoding } from "node:child_process";
-import { open, stat } from "node:fs/promises";
+import {
+  constants as fsConstants,
+  type BigIntStats,
+} from "node:fs";
+import { lstat, open } from "node:fs/promises";
 
 import { TiledMcpError, asTiledMcpError } from "../errors.js";
+import { decodeSafeImageRgba } from "../images/safeImage.js";
+import {
+  MAX_RASTER_PNG_BYTES,
+  MAX_RASTER_RENDER_EDGE,
+  MAX_RENDERER_VERSION_LENGTH,
+} from "../rasterContract.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_RENDER_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
 const ERROR_OUTPUT_EXCERPT_LENGTH = 4_096;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const SAFE_RASTER_OUTPUT_OPEN_FLAGS =
+  fsConstants.O_RDONLY |
+  fsConstants.O_NOFOLLOW |
+  fsConstants.O_NONBLOCK;
+const VERSION_TOKEN_PATTERN =
+  "[0-9]+(?:\\.[0-9]+){1,3}(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?";
 
 type ToolKind = "tiled" | "rasterizer";
 
@@ -49,6 +65,7 @@ export interface TiledCliCapabilities {
 
 export interface RenderPngOptions {
   timeoutMs?: number;
+  maxPngBytes?: number;
   scale?: number;
   tileSize?: number;
   size?: number;
@@ -59,6 +76,7 @@ export interface RenderPngOptions {
 
 export interface RenderPngResult {
   outputPath: string;
+  png: Buffer;
   bytes: number;
   width: number;
   height: number;
@@ -145,7 +163,12 @@ export class TiledCliAdapter {
       ["--version"],
       { timeoutMs: this.timeoutMs },
     );
-    return parseVersion(result, "TmxRasterizer", "TMXRASTERIZER");
+    return parseVersion(
+      result,
+      "TmxRasterizer",
+      "TMXRASTERIZER",
+      true,
+    );
   }
 
   /**
@@ -211,6 +234,10 @@ export class TiledCliAdapter {
         { outputPngPath },
       );
     }
+    const maxPngBytes = requirePositiveInteger(
+      options.maxPngBytes ?? MAX_RASTER_PNG_BYTES,
+      "maxPngBytes",
+    );
 
     const args = renderArguments(inputMapPath, outputPngPath, options);
     await this.run(
@@ -225,7 +252,10 @@ export class TiledCliAdapter {
       },
     );
 
-    return inspectPng(outputPngPath);
+    return inspectPng(
+      outputPngPath,
+      maxPngBytes,
+    );
   }
 
   private run(
@@ -317,22 +347,44 @@ function parseVersion(
   result: CommandResult,
   productName: string,
   errorPrefix: "TILED_CLI" | "TMXRASTERIZER",
+  requireProductName = false,
 ): string {
   const output = [result.stdout.trim(), result.stderr.trim()]
     .filter((part) => part.length > 0)
     .join("\n");
   const escapedName = productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`${escapedName}\\s+([^\\s]+)`, "i").exec(output);
+  const productPattern = new RegExp(
+    `^${escapedName}\\s+(${VERSION_TOKEN_PATTERN})$`,
+    "i",
+  );
+  const matchedVersion = output
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .map(
+      (line) =>
+        productPattern.exec(line)?.[1],
+    )
+    .find(
+      (value): value is string =>
+        value !== undefined,
+    );
 
-  if (match?.[1]) {
-    return match[1];
-  }
-  if (output.length > 0) {
-    return output;
+  const version =
+    matchedVersion ??
+    (!requireProductName && output.length > 0
+      ? output
+      : undefined);
+  if (
+    version !== undefined &&
+    version.length <=
+      MAX_RENDERER_VERSION_LENGTH
+  ) {
+    return version;
   }
   throw new TiledMcpError(
     `${errorPrefix}_UNEXPECTED_OUTPUT`,
-    `${productName} returned no version information.`,
+    `${productName} returned no bounded recognizable version information.`,
+    { output: excerpt(output) },
   );
 }
 
@@ -439,53 +491,178 @@ function commandError(
   );
 }
 
-async function inspectPng(outputPngPath: string): Promise<RenderPngResult> {
+async function inspectPng(
+  outputPngPath: string,
+  maxPngBytes: number,
+): Promise<RenderPngResult> {
   try {
-    const fileStat = await stat(outputPngPath);
-    if (!fileStat.isFile()) {
+    const pathStat = await lstat(
+      outputPngPath,
+    );
+    if (!pathStat.isFile()) {
       throw new TiledMcpError(
         "TMXRASTERIZER_OUTPUT_INVALID",
-        "TmxRasterizer output is not a regular file.",
+        "TmxRasterizer output path is not a regular non-symlink file.",
         { outputPngPath },
       );
     }
-
-    const header = Buffer.alloc(24);
-    const handle = await open(outputPngPath, "r");
+    const handle = await open(
+      outputPngPath,
+      SAFE_RASTER_OUTPUT_OPEN_FLAGS,
+    );
     try {
-      const readResult = await handle.read(header, 0, header.length, 0);
-      if (
-        readResult.bytesRead < header.length ||
-        !header.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
-        header.toString("ascii", 12, 16) !== "IHDR"
-      ) {
+      const fileStat = await handle.stat({
+        bigint: true,
+      });
+      if (!fileStat.isFile()) {
         throw new TiledMcpError(
           "TMXRASTERIZER_OUTPUT_INVALID",
-          "TmxRasterizer did not produce a valid PNG file.",
+          "TmxRasterizer output is not a regular file.",
           { outputPngPath },
         );
       }
+      if (
+        fileStat.size >
+        BigInt(maxPngBytes)
+      ) {
+        throw new TiledMcpError(
+          "IMAGE_TOO_LARGE",
+          `TmxRasterizer output is ${fileStat.size.toString()} bytes; PNG limit is ${maxPngBytes}.`,
+          {
+            outputPngPath,
+            bytes:
+              fileStat.size.toString(),
+            limit: maxPngBytes,
+          },
+        );
+      }
+
+      const png = Buffer.alloc(
+        Number(fileStat.size),
+      );
+      let offset = 0;
+      while (offset < png.byteLength) {
+        const readResult = await handle.read(
+          png,
+          offset,
+          png.byteLength - offset,
+          offset,
+        );
+        if (readResult.bytesRead === 0) {
+          break;
+        }
+        offset += readResult.bytesRead;
+      }
+      const currentStat = await handle.stat({
+        bigint: true,
+      });
+      if (
+        offset !== png.byteLength ||
+        !sameRasterOutputSnapshot(
+          fileStat,
+          currentStat,
+        ) ||
+        png.byteLength < 24 ||
+        !png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+        png.toString("ascii", 12, 16) !== "IHDR"
+      ) {
+        throw new TiledMcpError(
+          "TMXRASTERIZER_OUTPUT_INVALID",
+          "TmxRasterizer did not produce a stable valid PNG file.",
+          { outputPngPath },
+        );
+      }
+      let decoded;
+      try {
+        decoded = await decodeSafeImageRgba({
+          bytes: png,
+          path: outputPngPath,
+          limits: {
+            maxInputBytes:
+              maxPngBytes,
+            maxInputPixels:
+              MAX_RASTER_RENDER_EDGE *
+              MAX_RASTER_RENDER_EDGE,
+            maxInputEdge:
+              MAX_RASTER_RENDER_EDGE,
+          },
+        });
+      } catch (error) {
+        const cause = asTiledMcpError(error);
+        throw new TiledMcpError(
+          "TMXRASTERIZER_OUTPUT_INVALID",
+          "TmxRasterizer produced a corrupt or oversized PNG file.",
+          {
+            outputPngPath,
+            cause: cause.message,
+          },
+        );
+      }
+      if (
+        decoded.format !== "png" ||
+        decoded.width !==
+          png.readUInt32BE(16) ||
+        decoded.height !==
+          png.readUInt32BE(20)
+      ) {
+        throw new TiledMcpError(
+          "TMXRASTERIZER_OUTPUT_INVALID",
+          "TmxRasterizer PNG metadata is missing or inconsistent.",
+          { outputPngPath },
+        );
+      }
+
+      return {
+        outputPath: outputPngPath,
+        png,
+        bytes: png.byteLength,
+        width: decoded.width,
+        height: decoded.height,
+      };
     } finally {
       await handle.close();
     }
-
-    return {
-      outputPath: outputPngPath,
-      bytes: fileStat.size,
-      width: header.readUInt32BE(16),
-      height: header.readUInt32BE(20),
-    };
   } catch (error) {
     if (error instanceof TiledMcpError) {
       throw error;
     }
     const cause = asTiledMcpError(error);
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
+    if (errorCode !== "ENOENT") {
+      throw new TiledMcpError(
+        "TMXRASTERIZER_OUTPUT_INVALID",
+        "TmxRasterizer output could not be opened and read safely.",
+        {
+          outputPngPath,
+          cause: cause.message,
+        },
+      );
+    }
     throw new TiledMcpError(
       "TMXRASTERIZER_OUTPUT_MISSING",
       "TmxRasterizer exited successfully but its PNG output could not be read.",
       { outputPngPath, cause: cause.message },
     );
   }
+}
+
+function sameRasterOutputSnapshot(
+  left: BigIntStats,
+  right: BigIntStats,
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
 }
 
 function toProbeIssue(error: unknown): CapabilityProbeIssue {

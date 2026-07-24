@@ -1,4 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  truncate,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +17,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { TiledCliAdapter } from "../src/adapters/tiledCli.js";
+import {
+  TiledCliAdapter,
+  type RenderPngOptions,
+  type RenderPngResult,
+} from "../src/adapters/tiledCli.js";
 import { serializeJsonDocument, type JsonObject } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
@@ -658,9 +671,18 @@ describe("createTiledMcpServer", () => {
   });
 
   it("advertises an exact output schema for the optional rasterizer tool", async () => {
+    const forwardedRenderOptions:
+      RenderPngOptions[] = [];
     const rasterHarness = await createHarness({
       rasterizerAvailable: true,
       rasterizerPng: await terrainPng(),
+      onRasterizerRender: async ({
+        options,
+      }) => {
+        forwardedRenderOptions.push({
+          ...options,
+        });
+      },
     });
     try {
       const listed = await rasterHarness.client.listTools();
@@ -686,11 +708,17 @@ describe("createTiledMcpServer", () => {
         rasterTool?.outputSchema,
         "tiled_render_map",
       );
+      expectExactRasterResultOutputSchema(
+        rasterTool?.outputSchema,
+      );
       const capabilities = resultOf<{
         registeredTools: string[];
+        rasterMapCapabilities: Record<string, unknown>;
+        limits: Record<string, unknown>;
         cli: {
           rasterizer: {
             available: boolean;
+            version: string | null;
           };
         };
       }>(
@@ -707,7 +735,36 @@ describe("createTiledMcpServer", () => {
         cli: {
           rasterizer: {
             available: true,
+            version: "1.0",
           },
+        },
+        rasterMapCapabilities: {
+          registration:
+            "when-tmxrasterizer-version-probe-succeeds",
+          artifactMetadata:
+            "traceable-inline-png-v1",
+          rendererVersionSource:
+            "startup-capability-probe",
+          sourceRevisionCoverage:
+            "map-and-external-tsj-only",
+          inputImageRevisionCoverage:
+            "validated-before-and-after-not-reported",
+          snapshotValidation:
+            "before-and-after-render",
+          snapshotConsistency:
+            "non-atomic-read-set",
+          effectiveOptionsReturned: true,
+        },
+        limits: {
+          maxInlineImageBytes:
+            8 * 1_024 * 1_024,
+          maxRenderEdge: 2_048,
+          maxRasterInputImages: 64,
+          maxRasterInputAggregateBytes:
+            64 * 1_024 * 1_024,
+          maxRasterInputAggregatePixels:
+            16_000_000,
+          maxRasterInputEdge: 8_192,
         },
       });
 
@@ -741,6 +798,17 @@ describe("createTiledMcpServer", () => {
         "details",
       );
 
+      const sourceSummary = resultOf<{
+        revision: string;
+        dependencyRevisions: Record<string, string>;
+      }>(
+        await rasterHarness.client.callTool({
+          name: "tiled_get_map_summary",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
       const rasterResponse = asToolResponse(
         await rasterHarness.client.callTool({
           name: "tiled_render_map",
@@ -765,29 +833,1128 @@ describe("createTiledMcpServer", () => {
         mimeType: "image/png",
         bytes: png.byteLength,
       });
-      expect(
-        (
-          rasterResponse.structuredContent as {
-            result: {
-              mapPath: string;
-              mimeType: string;
-              bytes: number;
-              width: number;
-              height: number;
-            };
-          }
-        ).result,
-      ).toEqual({
-        mapPath: MAP_PATH,
+      const result = (
+        rasterResponse.structuredContent as {
+          result: Record<string, unknown>;
+        }
+      ).result;
+      expect(result).toEqual({
         mimeType: "image/png",
-        bytes: png.byteLength,
-        width: 32,
-        height: 32,
+        pixelSize: {
+          width: 32,
+          height: 32,
+        },
+        byteLength: png.byteLength,
+        sha256: revisionOf(png),
+        map: {
+          path: MAP_PATH,
+          revision:
+            sourceSummary.revision,
+        },
+        dependencyRevisions:
+          sourceSummary.dependencyRevisions,
+        renderer: {
+          kind: "tmxrasterizer",
+          version: "1.0",
+          profile:
+            "tmxrasterizer-png-v1",
+        },
+        options: {
+          size: 128,
+          ignoreVisibility: false,
+        },
+        snapshotConsistency:
+          "non-atomic-read-set",
+        truncated: false,
       });
+      for (const legacyField of [
+        "mapPath",
+        "bytes",
+        "width",
+        "height",
+      ]) {
+        expect(result).not.toHaveProperty(
+          legacyField,
+        );
+      }
+
+      const defaultSizeResponse = resultOf<{
+        options: {
+          size: number;
+          ignoreVisibility: boolean;
+        };
+      }>(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+            ignoreVisibility: true,
+          },
+        }),
+      );
+      expect(defaultSizeResponse.options).toEqual({
+        size: 1_400,
+        ignoreVisibility: true,
+      });
+      const maximumSizeResponse =
+        resultOf<{
+          options: {
+            size: number;
+            ignoreVisibility: boolean;
+          };
+        }>(
+          await rasterHarness.client.callTool({
+            name: "tiled_render_map",
+            arguments: {
+              mapPath: MAP_PATH,
+              size: 2_048,
+            },
+          }),
+        );
+      expect(
+        maximumSizeResponse.options,
+      ).toEqual({
+        size: 2_048,
+        ignoreVisibility: false,
+      });
+      const oversizedInput =
+        asToolResponse(
+          await rasterHarness.client.callTool({
+            name: "tiled_render_map",
+            arguments: {
+              mapPath: MAP_PATH,
+              size: 2_049,
+            },
+          }),
+        );
+      expect(oversizedInput.isError).toBe(
+        true,
+      );
+      expect(
+        oversizedInput.structuredContent,
+      ).toBeUndefined();
+      expect(
+        forwardedRenderOptions,
+      ).toEqual([
+        {
+          size: 128,
+          ignoreVisibility: false,
+          maxPngBytes:
+            8 * 1_024 * 1_024,
+        },
+        {
+          size: 1_400,
+          ignoreVisibility: true,
+          maxPngBytes:
+            8 * 1_024 * 1_024,
+        },
+        {
+          size: 2_048,
+          ignoreVisibility: false,
+          maxPngBytes:
+            8 * 1_024 * 1_024,
+        },
+      ]);
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
     } finally {
       await rasterHarness.client.close().catch(() => undefined);
       await rasterHarness.server.close().catch(() => undefined);
       await rm(rasterHarness.root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "bytes",
+    "width",
+    "height",
+  ] as const)(
+    "rejects incoherent rasterizer %s metadata without returning an image",
+    async (field) => {
+      const rasterizerPng =
+        await terrainPng();
+      const rasterHarness =
+        await createHarness({
+          rasterizerPng,
+          rasterizerMetadataOverride:
+            field === "bytes"
+              ? {
+                  bytes:
+                    rasterizerPng.byteLength +
+                    1,
+                }
+              : {
+                  [field]: 33,
+                },
+        });
+      try {
+        await rasterHarness.client.listTools();
+        const response = asToolResponse(
+          await rasterHarness.client.callTool({
+            name: "tiled_render_map",
+            arguments: {
+              mapPath: MAP_PATH,
+            },
+          }),
+        );
+
+        expect(response.isError).toBe(true);
+        expect(
+          response.content.every(
+            (block) => block.type !== "image",
+          ),
+        ).toBe(true);
+        expect(
+          response.structuredContent,
+        ).toMatchObject({
+          result: {
+            ok: false,
+            error: {
+              code:
+                "TMXRASTERIZER_OUTPUT_INVALID",
+            },
+          },
+        });
+        expect(
+          await readdir(
+            join(
+              rasterHarness.root,
+              ".tiledmcp",
+              "renders",
+            ),
+          ),
+        ).toEqual([]);
+      } finally {
+        await rasterHarness.client
+          .close()
+          .catch(() => undefined);
+        await rasterHarness.server
+          .close()
+          .catch(() => undefined);
+        await rm(rasterHarness.root, {
+          recursive: true,
+          force: true,
+        });
+      }
+    },
+  );
+
+  it("rejects raster output larger than the requested effective size", async () => {
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+            size: 16,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "TMXRASTERIZER_OUTPUT_INVALID",
+              details: {
+                width: 32,
+                height: 32,
+                maxEdge: 16,
+                requestedSize: 16,
+              },
+            },
+          },
+        },
+      });
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("fails closed without returning an image when raster cleanup fails", async () => {
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async ({
+        outputPngPath,
+      }) => {
+        await unlink(outputPngPath);
+        await mkdir(outputPngPath);
+      },
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "RASTER_TEMP_CLEANUP_FAILED",
+            },
+          },
+        },
+      });
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("rejects oversized raster input images before invoking the rasterizer", async () => {
+    let renderCalled = false;
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        renderCalled = true;
+      },
+    });
+    try {
+      await writeFile(
+        join(
+          rasterHarness.root,
+          "tiles",
+          "terrain.png",
+        ),
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg"',
+          ' width="8193" height="1">',
+          '<rect width="8193" height="1"/>',
+          "</svg>",
+        ].join(""),
+        "utf8",
+      );
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "INVALID_TILESET_IMAGE",
+            },
+          },
+        },
+      });
+      expect(renderCalled).toBe(false);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("enforces the aggregate raster input byte budget before invoking the rasterizer", async () => {
+    let renderCalled = false;
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        renderCalled = true;
+      },
+    });
+    try {
+      const smallImage =
+        await terrainPng();
+      await writeFile(
+        join(
+          rasterHarness.root,
+          "tiles",
+          "raster-small.png",
+        ),
+        smallImage,
+      );
+      const sparseImagePath = join(
+        rasterHarness.root,
+        "tiles",
+        "raster-sparse.png",
+      );
+      await writeFile(
+        sparseImagePath,
+        Buffer.alloc(0),
+      );
+      await truncate(
+        sparseImagePath,
+        64 * 1_024 * 1_024,
+      );
+      const map = baseMap();
+      (
+        map.layers as JsonObject[]
+      ).push(
+        {
+          id: 90,
+          type: "imagelayer",
+          image:
+            "../tiles/raster-small.png",
+        },
+        {
+          id: 91,
+          type: "imagelayer",
+          image:
+            "../tiles/raster-sparse.png",
+        },
+      );
+      map.nextlayerid = 92;
+      await writeJson(
+        join(
+          rasterHarness.root,
+          MAP_PATH,
+        ),
+        map,
+      );
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "IMAGE_TOO_LARGE",
+              details: {
+                path:
+                  "tiles/raster-sparse.png",
+                limit:
+                  64 * 1_024 * 1_024 -
+                  smallImage.byteLength,
+              },
+            },
+          },
+        },
+      });
+      expect(renderCalled).toBe(false);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("enforces the aggregate raster input pixel budget before invoking the rasterizer", async () => {
+    let renderCalled = false;
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        renderCalled = true;
+      },
+    });
+    try {
+      await writeFile(
+        join(
+          rasterHarness.root,
+          "tiles",
+          "sixteen-megapixels.svg",
+        ),
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg"',
+          ' width="4000" height="4000">',
+          '<rect width="4000" height="4000"/>',
+          "</svg>",
+        ].join(""),
+        "utf8",
+      );
+      const map = baseMap();
+      (
+        map.layers as JsonObject[]
+      ).push({
+        id: 90,
+        type: "imagelayer",
+        image:
+          "../tiles/sixteen-megapixels.svg",
+      });
+      map.nextlayerid = 91;
+      await writeJson(
+        join(
+          rasterHarness.root,
+          MAP_PATH,
+        ),
+        map,
+      );
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "RESULT_LIMIT_EXCEEDED",
+              details: {
+                path:
+                  "tiles/terrain.png",
+                limit: 16_000_000,
+                actual: 16_000_000,
+              },
+            },
+          },
+        },
+      });
+      expect(renderCalled).toBe(false);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("validates per-tile raster images before invoking the rasterizer", async () => {
+    let renderCalled = false;
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        renderCalled = true;
+      },
+    });
+    try {
+      const tileset = baseTileset();
+      tileset.tiles = [
+        {
+          id: 0,
+          image: "invalid-tile-image.bin",
+        },
+      ];
+      await writeJson(
+        join(
+          rasterHarness.root,
+          TILESET_PATH,
+        ),
+        tileset,
+      );
+      await writeFile(
+        join(
+          rasterHarness.root,
+          "tiles",
+          "invalid-tile-image.bin",
+        ),
+        "not an image",
+        "utf8",
+      );
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "UNSUPPORTED_IMAGE_FORMAT",
+            },
+          },
+        },
+      });
+      expect(renderCalled).toBe(false);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("bounds the deduplicated raster image-layer input set", async () => {
+    let renderCalled = false;
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        renderCalled = true;
+      },
+    });
+    try {
+      const image = await terrainPng();
+      const map = baseMap();
+      const layers =
+        map.layers as JsonObject[];
+      for (
+        let index = 0;
+        index < 64;
+        index += 1
+      ) {
+        const fileName =
+          `raster-input-${String(index)}.png`;
+        await writeFile(
+          join(
+            rasterHarness.root,
+            "tiles",
+            fileName,
+          ),
+          image,
+        );
+        layers.push({
+          id: 100 + index,
+          type: "imagelayer",
+          image:
+            `../tiles/${fileName}`,
+        });
+      }
+      map.nextlayerid = 164;
+      await writeJson(
+        join(
+          rasterHarness.root,
+          MAP_PATH,
+        ),
+        map,
+      );
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "RESULT_LIMIT_EXCEEDED",
+              details: {
+                path:
+                  "tiles/terrain.png",
+                limit: 64,
+              },
+            },
+          },
+        },
+      });
+      expect(renderCalled).toBe(false);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+
+      const deduplicatedMap =
+        baseMap();
+      const deduplicatedLayers =
+        deduplicatedMap.layers as JsonObject[];
+      await Promise.all([
+        writeFile(
+          join(
+            rasterHarness.root,
+            "tiles",
+            "raster-input.png",
+          ),
+          image,
+        ),
+        writeFile(
+          join(
+            rasterHarness.root,
+            "tiles",
+            "raster_input.png",
+          ),
+          image,
+        ),
+      ]);
+      deduplicatedLayers.push(
+        {
+          id: 198,
+          type: "imagelayer",
+          image:
+            "../tiles/raster-input.png",
+        },
+        {
+          id: 199,
+          type: "imagelayer",
+          image:
+            "../tiles/raster_input.png",
+        },
+      );
+      for (
+        let index = 0;
+        index < 65;
+        index += 1
+      ) {
+        deduplicatedLayers.push({
+          id: 200 + index,
+          type: "imagelayer",
+          image:
+            "../tiles/terrain.png",
+        });
+      }
+      deduplicatedMap.nextlayerid = 265;
+      await writeJson(
+        join(
+          rasterHarness.root,
+          MAP_PATH,
+        ),
+        deduplicatedMap,
+      );
+      const deduplicatedResponse =
+        asToolResponse(
+          await rasterHarness.client.callTool({
+            name: "tiled_render_map",
+            arguments: {
+              mapPath: MAP_PATH,
+            },
+          }),
+        );
+      expect(
+        deduplicatedResponse.isError,
+      ).not.toBe(true);
+      expect(renderCalled).toBe(true);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("cleans a partial rasterizer output when the adapter fails after writing", async () => {
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async () => {
+        throw new Error(
+          "injected rasterizer read failure",
+        );
+      },
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response.isError).toBe(true);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      expect(response.structuredContent).toMatchObject({
+        result: {
+          ok: false,
+          error: {
+            code: "INTERNAL_ERROR",
+          },
+        },
+      });
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("rejects a map revision race after rasterization and removes its temporary PNG", async () => {
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async ({ root }) => {
+        const changedMap = baseMap();
+        changedMap.backgroundcolor = "#123456";
+        await writeJson(
+          join(root, MAP_PATH),
+          changedMap,
+        );
+      },
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response.isError).toBe(true);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      expect(response.structuredContent).toMatchObject({
+        result: {
+          ok: false,
+          error: {
+            code: "REVISION_CONFLICT",
+            details: {
+              path: MAP_PATH,
+              expectedRevision:
+                expect.stringMatching(
+                  /^sha256:[0-9a-f]{64}$/u,
+                ),
+              actualRevision:
+                expect.stringMatching(
+                  /^sha256:[0-9a-f]{64}$/u,
+                ),
+            },
+          },
+        },
+      });
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("rejects a tileset revision race after rasterization and removes its temporary PNG", async () => {
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async ({ root }) => {
+        const changedTileset = baseTileset();
+        changedTileset.name =
+          "Changed while rasterizing";
+        await writeJson(
+          join(root, TILESET_PATH),
+          changedTileset,
+        );
+      },
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response.isError).toBe(true);
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      expect(response.structuredContent).toMatchObject({
+        result: {
+          ok: false,
+          error: {
+            code:
+              "DEPENDENCY_REVISION_CONFLICT",
+            details: {
+              assetId:
+                expect.stringMatching(
+                  /^asset_[0-9a-f]{24}$/u,
+                ),
+              expectedRevision:
+                expect.stringMatching(
+                  /^sha256:[0-9a-f]{64}$/u,
+                ),
+              actualRevision:
+                expect.stringMatching(
+                  /^sha256:[0-9a-f]{64}$/u,
+                ),
+            },
+          },
+        },
+      });
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it("rejects an input image revision race after rasterization", async () => {
+    const changedImage = await sharp({
+      create: {
+        width: 32,
+        height: 32,
+        channels: 4,
+        background: "#7b2fbe",
+      },
+    })
+      .png()
+      .toBuffer();
+    const rasterHarness = await createHarness({
+      rasterizerPng: await terrainPng(),
+      onRasterizerRender: async ({ root }) => {
+        await writeFile(
+          join(
+            root,
+            "tiles",
+            "terrain.png",
+          ),
+          changedImage,
+        );
+      },
+    });
+    try {
+      await rasterHarness.client.listTools();
+      const response = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+          },
+        }),
+      );
+
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code:
+                "DEPENDENCY_REVISION_CONFLICT",
+              details: {
+                path:
+                  "tiles/terrain.png",
+              },
+            },
+          },
+        },
+      });
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      const imageRaceDetails = (
+        response.structuredContent as {
+          result: {
+            error: {
+              details: Record<
+                string,
+                unknown
+              >;
+            };
+          };
+        }
+      ).result.error.details;
+      expect(
+        imageRaceDetails,
+      ).not.toHaveProperty(
+        "expectedRevision",
+      );
+      expect(
+        imageRaceDetails,
+      ).not.toHaveProperty(
+        "actualRevision",
+      );
+      expect(
+        await readdir(
+          join(
+            rasterHarness.root,
+            ".tiledmcp",
+            "renders",
+          ),
+        ),
+      ).toEqual([]);
+    } finally {
+      await rasterHarness.client
+        .close()
+        .catch(() => undefined);
+      await rasterHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(rasterHarness.root, {
+        recursive: true,
+        force: true,
+      });
     }
   });
 
@@ -878,6 +2045,12 @@ describe("createTiledMcpServer", () => {
     );
     expect(content.text).toContain(
       "`tiled-mcp-summary` v1",
+    );
+    expect(content.text).toContain(
+      "traceable PNG contract",
+    );
+    expect(content.text).toContain(
+      '`snapshotConsistency:"non-atomic-read-set"`',
     );
 
     await expect(
@@ -5904,6 +7077,18 @@ async function createHarness(
   options: {
     rasterizerAvailable?: boolean;
     rasterizerPng?: Buffer;
+    rasterizerMetadataOverride?: Partial<
+      Pick<
+        RenderPngResult,
+        "bytes" | "width" | "height"
+      >
+    >;
+    onRasterizerRender?: (context: {
+      root: string;
+      inputMapPath: string;
+      outputPngPath: string;
+      options: RenderPngOptions;
+    }) => Promise<void>;
   } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "tiledmcp-server-"));
@@ -5925,6 +7110,13 @@ async function createHarness(
       ? process.execPath
       : `${missingExecutable}-tmxrasterizer`,
   });
+  if (
+    options.rasterizerAvailable === true ||
+    options.rasterizerPng !== undefined
+  ) {
+    cli.getRasterizerVersion =
+      async () => "1.0";
+  }
   if (options.rasterizerPng !== undefined) {
     const rasterizerPng = options.rasterizerPng;
     const metadata = await sharp(rasterizerPng).metadata();
@@ -5934,13 +7126,31 @@ async function createHarness(
     ) {
       throw new Error("Expected rasterizerPng dimensions.");
     }
-    cli.renderPng = async (_inputMapPath, outputPngPath) => {
+    cli.renderPng = async (
+      inputMapPath,
+      outputPngPath,
+      renderOptions,
+    ) => {
       await writeFile(outputPngPath, rasterizerPng);
+      await options.onRasterizerRender?.({
+        root,
+        inputMapPath,
+        outputPngPath,
+        options: renderOptions ?? {},
+      });
       return {
         outputPath: outputPngPath,
-        bytes: rasterizerPng.byteLength,
-        width: metadata.width!,
-        height: metadata.height!,
+        png: rasterizerPng,
+        bytes:
+          options.rasterizerMetadataOverride
+            ?.bytes ??
+          rasterizerPng.byteLength,
+        width:
+          options.rasterizerMetadataOverride
+            ?.width ?? metadata.width!,
+        height:
+          options.rasterizerMetadataOverride
+            ?.height ?? metadata.height!,
       };
     };
   }
@@ -6177,6 +7387,252 @@ function expectNoUnconstrainedOutputSchemas(
   };
 
   visit(schema, "#");
+}
+
+function expectExactRasterResultOutputSchema(
+  schema: unknown,
+): void {
+  const root = schemaRecord(
+    schema,
+    "raster output root",
+  );
+  const rootProperties = schemaRecord(
+    root.properties,
+    "raster output root properties",
+  );
+  expect(root).toMatchObject({
+    type: "object",
+    required: ["result"],
+    additionalProperties: false,
+  });
+  expect(
+    Object.keys(rootProperties),
+  ).toEqual(["result"]);
+  const result = schemaRecord(
+    rootProperties.result,
+    "raster result union",
+  );
+  expect(result.anyOf).toEqual(
+    expect.any(Array),
+  );
+  if (!Array.isArray(result.anyOf)) {
+    throw new Error(
+      "Expected raster result anyOf variants.",
+    );
+  }
+  expect(result.anyOf).toHaveLength(2);
+  const successVariant =
+    result.anyOf.find((candidate) => {
+      if (!isRecord(candidate)) {
+        return false;
+      }
+      const candidateProperties =
+        candidate.properties;
+      return (
+        isRecord(candidateProperties) &&
+        "mimeType" in
+          candidateProperties
+      );
+    });
+  const success = schemaRecord(
+    successVariant,
+    "raster success result",
+  );
+  const successFields = [
+    "mimeType",
+    "pixelSize",
+    "byteLength",
+    "sha256",
+    "map",
+    "dependencyRevisions",
+    "renderer",
+    "options",
+    "snapshotConsistency",
+    "truncated",
+  ];
+  expect(success).toMatchObject({
+    type: "object",
+    additionalProperties: false,
+  });
+  expectSchemaRequiredFields(
+    success,
+    successFields,
+    "raster success result",
+  );
+  const properties = schemaRecord(
+    success.properties,
+    "raster success properties",
+  );
+  expect(
+    Object.keys(properties).sort(),
+  ).toEqual(
+    [...successFields].sort(),
+  );
+  expect(properties.mimeType).toMatchObject({
+    type: "string",
+    const: "image/png",
+  });
+  expect(properties.byteLength).toMatchObject({
+    type: "integer",
+    exclusiveMinimum: 0,
+    maximum: 8 * 1_024 * 1_024,
+  });
+  expect(properties.sha256).toMatchObject({
+    type: "string",
+    pattern:
+      "^sha256:[0-9a-f]{64}$",
+  });
+  expect(
+    properties.snapshotConsistency,
+  ).toMatchObject({
+    type: "string",
+    const:
+      "non-atomic-read-set",
+  });
+  expect(properties.truncated).toMatchObject({
+    type: "boolean",
+    const: false,
+  });
+
+  const pixelFields = expectClosedSchemaFields(
+    properties.pixelSize,
+    "raster pixelSize",
+    ["width", "height"],
+  );
+  for (const field of [
+    "width",
+    "height",
+  ]) {
+    expect(pixelFields[field]).toMatchObject({
+      type: "integer",
+      exclusiveMinimum: 0,
+      maximum: 2_048,
+    });
+  }
+  const mapFields = expectClosedSchemaFields(
+    properties.map,
+    "raster map snapshot",
+    ["path", "revision"],
+  );
+  expect(mapFields.path).toMatchObject({
+    type: "string",
+    minLength: 1,
+  });
+  expect(mapFields.revision).toMatchObject({
+    type: "string",
+    pattern:
+      "^sha256:[0-9a-f]{64}$",
+  });
+  expect(
+    properties.dependencyRevisions,
+  ).toMatchObject({
+    type: "object",
+    propertyNames: {
+      type: "string",
+      pattern:
+        "^asset_[0-9a-f]{24}$",
+    },
+    additionalProperties: {
+      type: "string",
+      pattern:
+        "^sha256:[0-9a-f]{64}$",
+    },
+  });
+  const rendererFields =
+    expectClosedSchemaFields(
+      properties.renderer,
+      "raster renderer",
+      ["kind", "version", "profile"],
+    );
+  expect(rendererFields.kind).toMatchObject({
+    type: "string",
+    const: "tmxrasterizer",
+  });
+  expect(rendererFields.version).toMatchObject({
+    type: "string",
+    minLength: 1,
+    maxLength: 1_024,
+  });
+  expect(rendererFields.profile).toMatchObject({
+    type: "string",
+    const:
+      "tmxrasterizer-png-v1",
+  });
+  const optionFields =
+    expectClosedSchemaFields(
+      properties.options,
+      "raster effective options",
+      ["size", "ignoreVisibility"],
+    );
+  expect(optionFields.size).toMatchObject({
+    type: "integer",
+    exclusiveMinimum: 0,
+    maximum: 2_048,
+  });
+  expect(
+    optionFields.ignoreVisibility,
+  ).toEqual({
+    type: "boolean",
+  });
+}
+
+function expectClosedSchemaFields(
+  schema: unknown,
+  context: string,
+  fields: string[],
+): Record<string, unknown> {
+  const objectSchema = schemaRecord(
+    schema,
+    context,
+  );
+  expect(objectSchema).toMatchObject({
+    type: "object",
+    additionalProperties: false,
+  });
+  expectSchemaRequiredFields(
+    objectSchema,
+    fields,
+    context,
+  );
+  const properties = schemaRecord(
+    objectSchema.properties,
+    `${context} properties`,
+  );
+  expect(
+    Object.keys(properties).sort(),
+  ).toEqual(
+    [...fields].sort(),
+  );
+  return properties;
+}
+
+function expectSchemaRequiredFields(
+  schema: Record<string, unknown>,
+  fields: string[],
+  context: string,
+): void {
+  if (!Array.isArray(schema.required)) {
+    throw new Error(
+      `Expected ${context} to define required fields.`,
+    );
+  }
+  expect(
+    [...schema.required].sort(),
+  ).toEqual(
+    [...fields].sort(),
+  );
+}
+
+function schemaRecord(
+  value: unknown,
+  context: string,
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(
+      `Expected ${context} to be a schema object.`,
+    );
+  }
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

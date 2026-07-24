@@ -55,7 +55,8 @@
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
 - 不依赖 Tiled 进程的有限正交 tile-layer region PNG 预览，支持图层筛选、GID
   H/V/D、opacity、网格和绝对坐标 gutter；
-- Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览；
+- Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览，后者返回 map/外部 TSJ
+  revision、PNG hash/尺寸、renderer 版本与实际生效选项；
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
   `tiled://guide` 安全编辑 playbook；
 - stdio MCP server、严格输入 schema、每工具精确 closed output schema、统一应用错误
@@ -68,10 +69,12 @@
 
 tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UTF-8 最多
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
-`structuredContent.result` 为准。接口仍未 Frozen：可选 `tiled_render_map` 仍使用未含
-revision/hash 的 legacy raster 元数据；自动生成的完整契约文档/示例和 rename-stable
-asset registry 也仍待完成。当前能力与 wire schema 应以
-`tiled_get_capabilities` 和 `tools/list` 为准。
+`structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
+PNG 元数据，不保留冻结前的 legacy aliases。接口仍未 Frozen：自动生成的完整契约
+文档/示例、rename-stable asset registry、`tiled_create_map` 的 no-replace 例外定案与
+固定 Tiled 1.12.2 集成门槛仍待完成；non-cooperative external-writer CAS 仍是公开的
+M0 安全 blocker。当前能力与 wire schema 应以 `tiled_get_capabilities` 和
+`tools/list` 为准。
 
 ## 文档索引
 
@@ -140,7 +143,23 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以目标 revision CAS 提交已批准的 map edit 或 checkpoint restore |
-| `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回 PNG |
+| `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回带 map/TSJ/output/renderer 可追溯元数据的 PNG |
+
+`tiled_render_map` 的成功结果使用 pre-Frozen clean break，不再返回 `mapPath`、`bytes`、
+`width` 或 `height` aliases。必填字段是 `mimeType`、`pixelSize`、`byteLength`、
+`sha256`、`map`、`dependencyRevisions`、`renderer`、`options`、
+`snapshotConsistency` 和 `truncated`。`pixelSize`、`byteLength`、`sha256` 与 MCP
+`image` content 都来自同一个不超过 8 MiB 的 PNG buffer；`renderer` 固定报告
+`tmxrasterizer`、启动时探测的版本与 `tmxrasterizer-png-v1` profile，`options` 返回实际
+生效的 `size` 和 `ignoreVisibility`。
+
+渲染前后会复核 map 与全部 external TSJ revisions，`dependencyRevisions` 仍只覆盖这些
+TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径统一去重：最多 64 张，
+原始 bytes 合计最多 64 MiB、解码像素合计最多 16,000,000，任一图片单边最多 8192 px。
+服务端在渲染前后分别读取这些图片的一致单文件 snapshot，并比较内部的完整路径/revision
+集合；这些图片 revision 有意不出现在公开结果中。`tmxrasterizer` 仍直接读取 live files，
+而且 pre/post 相等不能排除渲染期间发生又恢复的 ABA。因此结果固定标记
+`snapshotConsistency: "non-atomic-read-set"`，不能把它解释为 map、TSJ 与图片的原子快照。
 
 所有已注册工具都公布自己的精确、封闭 output schema。正常 handler 结果的统一外层是
 `{"result": <该工具的成功结果>}`；合法输入触发的领域/应用错误设置 `isError: true`，并

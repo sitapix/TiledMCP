@@ -2,8 +2,9 @@
 
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
-> closed output schema 和有界 compact text summary，但可选 rasterizer 元数据等冻结门槛
-> 尚未完成，接口与磁盘格式仍不视为冻结。
+> closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
+> 自动生成契约文档/示例、rename-stable asset registry、create-map 例外定案与固定版本
+> 集成门槛仍未完成，接口与磁盘格式仍不视为冻结。
 
 ### 当前落地状态（2026-07-25）
 
@@ -60,9 +61,27 @@ change-set apply 不是同一个 mutation 类型。handler 内的应用错误以
 错误只有 SDK-owned text content。进入 handler 后的成功与应用错误都使用
 `tiled-mcp-summary` v1 compact one-line JSON text block，UTF-8 最多 1024 bytes；摘要不
 复制完整成功 result 或错误 `details`，完整机器结果以 `structuredContent.result` 为准。
-图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。可选
-`tiled_render_map` 仍使用不含 revision/hash 的 legacy structured metadata；这是接口
-Frozen 前待收敛项。
+图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
+
+可选 `tiled_render_map` 已以 pre-Frozen clean break 删除旧
+`mapPath`/`bytes`/`width`/`height` aliases。它的 exact closed result 必须返回
+`mimeType`、`pixelSize`、`byteLength`、`sha256`、`map`、`dependencyRevisions`、
+`renderer`、`options`、`snapshotConsistency` 和 `truncated`。尺寸、byte count、hash
+与 MCP image block 全部绑定 adapter 一次有界读取后交给 server 的同一个 PNG buffer；
+server 会复核 PNG signature/IHDR 及 adapter 报告的一致性。renderer 元数据固定
+`kind:"tmxrasterizer"`、启动时探测的非空版本和
+`profile:"tmxrasterizer-png-v1"`；options 返回展开默认值后的实际 `size` 与
+`ignoreVisibility`。
+
+render 前后会重新加载并比较 map 与全部 external TSJ revisions，
+`dependencyRevisions` 仍只覆盖这些 TSJ。root atlas、per-tile image 与 image-layer 引用
+按规范化项目路径统一去重，并在渲染前后分别读取一致单文件 snapshot、比较内部的完整
+路径/revision 集合；图片集合或任一 revision 变化都会拒绝结果。该内部集合最多 64 张，
+原始 bytes 合计最多 64 MiB、解码像素合计最多 16,000,000，任一图片单边最多 8192 px，
+但这些图片 revisions 有意不进入公开 result。外部进程仍直接读取 live files，pre/post
+相等也不能排除中途变更后恢复的 ABA，逐文件读取也不是原子 read set。因此该结果只承诺
+`snapshotConsistency:"non-atomic-read-set"`，不把 map、TSJ 与图片描述成原子或同一时刻
+的输入快照。成功结果固定 `truncated:false`。
 
 atlas TSJ projection 以 Tiled 1.12 为语义基线：tile class 的当前磁盘字段是
 `tiles[].type`，`tiles[].class` 仅作为 Tiled 1.9 兼容输入。详情响应只携带所选 TSJ 的
@@ -88,7 +107,10 @@ closed，而不是把不理解的值当作未命中。续页把 map 和所选 TS
 
 native map preview v1 也已落地：它在进程内安全解码实际使用的 atlas，按有限正交
 tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变换与 map/TSJ/image
-快照 revision。复杂 Tiled 绘制语义仍由可选 `tmxrasterizer` 覆盖。
+快照 revision。复杂 Tiled 绘制语义仍由可选 `tmxrasterizer` 覆盖；后者报告
+pre/post 复核的 map/TSJ read set 和同一 PNG buffer 的 hash/尺寸；其有界、去重的输入图片
+集合也在前后读取并比较内部 revisions，但公开结果不报告这些 revisions，并明确保持非原子
+live-file 边界。
 
 当前写回已经使用 JSON syntax tree 生成局部替换：包括 `stampPattern`、`floodFill` 与
 `copyRegion`
@@ -1155,6 +1177,7 @@ checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`be
 | native preview region | 20,000 cells / 128 tile layers / 250,000 potential draws / 30M pixel blends |
 | native preview atlas aggregate | 64 images / 64 MiB source / 16M decoded pixels |
 | native preview surface | 1.5 megapixels，单边 2048 px，scale 1–4 |
+| `tmxrasterizer` 输入图片集合 | root atlas / per-tile / image-layer 统一去重；64 images / 64 MiB source / 16M decoded pixels；单边 8192 px |
 | 返回 PNG | 8 MiB；地图 rasterizer 默认长边 1400 px、最大 2048 px |
 | 外部进程 stdout + stderr | 各 1 MiB |
 | 外部进程时限 | 30 s（按工具可收紧） |
@@ -1186,6 +1209,13 @@ checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`be
 - native preview 结束前复核 map 和全部 TSJ revision；image hash 精确绑定实际解码 bytes，
   但多个 image 是依次读取而非跨文件原子快照，结果用
   `snapshotConsistency: "non-atomic-read-set"` 明示。
+- `tmxrasterizer` preview 在外部进程前后复核 map 与 external TSJ read set，并把启动时
+  探测的 renderer 版本、实际生效选项及同一有界 PNG buffer 的尺寸、byte count 和 hash 放入
+  结果。root atlas、per-tile image 与 image-layer 引用按规范化路径统一去重；前后分别读取
+  这个最多 64 张、64 MiB source、16M decoded pixels、单边 8192 px 的集合并比较内部路径与
+  revision。公开结果仍不报告图片 revision，`dependencyRevisions` 仍为 TSJ-only；外部进程
+  读取 live files 且无法排除 ABA，因此同样固定返回
+  `snapshotConsistency: "non-atomic-read-set"` 与 `truncated:false`。
 - 调试叠加层与地图像素分开绘制，返回 tile region、像素尺寸、scale 和 tile→pixel 变换。
 - 子进程使用最小环境、固定 executable、固定 flag 模板、受控 cwd 和并发 semaphore；超时后
   终止整个进程组并清理 staging。
@@ -1304,8 +1334,9 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract`、SDK-owned text-only 输入校验错误、错误码、annotations 和
-   size/page limit。
+   `textContentContract`、三种图片工具的同-buffer artifact metadata、rasterizer
+   renderer/options、有界输入图片集合的内部 pre/post revision 校验与 non-atomic 边界、
+   SDK-owned text-only 输入校验错误、错误码、annotations 和 size/page limit。
 4. **Integration**：固定版本 Tiled one-shot、`--export-formats`、`tmxrasterizer`；同时测试
    “未安装/版本不支持”的正常降级。
 5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。

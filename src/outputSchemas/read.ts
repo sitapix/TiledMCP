@@ -19,6 +19,13 @@ import {
   MAX_PREVIEW_REGION_CELLS,
 } from "../maps/previewScene.js";
 import {
+  MAX_RASTER_PNG_BYTES,
+  MAX_RASTER_RENDER_EDGE,
+  MAX_RENDERER_VERSION_LENGTH,
+  RASTER_RENDER_PROFILE,
+  RASTER_SNAPSHOT_CONSISTENCY,
+} from "../rasterContract.js";
+import {
   assetIdOutputSchema,
   checkpointIdOutputSchema,
   checkpointTimestampOutputSchema,
@@ -534,19 +541,55 @@ const nativePreviewResultOutputSchema = z
 export const nativePreviewToolOutputSchema =
   toolOutputSchema(nativePreviewResultOutputSchema);
 
-const rasterMapResultOutputSchema = z
+const rasterMapPixelSizeOutputSchema = z
   .object({
-    mapPath: projectPathOutputSchema,
-    mimeType: z.literal("image/png"),
-    bytes: positiveIntegerOutputSchema.max(
-      MAX_NATIVE_PREVIEW_BYTES,
-    ),
     width: positiveIntegerOutputSchema.max(
-      MAX_NATIVE_PREVIEW_EDGE,
+      MAX_RASTER_RENDER_EDGE,
     ),
     height: positiveIntegerOutputSchema.max(
-      MAX_NATIVE_PREVIEW_EDGE,
+      MAX_RASTER_RENDER_EDGE,
     ),
+  })
+  .strict();
+
+const rasterMapResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize:
+      rasterMapPixelSizeOutputSchema,
+    byteLength: positiveIntegerOutputSchema.max(
+      MAX_RASTER_PNG_BYTES,
+    ),
+    sha256: revisionOutputSchema,
+    map: mapSnapshotOutputSchema,
+    dependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    renderer: z
+      .object({
+        kind: z.literal("tmxrasterizer"),
+        version: z
+          .string()
+          .min(1)
+          .max(
+            MAX_RENDERER_VERSION_LENGTH,
+          ),
+        profile: z.literal(
+          RASTER_RENDER_PROFILE,
+        ),
+      })
+      .strict(),
+    options: z
+      .object({
+        size: positiveIntegerOutputSchema.max(
+          MAX_RASTER_RENDER_EDGE,
+        ),
+        ignoreVisibility: z.boolean(),
+      })
+      .strict(),
+    snapshotConsistency: z.literal(
+      RASTER_SNAPSHOT_CONSISTENCY,
+    ),
+    truncated: z.literal(false),
   })
   .strict();
 

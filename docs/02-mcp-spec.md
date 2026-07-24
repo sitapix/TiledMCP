@@ -42,13 +42,14 @@ tileset-reference 写入使用目标子树、object-member 或 array-element loc
 
 tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UTF-8 最多
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
-`structuredContent.result` 为准。当前仍未完成全部 schema/codegen 文档与示例；可选
-`tiled_render_map` 仍返回 legacy raster 元数据，尚未与两种内建图片结果的
-revision/hash/pixel-size 契约统一。外部 tileset `assetId` 也是由项目路径确定性派生的
-临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
-前的待办。因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
-`tiled_get_capabilities`、`tools/list`、`resources/list` 与
-`resources/templates/list` 为准。
+`structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
+元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
+aliases。当前仍未完成全部 schema/codegen 文档与示例；外部 tileset `assetId` 也是由项目
+路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable
+registry 是接口冻结前的待办。`tiled_create_map` 的 no-replace 例外仍需在冻结前定案，
+固定 Tiled 1.12.2 集成门槛也尚未全部固化。因此本文仍是 Draft，共享契约描述的冻结目标
+不能视为已全部达成；运行时应以 `tiled_get_capabilities`、`tools/list`、
+`resources/list` 与 `resources/templates/list` 为准。
 
 当前 `tiled_create_map` 是一个明确的临时例外：它只做 no-replace 新建，已有路径必然拒绝，
 但还没有纳入 change set。冻结前要么把创建也改为 preview/apply，要么在本规范中正式保留
@@ -951,9 +952,10 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 
 #### 3.11.1 图片 wire contract 与限制
 
-两种内建图片工具的成功 `structuredContent.result` 使用各自的 exact closed schema；
-下列代码块是它们字段的合并说明，不是可接受任意字段组合的共享 schema。sheet 使用单数
-`source`/`image`，native 地图预览使用实际影响本次像素的 `sources[]`：
+三种图片工具的成功 `structuredContent.result` 都使用各自的 exact closed schema，并共享
+`mimeType`、`pixelSize`、`byteLength`、`sha256`、`map` 与 `truncated` 核心。下列
+代码块仅是两种内建工具字段的合并说明，不是可接受任意字段组合的共享 schema。sheet 使用
+单数 `source`/`image`，native 地图预览使用实际影响本次像素的 `sources[]`：
 
 ```ts
 {
@@ -1007,21 +1009,52 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 `image:{mimeType:"image/png",bytes}`；`bytes` 来自实际 inline PNG buffer，而不是
 base64 字符数。完整图片元数据仍以各工具自己的 `structuredContent.result` 为准。
 
-可选 `tmxrasterizer` 工具 `tiled_render_map` 当前也有 closed output schema，但仍沿用较窄
-的 legacy 结果：
+可选 `tmxrasterizer` 工具 `tiled_render_map` 使用独立的 exact closed result：
 
 ```ts
 {
-  mapPath: ProjectPath;
   mimeType: "image/png";
-  bytes: number;
-  width: number;
-  height: number;
+  pixelSize: { width: number; height: number };
+  byteLength: number;
+  sha256: Revision;
+  map: { path: ProjectPath; revision: Revision };
+  dependencyRevisions: Record<AssetId, Revision>; // 仅 map 引用的 external TSJ
+  renderer: {
+    kind: "tmxrasterizer";
+    version: string; // 启动时 capability probe 的非空版本
+    profile: "tmxrasterizer-png-v1";
+  };
+  options: {
+    size: number;             // 实际生效值，省略输入时为 1400
+    ignoreVisibility: boolean; // 实际生效值，省略输入时为 false
+  };
+  snapshotConsistency: "non-atomic-read-set";
+  truncated: false;
 }
 ```
 
-它还没有返回 map revision、内容 hash 或统一的 `pixelSize` / `byteLength` 字段；冻结前
-必须把它迁移到与内建图片结果一致的可追溯元数据，或明确把这套 legacy 形状作为稳定例外。
+这是 pre-Frozen clean break，不保留 `mapPath`、`bytes`、`width` 或 `height` aliases。
+adapter 通过同一个有界 PNG buffer 校验 IHDR 和 adapter metadata；`pixelSize` 来自该
+buffer，`byteLength` 是其 base64 编码之前的原始 byte count，`sha256` 对同一 buffer
+计算，MCP `image` content 也由它编码。`renderer.version` 来自启动时使该工具可注册的版本
+探测，`options` 返回默认值展开后的实际调用参数。
+
+渲染前后服务端分别复核 map 与全部 external TSJ revisions；`map` 和
+`dependencyRevisions` 报告这个 pre/post 相等的 read set，后者仍只含 TSJ。root atlas、
+per-tile image 与 image-layer 引用按规范化项目路径统一去重，最多允许 64 张；原始 bytes
+合计最多 64 MiB、解码像素合计最多 16,000,000，任一图片单边最多 8192 px。服务端在渲染
+前后分别读取每个图片的一致单文件 snapshot，并比较内部的完整路径/revision 集合；集合或
+任一 revision 变化都拒绝结果。这些内部图片 revisions 有意不出现在公开 result 中，也不
+进入 TSJ-only 的 `dependencyRevisions`。
+
+`tmxrasterizer` 仍直接读取 live files，且相同的 pre/post revision 不能排除中途修改后又
+恢复的 ABA；这些逐文件读取也不构成原子 read set。因此结果固定为
+`snapshotConsistency: "non-atomic-read-set"`，客户端不得把这些字段解释成 map、TSJ 与
+图片来自一个原子快照。成功结果固定 `truncated: false`。上述能力由
+`rasterMapCapabilities.inputImageRevisionCoverage` 的
+`"validated-before-and-after-not-reported"` 公布，四项输入预算由
+`limits.maxRasterInputImages`、`maxRasterInputAggregateBytes`、
+`maxRasterInputAggregatePixels` 与 `maxRasterInputEdge` 公布。
 
 - 当前 tileset sheet 的输入上限为 `64 MiB`、`4096²` 解码像素和 `8192` 单边；输出上限为
   `2048` 单边、`1,500,000` 像素和编码后 `8 MiB`。每页请求最多 256 个 tile，

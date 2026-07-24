@@ -4,7 +4,10 @@ import { join, resolve } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import sharp from "sharp";
 import { expect, it } from "vitest";
+
+import { revisionOf } from "../src/storage/revision.js";
 
 it("serves tiled_find_tiles through the production stdio entry point", async () => {
   const temporaryRoot = await mkdtemp(
@@ -254,6 +257,23 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         structuredByteMeasure: "utf8-json-stringify",
         sdkInputErrors: "sdk-owned-text-only",
       },
+      rasterMapCapabilities: {
+        registration:
+          "when-tmxrasterizer-version-probe-succeeds",
+        artifactMetadata:
+          "traceable-inline-png-v1",
+        rendererVersionSource:
+          "startup-capability-probe",
+        sourceRevisionCoverage:
+          "map-and-external-tsj-only",
+        inputImageRevisionCoverage:
+          "validated-before-and-after-not-reported",
+        snapshotValidation:
+          "before-and-after-render",
+        snapshotConsistency:
+          "non-atomic-read-set",
+        effectiveOptionsReturned: true,
+      },
     });
     const capabilitiesText = (
       capabilitiesResponse as {
@@ -332,6 +352,106 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tileset).toBeDefined();
     if (summary === undefined || tileset === undefined) {
       throw new Error("Expected the stdio fixture summary.");
+    }
+
+    if (
+      tools.tools.some(
+        ({ name }) =>
+          name === "tiled_render_map",
+      )
+    ) {
+      const rasterResponse = await client.callTool({
+        name: "tiled_render_map",
+        arguments: {
+          mapPath: "basic.tmj",
+          size: 256,
+        },
+      });
+      expect(rasterResponse.isError).not.toBe(true);
+      const rasterContent = (
+        rasterResponse as {
+          content: Array<{
+            type: string;
+            data?: string;
+            mimeType?: string;
+          }>;
+        }
+      ).content;
+      const image = rasterContent.find(
+        (block) => block.type === "image",
+      );
+      expect(image).toMatchObject({
+        type: "image",
+        mimeType: "image/png",
+        data: expect.any(String),
+      });
+      const png = Buffer.from(
+        image?.data ?? "",
+        "base64",
+      );
+      const rasterResult = (
+        rasterResponse.structuredContent as {
+          result: {
+            mimeType: string;
+            pixelSize: {
+              width: number;
+              height: number;
+            };
+            byteLength: number;
+            sha256: string;
+            map: {
+              path: string;
+              revision: string;
+            };
+            dependencyRevisions:
+              Record<string, string>;
+            renderer: {
+              kind: string;
+              version: string;
+              profile: string;
+            };
+            options: {
+              size: number;
+              ignoreVisibility: boolean;
+            };
+            snapshotConsistency: string;
+            truncated: boolean;
+          };
+        }
+      ).result;
+      expect(rasterResult).toMatchObject({
+        mimeType: "image/png",
+        byteLength: png.byteLength,
+        sha256: revisionOf(png),
+        map: {
+          path: "basic.tmj",
+          revision: summary.revision,
+        },
+        dependencyRevisions:
+          summary.dependencyRevisions,
+        renderer: {
+          kind: "tmxrasterizer",
+          version: expect.any(String),
+          profile:
+            "tmxrasterizer-png-v1",
+        },
+        options: {
+          size: 256,
+          ignoreVisibility: false,
+        },
+        snapshotConsistency:
+          "non-atomic-read-set",
+        truncated: false,
+      });
+      expect(
+        await sharp(png).metadata(),
+      ).toMatchObject({
+        format: "png",
+        width:
+          rasterResult.pixelSize.width,
+        height:
+          rasterResult.pixelSize.height,
+      });
     }
 
     const usageResponse = await client.callTool({

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, unlink } from "node:fs/promises";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -9,7 +9,11 @@ import {
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 
-import type { TiledCliAdapter, TiledCliCapabilities } from "./adapters/tiledCli.js";
+import type {
+  RenderPngResult,
+  TiledCliAdapter,
+  TiledCliCapabilities,
+} from "./adapters/tiledCli.js";
 import {
   ChangeSetRegistry,
   DEFAULT_MAX_PENDING_CELL_WRITES,
@@ -132,23 +136,39 @@ import {
   registerGuideResource,
 } from "./resources/guide.js";
 import {
+  DEFAULT_RASTER_RENDER_EDGE,
+  MAX_RASTER_INPUT_AGGREGATE_BYTES,
+  MAX_RASTER_INPUT_AGGREGATE_PIXELS,
+  MAX_RASTER_INPUT_EDGE,
+  MAX_RASTER_INPUT_IMAGES,
+  MAX_RASTER_PNG_BYTES,
+  MAX_RASTER_RENDER_EDGE,
+  MAX_RENDERER_VERSION_LENGTH,
+  RASTER_RENDER_PROFILE,
+  RASTER_SNAPSHOT_CONSISTENCY,
+} from "./rasterContract.js";
+import {
   applyCheckpointRestore,
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
 import { CHECKPOINT_ID_PATTERN } from "./storage/checkpoints.js";
 import type { DocumentStore } from "./storage/documentStore.js";
 import { KeyedMutex } from "./storage/keyedMutex.js";
+import { revisionOf } from "./storage/revision.js";
 import { SERVER_NAME, SERVER_VERSION } from "./version.js";
 
-const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47,
+  0x0d, 0x0a, 0x1a, 0x0a,
+]);
+const MAX_INLINE_IMAGE_BYTES =
+  MAX_RASTER_PNG_BYTES;
 const MAX_TEXT_CONTENT_BYTES = 1_024;
 const MAX_ERROR_MESSAGE_CHARS = 4_096;
 const MAX_ERROR_DETAIL_CHARS = 8_000;
 const MAX_ERROR_TEXT_MESSAGE_CODE_POINTS = 512;
 const TEXT_CONTENT_CONTRACT_NAME = "tiled-mcp-summary" as const;
 const TEXT_CONTENT_CONTRACT_VERSION = 1 as const;
-const DEFAULT_RENDER_EDGE = 1400;
-const MAX_RENDER_EDGE = 2048;
 const projectPathSchema = z
   .string()
   .min(1)
@@ -1219,6 +1239,23 @@ export async function createTiledMcpServer(
           regionCoordinates: "absolute-map-tiles",
           reportsOmittedVisibleLayers: true,
         },
+        rasterMapCapabilities: {
+          registration:
+            "when-tmxrasterizer-version-probe-succeeds",
+          artifactMetadata:
+            "traceable-inline-png-v1",
+          rendererVersionSource:
+            "startup-capability-probe",
+          sourceRevisionCoverage:
+            "map-and-external-tsj-only",
+          inputImageRevisionCoverage:
+            "validated-before-and-after-not-reported",
+          snapshotValidation:
+            "before-and-after-render",
+          snapshotConsistency:
+            "non-atomic-read-set",
+          effectiveOptionsReturned: true,
+        },
         limits: {
           maxDocumentBytes: 64 * 1024 * 1024,
           maxAggregateTilesetDependencyBytes: 64 * 1024 * 1024,
@@ -1232,7 +1269,16 @@ export async function createTiledMcpServer(
           maxEditedSubtreesPerChangeSet: 128,
           maxListedObjects: 10_000,
           maxInlineImageBytes: MAX_INLINE_IMAGE_BYTES,
-          maxRenderEdge: MAX_RENDER_EDGE,
+          maxRenderEdge:
+            MAX_RASTER_RENDER_EDGE,
+          maxRasterInputImages:
+            MAX_RASTER_INPUT_IMAGES,
+          maxRasterInputAggregateBytes:
+            MAX_RASTER_INPUT_AGGREGATE_BYTES,
+          maxRasterInputAggregatePixels:
+            MAX_RASTER_INPUT_AGGREGATE_PIXELS,
+          maxRasterInputEdge:
+            MAX_RASTER_INPUT_EDGE,
           maxTilesetImageBytes: MAX_TILESET_IMAGE_BYTES,
           maxSimpleSvgBytes: MAX_SIMPLE_SVG_BYTES,
           maxTilesetImageEdge: MAX_TILESET_INPUT_EDGE,
@@ -1999,6 +2045,18 @@ export async function createTiledMcpServer(
   );
 
   if (cliCapabilities.rasterizer.available) {
+    const rasterizerVersion =
+      cliCapabilities.rasterizer.version;
+    if (
+      rasterizerVersion === null ||
+      rasterizerVersion.length === 0 ||
+      rasterizerVersion.length >
+        MAX_RENDERER_VERSION_LENGTH
+    ) {
+      throw new Error(
+        "Available TmxRasterizer capability is missing its probed version.",
+      );
+    }
     register(
       server,
       registeredTools,
@@ -2006,11 +2064,16 @@ export async function createTiledMcpServer(
       {
         title: "Render a Tiled map preview",
         description:
-          "Runs the local TmxRasterizer with bounded options and returns an inline PNG preview.",
+          "Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.",
         inputSchema: z
           .object({
             mapPath: projectPathSchema,
-            size: z.number().int().positive().max(MAX_RENDER_EDGE).optional(),
+            size: z
+              .number()
+              .int()
+              .positive()
+              .max(MAX_RASTER_RENDER_EDGE)
+              .optional(),
             ignoreVisibility: z.boolean().optional(),
           })
           .strict(),
@@ -2021,51 +2084,66 @@ export async function createTiledMcpServer(
       async ({ mapPath, size, ignoreVisibility }) =>
         renderMutex.runExclusive("tmxrasterizer", async () => {
           try {
-            await maps.assertRenderSafe(mapPath);
+            const sourceSnapshot =
+              await maps.assertRenderSafe(mapPath);
             const inputPath = await resolver.resolveExisting(mapPath);
             const outputDirectory =
               await resolver.ensureInternalDirectory(".tiledmcp/renders");
             const outputPath = join(outputDirectory, `${randomUUID()}.png`);
             try {
               const options = {
-                size: size ?? DEFAULT_RENDER_EDGE,
-                ...(ignoreVisibility === undefined ? {} : { ignoreVisibility }),
+                size: size ?? DEFAULT_RASTER_RENDER_EDGE,
+                ignoreVisibility:
+                  ignoreVisibility ?? false,
               };
-              const rendered = await cli.renderPng(inputPath, outputPath, options);
-              if (
-                rendered.width <= 0 ||
-                rendered.height <= 0 ||
-                rendered.width > MAX_RENDER_EDGE ||
-                rendered.height > MAX_RENDER_EDGE
-              ) {
-                throw new TiledMcpError(
-                  "TMXRASTERIZER_OUTPUT_INVALID",
-                  `Rendered preview dimensions must be between 1 and ${MAX_RENDER_EDGE} pixels per edge.`,
-                  {
-                    width: rendered.width,
-                    height: rendered.height,
-                    maxEdge: MAX_RENDER_EDGE,
-                  },
+              const rendered = await cli.renderPng(
+                inputPath,
+                outputPath,
+                {
+                  ...options,
+                  maxPngBytes:
+                    MAX_RASTER_PNG_BYTES,
+                },
+              );
+              const pixelSize =
+                inspectRasterPngResult(
+                  rendered,
+                  options.size,
                 );
-              }
-              if (rendered.bytes > MAX_INLINE_IMAGE_BYTES) {
-                throw new TiledMcpError(
-                  "IMAGE_TOO_LARGE",
-                  `Rendered preview is ${rendered.bytes} bytes; inline limit is ${MAX_INLINE_IMAGE_BYTES}.`,
-                  { bytes: rendered.bytes, limit: MAX_INLINE_IMAGE_BYTES },
-                );
-              }
-              const png = await readFile(outputPath);
-              const result = {
+              await maps.assertRenderSafe(
                 mapPath,
+                sourceSnapshot,
+              );
+              const result = {
                 mimeType: "image/png",
-                bytes: rendered.bytes,
-                width: rendered.width,
-                height: rendered.height,
+                pixelSize,
+                byteLength:
+                  rendered.png.byteLength,
+                sha256:
+                  revisionOf(rendered.png),
+                map: sourceSnapshot.map,
+                dependencyRevisions:
+                  sourceSnapshot.dependencyRevisions,
+                renderer: {
+                  kind: "tmxrasterizer",
+                  version:
+                    rasterizerVersion,
+                  profile:
+                    RASTER_RENDER_PROFILE,
+                },
+                options,
+                snapshotConsistency:
+                  RASTER_SNAPSHOT_CONSISTENCY,
+                truncated: false,
               };
-              return imageToolResult(result, png);
+              return imageToolResult(
+                result,
+                rendered.png,
+              );
             } finally {
-              await unlink(outputPath).catch(() => undefined);
+              await removeRasterOutput(
+                outputPath,
+              );
             }
           } catch (error) {
             return toolError(error);
@@ -2171,6 +2249,112 @@ function imageToolResult(result: unknown, png: Buffer): CallToolResult {
       },
     ],
   };
+}
+
+function inspectRasterPngResult(
+  rendered: RenderPngResult,
+  requestedSize: number,
+): {
+  width: number;
+  height: number;
+} {
+  const png = rendered.png;
+  if (
+    !Buffer.isBuffer(png) ||
+    png.byteLength < 24 ||
+    !png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+    png.toString("ascii", 12, 16) !== "IHDR"
+  ) {
+    throw new TiledMcpError(
+      "TMXRASTERIZER_OUTPUT_INVALID",
+      "TmxRasterizer did not return a valid coherent PNG snapshot.",
+    );
+  }
+  if (png.byteLength > MAX_INLINE_IMAGE_BYTES) {
+    throw new TiledMcpError(
+      "IMAGE_TOO_LARGE",
+      `Rendered preview is ${png.byteLength} bytes; inline limit is ${MAX_RASTER_PNG_BYTES}.`,
+      {
+        bytes: png.byteLength,
+        limit: MAX_RASTER_PNG_BYTES,
+      },
+    );
+  }
+
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const maxAllowedEdge = Math.min(
+    MAX_RASTER_RENDER_EDGE,
+    requestedSize,
+  );
+  if (
+    width <= 0 ||
+    height <= 0 ||
+    width > maxAllowedEdge ||
+    height > maxAllowedEdge
+  ) {
+    throw new TiledMcpError(
+      "TMXRASTERIZER_OUTPUT_INVALID",
+      `Rendered preview dimensions must be between 1 and ${maxAllowedEdge} pixels per edge for the requested size.`,
+      {
+        width,
+        height,
+        maxEdge: maxAllowedEdge,
+        requestedSize,
+      },
+    );
+  }
+  if (
+    rendered.bytes !== png.byteLength ||
+    rendered.width !== width ||
+    rendered.height !== height
+  ) {
+    throw new TiledMcpError(
+      "TMXRASTERIZER_OUTPUT_INVALID",
+      "TmxRasterizer metadata does not match the returned PNG snapshot.",
+      {
+        reported: {
+          bytes: rendered.bytes,
+          width: rendered.width,
+          height: rendered.height,
+        },
+        actual: {
+          bytes: png.byteLength,
+          width,
+          height,
+        },
+      },
+    );
+  }
+  return { width, height };
+}
+
+async function removeRasterOutput(
+  outputPath: string,
+): Promise<void> {
+  try {
+    await unlink(outputPath);
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
+    if (errorCode === "ENOENT") {
+      return;
+    }
+    throw new TiledMcpError(
+      "RASTER_TEMP_CLEANUP_FAILED",
+      "The temporary raster output could not be removed safely.",
+      {
+        ...(errorCode === undefined
+          ? {}
+          : { errorCode }),
+      },
+    );
+  }
 }
 
 function toolError(error: unknown): CallToolResult {

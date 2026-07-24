@@ -22,7 +22,10 @@ import {
   type JsonObjectMemberPatch,
   type JsonSourcePath,
 } from "../formats/jsonSourcePatch.js";
-import { readImageFileSnapshot } from "../images/imageFile.js";
+import {
+  readImageFileSnapshot,
+  type ImageFileSnapshot,
+} from "../images/imageFile.js";
 import {
   DEFAULT_TILESET_SHEET_PAGE_SIZE,
   DEFAULT_TILESET_SHEET_SCALE,
@@ -48,6 +51,12 @@ import {
   inspectSafeImage,
 } from "../images/safeImage.js";
 import type { ProjectPathResolver } from "../project/pathResolver.js";
+import {
+  MAX_RASTER_INPUT_AGGREGATE_BYTES,
+  MAX_RASTER_INPUT_AGGREGATE_PIXELS,
+  MAX_RASTER_INPUT_EDGE,
+  MAX_RASTER_INPUT_IMAGES,
+} from "../rasterContract.js";
 import type { CommitResult, DocumentStore, LoadedDocument } from "../storage/documentStore.js";
 import { shortHash } from "../storage/revision.js";
 import { decodeGid, encodeGid, type MapOrientation } from "./gid.js";
@@ -207,6 +216,13 @@ const GROUP_DESCENDANT_RENDER_FIELDS =
 
 interface LayerTraversalBudget {
   count: number;
+}
+
+interface RenderImageBudget {
+  revisions: Map<string, string>;
+  totalBytes: number;
+  totalPixels: number;
+  expectedRevisions?: Readonly<Record<string, string>>;
 }
 
 interface EditableContext {
@@ -428,6 +444,19 @@ export interface RenderPreviewInput {
 export interface RenderPreviewResult {
   png: Buffer;
   result: Record<string, unknown>;
+}
+
+export interface RenderSafetySnapshot {
+  map: {
+    path: string;
+    revision: string;
+  };
+  dependencyRevisions: Record<string, string>;
+  /**
+   * Internal render guard. The public raster result deliberately does not
+   * expose image revisions because TmxRasterizer reads live files.
+   */
+  inputImageRevisions: Record<string, string>;
 }
 
 export class MapService {
@@ -1695,19 +1724,55 @@ export class MapService {
     return { ...result, changeSetId: plan.id };
   }
 
-  async assertRenderSafe(mapPath: string): Promise<{ path: string; revision: string }> {
-    const context = await this.loadEditableContext(mapPath);
+  async assertRenderSafe(
+    mapPath: string,
+    expectedSnapshot?: RenderSafetySnapshot,
+  ): Promise<RenderSafetySnapshot> {
+    const context = await this.loadEditableContext(
+      mapPath,
+      expectedSnapshot === undefined
+        ? {}
+        : {
+            expectedMapRevision:
+              expectedSnapshot.map.revision,
+            expectedDependencyRevisions:
+              expectedSnapshot.dependencyRevisions,
+          },
+    );
+    const imageBudget: RenderImageBudget = {
+      revisions: new Map<string, string>(),
+      totalBytes: 0,
+      totalPixels: 0,
+      ...(expectedSnapshot === undefined
+        ? {}
+        : {
+            expectedRevisions:
+              expectedSnapshot.inputImageRevisions,
+          }),
+    };
     await this.assertRenderLayerReferences(
       context.loaded.path,
       expectArray(context.loaded.document.layers, `${mapPath}.layers`),
       0,
       { count: 0 },
+      imageBudget,
     );
     for (const binding of context.bindings) {
       const tileset = await this.store.read(binding.path);
       assertNoTemplateReferences(tileset.document, binding.path);
+      if (typeof tileset.document.image === "string") {
+        const imagePath =
+          await this.resolver.resolveReference(
+            binding.path,
+            tileset.document.image,
+          );
+        await this.assertRenderImageSafe(
+          imagePath,
+          imageBudget,
+        );
+      }
       if (Array.isArray(tileset.document.tiles)) {
-        for (const [index, value] of tileset.document.tiles.entries()) {
+        for (const value of tileset.document.tiles) {
           if (!isJsonObject(value) || typeof value.image !== "string") {
             continue;
           }
@@ -1715,15 +1780,48 @@ export class MapService {
             binding.path,
             value.image,
           );
-          const imageStat = await stat(await this.resolver.resolveExisting(imagePath));
-          if (!imageStat.isFile()) {
-            throw new TiledMcpError(
-              "INVALID_TILESET_IMAGE",
-              `${binding.path}.tiles[${index}].image is not a regular file.`,
-              { path: imagePath },
-            );
-          }
+          await this.assertRenderImageSafe(
+            imagePath,
+            imageBudget,
+          );
         }
+      }
+    }
+    const inputImageRevisions =
+      Object.fromEntries(
+        [...imageBudget.revisions.entries()].sort(
+          ([left], [right]) =>
+            left < right
+              ? -1
+              : left > right
+                ? 1
+                : 0,
+        ),
+      );
+    if (expectedSnapshot !== undefined) {
+      const expectedPaths = Object.keys(
+        expectedSnapshot.inputImageRevisions,
+      ).sort();
+      const actualPaths = Object.keys(
+        inputImageRevisions,
+      ).sort();
+      if (
+        expectedPaths.length !== actualPaths.length ||
+        expectedPaths.some(
+          (path, index) =>
+            path !== actualPaths[index],
+        )
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          "The raster input image set changed while the map was rendered.",
+          {
+            expectedCount: expectedPaths.length,
+            actualCount: actualPaths.length,
+            expectedPaths,
+            actualPaths,
+          },
+        );
       }
     }
     await this.assertDependenciesUnchanged(context.bindings);
@@ -1741,7 +1839,15 @@ export class MapService {
         },
       );
     }
-    return { path: context.loaded.path, revision: context.loaded.revision };
+    return {
+      map: {
+        path: context.loaded.path,
+        revision: context.loaded.revision,
+      },
+      dependencyRevisions:
+        context.dependencyRevisions,
+      inputImageRevisions,
+    };
   }
 
   async validate(mapPath: string): Promise<{
@@ -2747,6 +2853,7 @@ export class MapService {
     layers: JsonValue[],
     depth: number,
     budget: LayerTraversalBudget,
+    imageBudget: RenderImageBudget,
   ): Promise<void> {
     assertLayerTraversalBudget(layers.length, depth, budget);
     for (const [index, value] of layers.entries()) {
@@ -2758,6 +2865,7 @@ export class MapService {
           expectArray(layer.layers, `${mapPath}.layers[${index}].layers`),
           depth + 1,
           budget,
+          imageBudget,
         );
         continue;
       }
@@ -2778,14 +2886,10 @@ export class MapService {
           );
         }
         const imagePath = await this.resolver.resolveReference(mapPath, layer.image);
-        const imageStat = await stat(await this.resolver.resolveExisting(imagePath));
-        if (!imageStat.isFile()) {
-          throw new TiledMcpError(
-            "UNSAFE_RENDER_REFERENCE",
-            `${imagePath} is not a regular image file.`,
-            { path: imagePath },
-          );
-        }
+        await this.assertRenderImageSafe(
+          imagePath,
+          imageBudget,
+        );
         continue;
       }
       if (type === "objectgroup") {
@@ -2798,6 +2902,130 @@ export class MapService {
         { path: mapPath, layerIndex: index, type },
       );
     }
+  }
+
+  private async assertRenderImageSafe(
+    imagePath: string,
+    budget: RenderImageBudget,
+  ): Promise<void> {
+    const normalizedPath =
+      this.resolver.normalize(imagePath);
+    if (budget.revisions.has(normalizedPath)) {
+      return;
+    }
+    if (
+      budget.revisions.size >=
+      MAX_RASTER_INPUT_IMAGES
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Raster input references more than ${MAX_RASTER_INPUT_IMAGES} unique images.`,
+        {
+          path: normalizedPath,
+          limit: MAX_RASTER_INPUT_IMAGES,
+        },
+      );
+    }
+
+    const remainingBytes =
+      MAX_RASTER_INPUT_AGGREGATE_BYTES -
+      budget.totalBytes;
+    if (remainingBytes <= 0) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Raster input images exceed the ${MAX_RASTER_INPUT_AGGREGATE_BYTES} byte aggregate limit.`,
+        {
+          path: normalizedPath,
+          limit:
+            MAX_RASTER_INPUT_AGGREGATE_BYTES,
+          actual: budget.totalBytes,
+        },
+      );
+    }
+    const expectedRevision =
+      budget.expectedRevisions?.[
+        normalizedPath
+      ];
+    if (
+      budget.expectedRevisions !== undefined &&
+      expectedRevision === undefined
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${normalizedPath} was not part of the pre-render image set.`,
+        {
+          path: normalizedPath,
+        },
+      );
+    }
+    let image: ImageFileSnapshot;
+    try {
+      image = await readImageFileSnapshot(
+        this.resolver,
+        normalizedPath,
+        remainingBytes,
+      );
+    } catch (error) {
+      if (expectedRevision === undefined) {
+        throw error;
+      }
+      const cause =
+        asTiledMcpError(error);
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${normalizedPath} could not be re-read after the map was rendered.`,
+        {
+          path: normalizedPath,
+          causeCode: cause.code,
+        },
+      );
+    }
+    if (
+      expectedRevision !== undefined &&
+      image.revision !== expectedRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${normalizedPath} changed while the map was rendered.`,
+        {
+          path: normalizedPath,
+        },
+      );
+    }
+
+    const remainingPixels =
+      MAX_RASTER_INPUT_AGGREGATE_PIXELS -
+      budget.totalPixels;
+    if (remainingPixels <= 0) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Raster input images exceed the ${MAX_RASTER_INPUT_AGGREGATE_PIXELS} decoded-pixel aggregate limit.`,
+        {
+          path: normalizedPath,
+          limit:
+            MAX_RASTER_INPUT_AGGREGATE_PIXELS,
+          actual: budget.totalPixels,
+        },
+      );
+    }
+    const metadata = await inspectSafeImage({
+      bytes: image.bytes,
+      path: image.path,
+      limits: {
+        maxInputBytes: remainingBytes,
+        maxInputPixels: remainingPixels,
+        maxInputEdge:
+          MAX_RASTER_INPUT_EDGE,
+      },
+    });
+    budget.totalBytes +=
+      image.bytes.byteLength;
+    budget.totalPixels +=
+      metadata.width * metadata.height;
+    budget.revisions.set(
+      normalizedPath,
+      image.revision,
+    );
   }
 
 }

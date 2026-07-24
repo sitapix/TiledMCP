@@ -48,6 +48,30 @@ input-error boundary. Input-schema errors are rejected by the MCP SDK before a
 handler runs, so they remain SDK-owned text-only responses and do not use this
 application-level summary envelope.
 
+When the optional \`tiled_render_map\` is registered, its successful structured
+result uses the traceable PNG contract only; there are no legacy
+\`mapPath\`/\`bytes\`/\`width\`/\`height\` aliases. Read \`pixelSize\`,
+\`byteLength\`, and \`sha256\` as metadata for the same bounded PNG buffer used
+by the MCP image block. Also retain \`map\`, \`dependencyRevisions\`,
+\`renderer\`, and the effective \`options\`. The dependency revision record
+covers external TSJ files only, and a successful inline result reports
+\`truncated:false\`.
+
+Root-atlas, per-tile, and image-layer references are normalized and deduplicated
+as one input image set: at most 64 images, 64 MiB of source bytes, 16,000,000
+decoded pixels, and 8192 pixels on either edge of any image. TiledMCP reads a
+coherent single-file snapshot of every image before and after the render, then
+compares the complete internal path/revision set. Those image revisions are
+deliberately omitted from the public result; \`dependencyRevisions\` remains
+external-TSJ-only.
+
+The rasterizer result is deliberately
+\`snapshotConsistency:"non-atomic-read-set"\`. TiledMCP also rechecks the map
+and external TSJ revisions before and after the external render, but
+\`tmxrasterizer\` reads live files. Per-file pre/post equality cannot rule out
+an intervening ABA change and does not create an atomic read set. Do not treat
+this result as an atomic map/tileset/image snapshot.
+
 ## Inspect before planning
 
 For an existing map:
@@ -611,7 +635,10 @@ After a successful apply:
 3. Re-read the affected region or objects.
 4. Call \`tiled_render_preview\` for the affected area and compare it with the
    intended result. If \`tiled_render_map\` is registered, it may provide a
-   fuller Tiled-rendered check for semantics outside native preview v1.
+   fuller Tiled-rendered check for semantics outside native preview v1. Verify
+   that its returned \`map.revision\` is the revision you intended to inspect,
+   and retain its PNG \`sha256\`, renderer version, effective options, and
+   non-atomic snapshot marker with the observation.
 
 Every write creates a recovery checkpoint before replacement.
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
