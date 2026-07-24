@@ -80,7 +80,7 @@ import type {
 } from "./types.js";
 
 const MAX_PLAN_OPERATIONS = 128;
-const MAX_CELL_WRITES = 100_000;
+export const MAX_CELL_WRITES = 100_000;
 const MAX_REGION_CELLS = 20_000;
 const MAX_LAYER_COUNT = 10_000;
 const MAX_LAYER_DEPTH = 64;
@@ -2909,6 +2909,9 @@ function validateAndSummarizeOperations(
   const tileFloodFills: NonNullable<
     MapEditPlan["summary"]["tileFloodFills"]
   > = [];
+  const tileCopies: NonNullable<
+    MapEditPlan["summary"]["tileCopies"]
+  > = [];
   const mapUpdates: NonNullable<
     MapEditPlan["summary"]["mapUpdates"]
   > = [];
@@ -3174,7 +3177,7 @@ function validateAndSummarizeOperations(
         ) {
           throw new TiledMcpError(
             "RESULT_LIMIT_EXCEEDED",
-            `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles and floodFill operations.`,
+            `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
             {
               limit: MAX_TILE_OPERATION_SCANS,
               actual: nextScanCount,
@@ -3350,6 +3353,300 @@ function validateAndSummarizeOperations(
         scannedCellCount,
         changedCellCount,
         affectedBounds,
+        wouldChange: changedCellCount > 0,
+      });
+    } else if (operation.type === "copyRegion") {
+      const operationContext =
+        `operations[${operationIndex}]`;
+      assertExactObjectKeys(
+        operation as unknown as Record<
+          string,
+          unknown
+        >,
+        new Set(["destination", "source", "type"]),
+        operationContext,
+      );
+      if (!isRecordValue(operation.source)) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${operationContext}.source must be an object.`,
+        );
+      }
+      if (!isRecordValue(operation.destination)) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${operationContext}.destination must be an object.`,
+        );
+      }
+      assertExactObjectKeys(
+        operation.source as unknown as Record<
+          string,
+          unknown
+        >,
+        new Set([
+          "height",
+          "layerId",
+          "width",
+          "x",
+          "y",
+        ]),
+        `${operationContext}.source`,
+      );
+      assertExactObjectKeys(
+        operation.destination as unknown as Record<
+          string,
+          unknown
+        >,
+        new Set(["layerId", "x", "y"]),
+        `${operationContext}.destination`,
+      );
+      assertPositiveInteger(
+        operation.source.layerId,
+        `${operationContext}.source.layerId`,
+      );
+      assertSafeInteger(
+        operation.source.x,
+        `${operationContext}.source.x`,
+      );
+      assertSafeInteger(
+        operation.source.y,
+        `${operationContext}.source.y`,
+      );
+      assertPositiveInteger(
+        operation.source.width,
+        `${operationContext}.source.width`,
+      );
+      assertPositiveInteger(
+        operation.source.height,
+        `${operationContext}.source.height`,
+      );
+      assertPositiveInteger(
+        operation.destination.layerId,
+        `${operationContext}.destination.layerId`,
+      );
+      assertSafeInteger(
+        operation.destination.x,
+        `${operationContext}.destination.x`,
+      );
+      assertSafeInteger(
+        operation.destination.y,
+        `${operationContext}.destination.y`,
+      );
+      if (
+        !Number.isSafeInteger(
+          operation.source.x +
+            operation.source.width,
+        ) ||
+        !Number.isSafeInteger(
+          operation.source.y +
+            operation.source.height,
+        ) ||
+        !Number.isSafeInteger(
+          operation.destination.x +
+            operation.source.width,
+        ) ||
+        !Number.isSafeInteger(
+          operation.destination.y +
+            operation.source.height,
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${operationContext} copy endpoints must be safe integers.`,
+        );
+      }
+      const copyCellCount =
+        operation.source.width *
+        operation.source.height;
+      if (
+        !Number.isSafeInteger(copyCellCount) ||
+        cellWrites + copyCellCount >
+          MAX_CELL_WRITES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+          {
+            limit: MAX_CELL_WRITES,
+            actual: cellWrites + copyCellCount,
+            operationIndex,
+          },
+        );
+      }
+      const scannedCellCount = copyCellCount * 2;
+      if (
+        !Number.isSafeInteger(scannedCellCount) ||
+        tileOperationScans + scannedCellCount >
+          MAX_TILE_OPERATION_SCANS
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
+          {
+            limit: MAX_TILE_OPERATION_SCANS,
+            actual:
+              tileOperationScans +
+              scannedCellCount,
+            operationIndex,
+          },
+        );
+      }
+      const sourceLayer = findTileLayer(
+        map,
+        operation.source.layerId,
+        mapPath,
+      );
+      const destinationLayer = findTileLayer(
+        map,
+        operation.destination.layerId,
+        mapPath,
+      );
+      assertRegionInsideLayer(
+        sourceLayer,
+        operation.source.x,
+        operation.source.y,
+        operation.source.width,
+        operation.source.height,
+      );
+      assertRegionInsideLayer(
+        destinationLayer,
+        operation.destination.x,
+        operation.destination.y,
+        operation.source.width,
+        operation.source.height,
+      );
+
+      const sourceGids: number[] = [];
+      const destinationGids: number[] = [];
+      let sourceNonEmptyCellCount = 0;
+      let overwrittenNonEmptyCellCount = 0;
+      let changedCellCount = 0;
+      let clearedCellCount = 0;
+      for (
+        let rowIndex = 0;
+        rowIndex < operation.source.height;
+        rowIndex += 1
+      ) {
+        for (
+          let columnIndex = 0;
+          columnIndex < operation.source.width;
+          columnIndex += 1
+        ) {
+          const sourceGid = readLayerGid(
+            sourceLayer,
+            operation.source.x + columnIndex,
+            operation.source.y + rowIndex,
+          );
+          const destinationGid = readLayerGid(
+            destinationLayer,
+            operation.destination.x + columnIndex,
+            operation.destination.y + rowIndex,
+          );
+          // A copy observes both rectangles before it mutates either one.
+          // Resolve every observed encoded GID so malformed or unbound
+          // values fail closed even when the destination would be unchanged.
+          gidToTileRef(
+            sourceGid,
+            orientation,
+            bindings,
+          );
+          gidToTileRef(
+            destinationGid,
+            orientation,
+            bindings,
+          );
+          sourceGids.push(sourceGid);
+          destinationGids.push(destinationGid);
+          if (sourceGid !== 0) {
+            sourceNonEmptyCellCount += 1;
+          }
+          if (destinationGid !== 0) {
+            overwrittenNonEmptyCellCount += 1;
+          }
+          if (sourceGid !== destinationGid) {
+            changedCellCount += 1;
+            if (
+              sourceGid === 0 &&
+              destinationGid !== 0
+            ) {
+              clearedCellCount += 1;
+            }
+          }
+        }
+      }
+
+      for (
+        let rowIndex = 0;
+        rowIndex < operation.source.height;
+        rowIndex += 1
+      ) {
+        for (
+          let columnIndex = 0;
+          columnIndex < operation.source.width;
+          columnIndex += 1
+        ) {
+          const index =
+            rowIndex * operation.source.width +
+            columnIndex;
+          const sourceGid = sourceGids[index] as number;
+          if (
+            sourceGid === destinationGids[index]
+          ) {
+            continue;
+          }
+          writeLayerGid(
+            destinationLayer,
+            operation.destination.x + columnIndex,
+            operation.destination.y + rowIndex,
+            sourceGid,
+          );
+        }
+      }
+      cellWrites += copyCellCount;
+      tileOperationScans += scannedCellCount;
+      if (changedCellCount > 0) {
+        affectedLayerIds.add(destinationLayer.id);
+        affectedTileLayerIds.add(
+          destinationLayer.id,
+        );
+      }
+      const overlapsSource =
+        sourceLayer.id === destinationLayer.id &&
+        operation.source.x <
+          operation.destination.x +
+            operation.source.width &&
+        operation.destination.x <
+          operation.source.x +
+            operation.source.width &&
+        operation.source.y <
+          operation.destination.y +
+            operation.source.height &&
+        operation.destination.y <
+          operation.source.y +
+            operation.source.height;
+      tileCopies.push({
+        operationIndex,
+        source: {
+          layerId: sourceLayer.id,
+          x: operation.source.x,
+          y: operation.source.y,
+          width: operation.source.width,
+          height: operation.source.height,
+        },
+        destination: {
+          layerId: destinationLayer.id,
+          x: operation.destination.x,
+          y: operation.destination.y,
+          width: operation.source.width,
+          height: operation.source.height,
+        },
+        scannedCellCount,
+        cellCount: copyCellCount,
+        sourceNonEmptyCellCount,
+        changedCellCount,
+        overwrittenNonEmptyCellCount,
+        clearedCellCount,
+        overlapsSource,
         wouldChange: changedCellCount > 0,
       });
     } else if (operation.type === "stampPattern") {
@@ -3560,7 +3857,7 @@ function validateAndSummarizeOperations(
       ) {
         throw new TiledMcpError(
           "RESULT_LIMIT_EXCEEDED",
-          `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles and floodFill operations.`,
+          `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
           {
             limit: MAX_TILE_OPERATION_SCANS,
             actual:
@@ -3907,6 +4204,9 @@ function validateAndSummarizeOperations(
     ...(tileFloodFills.length === 0
       ? {}
       : { tileFloodFills }),
+    ...(tileCopies.length === 0
+      ? {}
+      : { tileCopies }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
     ...(removedTilesets.length === 0
       ? {}

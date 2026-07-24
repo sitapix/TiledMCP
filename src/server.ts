@@ -42,6 +42,7 @@ import {
 import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
+  MAX_CELL_WRITES,
   MAX_CREATE_TILE_LAYER_CELLS,
   MAX_DUPLICATE_LAYER_BYTES,
   MAX_FLOOD_FILL_SCANS,
@@ -472,6 +473,48 @@ const floodFillSchema = z
   })
   .strict();
 
+const copyRegionSourceSchema = z
+  .object({
+    layerId: z
+      .number()
+      .int()
+      .positive()
+      .max(Number.MAX_SAFE_INTEGER),
+    x: safeIntegerSchema,
+    y: safeIntegerSchema,
+    width: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_CELL_WRITES),
+    height: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_CELL_WRITES),
+  })
+  .strict();
+
+const copyRegionDestinationSchema = z
+  .object({
+    layerId: z
+      .number()
+      .int()
+      .positive()
+      .max(Number.MAX_SAFE_INTEGER),
+    x: safeIntegerSchema,
+    y: safeIntegerSchema,
+  })
+  .strict();
+
+const copyRegionSchema = z
+  .object({
+    type: z.literal("copyRegion"),
+    source: copyRegionSourceSchema,
+    destination: copyRegionDestinationSchema,
+  })
+  .strict();
+
 const replaceTilesRegionSchema = z
   .object({
     x: z.number().int(),
@@ -714,6 +757,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   fillRegionSchema,
   stampPatternSchema,
   floodFillSchema,
+  copyRegionSchema,
   replaceTilesSchema,
   createObjectSchema,
   updateObjectSchema,
@@ -818,6 +862,7 @@ export async function createTiledMcpServer(
           "stampPattern",
           "floodFill",
           "replaceTiles",
+          "copyRegion",
         ],
         tileStampCapabilities: {
           pattern:
@@ -841,8 +886,23 @@ export async function createTiledMcpServer(
             "sequential-change-set-order-last-write-wins",
           scanAccounting: "actual-gid-reads",
           scanBudget:
-            "shared-with-replaceTiles-per-change-set",
+            "shared-with-replaceTiles-and-copyRegion-per-change-set",
           sourcePatch: "tile-layer-data-member-local",
+        },
+        tileCopyCapabilities: {
+          coordinates: "absolute-tile-coordinates",
+          clipping: false,
+          overlap: "snapshot-source-memmove",
+          emptySource: "overwrites-and-clears",
+          gidCopy: "exact-encoded-gid",
+          observedGidValidation:
+            "source-and-destination-fail-closed",
+          operationOrdering:
+            "sequential-change-set-order-last-write-wins",
+          scanBudget:
+            "shared-with-replaceTiles-and-floodFill-per-change-set",
+          sourcePatch:
+            "destination-tile-layer-data-member-local",
         },
         tileReplacementCapabilities: {
           match: "exact-encoded-gid",
@@ -1043,7 +1103,7 @@ export async function createTiledMcpServer(
           maxDocumentBytes: 64 * 1024 * 1024,
           maxAggregateTilesetDependencyBytes: 64 * 1024 * 1024,
           maxRegionCells: 20_000,
-          maxChangeSetCellWrites: 100_000,
+          maxChangeSetCellWrites: MAX_CELL_WRITES,
           maxPendingChangeSetCellWrites: DEFAULT_MAX_PENDING_CELL_WRITES,
           maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
           maxStampPatternCells:
@@ -1696,7 +1756,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

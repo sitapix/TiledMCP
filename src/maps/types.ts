@@ -54,6 +54,29 @@ export interface FloodFillOperation {
   tile: TileRef | null;
 }
 
+export interface CopyRegionOperation {
+  type: "copyRegion";
+  source: {
+    layerId: number;
+    /**
+     * Absolute tile coordinate of the source region's top-left cell.
+     */
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  destination: {
+    layerId: number;
+    /**
+     * Absolute tile coordinate of the destination region's top-left cell.
+     * The destination dimensions are inherited from `source`.
+     */
+    x: number;
+    y: number;
+  };
+}
+
 export type MapRenderOrder =
   | "right-down"
   | "right-up"
@@ -239,6 +262,7 @@ export type MapEditOperation =
   | FillRegionOperation
   | StampPatternOperation
   | FloodFillOperation
+  | CopyRegionOperation
   | ReplaceTilesOperation
   | CreateObjectOperation
   | UpdateObjectOperation
@@ -475,6 +499,31 @@ export interface MapEditPlan {
         width: number;
         height: number;
       } | null;
+      wouldChange: boolean;
+    }>;
+    tileCopies?: Array<{
+      operationIndex: number;
+      source: {
+        layerId: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      destination: {
+        layerId: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      scannedCellCount: number;
+      cellCount: number;
+      sourceNonEmptyCellCount: number;
+      changedCellCount: number;
+      overwrittenNonEmptyCellCount: number;
+      clearedCellCount: number;
+      overlapsSource: boolean;
       wouldChange: boolean;
     }>;
     addedTilesets?: Array<{

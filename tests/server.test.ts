@@ -301,6 +301,17 @@ describe("createTiledMcpServer", () => {
         scanBudget: string;
         sourcePatch: string;
       };
+      tileCopyCapabilities: {
+        coordinates: string;
+        clipping: boolean;
+        overlap: string;
+        emptySource: string;
+        gidCopy: string;
+        observedGidValidation: string;
+        operationOrdering: string;
+        scanBudget: string;
+        sourcePatch: string;
+      };
       tileReplacementCapabilities: {
         match: string;
         transformMatch: string;
@@ -548,6 +559,7 @@ describe("createTiledMcpServer", () => {
         "stampPattern",
         "floodFill",
         "replaceTiles",
+        "copyRegion",
       ],
       tileStampCapabilities: {
         pattern:
@@ -571,8 +583,23 @@ describe("createTiledMcpServer", () => {
           "sequential-change-set-order-last-write-wins",
         scanAccounting: "actual-gid-reads",
         scanBudget:
-          "shared-with-replaceTiles-per-change-set",
+          "shared-with-replaceTiles-and-copyRegion-per-change-set",
         sourcePatch: "tile-layer-data-member-local",
+      },
+      tileCopyCapabilities: {
+        coordinates: "absolute-tile-coordinates",
+        clipping: false,
+        overlap: "snapshot-source-memmove",
+        emptySource: "overwrites-and-clears",
+        gidCopy: "exact-encoded-gid",
+        observedGidValidation:
+          "source-and-destination-fail-closed",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        scanBudget:
+          "shared-with-replaceTiles-and-floodFill-per-change-set",
+        sourcePatch:
+          "destination-tile-layer-data-member-local",
       },
       tileReplacementCapabilities: {
         match: "exact-encoded-gid",
@@ -2776,6 +2803,354 @@ describe("createTiledMcpServer", () => {
         }),
       ]);
     }
+  });
+
+  it("rejects invalid copy-region wire shapes before planning", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const source = {
+      layerId: LAYER_ID,
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    };
+    const destination = {
+      layerId: LAYER_ID,
+      x: 1,
+      y: 1,
+    };
+    const invalidOperations: unknown[] = [
+      {
+        type: "copyRegion",
+        source,
+        destination,
+        unexpected: true,
+      },
+      {
+        type: "copyRegion",
+        source: { ...source, unexpected: true },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source,
+        destination: {
+          ...destination,
+          unexpected: true,
+        },
+      },
+      {
+        type: "copyRegion",
+        source: { ...source, layerId: 0 },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source,
+        destination: { ...destination, layerId: 0 },
+      },
+      {
+        type: "copyRegion",
+        source: {
+          ...source,
+          x: Number.MAX_SAFE_INTEGER + 1,
+        },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source: {
+          ...source,
+          y: Number.MIN_SAFE_INTEGER - 1,
+        },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source,
+        destination: {
+          ...destination,
+          x: Number.MAX_SAFE_INTEGER + 1,
+        },
+      },
+      {
+        type: "copyRegion",
+        source,
+        destination: {
+          ...destination,
+          y: Number.MIN_SAFE_INTEGER - 1,
+        },
+      },
+      {
+        type: "copyRegion",
+        source: { ...source, width: 0 },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source: { ...source, height: -1 },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source: { ...source, width: 1.5 },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source: {
+          ...source,
+          height: Number.MAX_SAFE_INTEGER + 1,
+        },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source: {
+          layerId: LAYER_ID,
+          x: 0,
+          y: 0,
+          height: 1,
+        },
+        destination,
+      },
+      {
+        type: "copyRegion",
+        source,
+        destination: {
+          layerId: LAYER_ID,
+          x: 1,
+        },
+      },
+    ];
+    for (const operation of invalidOperations) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+  });
+
+  it("previews and applies a mixed-batch snapshot copy with the frozen MCP shape", async () => {
+    const absoluteMapPath = join(
+      harness.root,
+      MAP_PATH,
+    );
+    const map = baseMap();
+    map.width = 4;
+    map.height = 1;
+    const tileLayer = (
+      map.layers as JsonObject[]
+    )[0];
+    if (tileLayer === undefined) {
+      throw new Error(
+        "Expected the fixture tile layer.",
+      );
+    }
+    tileLayer.width = 4;
+    tileLayer.height = 1;
+    tileLayer.data = [
+      0x8000_0001,
+      0,
+      2,
+      0,
+    ];
+    await writeFile(
+      absoluteMapPath,
+      serializeJsonDocument(map),
+    );
+
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const operation = {
+      type: "copyRegion",
+      source: {
+        layerId: LAYER_ID,
+        x: 0,
+        y: 0,
+        width: 3,
+        height: 1,
+      },
+      destination: {
+        layerId: LAYER_ID,
+        x: 1,
+        y: 0,
+      },
+    } as const;
+
+    const mixedPreview = resultOf<{
+      operations: Array<{ type: string }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            operation,
+            {
+              type: "setTiles",
+              layerId: LAYER_ID,
+              cells: [{ x: 0, y: 0, tile: null }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(
+      mixedPreview.operations.map(
+        ({ type }) => type,
+      ),
+    ).toEqual(["copyRegion", "setTiles"]);
+
+    const before = await readFile(absoluteMapPath);
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        operationCount: number;
+        cellWrites: number;
+        tileCopies: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [operation],
+        },
+      }),
+    );
+    const normalizedSource = {
+      layerId: LAYER_ID,
+      x: 0,
+      y: 0,
+      width: 3,
+      height: 1,
+    };
+    const normalizedDestination = {
+      layerId: LAYER_ID,
+      x: 1,
+      y: 0,
+      width: 3,
+      height: 1,
+    };
+    expect(preview.operations).toEqual([
+      {
+        type: "copyRegion",
+        destructive: true,
+        warning: expect.any(String),
+        source: normalizedSource,
+        destination: normalizedDestination,
+        scannedCellCount: 6,
+        cellCount: 3,
+        sourceNonEmptyCellCount: 2,
+        changedCellCount: 3,
+        overwrittenNonEmptyCellCount: 1,
+        clearedCellCount: 1,
+        overlapsSource: true,
+        wouldChange: true,
+      },
+    ]);
+    expect(preview.summary).toMatchObject({
+      operationCount: 1,
+      cellWrites: 3,
+      tileCopies: [
+        {
+          operationIndex: 0,
+          source: normalizedSource,
+          destination: normalizedDestination,
+          scannedCellCount: 6,
+          cellCount: 3,
+          sourceNonEmptyCellCount: 2,
+          changedCellCount: 3,
+          overwrittenNonEmptyCellCount: 1,
+          clearedCellCount: 1,
+          overlapsSource: true,
+          wouldChange: true,
+        },
+      ],
+    });
+    expect(preview.operations[0]).not.toHaveProperty(
+      "operationIndex",
+    );
+    expect(await readFile(absoluteMapPath)).toEqual(
+      before,
+    );
+
+    const applied = resultOf<{
+      changed: boolean;
+      checkpointId: string;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision: preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied).toMatchObject({
+      changed: true,
+      checkpointId: expect.stringMatching(
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      ),
+      revision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+    });
+    const saved = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    expect(
+      ((saved.layers as JsonObject[])[0]
+        ?.data as number[]),
+    ).toEqual([
+      0x8000_0001,
+      0x8000_0001,
+      0,
+      2,
+    ]);
   });
 
   it("previews and applies exact tile replacements through the generic edit batch", async () => {

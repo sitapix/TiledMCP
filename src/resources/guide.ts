@@ -193,7 +193,8 @@ or silently repairs a stale counter.
 ## Preview, approve, then apply
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
-\`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, and \`floodFill\`;
+\`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, \`floodFill\`, and
+\`copyRegion\`;
 supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
 \`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; supported map-level
@@ -398,9 +399,10 @@ one operation are evaluated simultaneously in a single pass: with \`A->B\`
 and \`B->C\`, cells that originally held A become B rather than C. Swaps and
 cycles follow the same rule.
 
-Across one change set, replacement and flood-fill operations share a limit of
-1,000,000 actual GID reads. Only actual matches count toward the 100,000 total
-tile-cell write limit shared with set/fill. Zero replacement matches are a
+Across one change set, replacement, flood-fill, and copy operations share a
+limit of 1,000,000 actual GID reads. Only actual replacement matches count
+toward the 100,000 total tile-cell write limit shared by all tile edits. Zero
+replacement matches are a
 valid no-op: inspect the preview's scanned and replaced counts, and expect
 apply not to rewrite the map.
 
@@ -421,7 +423,8 @@ not transparent and does not skip a cell; there is no skip sentinel. To clear
 a plain rectangle, \`fillRegion\` with \`tile:null\` remains available.
 
 Operations execute in change-set order and later overlapping operations win.
-This applies across stamps, set/fill, and replacement; replacement remains
+This applies across stamps, set/fill, replacement, flood fill, and copy;
+replacement remains
 simultaneous only within its own single-pass mapping operation. Every pattern
 cell counts toward the shared 100,000-cell write budget, even when the target
 already has the same GID.
@@ -450,7 +453,7 @@ copies of one base tile remain separate. The target \`tile\` may be
 and can be filled with a non-null TileRef.
 
 Operations still execute in array order: flood fill observes earlier
-set/fill/stamp/replace/flood results, and later operations can overwrite its
+set/fill/stamp/replace/flood/copy results, and later operations can overwrite its
 result. If source and target encode to the same GID, the planner reads and
 validates only the seed, reports a no-op, and does not scan the complete
 component.
@@ -459,8 +462,9 @@ component.
 four-way traversal may read an already filled cell or a nonmatching boundary
 neighbor more than once. Every observed value is fully resolved before
 comparison; malformed, flag-only empty, or unbound GIDs fail closed. These
-reads share the 1,000,000-read change-set limit with replacement, while actual
-changed cells share the 100,000-cell write limit with all tile edits.
+reads share the 1,000,000-read change-set limit with replacement and copy,
+while actual changed cells share the 100,000-cell write limit with all tile
+edits.
 
 The preview returns canonical \`sourceTile\` and \`targetTile\`, absolute
 \`seed\`, \`connectivity:"four-way"\`, scan/change counts,
@@ -468,6 +472,68 @@ The preview returns canonical \`sourceTile\` and \`targetTile\`, absolute
 bounding box of changed cells, not a complete cell list; no cell sample is
 returned, and a no-op has null bounds. Apply uses only a member-local patch
 for the target layer's \`data\`. A net no-op preserves the exact bytes and
+revision.
+
+Use
+\`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}\`
+to copy one complete tile rectangle within the same map. This is the fifteenth
+generic operation, not a standalone tool, so the registry remains 18 core
+tools or 19 with the rasterizer. The operation, source, and destination are
+strict objects and reject extra keys.
+
+Both layer IDs must identify finite orthogonal tile layers with numeric data
+arrays. All coordinates are absolute tile coordinates in their respective
+layer spaces. The complete source rectangle and the destination rectangle
+with the same width and height must fit their layer bounds. Copy never clips,
+wraps, partially succeeds, or treats any cell as transparent. A source GID of
+zero overwrites and clears its destination cell.
+
+At the start of the operation, the planner snapshots the complete source and
+complete destination before writing. Same-layer overlap therefore has
+snapshot-source memmove semantics in every direction: a value written early
+cannot feed a later source read. Every raw encoded GID is copied exactly,
+including H/V/D and raw flag bits. Every observed source and destination GID
+is reverse-validated first; malformed, flag-only empty, gap, and unbound GIDs
+fail closed even when the destination would be overwritten.
+
+Copy can be mixed with other generic operations. It sees all earlier
+operation results at snapshot time, while later operations may overwrite its
+destination; the common rule is sequential change-set order and last write
+wins. Each copy consumes \`2 * cellCount\` reads from the 1,000,000-read
+budget shared with replacement and flood fill. Its full \`cellCount\`,
+including entries whose values already match, consumes the shared
+100,000-cell tile-write budget.
+
+\`summary.tileCopies[]\` contains \`operationIndex\`,
+\`source:{layerId,x,y,width,height}\`,
+\`destination:{layerId,x,y,width,height}\`, \`scannedCellCount\`,
+\`cellCount\`, \`sourceNonEmptyCellCount\`, \`changedCellCount\`,
+\`overwrittenNonEmptyCellCount\`, \`clearedCellCount\`,
+\`overlapsSource\`, and \`wouldChange\`. The operation preview has the same
+fields without \`operationIndex\`, plus \`type:"copyRegion"\`,
+\`destructive:true\`, and a warning. It returns no cell list or sample;
+approve it using the complete normalized rectangles and counts.
+\`sourceNonEmptyCellCount\` counts nonzero source-snapshot GIDs.
+\`overwrittenNonEmptyCellCount\` counts every nonzero GID in the
+operation-start destination snapshot, whether or not that cell changes.
+\`changedCellCount\` counts unequal source/destination pairs, and
+\`clearedCellCount\` counts nonzero destinations actually cleared by source
+GID zero.
+
+The advertised \`tiled_get_capabilities.tileCopyCapabilities\` object is exact:
+\`coordinates:"absolute-tile-coordinates"\`, \`clipping:false\`,
+\`overlap:"snapshot-source-memmove"\`,
+\`emptySource:"overwrites-and-clears"\`,
+\`gidCopy:"exact-encoded-gid"\`,
+\`observedGidValidation:"source-and-destination-fail-closed"\`,
+\`operationOrdering:"sequential-change-set-order-last-write-wins"\`,
+\`scanBudget:"shared-with-replaceTiles-and-floodFill-per-change-set"\`, and
+\`sourcePatch:"destination-tile-layer-data-member-local"\`.
+Apply recomputes both snapshots, validation, budgets, and summary from the
+pinned map. Only a destination layer changed when copy executes becomes a
+candidate for a member-local \`data\` patch. If a later operation restores
+the original value, the final source diff still collapses to an exact-byte
+no-op. A plan with no net change preserves the exact source bytes and
 revision.
 
 1. Call \`tiled_preview_edits\` with:
@@ -490,8 +556,9 @@ proposal.
 
 \`tiled_preview_edits\` validates and stores a proposal but does not write the
 map. \`tiled_add_tileset_to_map\` and \`tiled_create_layer\` are also
-preview-only; \`removeTilesetFromMap\` stays inside the generic preview tool
-and does not add a standalone tool. \`tiled_apply_change_set\` is the write
+preview-only; \`removeTilesetFromMap\` and \`copyRegion\` stay inside the
+generic preview tool and do not add standalone tools.
+\`tiled_apply_change_set\` is the write
 boundary for all proposal types. A
 textual confirmation argument, prompt, or guide instruction is never a
 substitute for client-side approval.

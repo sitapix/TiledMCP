@@ -56,6 +56,9 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).not.toContain(
       "tiled_remove_tileset_from_map",
     );
+    expect(tools.tools.map(({ name }) => name)).not.toContain(
+      "tiled_copy_region",
+    );
 
     const capabilitiesResponse = await client.callTool({
       name: "tiled_get_capabilities",
@@ -119,6 +122,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         "stampPattern",
         "floodFill",
         "replaceTiles",
+        "copyRegion",
       ],
       tileStampCapabilities: {
         pattern:
@@ -142,8 +146,23 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           "sequential-change-set-order-last-write-wins",
         scanAccounting: "actual-gid-reads",
         scanBudget:
-          "shared-with-replaceTiles-per-change-set",
+          "shared-with-replaceTiles-and-copyRegion-per-change-set",
         sourcePatch: "tile-layer-data-member-local",
+      },
+      tileCopyCapabilities: {
+        coordinates: "absolute-tile-coordinates",
+        clipping: false,
+        overlap: "snapshot-source-memmove",
+        emptySource: "overwrites-and-clears",
+        gidCopy: "exact-encoded-gid",
+        observedGidValidation:
+          "source-and-destination-fail-closed",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        scanBudget:
+          "shared-with-replaceTiles-and-floodFill-per-change-set",
+        sourcePatch:
+          "destination-tile-layer-data-member-local",
       },
       layerOperations: [
         "updateLayer",
@@ -454,6 +473,158 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(replacedMap.layers[0]?.data.slice(0, 4)).toEqual([
       2, 2, 2, 2,
     ]);
+
+    const copySummaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "basic.tmj" },
+    });
+    const copySummary = (
+      copySummaryResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              dependencyRevisions: Record<string, string>;
+            };
+          }
+        | undefined
+    )?.result;
+    if (copySummary === undefined) {
+      throw new Error(
+        "Expected the post-replacement map summary.",
+      );
+    }
+    const copyPreviewResponse = await client.callTool({
+      name: "tiled_preview_edits",
+      arguments: {
+        mapPath: "basic.tmj",
+        expectedRevision: copySummary.revision,
+        expectedDependencyRevisions:
+          copySummary.dependencyRevisions,
+        operations: [
+          {
+            type: "copyRegion",
+            source: {
+              layerId: 1,
+              x: 0,
+              y: 1,
+              width: 3,
+              height: 1,
+            },
+            destination: {
+              layerId: 1,
+              x: 1,
+              y: 1,
+            },
+          },
+        ],
+      },
+    });
+    expect(copyPreviewResponse.isError).not.toBe(
+      true,
+    );
+    const copyPreview = (
+      copyPreviewResponse.structuredContent as
+        | {
+            result?: {
+              changeSetId: string;
+              expectedRevision: string;
+              operations: Array<
+                Record<string, unknown>
+              >;
+              summary: Record<string, unknown>;
+            };
+          }
+        | undefined
+    )?.result;
+    const copiedSource = {
+      layerId: 1,
+      x: 0,
+      y: 1,
+      width: 3,
+      height: 1,
+    };
+    const copiedDestination = {
+      layerId: 1,
+      x: 1,
+      y: 1,
+      width: 3,
+      height: 1,
+    };
+    expect(copyPreview).toMatchObject({
+      operations: [
+        {
+          type: "copyRegion",
+          destructive: true,
+          warning: expect.any(String),
+          source: copiedSource,
+          destination: copiedDestination,
+          scannedCellCount: 6,
+          cellCount: 3,
+          sourceNonEmptyCellCount: 3,
+          changedCellCount: 3,
+          overwrittenNonEmptyCellCount: 3,
+          clearedCellCount: 0,
+          overlapsSource: true,
+          wouldChange: true,
+        },
+      ],
+      summary: {
+        cellWrites: 3,
+        tileCopies: [
+          {
+            operationIndex: 0,
+            source: copiedSource,
+            destination: copiedDestination,
+            scannedCellCount: 6,
+            cellCount: 3,
+            sourceNonEmptyCellCount: 3,
+            changedCellCount: 3,
+            overwrittenNonEmptyCellCount: 3,
+            clearedCellCount: 0,
+            overlapsSource: true,
+            wouldChange: true,
+          },
+        ],
+      },
+    });
+    if (copyPreview === undefined) {
+      throw new Error(
+        "Expected the tile-copy preview.",
+      );
+    }
+    expect(
+      copyPreview.operations[0],
+    ).not.toHaveProperty("operationIndex");
+    const copyApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: copyPreview.changeSetId,
+        expectedRevision:
+          copyPreview.expectedRevision,
+      },
+    });
+    expect(copyApplyResponse.isError).not.toBe(true);
+    expect(
+      (
+        copyApplyResponse.structuredContent as
+          | { result?: Record<string, unknown> }
+          | undefined
+      )?.result,
+    ).toMatchObject({
+      changed: true,
+      checkpointId: expect.stringMatching(
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      ),
+    });
+    const copiedMap = JSON.parse(
+      await readFile(
+        join(projectRoot, "basic.tmj"),
+        "utf8",
+      ),
+    ) as { layers: Array<{ data: number[] }> };
+    expect(
+      copiedMap.layers[0]?.data.slice(4, 8),
+    ).toEqual([1, 1, 3, 4]);
 
     const createdMapResponse = await client.callTool({
       name: "tiled_create_map",

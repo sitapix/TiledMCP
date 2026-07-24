@@ -28,6 +28,7 @@ import {
   GID_HEX_120,
 } from "./maps/gid.js";
 import {
+  MAX_CELL_WRITES,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
   MAX_REMOVE_TILESET_GID_SCANS,
   MAX_TILE_OPERATION_SCANS,
@@ -176,6 +177,33 @@ type OperationPreview =
         width: number;
         height: number;
       } | null;
+      wouldChange: boolean;
+    }
+  | {
+      type: "copyRegion";
+      destructive: true;
+      warning: string;
+      source: {
+        layerId: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      destination: {
+        layerId: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      scannedCellCount: number;
+      cellCount: number;
+      sourceNonEmptyCellCount: number;
+      changedCellCount: number;
+      overwrittenNonEmptyCellCount: number;
+      clearedCellCount: number;
+      overlapsSource: boolean;
       wouldChange: boolean;
     }
   | {
@@ -547,6 +575,7 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
   const plan = entry.plan;
   assertMapUpdateSummaryCoverage(plan);
   assertRemoveTilesetSummaryCoverage(plan);
+  assertCopyRegionSummaryCoverage(plan);
   const operations = plan.operations.map(
     (operation, operationIndex) =>
       summarizeOperation(
@@ -681,6 +710,115 @@ function assertRemoveTilesetSummaryCoverage(
       "removeTilesetFromMap summaries do not match the operations.",
     );
   }
+}
+
+function assertCopyRegionSummaryCoverage(
+  plan: MapEditPlan,
+): void {
+  const operationIndexes = plan.operations.flatMap(
+    (operation, operationIndex) =>
+      operation.type === "copyRegion"
+        ? [operationIndex]
+        : [],
+  );
+  const summaries = plan.summary.tileCopies;
+  if (operationIndexes.length === 0) {
+    if (summaries === undefined) {
+      return;
+    }
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "copyRegion summaries do not match the copyRegion operations.",
+    );
+  }
+  if (
+    !Array.isArray(summaries) ||
+    summaries.length !== operationIndexes.length ||
+    summaries.some(
+      (summary, index) =>
+        !isCopyRegionSummaryShape(
+          summary,
+          operationIndexes[index],
+        ),
+    )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "copyRegion summaries do not match the copyRegion operations.",
+    );
+  }
+  const copyCellWrites = summaries.reduce(
+    (total, summary) =>
+      total + summary.cellCount,
+    0,
+  );
+  const copyScans = summaries.reduce(
+    (total, summary) =>
+      total + summary.scannedCellCount,
+    0,
+  );
+  const replacementScans =
+    sumSummaryScanCounts(
+      plan.summary.tileReplacements,
+    );
+  const floodFillScans = sumSummaryScanCounts(
+    plan.summary.tileFloodFills,
+  );
+  if (
+    !Number.isSafeInteger(
+      plan.summary.cellWrites,
+    ) ||
+    plan.summary.cellWrites < copyCellWrites ||
+    plan.summary.cellWrites > MAX_CELL_WRITES ||
+    !Number.isSafeInteger(copyScans) ||
+    replacementScans === undefined ||
+    floodFillScans === undefined ||
+    !Number.isSafeInteger(
+      copyScans +
+        replacementScans +
+        floodFillScans,
+    ) ||
+    copyScans +
+        replacementScans +
+        floodFillScans >
+      MAX_TILE_OPERATION_SCANS
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "copyRegion summaries do not match the shared tile-operation accounting.",
+    );
+  }
+}
+
+function sumSummaryScanCounts(
+  summaries:
+    | ReadonlyArray<{ scannedCellCount: number }>
+    | undefined,
+): number | undefined {
+  if (summaries === undefined) {
+    return 0;
+  }
+  if (!Array.isArray(summaries)) {
+    return undefined;
+  }
+  let total = 0;
+  for (const summary of summaries) {
+    if (
+      typeof summary !== "object" ||
+      summary === null ||
+      !Number.isSafeInteger(
+        summary.scannedCellCount,
+      ) ||
+      summary.scannedCellCount < 0 ||
+      !Number.isSafeInteger(
+        total + summary.scannedCellCount,
+      )
+    ) {
+      return undefined;
+    }
+    total += summary.scannedCellCount;
+  }
+  return total;
 }
 
 function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
@@ -1168,6 +1306,142 @@ function summarizeOperation(
         floodSummary.affectedBounds,
       ),
       wouldChange: floodSummary.wouldChange,
+    };
+  }
+
+  if (operation.type === "copyRegion") {
+    const source = operation.source;
+    const destination = operation.destination;
+    const validOperation =
+      hasExactKeys(
+        operation as unknown as Record<
+          string,
+          unknown
+        >,
+        ["type", "source", "destination"],
+      ) &&
+      typeof source === "object" &&
+      source !== null &&
+      !Array.isArray(source) &&
+      hasExactKeys(
+        source as unknown as Record<
+          string,
+          unknown
+        >,
+        [
+          "layerId",
+          "x",
+          "y",
+          "width",
+          "height",
+        ],
+      ) &&
+      typeof destination === "object" &&
+      destination !== null &&
+      !Array.isArray(destination) &&
+      hasExactKeys(
+        destination as unknown as Record<
+          string,
+          unknown
+        >,
+        ["layerId", "x", "y"],
+      ) &&
+      Number.isSafeInteger(source.layerId) &&
+      source.layerId > 0 &&
+      Number.isSafeInteger(source.x) &&
+      Number.isSafeInteger(source.y) &&
+      Number.isSafeInteger(source.width) &&
+      source.width > 0 &&
+      Number.isSafeInteger(source.height) &&
+      source.height > 0 &&
+      Number.isSafeInteger(destination.layerId) &&
+      destination.layerId > 0 &&
+      Number.isSafeInteger(destination.x) &&
+      Number.isSafeInteger(destination.y) &&
+      Number.isSafeInteger(
+        source.x + source.width,
+      ) &&
+      Number.isSafeInteger(
+        source.y + source.height,
+      ) &&
+      Number.isSafeInteger(
+        destination.x + source.width,
+      ) &&
+      Number.isSafeInteger(
+        destination.y + source.height,
+      );
+    const copySummaries =
+      summary.tileCopies?.filter(
+        (entry) =>
+          entry.operationIndex === operationIndex,
+      ) ?? [];
+    const copySummary = copySummaries[0];
+    const expectedOverlap =
+      validOperation &&
+      source.layerId === destination.layerId &&
+      source.x <
+        destination.x + source.width &&
+      destination.x <
+        source.x + source.width &&
+      source.y <
+        destination.y + source.height &&
+      destination.y <
+        source.y + source.height;
+    if (
+      !validOperation ||
+      copySummaries.length !== 1 ||
+      !isCopyRegionSummaryShape(
+        copySummary,
+        operationIndex,
+      ) ||
+      copySummary.source.layerId !==
+        source.layerId ||
+      copySummary.source.x !== source.x ||
+      copySummary.source.y !== source.y ||
+      copySummary.source.width !== source.width ||
+      copySummary.source.height !==
+        source.height ||
+      copySummary.destination.layerId !==
+        destination.layerId ||
+      copySummary.destination.x !==
+        destination.x ||
+      copySummary.destination.y !==
+        destination.y ||
+      copySummary.destination.width !==
+        source.width ||
+      copySummary.destination.height !==
+        source.height ||
+      copySummary.overlapsSource !==
+        expectedOverlap
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "copyRegion preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      destructive: true,
+      warning:
+        "This snapshots the complete source and destination regions before writing, then overwrites every destination cell with the exact encoded source GID; zero clears a destination cell, clipping is not performed, and later operations observe this result.",
+      source: structuredClone(copySummary.source),
+      destination: structuredClone(
+        copySummary.destination,
+      ),
+      scannedCellCount:
+        copySummary.scannedCellCount,
+      cellCount: copySummary.cellCount,
+      sourceNonEmptyCellCount:
+        copySummary.sourceNonEmptyCellCount,
+      changedCellCount:
+        copySummary.changedCellCount,
+      overwrittenNonEmptyCellCount:
+        copySummary.overwrittenNonEmptyCellCount,
+      clearedCellCount:
+        copySummary.clearedCellCount,
+      overlapsSource: copySummary.overlapsSource,
+      wouldChange: copySummary.wouldChange,
     };
   }
 
@@ -1720,6 +1994,175 @@ function isRemovedTilesetSummaryShape(
     (scannedCellCount as number) +
       (scannedObjectCount as number) <=
       MAX_REMOVE_TILESET_GID_SCANS
+  );
+}
+
+function isCopyRegionSummaryShape(
+  value: unknown,
+  expectedOperationIndex: number | undefined,
+): value is NonNullable<
+  MapEditPlan["summary"]["tileCopies"]
+>[number] {
+  if (
+    expectedOperationIndex === undefined ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const summary = value as Record<
+    string,
+    unknown
+  >;
+  const source = summary.source;
+  const destination = summary.destination;
+  if (
+    typeof source !== "object" ||
+    source === null ||
+    Array.isArray(source) ||
+    typeof destination !== "object" ||
+    destination === null ||
+    Array.isArray(destination)
+  ) {
+    return false;
+  }
+  const sourceRecord = source as Record<
+    string,
+    unknown
+  >;
+  const destinationRecord =
+    destination as Record<string, unknown>;
+  const width = sourceRecord.width;
+  const height = sourceRecord.height;
+  const sourceX = sourceRecord.x;
+  const sourceY = sourceRecord.y;
+  const destinationX = destinationRecord.x;
+  const destinationY = destinationRecord.y;
+  const cellCount = summary.cellCount;
+  const scannedCellCount =
+    summary.scannedCellCount;
+  const sourceNonEmptyCellCount =
+    summary.sourceNonEmptyCellCount;
+  const changedCellCount =
+    summary.changedCellCount;
+  const overwrittenNonEmptyCellCount =
+    summary.overwrittenNonEmptyCellCount;
+  const clearedCellCount =
+    summary.clearedCellCount;
+  return (
+    hasExactKeys(summary, [
+      "operationIndex",
+      "source",
+      "destination",
+      "scannedCellCount",
+      "cellCount",
+      "sourceNonEmptyCellCount",
+      "changedCellCount",
+      "overwrittenNonEmptyCellCount",
+      "clearedCellCount",
+      "overlapsSource",
+      "wouldChange",
+    ]) &&
+    hasExactKeys(sourceRecord, [
+      "layerId",
+      "x",
+      "y",
+      "width",
+      "height",
+    ]) &&
+    hasExactKeys(destinationRecord, [
+      "layerId",
+      "x",
+      "y",
+      "width",
+      "height",
+    ]) &&
+    Number.isSafeInteger(summary.operationIndex) &&
+    summary.operationIndex ===
+      expectedOperationIndex &&
+    Number.isSafeInteger(sourceRecord.layerId) &&
+    (sourceRecord.layerId as number) > 0 &&
+    Number.isSafeInteger(sourceX) &&
+    Number.isSafeInteger(sourceY) &&
+    Number.isSafeInteger(width) &&
+    (width as number) > 0 &&
+    Number.isSafeInteger(height) &&
+    (height as number) > 0 &&
+    Number.isSafeInteger(
+      (sourceX as number) + (width as number),
+    ) &&
+    Number.isSafeInteger(
+      (sourceY as number) + (height as number),
+    ) &&
+    Number.isSafeInteger(
+      destinationRecord.layerId,
+    ) &&
+    (destinationRecord.layerId as number) > 0 &&
+    Number.isSafeInteger(destinationX) &&
+    Number.isSafeInteger(destinationY) &&
+    destinationRecord.width === width &&
+    destinationRecord.height === height &&
+    Number.isSafeInteger(
+      (destinationX as number) +
+        (width as number),
+    ) &&
+    Number.isSafeInteger(
+      (destinationY as number) +
+        (height as number),
+    ) &&
+    Number.isSafeInteger(cellCount) &&
+    cellCount ===
+      (width as number) * (height as number) &&
+    (cellCount as number) > 0 &&
+    (cellCount as number) <= MAX_CELL_WRITES &&
+    Number.isSafeInteger(scannedCellCount) &&
+    scannedCellCount ===
+      (cellCount as number) * 2 &&
+    (scannedCellCount as number) <=
+      MAX_TILE_OPERATION_SCANS &&
+    Number.isSafeInteger(
+      sourceNonEmptyCellCount,
+    ) &&
+    (sourceNonEmptyCellCount as number) >= 0 &&
+    (sourceNonEmptyCellCount as number) <=
+      (cellCount as number) &&
+    Number.isSafeInteger(changedCellCount) &&
+    (changedCellCount as number) >= 0 &&
+    (changedCellCount as number) <=
+      (cellCount as number) &&
+    Number.isSafeInteger(
+      overwrittenNonEmptyCellCount,
+    ) &&
+    (overwrittenNonEmptyCellCount as number) >=
+      0 &&
+    (overwrittenNonEmptyCellCount as number) <=
+      (cellCount as number) &&
+    Number.isSafeInteger(clearedCellCount) &&
+    (clearedCellCount as number) >= 0 &&
+    (clearedCellCount as number) <=
+      (changedCellCount as number) &&
+    (clearedCellCount as number) <=
+      (overwrittenNonEmptyCellCount as number) &&
+    (clearedCellCount as number) <=
+      (cellCount as number) -
+        (sourceNonEmptyCellCount as number) &&
+    // These three inequalities keep the implied nonnegative counts for
+    // source-only, equal-nonempty and different-nonempty cell pairs.
+    (sourceNonEmptyCellCount as number) +
+        (clearedCellCount as number) >=
+      (overwrittenNonEmptyCellCount as number) &&
+    (sourceNonEmptyCellCount as number) +
+        (clearedCellCount as number) >=
+      (changedCellCount as number) &&
+    (overwrittenNonEmptyCellCount as number) +
+        (changedCellCount as number) >=
+      (sourceNonEmptyCellCount as number) +
+        2 * (clearedCellCount as number) &&
+    typeof summary.overlapsSource === "boolean" &&
+    typeof summary.wouldChange === "boolean" &&
+    summary.wouldChange ===
+      ((changedCellCount as number) > 0)
   );
 }
 

@@ -26,7 +26,7 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
 `duplicateLayer`、`stampPattern`、`floodFill`、`updateMap` 和必须独占 change set 的
-`removeTilesetFromMap`。
+`removeTilesetFromMap`，以及第 15 种、可混批的 `copyRegion`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
@@ -501,6 +501,7 @@ patch，验证 digest/revision pins/raw-byte CAS，并在锁内完成写前 chec
 | `tiled_fill_region` | 矩形区域填充单一 tile；当前等价能力通过 `fillRegion` operation 实现，`tile:null` 可清空整块 | `mapPath`, `layerId`, `x`, `y`, `width`, `height`, `tile` |
 | `tiled_flood_fill` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 12 种、固定四向的 `floodFill` 从绝对 seed 填充完整 encoded GID 相同的连通区域 | `mapPath`, `layerId`, `x`, `y`, `tile` |
 | `tiled_replace_tiles` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的 `replaceTiles` operation 实现：在全 layer/区域内同时应用多组精确替换 | `mapPath`, `layerId`, `mappings: [{from, to}]`, `region?` |
+| `tiled_copy_region` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 15 种 `copyRegion` 在同一 map 的 finite numeric tile layers 间按绝对坐标复制完整矩形 | `mapPath`, `source:{layerId,x,y,width,height}`, `destination:{layerId,x,y}` |
 | `tiled_clear_region` | 候选独立入口；当前直接使用 `fillRegion` + `tile:null` 清空矩形，不新增 operation/tool | `mapPath`, `layerId`, `region` |
 | `tiled_stamp_pattern` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 11 种 `stampPattern` 盖章。成型的多图层复用结构走预制件（3.5） | `mapPath`, `layerId`, `x`, `y`, `pattern: (TileRef|null)[][]` |
 | `tiled_select` | 创建显式选区：按 tile 值、魔棒、多边形或已有 selectionId 组合；返回绑定 map revision、客户端连接和 TTL 的 `selectionId`，后续通过 `Region.kind = "selection"` 显式引用 | `mapPath`, `layerId`, `mode`, `args` |
@@ -520,7 +521,7 @@ cell 按完整 unsigned encoded GID 精确比较，包括 transform/raw flags；
 cell 值求值。相同 encoded source 的重复 mapping，以及 source/target encoded GID 完全
 相同的 mapping 会被拒绝。可选 `region` 使用 layer 空间中的绝对 tile 坐标，必须完全落在
 layer bounds 内；省略时精确采用该 layer 的 `x/y/width/height` bounds。每个 operation
-最多 128 组 mapping。一个 change set 的 replacement 与 flood-fill operation 共用
+最多 128 组 mapping。一个 change set 的 replacement、flood-fill 与 copy operation 共用
 1,000,000 次实际 GID 读取预算；只有实际替换才计入所有 tile operations 共用的
 100,000-cell 写入上限。零命中是合法 no-op，preview 报告
 `replacedCellCount:0`，apply 不改写文档。
@@ -540,8 +541,9 @@ layer bounds 内；省略时精确采用该 layer 的 `x/y/width/height` bounds�
 
 一个 change set 严格按 operations 顺序执行，后面的 operation 读取前面 operation 的结果；
 重叠位置由 later operation 决定最终值。该规则同时覆盖 stamp、`setTiles`、
-`fillRegion`、`replaceTiles`、`floodFill` 与其他 stamp；`replaceTiles` 仅在自己的
-operation 内保持 simultaneous single-pass。每个 stamp 的全部 `cellCount`（包括写入
+`fillRegion`、`replaceTiles`、`floodFill`、`copyRegion` 与其他 stamp；
+`replaceTiles` 仅在自己的 operation 内保持 simultaneous single-pass。每个 stamp 的全部
+`cellCount`（包括写入
 相同值的格子）都计入所有 tile operations 共用的 100,000-cell change-set 写入上限。
 
 preview 回显规范化 `region`、`cellCount`、非空/清空/变换/实际变化 count 与
@@ -567,13 +569,15 @@ source 也可以是空 GID 0，因此能把相连空区填成非空 tile。sourc
 
 flood fill 的 `scannedCellCount` 是实际 GID 读取次数，不是 distinct cell 数。固定四向遍历
 可能重复观察已经改成 target 的 cell 或不匹配的边界邻格；每次读取都与
-`replaceTiles` 共用单 change set 1,000,000-read scan budget。任何被观察到的 cell 都先
+`replaceTiles` / `copyRegion` 共用单 change set 1,000,000-read scan budget。任何被观察到的
+cell 都先
 按当前 orientation 与 tileset bindings 完整反向解析；非 unsigned GID、带 transform flags
 的空 GID 或未绑定/越界 base GID 都 fail closed，不能因其不匹配 source 就跳过验证。未被
 该局部遍历观察的远端 cell 不属于此次操作的扫描承诺。
 
 实际改变的连通 cell 才计入所有 tile operations 共用的 100,000-cell 写入预算。一个 change
-set 仍按 operations 顺序修改同一工作副本：flood 会看到之前的 set/fill/stamp/replace/flood
+set 仍按 operations 顺序修改同一工作副本：flood 会看到之前的
+set/fill/stamp/replace/flood/copy
 结果，后面的 operation 又可以覆盖它，重叠时 later wins。plan 的
 `tileFloodFills` summary 与 bounded preview 回显绝对 `seed`、固定
 `connectivity:"four-way"`、canonical `sourceTile` / `targetTile`、
@@ -584,6 +588,63 @@ set 仍按 operations 顺序修改同一工作副本：flood 会看到之前的 
 apply 会重算 source、遍历、预算、summary 与 dependency pins，只为实际变化的目标 tile
 layer 生成 `data`-member-local source patch。source=target 或 mixed operations 最终回到
 原始数据的 net no-op 返回 `changed:false`，不改变 revision 与原文件 exact bytes。
+
+当前已实现的矩形复制 wire contract 是
+`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}`。
+它是通用 `tiled_preview_edits.operations` union 的第 15 种 operation，不注册
+`tiled_copy_region` standalone tool，因此 registry 仍为 18 core / 19 with rasterizer。
+operation、`source` 与 `destination` 均为 exact-key strict object。source 和
+destination 必须位于同一 map，且两侧 layer 都必须是 finite orthogonal、
+numeric-array tile layer；不支持 infinite chunks、字符串/base64 data 或压缩编码。
+
+所有坐标都是 layer 空间中的绝对 tile 坐标。source 的正整数 `width/height` 固定 copy
+尺寸，destination 使用同样宽高；两个完整半开矩形必须分别位于对应 layer 的
+`x/y/width/height` bounds 内。超出任一边界时整个 operation 拒绝，不做 clipping、wrap、
+partial copy 或 transparent/skip。source 中的 GID 0 也是待复制值，会把对应 destination
+清空。
+
+operation 开始时，planner 先快照完整 source 和完整 destination，再产生任何写入。因此
+同层重叠矩形具有 snapshot-source memmove 语义，不能把刚写入的 destination 值继续作为
+后续 source。非零值按完整 unsigned encoded GID 原样复制，H/V/D 与保留 raw flags 不会
+丢失或重新 canonicalize。source 与 destination 的每个 observed GID 都先经当前
+orientation/bindings 完整反向解析；非整数、数组 hole、超出 uint32、flag-only empty、
+tileset gap 或未绑定 GID 均 fail closed。
+
+copy 可以与其他 generic operations 混批。它在执行时看到所有前序 operation 的结果；
+后序 operation 可以覆盖 destination，统一采用 sequential change-set order 和
+last-write-wins。每个 operation 的 `cellCount = width * height`，
+`scannedCellCount = 2 * cellCount`：source 与 destination snapshot 的全部读取都计入
+replace/flood/copy 共用的单 change set 1,000,000-read scan budget。完整 `cellCount`
+（包括 source 与 destination 已相同的格子）计入所有 tile operations 共用的
+100,000-cell write budget；超限拒绝整个 plan。
+
+plan 的 `summary.tileCopies[]` shape 固定为
+`{operationIndex,source:{layerId,x,y,width,height},destination:{layerId,x,y,width,height},`
+`scannedCellCount,cellCount,sourceNonEmptyCellCount,changedCellCount,`
+`overwrittenNonEmptyCellCount,clearedCellCount,overlapsSource,wouldChange}`。
+bounded operation preview 使用相同字段但不含 `operationIndex`，另含
+`type:"copyRegion"`、`destructive:true` 和 `warning`；destination 的
+`width/height` 由 source 尺寸规范化补齐。preview 不返回 cell list/sample，调用方必须
+根据完整 regions 和 counts 审批。`overlapsSource` 只在同 layer 且两个矩形相交时为 true；
+`sourceNonEmptyCellCount` 统计 source snapshot 的非零 GID；
+`overwrittenNonEmptyCellCount` 统计 operation-start destination snapshot 中全部非零
+GID，无论对应格最终是否变化；`changedCellCount` 统计两侧值不同的格子；
+`clearedCellCount` 统计 source GID 0 实际清空的非零 destination。所有 GID 已相同时
+`changedCellCount:0`、`wouldChange:false`。
+
+`tiled_get_capabilities.tileCopyCapabilities` 精确公布：
+`coordinates:"absolute-tile-coordinates"`、`clipping:false`、
+`overlap:"snapshot-source-memmove"`、`emptySource:"overwrites-and-clears"`、
+`gidCopy:"exact-encoded-gid"`、
+`observedGidValidation:"source-and-destination-fail-closed"`、
+`operationOrdering:"sequential-change-set-order-last-write-wins"`、
+`scanBudget:"shared-with-replaceTiles-and-floodFill-per-change-set"` 与
+`sourcePatch:"destination-tile-layer-data-member-local"`。
+apply 从 pinned source 重算两个快照、GID validation、预算、summary 与 dependency pins；
+copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`，并成为
+`data`-member-local source patch 候选。跨 layer copy 不重写 source layer；同 layer copy
+也只 patch 该层一次。若后序 operation 恢复原值，最终 net no-op 仍返回
+`changed:false` 并保持 revision/source exact bytes。
 
 ### 3.5 程序化生成与预制件（后续重点）
 
@@ -940,7 +1001,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑有限正交 TMJ；move/delete/duplicate/tileset removal 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 
