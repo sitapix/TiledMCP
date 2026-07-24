@@ -1,0 +1,85 @@
+{
+  "columns": 2,
+  "image": "tiles.svg",
+  "imageheight": 32,
+  "imagewidth": 32,
+  "margin": 0,
+  "name": "basic",
+  "spacing": 0,
+  "tilecount": 4,
+  "tiles": [
+    {
+      "type": "Grass",
+      "id": 0,
+      "properties": [
+        {
+          "name": "walkable",
+          "type": "bool",
+          "value": true
+        }
+      ]
+    },
+    {
+      "type": "Rock",
+      "id": 1,
+      "objectgroup": {
+        "draworder": "index",
+        "name": "",
+        "objects": [
+          {
+            "height": 12,
+            "id": 1,
+            "name": "",
+            "opacity": 1,
+            "rotation": 0,
+            "type": "",
+            "visible": true,
+            "width": 12,
+            "x": 2,
+            "y": 2
+          }
+        ],
+        "opacity": 1,
+        "type": "objectgroup",
+        "visible": true,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "tiledversion": "1.12.2",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "tileset",
+  "version": "1.10",
+  "wangsets": [
+    {
+      "colors": [
+        {
+          "color": "#4f8f4f",
+          "name": "Ground",
+          "probability": 1,
+          "tile": 0
+        }
+      ],
+      "name": "Ground",
+      "tile": -1,
+      "type": "mixed",
+      "wangtiles": [
+        {
+          "tileid": 0,
+          "wangid": [
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

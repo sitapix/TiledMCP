@@ -1,0 +1,606 @@
+import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { expect, it } from "vitest";
+
+it("serves tiled_find_tiles through the production stdio entry point", async () => {
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), "tiledmcp-stdio-test-"),
+  );
+  const projectRoot = join(temporaryRoot, "project");
+  await cp(resolve("fixtures/mvp"), projectRoot, { recursive: true });
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      "dist/index.js",
+      "--project-dir",
+      projectRoot,
+    ],
+    cwd: process.cwd(),
+    stderr: "pipe",
+  });
+  let stderr = "";
+  transport.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString("utf8");
+  });
+  const client = new Client({
+    name: "tiledmcp-stdio-contract-test",
+    version: "1.0.0",
+  });
+
+  try {
+    await client.connect(transport);
+    const tools = await client.listTools();
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_find_tiles",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_add_tileset_to_map",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_create_layer",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_preview_checkpoint_restore",
+    );
+    expect(tools.tools.length === 17 || tools.tools.length === 18).toBe(
+      true,
+    );
+
+    const capabilitiesResponse = await client.callTool({
+      name: "tiled_get_capabilities",
+      arguments: {},
+    });
+    const capabilities = (
+      capabilitiesResponse.structuredContent as
+        | { result?: Record<string, unknown> }
+        | undefined
+    )?.result;
+    expect(capabilities).toMatchObject({
+      checkpointCapabilities: {
+        automaticBeforeWrite: true,
+        exactByteRestoreKernel: true,
+        previewAndApplyRestore: true,
+        restoreScope: "single-existing-json-document",
+        restoresReferencedDependencies: false,
+      },
+      tileFindCapabilities: {
+        defaultQueryMode: "all",
+        nextPageIncludesRevisionPins: true,
+        inputRevisionPins: "optional",
+      },
+      tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
+      tileReplacementCapabilities: {
+        match: "exact-encoded-gid",
+        transformMatch: "exact",
+        mappingEvaluation: "simultaneous-single-pass",
+        emptySource: false,
+        nullableTarget: true,
+        defaultRegion: "target-layer-bounds",
+      },
+      limits: {
+        maxReplaceTileMappings: 128,
+        maxReplaceTileScans: 1_000_000,
+      },
+    });
+
+    const summaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "basic.tmj" },
+    });
+    const summary = (
+      summaryResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              dependencyRevisions: Record<string, string>;
+              tilesets: Array<{
+                assetId: string;
+                revision: string;
+              }>;
+            };
+          }
+        | undefined
+    )?.result;
+    const tileset = summary?.tilesets[0];
+    expect(summary).toBeDefined();
+    expect(tileset).toBeDefined();
+    if (summary === undefined || tileset === undefined) {
+      throw new Error("Expected the stdio fixture summary.");
+    }
+
+    const searchResponse = await client.callTool({
+      name: "tiled_find_tiles",
+      arguments: {
+        mapPath: "basic.tmj",
+        tilesetAssetId: tileset.assetId,
+        query: {
+          clauses: [
+            { kind: "class", equals: "Grass" },
+            {
+              kind: "propertyEquals",
+              name: "walkable",
+              type: "bool",
+              value: true,
+            },
+          ],
+        },
+        expectedMapRevision: summary.revision,
+        expectedTilesetRevision: tileset.revision,
+      },
+    });
+    expect(searchResponse.isError).not.toBe(true);
+    const searchResult = (
+      searchResponse.structuredContent as
+        | { result?: Record<string, unknown> }
+        | undefined
+    )?.result;
+    expect(searchResult).toMatchObject({
+      query: { mode: "all" },
+      source: {
+        assetId: tileset.assetId,
+        revision: tileset.revision,
+      },
+      items: [
+        {
+          tile: {
+            tileset: {
+              kind: "external",
+              assetId: tileset.assetId,
+            },
+            localId: 0,
+          },
+          matchedClauseIndexes: [0, 1],
+        },
+      ],
+    });
+
+    const replacePreviewResponse = await client.callTool({
+      name: "tiled_preview_edits",
+      arguments: {
+        mapPath: "basic.tmj",
+        expectedRevision: summary.revision,
+        expectedDependencyRevisions:
+          summary.dependencyRevisions,
+        operations: [
+          {
+            type: "replaceTiles",
+            layerId: 1,
+            region: { x: 0, y: 0, width: 2, height: 1 },
+            mappings: [
+              {
+                from: {
+                  tileset: {
+                    kind: "external",
+                    assetId: tileset.assetId,
+                  },
+                  localId: 0,
+                },
+                to: {
+                  tileset: {
+                    kind: "external",
+                    assetId: tileset.assetId,
+                  },
+                  localId: 1,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(replacePreviewResponse.isError).not.toBe(true);
+    const replacePreview = (
+      replacePreviewResponse.structuredContent as
+        | {
+            result?: {
+              changeSetId: string;
+              expectedRevision: string;
+              operations: Array<Record<string, unknown>>;
+              summary: Record<string, unknown>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(replacePreview).toMatchObject({
+      operations: [
+        {
+          type: "replaceTiles",
+          layerId: 1,
+          region: { x: 0, y: 0, width: 2, height: 1 },
+          scannedCellCount: 2,
+          replacedCellCount: 2,
+          mappingCount: 1,
+          omittedMappingCount: 0,
+        },
+      ],
+      summary: {
+        cellWrites: 2,
+        tileReplacements: [
+          {
+            operationIndex: 0,
+            layerId: 1,
+            scannedCellCount: 2,
+            replacedCellCount: 2,
+            mappingCount: 1,
+          },
+        ],
+      },
+    });
+    if (replacePreview === undefined) {
+      throw new Error("Expected the tile-replacement preview.");
+    }
+    const replaceApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: replacePreview.changeSetId,
+        expectedRevision: replacePreview.expectedRevision,
+      },
+    });
+    expect(replaceApplyResponse.isError).not.toBe(true);
+    expect(
+      (
+        replaceApplyResponse.structuredContent as
+          | { result?: Record<string, unknown> }
+          | undefined
+      )?.result,
+    ).toMatchObject({
+      changed: true,
+      checkpointId: expect.stringMatching(
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      ),
+    });
+    const replacedMap = JSON.parse(
+      await readFile(join(projectRoot, "basic.tmj"), "utf8"),
+    ) as { layers: Array<{ data: number[] }> };
+    expect(replacedMap.layers[0]?.data.slice(0, 4)).toEqual([
+      2, 2, 2, 2,
+    ]);
+
+    const createdMapResponse = await client.callTool({
+      name: "tiled_create_map",
+      arguments: {
+        mapPath: "created.tmj",
+        width: 4,
+        height: 3,
+        tileWidth: 16,
+        tileHeight: 16,
+      },
+    });
+    expect(createdMapResponse.isError).not.toBe(true);
+    const createdMapSummaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "created.tmj" },
+    });
+    const createdMapSummary = (
+      createdMapSummaryResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              dependencyRevisions: Record<string, string>;
+              tilesets: unknown[];
+            };
+          }
+        | undefined
+    )?.result;
+    expect(createdMapSummary).toMatchObject({
+      dependencyRevisions: {},
+      tilesets: [],
+    });
+    if (createdMapSummary === undefined) {
+      throw new Error("Expected the newly created map summary.");
+    }
+
+    const addTilesetResponse = await client.callTool({
+      name: "tiled_add_tileset_to_map",
+      arguments: {
+        mapPath: "created.tmj",
+        tilesetPath: "basic.tsj",
+        expectedMapRevision: createdMapSummary.revision,
+        expectedDependencyRevisions:
+          createdMapSummary.dependencyRevisions,
+        expectedTilesetRevision: tileset.revision,
+      },
+    });
+    expect(addTilesetResponse.isError).not.toBe(true);
+    const addTilesetPreview = (
+      addTilesetResponse.structuredContent as
+        | {
+            result?: {
+              changeSetId: string;
+              expectedRevision: string;
+              operations: Array<Record<string, unknown>>;
+              prospectiveDependencyRevisions: Record<string, string>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(addTilesetPreview).toMatchObject({
+      changeSetId: expect.stringMatching(/^changeset:[0-9a-f]{64}$/u),
+      expectedRevision: createdMapSummary.revision,
+      prospectiveDependencyRevisions: {
+        [tileset.assetId]: tileset.revision,
+      },
+      operations: [
+        {
+          type: "addTilesetToMap",
+          source: "basic.tsj",
+          assignedFirstGid: 1,
+          gidRange: { first: 1, last: 4 },
+          tileset: {
+            kind: "external",
+            assetId: tileset.assetId,
+            revision: tileset.revision,
+            tileCount: 4,
+          },
+        },
+      ],
+    });
+    if (addTilesetPreview === undefined) {
+      throw new Error("Expected an add-tileset change-set preview.");
+    }
+    const addTilesetApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: addTilesetPreview.changeSetId,
+        expectedRevision: addTilesetPreview.expectedRevision,
+      },
+    });
+    expect(addTilesetApplyResponse.isError).not.toBe(true);
+
+    const attachedSummaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "created.tmj" },
+    });
+    const attachedSummary = (
+      attachedSummaryResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              dependencyRevisions: Record<string, string>;
+              layers: Array<Record<string, unknown>>;
+              tilesets: Array<Record<string, unknown>>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(attachedSummary?.tilesets).toEqual([
+      expect.objectContaining({
+        assetId: tileset.assetId,
+        path: "basic.tsj",
+        firstGid: 1,
+        tileCount: 4,
+        revision: tileset.revision,
+      }),
+    ]);
+    if (attachedSummary === undefined) {
+      throw new Error("Expected the attached map summary.");
+    }
+    const beforeLayerBytes = await readFile(
+      join(projectRoot, "created.tmj"),
+    );
+
+    const createLayerResponse = await client.callTool({
+      name: "tiled_create_layer",
+      arguments: {
+        mapPath: "created.tmj",
+        type: "objectgroup",
+        name: "Objects",
+        expectedMapRevision: attachedSummary.revision,
+        expectedDependencyRevisions:
+          attachedSummary.dependencyRevisions,
+      },
+    });
+    expect(createLayerResponse.isError).not.toBe(true);
+    const createLayerPreview = (
+      createLayerResponse.structuredContent as
+        | {
+            result?: {
+              changeSetId: string;
+              expectedRevision: string;
+              operations: Array<Record<string, unknown>>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(createLayerPreview).toMatchObject({
+      expectedRevision: attachedSummary.revision,
+      operations: [
+        {
+          type: "createLayer",
+          layer: {
+            id: 1,
+            type: "objectgroup",
+            name: "Objects",
+          },
+          parentGroupId: null,
+          index: 0,
+          allocatedCellCount: 0,
+        },
+      ],
+    });
+    if (createLayerPreview === undefined) {
+      throw new Error("Expected a create-layer change-set preview.");
+    }
+    const createLayerApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: createLayerPreview.changeSetId,
+        expectedRevision: createLayerPreview.expectedRevision,
+      },
+    });
+    expect(createLayerApplyResponse.isError).not.toBe(true);
+    const createLayerApply = (
+      createLayerApplyResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              checkpointId: string;
+              changed: boolean;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(createLayerApply).toMatchObject({
+      revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      checkpointId: expect.stringMatching(
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      ),
+      changed: true,
+    });
+    if (createLayerApply === undefined) {
+      throw new Error("Expected the create-layer apply result.");
+    }
+
+    const layeredSummaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "created.tmj" },
+    });
+    const layeredSummary = (
+      layeredSummaryResponse.structuredContent as
+          | {
+            result?: {
+              revision: string;
+              layers: Array<Record<string, unknown>>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(layeredSummary?.layers).toEqual([
+      expect.objectContaining({
+        id: 1,
+        name: "Objects",
+        type: "objectgroup",
+      }),
+    ]);
+    expect(layeredSummary?.revision).toBe(createLayerApply.revision);
+
+    const restorePreviewResponse = await client.callTool({
+      name: "tiled_preview_checkpoint_restore",
+      arguments: {
+        checkpointId: createLayerApply.checkpointId,
+        expectedRevision: createLayerApply.revision,
+      },
+    });
+    expect(restorePreviewResponse.isError).not.toBe(true);
+    const restorePreview = (
+      restorePreviewResponse.structuredContent as
+        | {
+            result?: {
+              kind: string;
+              changeSetId: string;
+              expectedRevision: string;
+              targetPath: string;
+              restore: {
+                revision: string;
+                exactBytes: boolean;
+                wouldChange: boolean;
+              };
+              operations: Array<Record<string, unknown>>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(restorePreview).toMatchObject({
+      kind: "checkpointRestore",
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      expectedRevision: createLayerApply.revision,
+      targetPath: "created.tmj",
+      restore: {
+        revision: attachedSummary.revision,
+        exactBytes: true,
+        wouldChange: true,
+      },
+      operations: [
+        {
+          type: "restoreCheckpoint",
+          destructive: true,
+          checkpointId: createLayerApply.checkpointId,
+          targetPath: "created.tmj",
+          exactBytes: true,
+          wouldChange: true,
+        },
+      ],
+    });
+    if (restorePreview === undefined) {
+      throw new Error("Expected a checkpoint restore preview.");
+    }
+    const restoreApplyResponse = await client.callTool({
+      name: "tiled_apply_change_set",
+      arguments: {
+        changeSetId: restorePreview.changeSetId,
+        expectedRevision: restorePreview.expectedRevision,
+      },
+    });
+    expect(restoreApplyResponse.isError).not.toBe(true);
+    const restoreApply = (
+      restoreApplyResponse.structuredContent as
+        | {
+            result?: {
+              path: string;
+              beforeRevision: string;
+              revision: string;
+              changed: boolean;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(restoreApply).toMatchObject({
+      path: "created.tmj",
+      beforeRevision: createLayerApply.revision,
+      revision: attachedSummary.revision,
+      changed: true,
+    });
+    expect(await readFile(join(projectRoot, "created.tmj"))).toEqual(
+      beforeLayerBytes,
+    );
+
+    const restoredSummaryResponse = await client.callTool({
+      name: "tiled_get_map_summary",
+      arguments: { mapPath: "created.tmj" },
+    });
+    const restoredSummary = (
+      restoredSummaryResponse.structuredContent as
+        | {
+            result?: {
+              revision: string;
+              layers: Array<Record<string, unknown>>;
+              tilesets: Array<Record<string, unknown>>;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(restoredSummary).toMatchObject({
+      revision: attachedSummary.revision,
+      layers: [],
+      tilesets: [
+        expect.objectContaining({
+          assetId: tileset.assetId,
+          path: "basic.tsj",
+        }),
+      ],
+    });
+
+    const guide = await client.readResource({ uri: "tiled://guide" });
+    const guideText = guide.contents[0];
+    expect(guideText).toMatchObject({ mimeType: "text/markdown" });
+    expect(
+      guideText !== undefined && "text" in guideText
+        ? guideText.text
+        : "",
+    ).toContain("`tilesetAssetId`");
+  } finally {
+    await client.close().catch(() => undefined);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+
+  expect(stderr).toMatch(
+    /ready for .+ \(1[78] tools\)/u,
+  );
+});

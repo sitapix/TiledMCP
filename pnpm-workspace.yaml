@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+overrides:
+  # The SDK's Hono adapter is unused by stdio, but older transitive releases
+  # have published path-traversal / WebSocket DoS advisories.
+  '@hono/node-server': 2.0.11
