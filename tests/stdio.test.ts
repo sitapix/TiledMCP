@@ -84,6 +84,25 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         optionalExactReadSetPins: true,
         defaultTopTileLimit: 64,
       },
+      mapOperations: ["updateMap"],
+      mapUpdateCapabilities: {
+        fields: [
+          "renderOrder",
+          "backgroundColor",
+          "className",
+        ],
+        renderOrders: [
+          "right-down",
+          "right-up",
+          "left-down",
+          "left-up",
+        ],
+        backgroundColorNullDeletes: true,
+        maxClassNameCodePoints: 1_024,
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        sourcePatch: "root-object-member-local",
+      },
       tileOperations: [
         "setTiles",
         "fillRegion",
@@ -201,6 +220,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
             result?: {
               revision: string;
               dependencyRevisions: Record<string, string>;
+              renderOrder: string;
               tilesets: Array<{
                 assetId: string;
                 revision: string;
@@ -210,7 +230,9 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         | undefined
     )?.result;
     const tileset = summary?.tilesets[0];
-    expect(summary).toBeDefined();
+    expect(summary).toMatchObject({
+      renderOrder: "right-down",
+    });
     expect(tileset).toBeDefined();
     if (summary === undefined || tileset === undefined) {
       throw new Error("Expected the stdio fixture summary.");
@@ -443,6 +465,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
             result?: {
               revision: string;
               dependencyRevisions: Record<string, string>;
+              renderOrder: string;
               tilesets: unknown[];
             };
           }
@@ -450,6 +473,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     )?.result;
     expect(createdMapSummary).toMatchObject({
       dependencyRevisions: {},
+      renderOrder: "right-down",
       tilesets: [],
     });
     if (createdMapSummary === undefined) {

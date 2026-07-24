@@ -33,6 +33,9 @@ For an existing map:
 
 1. Call \`tiled_get_map_summary\`. Keep its map \`revision\`,
    \`dependencyRevisions\`, layer IDs, and tileset \`assetId\` values together.
+   It also returns normalized \`renderOrder\` and, when serialized, bounded
+   \`backgroundColor\` and \`className\`; inspect \`classNameTruncated\`
+   before treating a class as complete.
 2. Call \`tiled_get_tileset\` with that \`mapPath\` and the selected
    \`tilesetAssetId\` when class names, animation summaries, collision counts,
    or Wang-set overviews matter. Its tile metadata page is sparse and ordered
@@ -154,7 +157,31 @@ All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, and \`floodFill\`;
 supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
-\`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`.
+\`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; the supported root
+map operation is \`updateMap\`.
+
+Use \`{type:"updateMap", patch}\` to change existing root map properties.
+This is the thirteenth generic operation, not a standalone tool, so the
+registry remains 18 core tools or 19 when the rasterizer is available. The
+strict, non-empty patch may contain:
+
+- \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
+  \`left-up\`;
+- \`backgroundColor\`: \`#RRGGBB\`, \`#AARRGGBB\`, or \`null\` to remove
+  the serialized \`backgroundcolor\` member;
+- \`className\`: a string of at most 1,024 Unicode code points, mapped to root
+  \`class\`.
+
+Operations run in array order, so later map updates see earlier values.
+Writing an explicit value to a missing member is a change even when it equals
+a Tiled runtime default. Preview reports \`requestedFields\`,
+\`changedFields\`, \`wouldChange\`, and \`renderingMayChange\`; the last flag
+is true only when the render order or background actually changes. Apply uses
+root object-member-local patches, preserving unrelated root members and all
+layer contents. In mixed batches, \`summary.mapUpdates[*].operationIndex\`
+identifies the source operation, while \`preview.operations[*]\` uses its
+array position and does not repeat \`operationIndex\`. Repeated updates that
+restore the original serialized values produce a file-level exact-byte no-op.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the

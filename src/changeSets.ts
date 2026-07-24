@@ -20,11 +20,31 @@ import {
   GID_FLIP_VERTICAL,
   GID_HEX_120,
 } from "./maps/gid.js";
-import { MAX_TILE_OPERATION_SCANS } from "./maps/mapService.js";
+import {
+  MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_TILE_OPERATION_SCANS,
+} from "./maps/mapService.js";
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 256;
 export const DEFAULT_MAX_PENDING_CELL_WRITES = 200_000;
+const MAP_UPDATE_FIELDS = [
+  "renderOrder",
+  "backgroundColor",
+  "className",
+] as const;
+const MAP_RENDER_UPDATE_FIELDS = new Set([
+  "renderOrder",
+  "backgroundColor",
+]);
+const MAP_RENDER_ORDERS = new Set([
+  "right-down",
+  "right-up",
+  "left-down",
+  "left-up",
+]);
+const TILED_COLOR_PATTERN =
+  /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
 
 export type ChangeSetPlan =
   | MapEditPlan
@@ -83,6 +103,19 @@ export type ChangeSetPreview =
   | CheckpointRestoreChangeSetPreview;
 
 type OperationPreview =
+  | {
+      type: "updateMap";
+      destructive: false;
+      warning: string;
+      patch: Extract<
+        MapEditOperation,
+        { type: "updateMap" }
+      >["patch"];
+      requestedFields: string[];
+      changedFields: string[];
+      wouldChange: boolean;
+      renderingMayChange: boolean;
+    }
   | {
       type: "setTiles";
       layerId: number;
@@ -377,8 +410,9 @@ export class ChangeSetRegistry {
       createdAt: new Date(now).toISOString(),
       expiresAt: now + this.ttlMs,
     };
+    const preview = toPreview(entry);
     this.entries.set(id, entry);
-    return toPreview(entry);
+    return preview;
   }
 
   async apply(
@@ -479,6 +513,7 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
     };
   }
   const plan = entry.plan;
+  assertMapUpdateSummaryCoverage(plan);
   return {
     kind: plan.kind,
     changeSetId: entry.id,
@@ -508,6 +543,43 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
     createdAt: entry.createdAt,
     expiresAt: new Date(entry.expiresAt).toISOString(),
   };
+}
+
+function assertMapUpdateSummaryCoverage(
+  plan: MapEditPlan,
+): void {
+  const operationIndexes = plan.operations.flatMap(
+    (operation, operationIndex) =>
+      operation.type === "updateMap"
+        ? [operationIndex]
+        : [],
+  );
+  const summaries = plan.summary.mapUpdates;
+  if (operationIndexes.length === 0) {
+    if (summaries === undefined) {
+      return;
+    }
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "updateMap summaries do not match the updateMap operations.",
+    );
+  }
+  if (
+    !Array.isArray(summaries) ||
+    summaries.length !== operationIndexes.length ||
+    summaries.some(
+      (summary, index) =>
+        !isMapUpdateSummaryShape(
+          summary,
+          operationIndexes[index],
+        ),
+    )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "updateMap summaries do not match the updateMap operations.",
+    );
+  }
 }
 
 function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
@@ -562,6 +634,95 @@ function summarizeOperation(
       ...(operation.image === undefined
         ? {}
         : { image: structuredClone(operation.image) }),
+    };
+  }
+
+  if (operation.type === "updateMap") {
+    if (!isValidMapUpdatePatch(operation.patch)) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "updateMap preview contains an invalid patch.",
+        { operationIndex },
+      );
+    }
+    const patch = operation.patch;
+    const requestedFields = MAP_UPDATE_FIELDS.filter(
+      (field) =>
+        Object.prototype.hasOwnProperty.call(
+          patch,
+          field,
+        ),
+    );
+    const updateSummaries =
+      summary.mapUpdates?.filter(
+        (entry) =>
+          entry.operationIndex === operationIndex,
+      ) ?? [];
+    const updateSummary = updateSummaries[0];
+    const expectedChangedFields =
+      MAP_UPDATE_FIELDS.filter((field) =>
+        updateSummary?.changedFields.includes(field),
+      );
+    if (
+      updateSummaries.length !== 1 ||
+      updateSummary === undefined ||
+      !hasExactKeys(
+        updateSummary as unknown as Record<
+          string,
+          unknown
+        >,
+        [
+          "operationIndex",
+          "requestedFields",
+          "changedFields",
+          "wouldChange",
+          "renderingMayChange",
+        ],
+      ) ||
+      !arraysEqual(
+        updateSummary.requestedFields,
+        requestedFields,
+      ) ||
+      !arraysEqual(
+        updateSummary.changedFields,
+        expectedChangedFields,
+      ) ||
+      updateSummary.changedFields.some(
+        (field) => !requestedFields.includes(
+          field as (typeof MAP_UPDATE_FIELDS)[number],
+        ),
+      ) ||
+      updateSummary.wouldChange !==
+        (updateSummary.changedFields.length > 0) ||
+      updateSummary.renderingMayChange !==
+        updateSummary.changedFields.some((field) =>
+          MAP_RENDER_UPDATE_FIELDS.has(field),
+        )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "updateMap preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      destructive: false,
+      warning: updateSummary.renderingMayChange
+        ? "This updates root map properties and may change tile render order or the rendered background; unrelated root members and layer contents are preserved."
+        : updateSummary.wouldChange
+          ? "This updates only root map metadata and preserves unrelated root members and layer contents."
+          : "The requested root map properties already have the exact serialized values.",
+      patch: structuredClone(patch),
+      requestedFields: structuredClone(
+        updateSummary.requestedFields,
+      ),
+      changedFields: structuredClone(
+        updateSummary.changedFields,
+      ),
+      wouldChange: updateSummary.wouldChange,
+      renderingMayChange:
+        updateSummary.renderingMayChange,
     };
   }
 
@@ -1182,6 +1343,130 @@ function summarizeOperation(
     sample: operation.cells.slice(0, 8),
     omittedCellCount: Math.max(0, operation.cells.length - 8),
   };
+}
+
+function isValidMapUpdatePatch(
+  value: unknown,
+): value is Extract<
+  MapEditOperation,
+  { type: "updateMap" }
+>["patch"] {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const patch = value as Record<string, unknown>;
+  const keys = Object.keys(patch);
+  if (
+    keys.length === 0 ||
+    keys.some(
+      (key) =>
+        !(
+          MAP_UPDATE_FIELDS as readonly string[]
+        ).includes(key),
+    )
+  ) {
+    return false;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "renderOrder",
+    ) &&
+    (typeof patch.renderOrder !== "string" ||
+      !MAP_RENDER_ORDERS.has(patch.renderOrder))
+  ) {
+    return false;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "backgroundColor",
+    ) &&
+    patch.backgroundColor !== null &&
+    (typeof patch.backgroundColor !== "string" ||
+      !TILED_COLOR_PATTERN.test(patch.backgroundColor))
+  ) {
+    return false;
+  }
+  return !(
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "className",
+    ) &&
+    (typeof patch.className !== "string" ||
+      !hasAtMostCodePoints(
+        patch.className,
+        MAX_MAP_CLASS_NAME_CODE_POINTS,
+      ))
+  );
+}
+
+function hasAtMostCodePoints(
+  value: string,
+  limit: number,
+): boolean {
+  let count = 0;
+  for (const _codePoint of value) {
+    count += 1;
+    if (count > limit) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isMapUpdateSummaryShape(
+  value: unknown,
+  expectedOperationIndex: number | undefined,
+): value is NonNullable<
+  MapEditPlan["summary"]["mapUpdates"]
+>[number] {
+  if (
+    expectedOperationIndex === undefined ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const summary = value as Record<string, unknown>;
+  return (
+    hasExactKeys(summary, [
+      "operationIndex",
+      "requestedFields",
+      "changedFields",
+      "wouldChange",
+      "renderingMayChange",
+    ]) &&
+    Number.isSafeInteger(summary.operationIndex) &&
+    summary.operationIndex === expectedOperationIndex &&
+    Array.isArray(summary.requestedFields) &&
+    summary.requestedFields.every(
+      (field) => typeof field === "string",
+    ) &&
+    Array.isArray(summary.changedFields) &&
+    summary.changedFields.every(
+      (field) => typeof field === "string",
+    ) &&
+    typeof summary.wouldChange === "boolean" &&
+    typeof summary.renderingMayChange === "boolean"
+  );
+}
+
+function arraysEqual(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (value, index) => value === right[index],
+    )
+  );
 }
 
 function isCanonicalPreviewTileRef(

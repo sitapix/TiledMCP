@@ -352,6 +352,16 @@ describe("buildPreviewScene", () => {
     expect(scene.usedAssetIds).toEqual([]);
   });
 
+  it("does not treat an explicit null render order as an omitted default", () => {
+    const document = map([tileLayer(1, [1])]);
+    document.renderorder = null;
+    expect(() => build(document)).toThrowError(
+      expect.objectContaining({
+        code: "UNSUPPORTED_RENDER_FEATURE",
+      }),
+    );
+  });
+
   it.each([
     ["visible", { visible: "yes" }],
     ["type", { type: 17 }],

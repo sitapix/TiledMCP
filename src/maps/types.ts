@@ -54,6 +54,24 @@ export interface FloodFillOperation {
   tile: TileRef | null;
 }
 
+export type MapRenderOrder =
+  | "right-down"
+  | "right-up"
+  | "left-down"
+  | "left-up";
+
+export interface UpdateMapOperation {
+  type: "updateMap";
+  patch: {
+    renderOrder?: MapRenderOrder;
+    /**
+     * `null` removes the serialized `backgroundcolor` member.
+     */
+    backgroundColor?: string | null;
+    className?: string;
+  };
+}
+
 export interface ReplaceTilesOperation {
   type: "replaceTiles";
   layerId: number;
@@ -206,6 +224,7 @@ export interface DuplicateLayerOperation {
 }
 
 export type MapEditOperation =
+  | UpdateMapOperation
   | SetTilesOperation
   | FillRegionOperation
   | StampPatternOperation
@@ -288,6 +307,13 @@ export interface MapEditPlan {
     createdObjectIds: number[];
     updatedObjectIds: number[];
     deletedObjectIds: number[];
+    mapUpdates?: Array<{
+      operationIndex: number;
+      requestedFields: string[];
+      changedFields: string[];
+      wouldChange: boolean;
+      renderingMayChange: boolean;
+    }>;
     updatedLayerIds?: number[];
     layerUpdates?: Array<{
       operationIndex: number;

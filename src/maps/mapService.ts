@@ -102,6 +102,7 @@ export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
 export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
 export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
+export const MAX_MAP_CLASS_NAME_CODE_POINTS = 1_024;
 export const MAX_REPLACE_TILE_MAPPINGS = 128;
 export const MAX_TILE_OPERATION_SCANS = 1_000_000;
 export const MAX_REPLACE_TILE_SCANS =
@@ -121,6 +122,11 @@ export const MAX_USAGE_RESULT_BYTES = 256 * 1024;
 const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const TILED_COLOR_PATTERN =
   /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+const MAP_PATCH_FIELDS = [
+  "renderOrder",
+  "backgroundColor",
+  "className",
+] as const;
 const LAYER_PATCH_FIELDS = [
   "name",
   "className",
@@ -141,6 +147,22 @@ const FOUR_WAY_TILE_NEIGHBOR_OFFSETS = [
   [0, 1],
 ] as const;
 type LayerPatchField = (typeof LAYER_PATCH_FIELDS)[number];
+type MapPatchField = (typeof MAP_PATCH_FIELDS)[number];
+const MAP_PATCH_JSON_KEYS: Record<MapPatchField, string> = {
+  renderOrder: "renderorder",
+  backgroundColor: "backgroundcolor",
+  className: "class",
+};
+const MAP_RENDER_ORDERS = new Set([
+  "right-down",
+  "right-up",
+  "left-down",
+  "left-up",
+]);
+const MAP_RENDER_FIELDS = new Set<MapPatchField>([
+  "renderOrder",
+  "backgroundColor",
+]);
 const LAYER_PATCH_JSON_KEYS: Record<LayerPatchField, string> = {
   name: "name",
   className: "class",
@@ -432,6 +454,10 @@ export class MapService {
 
   async getSummary(mapPath: string): Promise<Record<string, unknown>> {
     const context = await this.loadEditableContext(mapPath);
+    const rootProperties = summarizeMapRootProperties(
+      context.loaded.document,
+      context.loaded.path,
+    );
     const layers = collectLayerSummaries(
       expectArray(context.loaded.document.layers, `${mapPath}.layers`),
       `${mapPath}.layers`,
@@ -442,6 +468,7 @@ export class MapService {
       format: "tmj",
       orientation: context.orientation,
       infinite: false,
+      ...rootProperties,
       width: context.width,
       height: context.height,
       tileWidth: expectInteger(context.loaded.document.tilewidth, `${mapPath}.tilewidth`),
@@ -2827,6 +2854,7 @@ function validateAndSummarizeOperations(
   const updatedObjectIds = new Set<number>();
   const deletedObjectIds = new Set<number>();
   const updatedLayerIds = new Set<number>();
+  const changedMapMembers = new Set<string>();
   const changedLayerMembers = new Set<string>();
   const addedTilesets: NonNullable<
     MapEditPlan["summary"]["addedTilesets"]
@@ -2842,6 +2870,9 @@ function validateAndSummarizeOperations(
   > = [];
   const tileFloodFills: NonNullable<
     MapEditPlan["summary"]["tileFloodFills"]
+  > = [];
+  const mapUpdates: NonNullable<
+    MapEditPlan["summary"]["mapUpdates"]
   > = [];
   const layerUpdates: NonNullable<
     MapEditPlan["summary"]["layerUpdates"]
@@ -2928,6 +2959,29 @@ function validateAndSummarizeOperations(
         tileCount: operation.tileCount,
         gidSpan: operation.gidSpan,
         firstGid: operation.firstGid,
+      });
+    } else if (operation.type === "updateMap") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["patch", "type"]),
+        `operations[${operationIndex}]`,
+      );
+      const update = updateCommonMap(
+        map,
+        operation.patch,
+        `operations[${operationIndex}].patch`,
+      );
+      for (const field of update.changedFields) {
+        changedMapMembers.add(mapPatchJsonKey(field));
+      }
+      mapUpdates.push({
+        operationIndex,
+        requestedFields: update.requestedFields,
+        changedFields: update.changedFields,
+        wouldChange: update.changedFields.length > 0,
+        renderingMayChange: update.changedFields.some(
+          (field) => MAP_RENDER_FIELDS.has(field),
+        ),
       });
     } else if (operation.type === "setTiles") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
@@ -3721,6 +3775,7 @@ function validateAndSummarizeOperations(
   const patchedSubtreeCount =
     affectedTileLayerIds.size +
     affectedObjectLayerIds.size +
+    changedMapMembers.size +
     changedLayerMembers.size +
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
@@ -3765,6 +3820,9 @@ function validateAndSummarizeOperations(
     createdObjectIds: [...createdObjectIds].sort((left, right) => left - right),
     updatedObjectIds: [...updatedObjectIds].sort((left, right) => left - right),
     deletedObjectIds: [...deletedObjectIds].sort((left, right) => left - right),
+    ...(mapUpdates.length === 0
+      ? {}
+      : { mapUpdates }),
     ...(layerUpdates.length === 0
       ? {}
       : {
@@ -6784,6 +6842,245 @@ function inspectLayerSubtree(
   };
 }
 
+function summarizeMapRootProperties(
+  map: JsonObject,
+  mapPath: string,
+): {
+  renderOrder:
+    | "right-down"
+    | "right-up"
+    | "left-down"
+    | "left-up";
+  backgroundColor?: string;
+  className?: string;
+  classNameTruncated?: true;
+} {
+  const rawRenderOrder =
+    map.renderorder === undefined
+      ? "right-down"
+      : map.renderorder;
+  if (
+    typeof rawRenderOrder !== "string" ||
+    !MAP_RENDER_ORDERS.has(rawRenderOrder)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${mapPath}.renderorder is not a supported orthogonal render order.`,
+      {
+        path: mapPath,
+        renderOrder: rawRenderOrder,
+      },
+    );
+  }
+  const backgroundColor = map.backgroundcolor;
+  if (
+    backgroundColor !== undefined &&
+    (typeof backgroundColor !== "string" ||
+      !TILED_COLOR_PATTERN.test(backgroundColor))
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${mapPath}.backgroundcolor must be #RRGGBB or #AARRGGBB.`,
+      { path: mapPath },
+    );
+  }
+  const className = map.class;
+  if (
+    className !== undefined &&
+    typeof className !== "string"
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${mapPath}.class must be a string.`,
+      { path: mapPath },
+    );
+  }
+  const boundedClassName =
+    className === undefined
+      ? undefined
+      : boundedMapClassName(className);
+  return {
+    renderOrder: rawRenderOrder as
+      | "right-down"
+      | "right-up"
+      | "left-down"
+      | "left-up",
+    ...(backgroundColor === undefined
+      ? {}
+      : { backgroundColor }),
+    ...(boundedClassName === undefined
+      ? {}
+      : {
+          className: boundedClassName.value,
+          ...(boundedClassName.truncated
+            ? { classNameTruncated: true as const }
+            : {}),
+        }),
+  };
+}
+
+function updateCommonMap(
+  map: JsonObject,
+  patch: Extract<
+    MapEditOperation,
+    { type: "updateMap" }
+  >["patch"],
+  context: string,
+): {
+  requestedFields: MapPatchField[];
+  changedFields: MapPatchField[];
+} {
+  if (!isRecordValue(patch)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be an object.`,
+    );
+  }
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must contain at least one field.`,
+    );
+  }
+  const allowedFields = new Set<string>(MAP_PATCH_FIELDS);
+  const unknownKey = keys.find(
+    (key) => !allowedFields.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} contains unsupported field ${unknownKey}.`,
+    );
+  }
+  const requestedFields = MAP_PATCH_FIELDS.filter((field) =>
+    Object.prototype.hasOwnProperty.call(patch, field),
+  );
+  for (const field of requestedFields) {
+    assertMapPatchValue(
+      field,
+      (patch as Record<string, unknown>)[field],
+      `${context}.${field}`,
+    );
+  }
+
+  const changedFields: MapPatchField[] = [];
+  for (const field of requestedFields) {
+    const jsonKey = mapPatchJsonKey(field);
+    const value = (patch as Record<string, unknown>)[field];
+    if (field === "backgroundColor" && value === null) {
+      if (
+        Object.prototype.hasOwnProperty.call(map, jsonKey)
+      ) {
+        delete map[jsonKey];
+        changedFields.push(field);
+      }
+      continue;
+    }
+    const currentValue = map[jsonKey];
+    if (
+      !Object.prototype.hasOwnProperty.call(map, jsonKey) ||
+      stableJson(currentValue as JsonValue) !==
+        stableJson(value as JsonValue)
+    ) {
+      map[jsonKey] = value as JsonValue;
+      changedFields.push(field);
+    }
+  }
+  return { requestedFields, changedFields };
+}
+
+function assertMapPatchValue(
+  field: MapPatchField,
+  value: unknown,
+  context: string,
+): void {
+  if (field === "className") {
+    assertMapClassName(value, context);
+    return;
+  }
+  if (field === "backgroundColor") {
+    if (
+      value !== null &&
+      (typeof value !== "string" ||
+        !TILED_COLOR_PATTERN.test(value))
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context} must be null, #RRGGBB, or #AARRGGBB.`,
+      );
+    }
+    return;
+  }
+  if (
+    typeof value !== "string" ||
+    !MAP_RENDER_ORDERS.has(value)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} is not a supported orthogonal render order.`,
+    );
+  }
+}
+
+function mapPatchJsonKey(field: MapPatchField): string {
+  return MAP_PATCH_JSON_KEYS[field];
+}
+
+function assertMapClassName(
+  value: unknown,
+  context: string,
+): void {
+  if (
+    typeof value !== "string" ||
+    !hasAtMostCodePoints(
+      value,
+      MAX_MAP_CLASS_NAME_CODE_POINTS,
+    )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be a string of at most ${MAX_MAP_CLASS_NAME_CODE_POINTS} Unicode code points.`,
+    );
+  }
+}
+
+function boundedMapClassName(value: string): {
+  value: string;
+  truncated: boolean;
+} {
+  let displayEnd = 0;
+  let codePointCount = 0;
+  for (const codePoint of value) {
+    codePointCount += 1;
+    if (
+      codePointCount >
+      MAX_MAP_CLASS_NAME_CODE_POINTS
+    ) {
+      return {
+        value: value.slice(0, displayEnd),
+        truncated: true,
+      };
+    }
+    displayEnd += codePoint.length;
+  }
+  return { value, truncated: false };
+}
+
+function hasAtMostCodePoints(
+  value: string,
+  limit: number,
+): boolean {
+  let count = 0;
+  for (const _codePoint of value) {
+    count += 1;
+    if (count > limit) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function updateCommonLayer(
   map: JsonObject,
   layerId: number,
@@ -7687,6 +7984,33 @@ function sourceObjectMemberPatchesForSummary(
 ): JsonObjectMemberPatch[] {
   const patches: JsonObjectMemberPatch[] = [];
   const seen = new Set<string>();
+  for (const update of summary.mapUpdates ?? []) {
+    for (const field of update.changedFields) {
+      if (!isMapPatchField(field)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          `Map update summary contains unsupported field ${field}.`,
+          {
+            path: mapPath,
+            field,
+          },
+        );
+      }
+      const patch = {
+        path: [] as JsonSourcePath,
+        key: mapPatchJsonKey(field),
+      };
+      const identity = JSON.stringify([
+        ...patch.path,
+        patch.key,
+      ]);
+      if (seen.has(identity)) {
+        continue;
+      }
+      seen.add(identity);
+      patches.push(patch);
+    }
+  }
   for (const update of summary.layerUpdates ?? []) {
     if (update.changedFields.length === 0) {
       continue;
@@ -7724,6 +8048,14 @@ function sourceObjectMemberPatchesForSummary(
     }
   }
   return patches;
+}
+
+function isMapPatchField(
+  value: string,
+): value is MapPatchField {
+  return (MAP_PATCH_FIELDS as readonly string[]).includes(
+    value,
+  );
 }
 
 function isLayerPatchField(

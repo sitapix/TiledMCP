@@ -25,14 +25,14 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
-`duplicateLayer`、`stampPattern` 和 `floodFill`。
+`duplicateLayer`、`stampPattern`、`floodFill` 和 `updateMap`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、结构化输出 envelope、四项 annotations 和 MCP 客户端契约
-测试；tile/object/layer 写入使用目标子树或 object-member local patch，完整语义复核
+测试；tile/object/layer/map-root 写入使用目标子树或 object-member local patch，完整语义复核
 通过后才提交。完整字段级
 output schema/codegen 尚未完成。当前外部 tileset `assetId` 是由项目路径确定性派生的
 临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
@@ -205,11 +205,43 @@ type MutationResult =
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_list_files` | 列出项目内的 Tiled 资产（地图/图块集/模板/世界），返回路径+类型+基本信息 | `pattern?` |
-| `tiled_get_map_summary` | 地图摘要：尺寸、方向、图层树（含 id/类型/可见性）、tileset 引用表（含 firstgid 区间）、对象统计。**模型动手前必读** | `mapPath` |
+| `tiled_get_map_summary` | 地图摘要：尺寸、方向、规范化 render order、可选背景色/class、图层树（含 id/类型/可见性）、tileset 引用表（含 firstgid 区间）、对象统计。**模型动手前必读** | `mapPath` |
 | `tiled_create_map` | 新建地图 | `mapPath`, `orientation`, `width`, `height`, `tileWidth`, `tileHeight`, `infinite?`, `staggerAxis?`, `staggerIndex?`, `hexSideLength?`, `backgroundColor?` |
-| `tiled_update_map` | 修改地图级属性（renderorder、背景色、class 等） | `mapPath`, `patch` |
+| `tiled_update_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 13 种 `updateMap` operation 实现，修改根级 render order、背景色与 class | `mapPath`, `patch` |
 | `tiled_resize_map` | 调整地图尺寸；只要可能裁剪内容，该工具就静态标为 destructive 并走 change set 批准 | `mapPath`, `width`, `height`, `offsetX?`, `offsetY?` |
 | `tiled_delete_file` | 删除资产文件（**destructive**，只生成待批准 change set） | `path` |
+
+当前已实现的 map-root update wire contract 是
+`{type:"updateMap", patch}`，并属于通用 `tiled_preview_edits.operations` union 的
+第 13 种 operation。它不额外注册 `tiled_update_map` standalone tool，因此 registry
+保持 18 core / 19 with rasterizer。operation 与 patch 都是 strict object；patch 至少
+包含一个字段且只允许：
+
+| operation patch | TMJ root member | 输入约束 |
+|---|---|---|
+| `renderOrder` | `renderorder` | `right-down`、`right-up`、`left-down`、`left-up` |
+| `backgroundColor` | `backgroundcolor` | `#RRGGBB`、`#AARRGGBB` 或删除用 `null` |
+| `className` | `class` | 字符串，最多 1024 个 Unicode code points |
+
+`tiled_get_map_summary` 的 `renderOrder` 总是存在；源文件省略 `renderorder` 时返回 Tiled
+默认 `right-down`。只有根成员存在时才返回 `backgroundColor` / `className`；已有 class
+超过 1024 个 Unicode code points 时按 code-point 边界截断并返回
+`classNameTruncated:true`。无效 render order、无效背景色或非字符串 class 会以
+`INVALID_DOCUMENT` fail closed。
+
+planner 按 operations 数组顺序修改同一工作副本；后面的 `updateMap` 读取前序结果，同一
+字段重复请求时 later wins。change detection 以 raw 根对象 member 是否存在及其 JSON 值
+为准：已有相同值与 `backgroundColor:null` 删除缺失 member 是 no-op；缺失 member 即使
+等于 Tiled 的运行时默认值，显式插入仍是 change。
+
+plan summary 的 `mapUpdates` 项以 `operationIndex` 关联；bounded operation preview
+以 operations 数组位置关联。二者都回显 `requestedFields`、`changedFields`、
+`wouldChange` 与 `renderingMayChange`。只有实际改变 `renderOrder` 或 `backgroundColor` 时
+`renderingMayChange` 才为 true；仅改变 class 或 no-op 不会误报渲染影响。apply 从
+pinned source 重算 operation、summary 与 dependency revisions，只对实际变化的 TMJ
+root member 做 insertion/replacement/deletion。未触及的根成员、layers/tilesets 子树、
+未知字段、BOM、CRLF、缩进、键序和其他词法保持原 bytes；若顺序 operations 最终把根对象
+还原为原值，文件级结果为 `changed:false`，revision 与 exact bytes 不变。
 
 ### 3.2 编辑事务与安全网
 
@@ -869,7 +901,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill、基础 object 编辑、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/移动/复制/删除图层并修改一张有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性并创建/更新/移动/复制/删除图层及编辑有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

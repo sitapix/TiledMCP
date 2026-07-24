@@ -46,6 +46,7 @@ import {
   MAX_DUPLICATE_LAYER_BYTES,
   MAX_FLOOD_FILL_SCANS,
   MAX_LAYER_NAME_LENGTH,
+  MAX_MAP_CLASS_NAME_CODE_POINTS,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
   MAX_STAMP_PATTERN_CELLS,
@@ -134,6 +135,22 @@ const objectCoordinateSchema = z.number().min(-1_000_000_000).max(1_000_000_000)
 const objectExtentSchema = z.number().min(0).max(1_000_000_000);
 const objectStringSchema = z.string().max(1_024);
 const objectOpacitySchema = z.number().min(0).max(1);
+const mapRenderOrderSchema = z.enum([
+  "right-down",
+  "right-up",
+  "left-down",
+  "left-up",
+]);
+const mapClassNameSchema = z.string().refine(
+  (value) =>
+    hasAtMostCodePoints(
+      value,
+      MAX_MAP_CLASS_NAME_CODE_POINTS,
+    ),
+  {
+    message: `Map className may contain at most ${MAX_MAP_CLASS_NAME_CODE_POINTS} Unicode code points`,
+  },
+);
 const layerBlendModeSchema = z.enum([
   "normal",
   "add",
@@ -567,6 +584,25 @@ const deleteObjectsSchema = z
   })
   .strict();
 
+const mapPatchSchema = z
+  .object({
+    renderOrder: mapRenderOrderSchema.optional(),
+    backgroundColor:
+      tiledColorSchema.nullable().optional(),
+    className: mapClassNameSchema.optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Map update patch must contain at least one field",
+  });
+
+const updateMapSchema = z
+  .object({
+    type: z.literal("updateMap"),
+    patch: mapPatchSchema,
+  })
+  .strict();
+
 const layerPatchSchema = z
   .object({
     name: objectStringSchema.optional(),
@@ -662,6 +698,7 @@ const duplicateLayerSchema = z
   .strict();
 
 const mapEditSchema = z.discriminatedUnion("type", [
+  updateMapSchema,
   setTilesSchema,
   fillRegionSchema,
   stampPatternSchema,
@@ -744,6 +781,26 @@ export async function createTiledMcpServer(
           listChanged: true,
         },
         editProfiles: ["finite-orthogonal-tmj-external-atlas-tsj"],
+        mapOperations: ["updateMap"],
+        mapUpdateCapabilities: {
+          fields: [
+            "renderOrder",
+            "backgroundColor",
+            "className",
+          ],
+          renderOrders: [
+            "right-down",
+            "right-up",
+            "left-down",
+            "left-up",
+          ],
+          backgroundColorNullDeletes: true,
+          maxClassNameCodePoints:
+            MAX_MAP_CLASS_NAME_CODE_POINTS,
+          operationOrdering:
+            "sequential-change-set-order-last-write-wins",
+          sourcePatch: "root-object-member-local",
+        },
         tileOperations: [
           "setTiles",
           "fillRegion",
@@ -1149,7 +1206,7 @@ export async function createTiledMcpServer(
     {
       title: "Read a Tiled map summary",
       description:
-        "Reads dimensions, revision, layer tree and external tileset identities before editing.",
+        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema: resultOutputSchema,
       annotations: READ_ONLY,
@@ -1621,7 +1678,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1911,6 +1968,20 @@ function sanitizeErrorValue(
   );
   budget.remaining -= output.length;
   return output;
+}
+
+function hasAtMostCodePoints(
+  value: string,
+  limit: number,
+): boolean {
+  let count = 0;
+  for (const _codePoint of value) {
+    count += 1;
+    if (count > limit) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function truncateOutputString(value: string, maximum: number): string {

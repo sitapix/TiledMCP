@@ -271,6 +271,15 @@ describe("createTiledMcpServer", () => {
         restoreScope: string;
         restoresReferencedDependencies: boolean;
       };
+      mapOperations: string[];
+      mapUpdateCapabilities: {
+        fields: string[];
+        renderOrders: string[];
+        backgroundColorNullDeletes: boolean;
+        maxClassNameCodePoints: number;
+        operationOrdering: string;
+        sourcePatch: string;
+      };
       tileOperations: string[];
       tileStampCapabilities: {
         pattern: string;
@@ -508,6 +517,25 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+      },
+      mapOperations: ["updateMap"],
+      mapUpdateCapabilities: {
+        fields: [
+          "renderOrder",
+          "backgroundColor",
+          "className",
+        ],
+        renderOrders: [
+          "right-down",
+          "right-up",
+          "left-down",
+          "left-up",
+        ],
+        backgroundColorNullDeletes: true,
+        maxClassNameCodePoints: 1_024,
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        sourcePatch: "root-object-member-local",
       },
       tileOperations: [
         "setTiles",
@@ -1813,6 +1841,270 @@ describe("createTiledMcpServer", () => {
         text: expect.stringContaining("Input validation error"),
       }),
     ]);
+  });
+
+  it("previews and applies strict root map-property updates", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    for (const operation of [
+      { type: "updateMap", patch: {} },
+      {
+        type: "updateMap",
+        patch: { renderOrder: "clockwise" },
+      },
+      {
+        type: "updateMap",
+        patch: { backgroundColor: "#abc" },
+      },
+      {
+        type: "updateMap",
+        patch: { className: null },
+      },
+      {
+        type: "updateMap",
+        patch: {
+          className: "🌲".repeat(1_025),
+        },
+      },
+      {
+        type: "updateMap",
+        patch: { unknown: true },
+      },
+      {
+        type: "updateMap",
+        patch: { className: "MapClass" },
+        unexpected: true,
+      },
+    ]) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+
+    const maximumAstralClass =
+      "🌲".repeat(1_024);
+    expect(
+      resultOf<{
+        operations: Array<Record<string, unknown>>;
+      }>(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [
+              {
+                type: "updateMap",
+                patch: {
+                  className: maximumAstralClass,
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    ).toMatchObject({
+      operations: [
+        {
+          type: "updateMap",
+          patch: {
+            className: maximumAstralClass,
+          },
+          changedFields: ["className"],
+        },
+      ],
+    });
+
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(absoluteMapPath);
+    const patch = {
+      renderOrder: "left-up",
+      backgroundColor: "#80112233",
+      className: "WorldMap",
+    } as const;
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        mapUpdates: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "updateMap",
+              patch,
+            },
+          ],
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      expectedRevision: summary.revision,
+      operations: [
+        {
+          type: "updateMap",
+          destructive: false,
+          patch,
+          requestedFields: [
+            "renderOrder",
+            "backgroundColor",
+            "className",
+          ],
+          changedFields: [
+            "renderOrder",
+            "backgroundColor",
+            "className",
+          ],
+          wouldChange: true,
+          renderingMayChange: true,
+        },
+      ],
+      summary: {
+        mapUpdates: [
+          {
+            operationIndex: 0,
+            requestedFields: [
+              "renderOrder",
+              "backgroundColor",
+              "className",
+            ],
+            changedFields: [
+              "renderOrder",
+              "backgroundColor",
+              "className",
+            ],
+            wouldChange: true,
+            renderingMayChange: true,
+          },
+        ],
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(before);
+
+    const applied = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision: preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied.changed).toBe(true);
+    const saved = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    expect(saved).toMatchObject({
+      renderorder: "left-up",
+      backgroundcolor: "#80112233",
+      class: "WorldMap",
+    });
+    const latestSummary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+      [key: string]: unknown;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    expect(latestSummary).toMatchObject({
+      renderOrder: "left-up",
+      backgroundColor: "#80112233",
+      className: "WorldMap",
+    });
+
+    const stalePreview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: latestSummary.revision,
+          expectedDependencyRevisions:
+            latestSummary.dependencyRevisions,
+          operations: [
+            {
+              type: "updateMap",
+              patch: { className: "StalePlan" },
+            },
+          ],
+        },
+      }),
+    );
+    const external = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    external.vendorExternalEdit = { preserve: true };
+    await writeJson(absoluteMapPath, external);
+    const externalBytes = await readFile(absoluteMapPath);
+    const staleApply = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: stalePreview.changeSetId,
+          expectedRevision:
+            stalePreview.expectedRevision,
+        },
+      }),
+    );
+    expect(staleApply).toMatchObject({
+      isError: true,
+      structuredContent: {
+        result: {
+          ok: false,
+          error: { code: "REVISION_CONFLICT" },
+        },
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(
+      externalBytes,
+    );
   });
 
   it("previews and applies strict common layer-property updates", async () => {

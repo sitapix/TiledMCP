@@ -212,7 +212,10 @@ export function buildPreviewScene(
 }
 
 function assertSupportedRenderOrder(map: JsonObject, mapPath: string): void {
-  const renderOrder = map.renderorder ?? "right-down";
+  const renderOrder =
+    map.renderorder === undefined
+      ? "right-down"
+      : map.renderorder;
   if (
     !["right-down", "right-up", "left-down", "left-up"].includes(
       String(renderOrder),

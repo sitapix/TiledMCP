@@ -24,7 +24,8 @@ display/metadata member 做 strict patch；第 8 种、必须独占 change set �
 source insertion 复制 4 类 layer 或完整 Group subtree；第 11 种 `stampPattern` 使用
 明确清空语义、no-clipping bounds 检查和 later-wins 顺序写入；第 12 种
 `floodFill` 从 operation 执行时的 seed 推导 source，支持 null source/target、observed
-GID fail-closed 和有界四向遍历。这些能力都不注册新工具。
+GID fail-closed 和有界四向遍历；第 13 种 `updateMap` 以 strict root-member patch
+修改 render order、背景色和 class。这些能力都不注册新工具。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -73,7 +74,8 @@ tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变�
 `nextobjectid`。全相同 GID 的 stamp、source=target 的 flood 及 mixed-operation net
 no-op 不生成 source patch，保持原始 bytes。
 `updateLayer` 对每个实际改变的 object member 分别做插入、替换或删除，不重写完整 layer
-object。`deleteLayer` 只从目标
+object；`updateMap` 同样只 patch 实际改变的根对象 member，不重写完整 TMJ。
+`deleteLayer` 只从目标
 直接父层的 `layers` array 删除一个 element；`moveLayer` 则由 `JsonArrayMove` 按原始
 source snapshot 中的 source/target container paths 捕获并原样搬运 element bytes。
 创建图层也不替换整个 sibling array，而是
@@ -245,7 +247,8 @@ interface MapView {
 }
 ```
 
-领域操作生成诸如 `SetTileIntent`、`PatchObjectIntent`、`AddTilesetRefIntent` 的封闭联合，
+领域操作生成诸如 `SetTileIntent`、`PatchObjectIntent`、`PatchMapMemberIntent`、
+`AddTilesetRefIntent` 的封闭联合，
 再由文档引擎把 intent 编译为文本 edits。禁止用通用 `{tool, args}` 在底层递归调用其他
 工具；batch 的 operation 必须是显式白名单联合，且禁止嵌套 batch、checkpoint、revert、
 delete-file 和外部进程副作用。
@@ -753,6 +756,44 @@ apply 从 pinned source 重算 seed source、GID validation、四向 traversal�
 net no-op 返回 `changed:false`，不创建无意义 diff，revision 与 source bytes 保持精确
 不变。
 
+### 6.12 Map-root member update
+
+`updateMap` 是 `tiled_preview_edits` 封闭 union 的第 13 种 operation，wire shape 为
+`{type:"updateMap", patch}`。它不注册 standalone `tiled_update_map`，registry 仍为
+18 core / 19 with rasterizer。operation 与 patch 都使用 exact-key schema；patch 必须
+非空，并仅允许 `renderOrder`、`backgroundColor` 与 `className`。
+
+字段到 TMJ 根成员的映射固定为 `renderOrder→renderorder`、
+`backgroundColor→backgroundcolor`、`className→class`。render order 是 Tiled 正交地图
+的封闭四项枚举：`right-down`、`right-up`、`left-down`、`left-up`；背景色只接受
+`#RRGGBB`、`#AARRGGBB` 或删除 member 用的 `null`；class 是最长 1024 个 Unicode code points
+的字符串。额外 key、空 patch、未知 render order、其他颜色表示和过长 class 均在规划前
+拒绝。
+
+map summary 将缺失的 `renderorder` 规范化为 `right-down`，并有界返回存在的
+`backgroundColor` / `className`；超长已有 class 按 Unicode code-point 边界截断并标记
+`classNameTruncated:true`，不会切出 lone surrogate。无效 root render order、背景色或
+非字符串 class 在摘要阶段 fail closed。
+
+planner 按 operations 数组顺序作用于同一 semantic 工作副本，后一个 operation 能观察并
+覆盖前一个 `updateMap` 的结果，因此重复字段使用 later-wins 语义。change detection
+不把 Tiled 默认值折叠进 raw JSON：已有 member 与请求值相同、或删除一个缺失的
+`backgroundcolor` 是 no-op；对缺失 member 显式写入默认等价值仍是 change。
+
+plan summary 的 `mapUpdates` 项按 `operationIndex` 关联，bounded operation preview
+则按 operations 数组位置关联；二者都回显 `requestedFields`、`changedFields`、
+`wouldChange` 和 `renderingMayChange`。最后一个标记只在 `renderOrder` 或
+`backgroundColor` 实际改变时为 true；class-only change 与 no-op 不置位。它提示静态
+渲染结果可能改变，不宣称 renderer 已支持所有受影响语义。
+
+source writer 将最终 changed root fields 编译为 object-member-local
+insert/replace/delete，并按 raw member key 合并顺序 intents；它不序列化根对象，也不
+触碰 `layers`、`tilesets` 或未知 siblings。patch 后仍解析完整 target semantic tree，
+preview 固定 map revision 与完整 dependency read set，apply 重算 operation/summary、
+验证 digest 与 revision pins 后再走 CAS/checkpoint/原子替换。若中间 operations 有变化
+但最终根成员回到 pinned source，文件级结果为 `changed:false`，不生成 source patch，
+revision 和原始 bytes 精确不变。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -994,7 +1035,7 @@ M0 不追求完整地图 CRUD。验收标准：
 - 已实现基础 tile set/fill、绝对坐标的稠密矩形 `stampPattern`、按 encoded GID
   精确且 simultaneous single-pass 的 `replaceTiles`，以及从绝对 seed 推导 source 的
   固定四向 `floodFill`；已实现基础对象
-  create/update/delete，以及 4 类 layer 的公共字段
+  create/update/delete、map 根级 render/background/class `updateMap`，以及 4 类 layer 的公共字段
   `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
   `moveLayer` 与安全 `duplicateLayer`；duplicate 以 preorder high-water IDs 复制完整
   subtree、重连副本内部 typed object/list references，并保留共享 file/image references。
@@ -1018,7 +1059,7 @@ M1 明确拒绝：
 
 这些文件仍可被 raw layer 安全列出、摘要或保留；只有语义写入被拒绝。M1 验收标准是：
 
-> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/公共 layer 字段，并经
+> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/map 根属性/公共 layer 字段，并经
 > preview 移动、复制或 destructive 删除 layer subtree；文件由 Tiled
 > 目标版本打开无警告，并能从 checkpoint 恢复。合作写者的 revision 冲突不得覆盖用户内容；
 > 未经中介的外部 GUI 保存竞态必须在 capabilities 中如实标为不受严格 CAS 保护。
@@ -1038,6 +1079,7 @@ M1 明确拒绝：
 | JS 有符号位或 hex flag 误解 | tile/朝向错误 | 单一 GID codec、orientation union、`>>> 0` | 4 flags 全组合、边界 GID、hex/non-hex property tests |
 | replacement 忽略 transform 或发生 mapping 级联 | 错换朝向、swap/cycle 结果错误 | encoded-GID exact match、single-pass lookup、共享 scan / 独立实际 write 计数 | identity/flags 精确匹配、A→B/B→C、swap、null target、零命中、预算边界 |
 | flood fill 忽略 transform、误用对角连通或扫描无界 | 错填区域、CPU/写入过量或坏 GID 隐藏 | 固定四向、seed 完整 encoded-GID match、observed GID reverse validation、与 replacement 共享实际读取预算及 tile write cap | 四向/纯对角、非零 origin、flags 隔离、null source/target、source=target scan-one no-op、重复边界读取、malformed observed GID、shared scan/write 边界、later-wins |
+| map-root patch 接受宽松 key、吞掉默认值 intent 或重写完整 TMJ | 错误字段落盘、渲染变化漏报或无关 source diff | strict/nonempty schema、member existence-aware detection、root-member-local patch、完整 target tree 复核 | 4 render orders、颜色写入/删除、class 长度边界、extra/empty rejection、later-wins、rendering flag、BOM/CRLF、net no-op、tamper/stale revision |
 | layer patch 吞掉默认值 intent 或重写完整 layer | 字段未落盘或无关 source diff 爆炸 | member existence-aware change detection、object-member local patch、完整 target tree 复核 | 4 类 layer、缺失默认字段插入、tint 删除/no-op、13 modes、BOM/CRLF、mixed batch、stale revision |
 | layer subtree 删除提升 children、留下 object 悬挂引用或降低 ID 高水位 | 层级/逻辑损坏、未来 ID 复用 | exclusive plan、显式 descendant confirmation、surviving-document typed-reference scan、array-element local patch | leaf/empty/non-empty Group、direct/list/class refs、locked warning、32-ID samples、high-water marks、BOM/CRLF、tamper/stale revision |
 | layer subtree move 发生同父 off-by-one、cycle、深度溢出或 source lexeme 丢失 | 绘制顺序错误、层级损坏或不可逆 diff | final-index contract、exclusive plan、cycle/depth-64 guard、source-snapshot `JsonArrayMove`、完整 target tree 复核 | 同父前后/首尾/no-op、跨父空目标/root omission、self/descendant、effective lock、32-ID sample、BOM/CRLF/unknown lexeme、target path shift、tamper/stale revision |
