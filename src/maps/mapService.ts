@@ -104,6 +104,8 @@ export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
 export const MAX_REPLACE_TILE_MAPPINGS = 128;
 export const MAX_REPLACE_TILE_SCANS = 1_000_000;
+export const MAX_STAMP_PATTERN_EDGE = 256;
+export const MAX_STAMP_PATTERN_CELLS = 16_384;
 export const DEFAULT_USAGE_TOP_TILE_LIMIT = 64;
 export const MAX_USAGE_TOP_TILE_LIMIT = 128;
 export const MAX_USAGE_SCAN_VALUES = 1_000_000;
@@ -2825,6 +2827,9 @@ function validateAndSummarizeOperations(
   const tileReplacements: NonNullable<
     MapEditPlan["summary"]["tileReplacements"]
   > = [];
+  const tileStamps: NonNullable<
+    MapEditPlan["summary"]["tileStamps"]
+  > = [];
   const layerUpdates: NonNullable<
     MapEditPlan["summary"]["layerUpdates"]
   > = [];
@@ -2971,6 +2976,149 @@ function validateAndSummarizeOperations(
           writeLayerGid(layer, x, y, gid);
         }
       }
+    } else if (operation.type === "stampPattern") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set([
+          "layerId",
+          "pattern",
+          "type",
+          "x",
+          "y",
+        ]),
+        `operations[${operationIndex}]`,
+      );
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
+      assertSafeInteger(
+        operation.x,
+        `operations[${operationIndex}].x`,
+      );
+      assertSafeInteger(
+        operation.y,
+        `operations[${operationIndex}].y`,
+      );
+      const pattern = readStampPattern(
+        operation.pattern,
+        operationIndex,
+      );
+      const height = pattern.length;
+      const width = pattern[0]?.length ?? 0;
+      const patternCellCount = width * height;
+      if (
+        !Number.isSafeInteger(operation.x + width) ||
+        !Number.isSafeInteger(operation.y + height)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}] stamp endpoints must be safe integers.`,
+        );
+      }
+      if (
+        cellWrites + patternCellCount >
+        MAX_CELL_WRITES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+          {
+            limit: MAX_CELL_WRITES,
+            actual: cellWrites + patternCellCount,
+          },
+        );
+      }
+      const layer = findTileLayer(
+        map,
+        operation.layerId,
+        mapPath,
+      );
+      assertRegionInsideLayer(
+        layer,
+        operation.x,
+        operation.y,
+        width,
+        height,
+      );
+
+      const resolvedRows: number[][] = [];
+      let nonEmptyCellCount = 0;
+      let clearCellCount = 0;
+      let transformedCellCount = 0;
+      for (const row of pattern) {
+        const resolvedRow: number[] = [];
+        for (const tile of row) {
+          const gid = tileRefToGid(
+            tile,
+            orientation,
+            bindings,
+          );
+          resolvedRow.push(gid);
+          if (gid === 0) {
+            clearCellCount += 1;
+          } else {
+            nonEmptyCellCount += 1;
+            if (
+              decodeGid(gid, orientation).transform
+                .rawFlags !== 0
+            ) {
+              transformedCellCount += 1;
+            }
+          }
+        }
+        resolvedRows.push(resolvedRow);
+      }
+
+      let changedCellCount = 0;
+      for (
+        let rowIndex = 0;
+        rowIndex < resolvedRows.length;
+        rowIndex += 1
+      ) {
+        const row = resolvedRows[rowIndex] as number[];
+        for (
+          let columnIndex = 0;
+          columnIndex < row.length;
+          columnIndex += 1
+        ) {
+          const gid = row[columnIndex] as number;
+          const x = operation.x + columnIndex;
+          const y = operation.y + rowIndex;
+          const currentGid = readLayerGid(layer, x, y);
+          gidToTileRef(
+            currentGid,
+            orientation,
+            bindings,
+          );
+          if (currentGid === gid) {
+            continue;
+          }
+          writeLayerGid(layer, x, y, gid);
+          changedCellCount += 1;
+        }
+      }
+      if (changedCellCount > 0) {
+        affectedLayerIds.add(layer.id);
+        affectedTileLayerIds.add(layer.id);
+      }
+      cellWrites += patternCellCount;
+      tileStamps.push({
+        operationIndex,
+        layerId: layer.id,
+        region: {
+          x: operation.x,
+          y: operation.y,
+          width,
+          height,
+        },
+        cellCount: patternCellCount,
+        nonEmptyCellCount,
+        clearCellCount,
+        transformedCellCount,
+        changedCellCount,
+        wouldChange: changedCellCount > 0,
+      });
     } else if (operation.type === "replaceTiles") {
       assertPositiveInteger(
         operation.layerId,
@@ -3370,6 +3518,9 @@ function validateAndSummarizeOperations(
     ...(tileReplacements.length === 0
       ? {}
       : { tileReplacements }),
+    ...(tileStamps.length === 0
+      ? {}
+      : { tileStamps }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
     ...(createdLayers.length === 0 ? {} : { createdLayers }),
     ...(deletedLayers.length === 0 ? {} : { deletedLayers }),
@@ -4408,17 +4559,44 @@ function tileRefToGid(
   if (!isRecordValue(tile)) {
     throw new TiledMcpError("INVALID_ARGUMENT", "tile must be a TileRef or null.");
   }
+  const tileRecord =
+    tile as unknown as Record<string, unknown>;
+  assertExactObjectKeys(
+    tileRecord,
+    new Set([
+      "localId",
+      "tileset",
+      ...(Object.prototype.hasOwnProperty.call(
+        tileRecord,
+        "transform",
+      )
+        ? ["transform"]
+        : []),
+    ]),
+    "tile",
+  );
   if (
     !isRecordValue(tile.tileset) ||
     tile.tileset.kind !== "external" ||
-    typeof tile.tileset.assetId !== "string"
+    typeof tile.tileset.assetId !== "string" ||
+    tile.tileset.assetId.length === 0 ||
+    tile.tileset.assetId.length > 128
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
       "tile.tileset must identify an external tileset asset.",
     );
   }
+  assertExactObjectKeys(
+    tile.tileset as unknown as Record<string, unknown>,
+    new Set(["assetId", "kind"]),
+    "tile.tileset",
+  );
   assertSafeInteger(tile.localId, "tile.localId");
+  assertTileTransformInput(
+    tileRecord.transform,
+    orientation,
+  );
   const binding = bindings.find((candidate) => candidate.assetId === tile.tileset.assetId);
   if (!binding) {
     throw new TiledMcpError(
@@ -4435,6 +4613,82 @@ function tileRefToGid(
     );
   }
   return encodeGid(binding.firstGid + tile.localId, orientation, tile.transform);
+}
+
+function assertTileTransformInput(
+  value: unknown,
+  orientation: MapOrientation,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecordValue(value)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "tile.transform must be an object when present.",
+    );
+  }
+  const transform = value as Record<string, unknown>;
+  const hexagonal = orientation === "hexagonal";
+  const booleanFields = hexagonal
+    ? ["flipH", "flipV", "rotate60", "rotate120"]
+    : ["flipD", "flipH", "flipV"];
+  const allowedFields = new Set([
+    "kind",
+    "rawFlags",
+    ...booleanFields,
+  ]);
+  const unexpectedField = Object.keys(transform).find(
+    (key) => !allowedFields.has(key),
+  );
+  if (unexpectedField !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `tile.transform contains unsupported field ${unexpectedField}.`,
+    );
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(
+      transform,
+      "kind",
+    ) &&
+    transform.kind !==
+      (hexagonal ? "hexagonal" : "orthogonal")
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `tile.transform.kind must be ${hexagonal ? "hexagonal" : "orthogonal"}.`,
+    );
+  }
+  for (const field of booleanFields) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        transform,
+        field,
+      ) &&
+      typeof transform[field] !== "boolean"
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `tile.transform.${field} must be a boolean.`,
+      );
+    }
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(
+      transform,
+      "rawFlags",
+    ) &&
+    (typeof transform.rawFlags !== "number" ||
+      !Number.isSafeInteger(transform.rawFlags) ||
+      transform.rawFlags < 0 ||
+      transform.rawFlags > 0xffffffff)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "tile.transform.rawFlags must be an unsigned 32-bit integer.",
+    );
+  }
 }
 
 function gidToTileRef(
@@ -7327,6 +7581,76 @@ function readReplaceTilesRegion(
   };
 }
 
+function readStampPattern(
+  value: unknown,
+  operationIndex: number,
+): Array<Array<TileRef | null>> {
+  const context = `operations[${operationIndex}].pattern`;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be a non-empty two-dimensional array.`,
+    );
+  }
+  if (value.length > MAX_STAMP_PATTERN_EDGE) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A stamp pattern may have at most ${MAX_STAMP_PATTERN_EDGE} rows.`,
+      {
+        limit: MAX_STAMP_PATTERN_EDGE,
+        actual: value.length,
+      },
+    );
+  }
+  const firstRow = value[0];
+  if (!Array.isArray(firstRow) || firstRow.length === 0) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}[0] must be a non-empty row.`,
+    );
+  }
+  const width = firstRow.length;
+  if (width > MAX_STAMP_PATTERN_EDGE) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A stamp pattern row may have at most ${MAX_STAMP_PATTERN_EDGE} cells.`,
+      {
+        limit: MAX_STAMP_PATTERN_EDGE,
+        actual: width,
+      },
+    );
+  }
+  for (const [rowIndex, row] of value.entries()) {
+    if (!Array.isArray(row) || row.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}[${rowIndex}] must be a non-empty row.`,
+      );
+    }
+    if (row.length !== width) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context} must be rectangular; row ${rowIndex} has ${row.length} cells instead of ${width}.`,
+      );
+    }
+  }
+  const cellCount = value.length * width;
+  if (
+    !Number.isSafeInteger(cellCount) ||
+    cellCount > MAX_STAMP_PATTERN_CELLS
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A stamp pattern may contain at most ${MAX_STAMP_PATTERN_CELLS} cells.`,
+      {
+        limit: MAX_STAMP_PATTERN_CELLS,
+        actual: cellCount,
+      },
+    );
+  }
+  return value as Array<Array<TileRef | null>>;
+}
+
 function assertRegionInsideLayer(
   layer: TileLayerView,
   x: number,
@@ -7334,11 +7658,45 @@ function assertRegionInsideLayer(
   width: number,
   height: number,
 ): void {
+  const regionEndX = x + width;
+  const regionEndY = y + height;
+  if (
+    !Number.isSafeInteger(regionEndX) ||
+    !Number.isSafeInteger(regionEndY)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Region endpoints must be safe integers.",
+      {
+        region: { x, y, width, height },
+      },
+    );
+  }
+  const layerEndX = layer.x + layer.width;
+  const layerEndY = layer.y + layer.height;
+  if (
+    !Number.isSafeInteger(layerEndX) ||
+    !Number.isSafeInteger(layerEndY)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Tile layer ${layer.id} bounds exceed the safe integer range.`,
+      {
+        layerId: layer.id,
+        layerBounds: {
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+        },
+      },
+    );
+  }
   if (
     x < layer.x ||
     y < layer.y ||
-    x + width > layer.x + layer.width ||
-    y + height > layer.y + layer.height
+    regionEndX > layerEndX ||
+    regionEndY > layerEndY
   ) {
     throw new TiledMcpError(
       "REGION_OUT_OF_BOUNDS",

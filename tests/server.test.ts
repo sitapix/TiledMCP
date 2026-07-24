@@ -272,6 +272,16 @@ describe("createTiledMcpServer", () => {
         restoresReferencedDependencies: boolean;
       };
       tileOperations: string[];
+      tileStampCapabilities: {
+        pattern: string;
+        origin: string;
+        nullSemantics: string;
+        skipSentinel: boolean;
+        clipping: boolean;
+        transformEncoding: string;
+        operationOrdering: string;
+        sourcePatch: string;
+      };
       tileReplacementCapabilities: {
         match: string;
         transformMatch: string;
@@ -435,6 +445,8 @@ describe("createTiledMcpServer", () => {
         maxUsageResultBytes: number;
         maxReplaceTileMappings: number;
         maxReplaceTileScans: number;
+        maxStampPatternEdge: number;
+        maxStampPatternCells: number;
         maxCreateTileLayerCells: number;
         maxLayerNameLength: number;
         maxNativePreviewBytes: number;
@@ -485,7 +497,25 @@ describe("createTiledMcpServer", () => {
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
       },
-      tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
+      tileOperations: [
+        "setTiles",
+        "fillRegion",
+        "stampPattern",
+        "replaceTiles",
+      ],
+      tileStampCapabilities: {
+        pattern:
+          "dense-non-empty-rectangular-row-major",
+        origin: "absolute-tile-coordinates",
+        nullSemantics: "clear-target-cell",
+        skipSentinel: false,
+        clipping: false,
+        transformEncoding:
+          "standard-tile-ref-encoded-gid",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        sourcePatch: "tile-layer-data-member-local",
+      },
       tileReplacementCapabilities: {
         match: "exact-encoded-gid",
         transformMatch: "exact",
@@ -711,6 +741,8 @@ describe("createTiledMcpServer", () => {
         maxUsageResultBytes: 256 * 1024,
         maxReplaceTileMappings: 128,
         maxReplaceTileScans: 1_000_000,
+        maxStampPatternEdge: 256,
+        maxStampPatternCells: 16_384,
         maxCreateTileLayerCells: 100_000,
         maxLayerNameLength: 1_024,
         maxNativePreviewBytes: 8 * 1024 * 1024,

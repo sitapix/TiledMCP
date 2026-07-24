@@ -24,7 +24,8 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 的 direct Resource：`tiled://guide`，通过 `resources/list` 发现并由 `resources/read`
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
-`updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer` 和 `moveLayer`。
+`updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
+`duplicateLayer` 和 `stampPattern`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
@@ -463,11 +464,11 @@ patch，验证 digest/revision pins/raw-byte CAS，并在锁内完成写前 chec
 |---|---|---|
 | `tiled_get_region` | 读取矩形区域的 tile。`format: "json"` 返回 `TileRef \| null` 二维数组；`format: "ascii"`（默认）返回单字符网格 + 图例，图例中的每项仍映射到完整 `TileRef`。图像看外观、ASCII 看结构、JSON 看精确值 | `mapPath`, `layerId`, `region`, `format?` |
 | `tiled_set_tiles` | 批量设置稀疏 tile 列表（一次调用可跨多个不相邻位置） | `mapPath`, `layerId`, `tiles: [{x, y, tile|null}]` |
-| `tiled_fill_region` | 矩形区域填充（单一 tile 或按 pattern 平铺一个小图案） | `mapPath`, `layerId`, `x`, `y`, `width`, `height`, `tile|pattern` |
+| `tiled_fill_region` | 矩形区域填充单一 tile；当前等价能力通过 `fillRegion` operation 实现，`tile:null` 可清空整块 | `mapPath`, `layerId`, `x`, `y`, `width`, `height`, `tile` |
 | `tiled_flood_fill` | 油漆桶：从某点开始填充相连的同值区域 | `mapPath`, `layerId`, `x`, `y`, `tile` |
 | `tiled_replace_tiles` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的 `replaceTiles` operation 实现：在全 layer/区域内同时应用多组精确替换 | `mapPath`, `layerId`, `mappings: [{from, to}]`, `region?` |
-| `tiled_clear_region` | 清空矩形区域（后续候选，可由 fill null 实现，独立工具更直观） | `mapPath`, `layerId`, `region` |
-| `tiled_stamp_pattern` | 盖章：把一个内联的二维 tile 图案整体戳到指定位置（后续候选）。成型的多图层复用结构走预制件（3.5） | `mapPath`, `layerId`, `x`, `y`, `pattern: TileRef[][]` |
+| `tiled_clear_region` | 候选独立入口；当前直接使用 `fillRegion` + `tile:null` 清空矩形，不新增 operation/tool | `mapPath`, `layerId`, `region` |
+| `tiled_stamp_pattern` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 11 种 `stampPattern` 盖章。成型的多图层复用结构走预制件（3.5） | `mapPath`, `layerId`, `x`, `y`, `pattern: (TileRef|null)[][]` |
 | `tiled_select` | 创建显式选区：按 tile 值、魔棒、多边形或已有 selectionId 组合；返回绑定 map revision、客户端连接和 TTL 的 `selectionId`，后续通过 `Region.kind = "selection"` 显式引用 | `mapPath`, `layerId`, `mode`, `args` |
 
 其中 `tile` 参数统一为 `TileRef` 或持久化注册过的语义名（见 3.10）；语义名解析结果必须在预览中回显为完整 `TileRef`，有歧义时拒绝执行。
@@ -488,6 +489,32 @@ layer bounds 内；省略时精确采用该 layer 的 `x/y/width/height` bounds�
 最多 128 组 mapping，一个 change set 的所有 replacement operation 合计最多扫描
 1,000,000 个 cell；只有实际替换才计入所有 tile operations 共用的 100,000-cell 写入
 上限。零命中是合法 no-op，preview 报告 `replacedCellCount:0`，apply 不改写文档。
+
+当前已实现的 stamp wire contract 是
+`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它是通用
+`tiled_preview_edits.operations` union 的第 11 种 operation，不额外注册
+`tiled_stamp_pattern` 工具，因此 registry 保持 18 core / 19 with rasterizer。
+`pattern` 必须是非空、稠密、矩形、row-major 的二维数组：外层和每行均非空、所有行等宽，
+不接受 sparse hole/`undefined`。宽和高各最多 256，总格数最多 16,384。
+
+`x/y` 是 pattern 左上角在 layer 空间中的绝对 tile 坐标。由它和矩阵宽高得到的目标矩形
+必须完整落在目标有限 tile layer 的 `x/y/width/height` bounds 内；服务端不做 clipping。
+矩阵的每一项都是一次显式写入：`TileRef` 编码并写入完整 GID，`null` 写入 GID 0、明确
+清空目标格；`null` 不是 transparent/skip，当前也没有其他 skip sentinel。需要清空整个
+矩形时仍可使用 `fillRegion` + `tile:null`。
+
+一个 change set 严格按 operations 顺序执行，后面的 operation 读取前面 operation 的结果；
+重叠位置由 later operation 决定最终值。该规则同时覆盖 stamp、`setTiles`、
+`fillRegion`、`replaceTiles` 与其他 stamp；`replaceTiles` 仅在自己的 operation 内保持
+simultaneous single-pass。每个 stamp 的全部 `cellCount`（包括写入相同值的格子）都计入
+所有 tile operations 共用的 100,000-cell change-set 写入上限。
+
+preview 回显规范化 `region`、`cellCount`、非空/清空/变换/实际变化 count 与
+`wouldChange`。其 `sample` 只按 pattern 的 row-major 顺序返回前 8 个绝对
+`{x,y,tile}`，其中保留 `tile:null`，并以 `omittedCellCount = cellCount - sample.length`
+明确截断。source writer 只局部替换目标 tile layer 的 `data`。若每个 pattern entry
+编码后的 GID 都已等于目标值，则该 operation 是 no-op；最终全 plan 也无其他变化时 apply
+返回 `changed:false`，revision 与原文件 bytes 完全不变。
 
 ### 3.5 程序化生成与预制件（后续重点）
 
@@ -807,7 +834,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/移动/复制/删除图层并修改一张有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace、基础 object 编辑、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/移动/复制/删除图层并修改一张有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

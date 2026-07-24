@@ -12,14 +12,16 @@ tile edits、rectangle/point 对象增删改、stdio MCP 和 `tmxrasterizer` ada
 并有自动化测试。有全局扫描/结果预算的 atlas TSJ semantic projection、显式稀疏
 `tiles[]` semantic search，以及带 ID、分页且有图像预算的 atlas tileset sheet 也已落地。
 tile edits 现包括 `setTiles`、`fillRegion` 与通用 preview union 中的
-`replaceTiles`；replacement 对包含 transform/raw flags 的完整 encoded GID 做精确匹配，
-一个 operation 内 simultaneous single-pass 求值，并分别限制 mapping、扫描和实际写入。
+`replaceTiles`、`stampPattern`；replacement 对包含 transform/raw flags 的完整 encoded
+GID 做精确匹配，一个 operation 内 simultaneous single-pass 求值，并分别限制 mapping、
+扫描和实际写入；stamp 则在绝对坐标写入有界的稠密矩形 `(TileRef|null)[][]`。
 同一通用 union 的第 7 种 `updateLayer` operation 已支持对 4 类 layer 的公共
 display/metadata member 做 strict patch；第 8 种、必须独占 change set 的
 `deleteLayer` 删除一个 leaf/空 Group 或经显式确认的完整 Group subtree；第 9 种、同样
 独占的 `moveLayer` 调整 sibling 顺序或把完整 subtree 移入/移出 Group；第 10 种
 `duplicateLayer` 则以高水位 preorder 新 ID、安全 object-reference 重连和 compact
-source insertion 复制 4 类 layer 或完整 Group subtree。这些能力都不注册新工具。
+source insertion 复制 4 类 layer 或完整 Group subtree；第 11 种 `stampPattern` 使用
+明确清空语义、no-clipping bounds 检查和 later-wins 顺序写入。这些能力都不注册新工具。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -63,9 +65,11 @@ native map preview v1 也已落地：它在进程内安全解码实际使用的 
 tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变换与 map/TSJ/image
 快照 revision。复杂 Tiled 绘制语义仍由可选 `tmxrasterizer` 覆盖。
 
-当前写回已经使用 JSON syntax tree 生成局部替换：tile 操作只替换目标 `data`，对象操作
-只替换目标 `objects`，创建对象时另替换 `nextobjectid`。`updateLayer` 对每个实际改变的
-object member 分别做插入、替换或删除，不重写完整 layer object。`deleteLayer` 只从目标
+当前写回已经使用 JSON syntax tree 生成局部替换：包括 `stampPattern` 在内的 tile 操作
+只替换目标 `data`，对象操作只替换目标 `objects`，创建对象时另替换
+`nextobjectid`。全相同 GID 的 stamp 不生成 source patch，net no-op 保持原始 bytes。
+`updateLayer` 对每个实际改变的 object member 分别做插入、替换或删除，不重写完整 layer
+object。`deleteLayer` 只从目标
 直接父层的 `layers` array 删除一个 element；`moveLayer` 则由 `JsonArrayMove` 按原始
 source snapshot 中的 source/target container paths 捕获并原样搬运 element bytes。
 创建图层也不替换整个 sibling array，而是
@@ -658,6 +662,41 @@ preview 固定 map revision、完整 dependency revision set、operation 与 dig
 后才进入同一进程/文件锁、raw-byte CAS、写前 content-addressed checkpoint 和同目录原子
 替换；stale revision、tampered plan 或被外部改动的 raw bytes 都在写盘前拒绝。
 
+### 6.10 Dense tile-pattern stamp
+
+`stampPattern` 是 `tiled_preview_edits` 封闭 union 的第 11 种 operation，wire shape 为
+`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有 standalone
+`tiled_stamp_pattern`，registry 仍为 18 core / 19 with rasterizer。与 `setTiles` /
+`fillRegion` / `replaceTiles` 一样，它只接受 finite orthogonal、numeric-array tile
+layer；`layerId` 是正整数，`x/y` 是 pattern 左上角的绝对 tile 坐标。
+
+schema 要求 `pattern` 是非空、稠密、矩形、row-major 的二维数组：外层至少一行、每行至少
+一项、所有行等宽，wire 中不能出现 sparse hole/`undefined`。宽和高分别不超过 256，
+`width × height` 不超过 16,384。planner 用 checked arithmetic 从 origin 和矩阵尺寸
+计算半开目标矩形，并要求它完整落在 layer 的 `x/y/width/height` bounds 内；不会把越界
+图案裁剪成部分成功。
+
+每个矩阵 entry 都是写入意图。`TileRef` 经当前 tileset binding 和 orientation 编码为完整
+unsigned GID，保留显式 transform/raw flags；`null` 编码为 GID 0，明确清空目标格，不是
+transparent/skip。当前不存在其他 skip sentinel，因此 pattern 的 `cellCount` 就是其覆盖和
+预算计数。清空纯矩形仍可直接用 `fillRegion` + `tile:null`，无须新增 `clearRegion`。
+
+planner 按 change-set operations 的数组顺序修改同一工作副本：后面的 operation 看到前面
+的结果，重叠时 later wins。该规则适用于 stamp 与 `setTiles`、`fillRegion`、
+`replaceTiles`、其他 stamp 的任意交叠；`replaceTiles` 的 simultaneous single-pass 只描述
+它自身对进入该 operation 时快照的 mapping 求值。每个 stamp 的所有 pattern cells，即使
+编码后与当前 GID 相同，也计入所有 tile operations 共用的 100,000-cell write budget。
+
+plan 的 `tileStamps` summary 固定 operation/layer、规范化 region、`cellCount`、
+`nonEmptyCellCount`、`clearCellCount`、`transformedCellCount`、`changedCellCount` 与
+`wouldChange`。面向批准的 bounded operation preview 另按 row-major 返回至多 8 个绝对
+`{x,y,tile}` `sample`（包括 `tile:null`），并以
+`omittedCellCount = cellCount - sample.length` 明示截断；调用方不能把 sample 当作完整
+图案。apply 重算同一 summary 和 bounds/GID/budget 校验后，只为实际变化的目标 tile layer
+生成 `data`-member-local source patch。若全部目标 GID 已相同，stamp 的
+`changedCellCount` 为 0、`wouldChange:false`；整个 plan 也无其他变化时返回
+`changed:false`，不创建 checkpoint、不改变 revision，并保留文件 exact bytes。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -808,6 +847,7 @@ checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`be
 | 单张地图引用的 TSJ 原始 bytes 合计 | 64 MiB |
 | 单 tile layer / 单次总解压 | 16M cells / 256 MiB |
 | 单 change set tile 写入 | 100,000 cells |
+| 单个 `stampPattern` operation | 单边 256 cells；总计 16,384 cells；preview sample 8 |
 | 单个 `replaceTiles` operation | 128 mappings |
 | 单 change set `replaceTiles` 扫描 | 1,000,000 cells |
 | usage analysis 扫描 / distinct aggregation | 1,000,000 cells+objects / 100,000 tiles |
@@ -895,8 +935,9 @@ M0 不追求完整地图 CRUD。验收标准：
 
 - 文件列表、地图摘要、tileset 摘要、whole-map tile usage analysis、显式 tile metadata
   精确检索和区域读取。
-- 已实现基础 tile set/fill，以及按 encoded GID 精确、simultaneous single-pass 的
-  `replaceTiles`；已实现基础对象 create/update/delete，以及 4 类 layer 的公共字段
+- 已实现基础 tile set/fill、绝对坐标的稠密矩形 `stampPattern`，以及按 encoded GID
+  精确、simultaneous single-pass 的 `replaceTiles`；已实现基础对象
+  create/update/delete，以及 4 类 layer 的公共字段
   `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
   `moveLayer` 与安全 `duplicateLayer`；duplicate 以 preorder high-water IDs 复制完整
   subtree、重连副本内部 typed object/list references，并保留共享 file/image references。

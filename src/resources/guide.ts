@@ -151,10 +151,10 @@ or silently repairs a stale counter.
 ## Preview, approve, then apply
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
-\`fillRegion\`, and \`replaceTiles\`; supported object operations are
-\`createObject\`, \`updateObject\`, and \`deleteObjects\`; supported layer
-operations are \`updateLayer\`, \`deleteLayer\`, \`moveLayer\`, and
-\`duplicateLayer\`.
+\`fillRegion\`, \`replaceTiles\`, and \`stampPattern\`; supported object
+operations are \`createObject\`, \`updateObject\`, and \`deleteObjects\`;
+supported layer operations are \`updateLayer\`, \`deleteLayer\`,
+\`moveLayer\`, and \`duplicateLayer\`.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
@@ -337,6 +337,37 @@ cells. Only actual matches count toward the 100,000 total tile-cell write
 limit shared with set/fill. Zero matches are a valid no-op: inspect the
 preview's scanned and replaced counts, and expect apply not to rewrite the
 map.
+
+Use
+\`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
+dense rectangular tile stamp. This is the eleventh generic operation, not a
+standalone tool, so the registry remains 18 core tools or 19 with the
+rasterizer. The row-major pattern must be non-empty and rectangular: every
+row is non-empty and has the same width, with no sparse holes or
+\`undefined\`. Width and height are each capped at 256 and the complete
+pattern at 16,384 cells.
+
+\`x\` and \`y\` are the absolute tile coordinates of the pattern's top-left
+cell. The complete rectangle must fit the target tile layer; no clipping is
+performed. Every entry writes its target: a \`TileRef\` writes its complete
+encoded GID, while \`null\` explicitly clears the cell to GID zero. Null is
+not transparent and does not skip a cell; there is no skip sentinel. To clear
+a plain rectangle, \`fillRegion\` with \`tile:null\` remains available.
+
+Operations execute in change-set order and later overlapping operations win.
+This applies across stamps, set/fill, and replacement; replacement remains
+simultaneous only within its own single-pass mapping operation. Every pattern
+cell counts toward the shared 100,000-cell write budget, even when the target
+already has the same GID.
+
+The preview includes normalized region and cell/change counts. Its
+\`sample\` contains only the first eight row-major cells as absolute
+\`{x,y,tile}\` entries, including null entries; use \`omittedCellCount\` and
+the complete counts rather than treating that sample as the whole pattern.
+Apply uses a member-local patch for only the target layer's \`data\`. If all
+encoded GIDs already match, the stamp is a no-op; when the whole plan is also
+a no-op, apply returns \`changed:false\` and preserves the exact file bytes
+and revision.
 
 1. Call \`tiled_preview_edits\` with:
    - the project-relative \`mapPath\`;

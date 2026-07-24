@@ -84,7 +84,25 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         optionalExactReadSetPins: true,
         defaultTopTileLimit: 64,
       },
-      tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
+      tileOperations: [
+        "setTiles",
+        "fillRegion",
+        "stampPattern",
+        "replaceTiles",
+      ],
+      tileStampCapabilities: {
+        pattern:
+          "dense-non-empty-rectangular-row-major",
+        origin: "absolute-tile-coordinates",
+        nullSemantics: "clear-target-cell",
+        skipSentinel: false,
+        clipping: false,
+        transformEncoding:
+          "standard-tile-ref-encoded-gid",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        sourcePatch: "tile-layer-data-member-local",
+      },
       layerOperations: [
         "updateLayer",
         "deleteLayer",
@@ -153,6 +171,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxSerializedDuplicateBytes: 16 * 1024 * 1024,
         maxReplaceTileMappings: 128,
         maxReplaceTileScans: 1_000_000,
+        maxStampPatternEdge: 256,
+        maxStampPatternCells: 16_384,
       },
     });
 

@@ -91,6 +91,25 @@ type OperationPreview =
       tile: Extract<MapEditOperation, { type: "fillRegion" }>["tile"];
     }
   | {
+      type: "stampPattern";
+      layerId: number;
+      destructive: true;
+      warning: string;
+      region: { x: number; y: number; width: number; height: number };
+      cellCount: number;
+      nonEmptyCellCount: number;
+      clearCellCount: number;
+      transformedCellCount: number;
+      changedCellCount: number;
+      wouldChange: boolean;
+      sample: Array<{
+        x: number;
+        y: number;
+        tile: TileRef | null;
+      }>;
+      omittedCellCount: number;
+    }
+  | {
       type: "replaceTiles";
       layerId: number;
       destructive: true;
@@ -531,6 +550,136 @@ function summarizeOperation(
         height: operation.height,
       },
       tile: operation.tile,
+    };
+  }
+
+  if (operation.type === "stampPattern") {
+    const height = operation.pattern.length;
+    const width = operation.pattern[0]?.length ?? 0;
+    if (
+      height === 0 ||
+      width === 0 ||
+      operation.pattern.some(
+        (row) => row.length !== width,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "stampPattern preview requires a non-empty rectangular pattern.",
+        { operationIndex },
+      );
+    }
+    const cellCount = width * height;
+    let nonEmptyCellCount = 0;
+    let transformedCellCount = 0;
+    const sample: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+    for (
+      let rowIndex = 0;
+      rowIndex < height;
+      rowIndex += 1
+    ) {
+      const row = operation.pattern[rowIndex];
+      if (row === undefined) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "stampPattern preview encountered a missing row.",
+          { operationIndex, rowIndex },
+        );
+      }
+      for (
+        let columnIndex = 0;
+        columnIndex < width;
+        columnIndex += 1
+      ) {
+        const tile = row[columnIndex];
+        if (tile === undefined) {
+          throw new TiledMcpError(
+            "INVALID_CHANGE_SET",
+            "stampPattern preview encountered a missing cell.",
+            {
+              operationIndex,
+              rowIndex,
+              columnIndex,
+            },
+          );
+        }
+        if (tile !== null) {
+          nonEmptyCellCount += 1;
+          const transform = tile.transform;
+          if (
+            transform !== undefined &&
+            (transform.flipH === true ||
+              transform.flipV === true ||
+              ("flipD" in transform &&
+                transform.flipD === true) ||
+              (transform.rawFlags ?? 0) !== 0)
+          ) {
+            transformedCellCount += 1;
+          }
+        }
+        if (sample.length < 8) {
+          sample.push({
+            x: operation.x + columnIndex,
+            y: operation.y + rowIndex,
+            tile: structuredClone(tile),
+          });
+        }
+      }
+    }
+    const stampSummary = summary.tileStamps?.find(
+      (entry) => entry.operationIndex === operationIndex,
+    );
+    const clearCellCount =
+      cellCount - nonEmptyCellCount;
+    if (
+      stampSummary === undefined ||
+      stampSummary.layerId !== operation.layerId ||
+      stampSummary.region.x !== operation.x ||
+      stampSummary.region.y !== operation.y ||
+      stampSummary.region.width !== width ||
+      stampSummary.region.height !== height ||
+      stampSummary.cellCount !== cellCount ||
+      stampSummary.nonEmptyCellCount !==
+        nonEmptyCellCount ||
+      stampSummary.clearCellCount !== clearCellCount ||
+      stampSummary.transformedCellCount !==
+        transformedCellCount ||
+      !Number.isSafeInteger(
+        stampSummary.changedCellCount,
+      ) ||
+      stampSummary.changedCellCount < 0 ||
+      stampSummary.changedCellCount > cellCount ||
+      stampSummary.wouldChange !==
+        (stampSummary.changedCellCount > 0)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "stampPattern preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      layerId: operation.layerId,
+      destructive: true,
+      warning:
+        "This overwrites every target cell in row-major order; null explicitly clears a cell, clipping is not performed, and later operations in the change set win on overlap.",
+      region: structuredClone(stampSummary.region),
+      cellCount: stampSummary.cellCount,
+      nonEmptyCellCount:
+        stampSummary.nonEmptyCellCount,
+      clearCellCount: stampSummary.clearCellCount,
+      transformedCellCount:
+        stampSummary.transformedCellCount,
+      changedCellCount:
+        stampSummary.changedCellCount,
+      wouldChange: stampSummary.wouldChange,
+      sample,
+      omittedCellCount: cellCount - sample.length,
     };
   }
 

@@ -25,6 +25,21 @@ export interface FillRegionOperation {
   tile: TileRef | null;
 }
 
+export interface StampPatternOperation {
+  type: "stampPattern";
+  layerId: number;
+  /**
+   * Absolute tile coordinate of the pattern's top-left cell.
+   */
+  x: number;
+  y: number;
+  /**
+   * A non-empty, dense rectangular row-major pattern. `null` explicitly
+   * clears a target cell; there is no transparent/skip sentinel.
+   */
+  pattern: Array<Array<TileRef | null>>;
+}
+
 export interface ReplaceTilesOperation {
   type: "replaceTiles";
   layerId: number;
@@ -179,6 +194,7 @@ export interface DuplicateLayerOperation {
 export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
+  | StampPatternOperation
   | ReplaceTilesOperation
   | CreateObjectOperation
   | UpdateObjectOperation
@@ -357,6 +373,22 @@ export interface MapEditPlan {
       scannedCellCount: number;
       replacedCellCount: number;
       mappingCount: number;
+    }>;
+    tileStamps?: Array<{
+      operationIndex: number;
+      layerId: number;
+      region: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      cellCount: number;
+      nonEmptyCellCount: number;
+      clearCellCount: number;
+      transformedCellCount: number;
+      changedCellCount: number;
+      wouldChange: boolean;
     }>;
     addedTilesets?: Array<{
       tilesetPath: string;

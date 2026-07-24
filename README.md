@@ -33,9 +33,10 @@
 - 通过该 generic union 的第 10 种独占 operation 复制 4 类已有图层或完整 Group
   subtree，以高水位 preorder 分配新 layer/object ID，并安全重连副本内部对象引用；
 - 无损 4-bit GID 变换编解码；
-- `setTiles` / `fillRegion` / `replaceTiles` 封闭编辑集合，以及 preview →
-  approved change set → apply 的两阶段提交；replacement 按完整变换后的 encoded GID
-  精确匹配，并在一个 operation 内单次扫描、同时求值；
+- `setTiles` / `fillRegion` / `replaceTiles` / `stampPattern` 封闭编辑集合，以及
+  preview → approved change set → apply 的两阶段提交；replacement 按完整变换后的
+  encoded GID 精确匹配并在一个 operation 内单次扫描、同时求值，stamp 则按绝对坐标
+  写入有界的稠密矩形图案；
 - 基础 rectangle/point 对象的有界列表与 create/update/delete（正确维护
   `nextobjectid`）；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
@@ -289,6 +290,26 @@ subtree、既有 siblings、未知字段、BOM、CRLF、键序与数字/字符�
 apply 会重算目标、分配、引用和摘要，校验 change-set digest、map/dependency revision 与
 raw-byte CAS，然后才在锁内创建 checkpoint 并原子替换。
 
+盖章写入使用 generic union 的第 11 种 operation：
+`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有
+`tiled_stamp_pattern` standalone tool，所以 registry 仍为 18 core / 19 with
+rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维数组：每行非空且等宽，
+不能有 sparse hole/`undefined`。每条边最多 256 格，总格数最多 16,384。
+
+`x/y` 是图案左上角的绝对 tile 坐标。完整目标矩形必须落在目标有限 tile layer 的 bounds
+内；服务端不会裁剪。矩阵中的每一项都是一次明确写入：`TileRef` 写入完整 encoded GID，
+`null` 写入 GID 0、明确清空该格，不表示透明或跳过；当前没有 transparent/skip sentinel。
+一个 change set 按 operation 顺序执行，后面的 operation 看到前面的结果；重叠时后写者
+获胜，包括 stamp 与 `setTiles`、`fillRegion`、`replaceTiles` 或其他 stamp 的组合。
+
+每个 pattern cell 都计入所有 tile operations 共用的 100,000-cell change-set 写入预算，
+即使目标当前已经是相同值。preview 的 `sample` 只按 row-major 返回前 8 格的绝对
+`{x,y,tile}`（包括 `tile:null`），并以 `omittedCellCount` 表示其余格数；完整影响范围应以
+规范化 `region`、`cellCount` 和各项 count 为准。写回只局部替换目标 layer 的 `data`；
+若所有编码后的 GID 都与原数据相同，则是语义 no-op，apply 返回 `changed:false`，revision
+与文件 bytes 完全不变。整块清空仍直接使用 `fillRegion` 的 `tile:null`，不需要独立
+`clearRegion` operation。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -328,8 +349,8 @@ pnpm build
 `pnpm test:stdio` 单独重建并复跑。
 
 测试覆盖路径沙箱、JSON 词法保真、revision 冲突、原子提交、checkpoint 启动对账、
-全部 GID flag 组合、tile set/fill/精确 replace 与 object 编辑闭环，以及 atlas 几何、
-SVG 安全预检、图片预算和
+全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp 与 object 编辑闭环，
+以及 atlas 几何、SVG 安全预检、图片预算和
 native preview 的图层选择、H/V/D、opacity、region/overlay/工作量预算与 MCP image wire
 contract；TSJ 详情另覆盖稀疏分页、Tiled 1.12 tile `type`、动画采样、
 collision/Wang 计数、严格 rendering 枚举、聚合扫描/256 KiB 输出预算和非法 atlas；
@@ -347,6 +368,9 @@ layer move 覆盖同父 forward/backward/first/last 的最终 index 语义、根
 locked/effective-locked warning、32-ID 有界摘要与 render flags、ID 高水位、
 source-snapshot `JsonArrayMove`（含 BOM/CRLF/未知词法及目标 path 偏移）、
 tamper/stale revision 和 Tiled 1.12 round trip；
+tile stamp 覆盖非零 layer origin、null 清空、变换 GID、稠密矩形/边长/格数边界、
+mixed-operation later-wins、8 格有界 preview、exact-byte no-op、局部 source patch、
+tamper/stale dependency 与 Tiled 1.12 round trip；
 layer duplicate 的 37+1 项专项/集成 cases 覆盖 destination 三分支、默认/最终 insertion
 index、root-only name override、完整 subtree 的 preorder layer/object ID、direct 与
 nested-list object reference 重连、外部/零/dangling reference、class/template fail
@@ -411,6 +435,12 @@ checkpoint restore。架构与 roadmap
   等无法证明安全的语义 fail closed。新副本用紧凑 JSON 插入，原 subtree 与 siblings 的
   source bytes 不重排；计数器使用 value-local patch，并沿用 revision/CAS/checkpoint
   安全边界。
+- `stampPattern` 是同一 union 已实现的第 11 种 operation，不新增 standalone tool。
+  它在绝对坐标一次写入非空、稠密、等宽的 row-major `(TileRef|null)[][]`；`null` 是清空
+  而非透明跳过，目标矩形必须完整位于 layer bounds 内且不做 clipping。单边最多 256、
+  总格数最多 16,384，全部 pattern cells 都计入共享 100,000-cell 写预算。operations
+  依序执行且重叠时 later wins；preview 最多采样 8 格。仅目标 `data` 会局部重写，全相同
+  GID 的 net no-op 保持精确 bytes。清空矩形可继续使用 `fillRegion` + `tile:null`。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

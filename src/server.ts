@@ -47,6 +47,8 @@ import {
   MAX_LAYER_NAME_LENGTH,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
+  MAX_STAMP_PATTERN_CELLS,
+  MAX_STAMP_PATTERN_EDGE,
   MAX_USAGE_DISTINCT_TILES,
   MAX_USAGE_LAYER_SUMMARIES,
   MAX_USAGE_RESULT_BYTES,
@@ -386,6 +388,51 @@ const fillRegionSchema = z
   })
   .strict();
 
+const stampPatternSchema = z
+  .object({
+    type: z.literal("stampPattern"),
+    layerId: positiveIdSchema,
+    x: z.number().int(),
+    y: z.number().int(),
+    pattern: z
+      .array(
+        z
+          .array(tileRefSchema.nullable())
+          .min(1)
+          .max(MAX_STAMP_PATTERN_EDGE),
+      )
+      .min(1)
+      .max(MAX_STAMP_PATTERN_EDGE)
+      .superRefine((pattern, context) => {
+        const width = pattern[0]?.length ?? 0;
+        for (
+          let rowIndex = 1;
+          rowIndex < pattern.length;
+          rowIndex += 1
+        ) {
+          if (pattern[rowIndex]?.length !== width) {
+            context.addIssue({
+              code: "custom",
+              message:
+                "stampPattern rows must all have the same length",
+              path: [rowIndex],
+            });
+          }
+        }
+        if (
+          width > 0 &&
+          pattern.length * width >
+            MAX_STAMP_PATTERN_CELLS
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `stampPattern may contain at most ${MAX_STAMP_PATTERN_CELLS} cells`,
+          });
+        }
+      }),
+  })
+  .strict();
+
 const replaceTilesRegionSchema = z
   .object({
     x: z.number().int(),
@@ -596,6 +643,7 @@ const duplicateLayerSchema = z
 const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
+  stampPatternSchema,
   replaceTilesSchema,
   createObjectSchema,
   updateObjectSchema,
@@ -674,7 +722,25 @@ export async function createTiledMcpServer(
           listChanged: true,
         },
         editProfiles: ["finite-orthogonal-tmj-external-atlas-tsj"],
-        tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
+        tileOperations: [
+          "setTiles",
+          "fillRegion",
+          "stampPattern",
+          "replaceTiles",
+        ],
+        tileStampCapabilities: {
+          pattern:
+            "dense-non-empty-rectangular-row-major",
+          origin: "absolute-tile-coordinates",
+          nullSemantics: "clear-target-cell",
+          skipSentinel: false,
+          clipping: false,
+          transformEncoding:
+            "standard-tile-ref-encoded-gid",
+          operationOrdering:
+            "sequential-change-set-order-last-write-wins",
+          sourcePatch: "tile-layer-data-member-local",
+        },
         tileReplacementCapabilities: {
           match: "exact-encoded-gid",
           transformMatch: "exact",
@@ -871,6 +937,9 @@ export async function createTiledMcpServer(
           maxRegionCells: 20_000,
           maxChangeSetCellWrites: 100_000,
           maxPendingChangeSetCellWrites: DEFAULT_MAX_PENDING_CELL_WRITES,
+          maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
+          maxStampPatternCells:
+            MAX_STAMP_PATTERN_CELLS,
           maxObjectMutationsPerChangeSet: 10_000,
           maxEditedSubtreesPerChangeSet: 128,
           maxListedObjects: 10_000,
@@ -1514,7 +1583,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, dense rectangular pattern stamps, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
