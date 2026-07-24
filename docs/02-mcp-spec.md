@@ -24,14 +24,15 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 的 direct Resource：`tiled://guide`，通过 `resources/list` 发现并由 `resources/read`
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
-`updateObject` 和 `deleteObjects`。
+`updateObject`、`deleteObjects` 和 `updateLayer`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、结构化输出 envelope、四项 annotations 和 MCP 客户端契约
-测试；tile/object 写入使用目标子树 range patch，完整语义复核通过后才提交。完整字段级
+测试；tile/object/layer 写入使用目标子树或 object-member local patch，完整语义复核
+通过后才提交。完整字段级
 output schema/codegen 尚未完成。当前外部 tileset `assetId` 是由项目路径确定性派生的
 临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
 前的待办。因此本文仍是 Draft，共享契约描述的是冻结目标；运行时应以
@@ -215,7 +216,7 @@ type MutationResult =
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_preview_edits` | 预览同一文档上的一组编辑，返回 change set；`edits` 是封闭的 discriminated union，不接受任意 `{tool,args}` | `documentPath`, `expectedRevision`, `expectedDependencyRevisions`, `edits` |
+| `tiled_preview_edits` | 预览同一 map 上的一组编辑，返回 change set；`operations` 是封闭的 discriminated union，不接受任意 `{tool,args}` | `mapPath`, `expectedRevision`, `expectedDependencyRevisions`, `operations` |
 | `tiled_apply_change_set` | 提交已经由客户端批准的 map edit 或 checkpoint restore change set；提交前重新做锁与 revision CAS | `changeSetId`, `expectedRevision` |
 | `tiled_create_checkpoint` | 为显式文档集合建立自有内容寻址快照；破坏性提交前也自动创建匿名快照 | `paths`, `label?` |
 | `tiled_list_checkpoints` | **已实现**；有界列出 manifest，并把损坏条目隔离到 `corruptEntries`，不读取或恢复目标 | `status?`, `limit?`, `scanLimit?` |
@@ -238,7 +239,9 @@ apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revi
 `before.existed:false` 会稳定报 `REVERT_WOULD_DELETE`：当前工具不会以恢复之名删除后来
 创建的文件，也不会隐式恢复任何依赖闭包。
 
-`edits` 只允许当前版本列出的 tile/layer/object/property 纯文档编辑，不允许嵌套 edits、删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。M1 若无法把这个封闭 union 做完整，就延后 `tiled_preview_edits`，由各写工具各自产生单操作 change set；不得退回通用 batch。
+`operations` 只允许当前版本列出的 tile/layer/object 纯文档编辑，不允许嵌套 operations、
+删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。不得退回接受
+任意工具名与参数的通用 batch。
 
 除 `tiled_apply_change_set` 外，roadmap 中表达“创建/更新/删除”的项目资产工具都只构造 preview，不直接写盘；因此其 annotations 按 preview 填写。若未来提供直接提交入口，必须使用不同工具名并单独标注，不能用 `dryRun` 或 `commit` 布尔分支混合两种语义。
 
@@ -247,7 +250,7 @@ apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revi
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_create_layer` | **已实现**；预览创建一个空图层（4 种类型），可指定父 Group 与插入位置，不直接写盘 | `mapPath`, `type`(tilelayer/objectgroup/imagelayer/group), `name`, `parentGroupId?`, `index?`, `imagePath?`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedImageRevision?` |
-| `tiled_update_layer` | 修改图层属性：改名、可见性、opacity、offset、parallax、tintcolor、锁定、混合模式 | `mapPath`, `layerId`, `patch` |
+| `tiled_update_layer` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 7 种 `updateLayer` operation 实现，修改 4 类 layer 的公共显示/元数据字段 | `mapPath`, `layerId`, `patch` |
 | `tiled_move_layer` | 调整图层顺序 / 移入移出 Group | `mapPath`, `layerId`, `parentGroupId?`, `index` |
 | `tiled_delete_layer` | 删除图层（**destructive**，返回待批准 change set） | `mapPath`, `layerId` |
 | `tiled_duplicate_layer` | 复制图层（后续候选） | `mapPath`, `layerId`, `newName?` |
@@ -273,7 +276,51 @@ pin。
 本身使用紧凑 JSON。当前一个 change set 只能创建一个空层，不能同批创建 Group 后再向它
 添加子层，也不支持 infinite/chunk、移动或删除图层。
 
-其他图层工具统一用 `layerId`（数字 id）定位；表中尚未标记“已实现”的 update/move/delete/
+当前已实现的 common-layer update wire contract 是
+`{type:"updateLayer", layerId, patch}`，并属于通用
+`tiled_preview_edits.operations` union；它不额外注册 `tiled_update_layer` 工具，因此
+registry 仍为 18 个 core / 19 个含 rasterizer。`layerId` 必须是正整数，并递归定位一个
+现有 `tilelayer`、`objectgroup`、`imagelayer` 或 `group`；不按名称 fallback。patch
+必须至少包含一个字段，禁止额外 key。允许字段与 TMJ key 的映射为：
+
+| operation patch | TMJ member |
+|---|---|
+| `name` | `name` |
+| `className` | `class` |
+| `visible` | `visible` |
+| `opacity` | `opacity` |
+| `offsetX` / `offsetY` | `offsetx` / `offsety` |
+| `parallaxX` / `parallaxY` | `parallaxx` / `parallaxy` |
+| `tintColor` | `tintcolor` |
+| `locked` | `locked` |
+| `blendMode` | `mode` |
+
+`name`/`className` 各最多 1024 个 JS characters；`visible`/`locked` 是 boolean；
+`opacity` 为有限数且限 `0..1`；offset/parallax 必须是
+`-1,000,000,000..1,000,000,000` 内的有限数。`tintColor` 接受
+`#RRGGBB`、`#AARRGGBB` 或 `null`，其中 `null` 精确表示删除 `tintcolor`。
+`blendMode` 是 13 项封闭 enum：`normal`、`add`、`multiply`、`screen`、`overlay`、
+`darken`、`lighten`、`color-dodge`、`color-burn`、`hard-light`、`soft-light`、
+`difference`、`exclusion`；未知 Tiled/Canvas 名称不会透传。
+
+no-op 以 JSON member 的实际存在性和值判断：已存在且值相同不改；删除缺失的 tint 不改。
+如果字段缺失，即使 Tiled 的运行时默认值与请求相同，显式插入仍是 change，不能用语义
+默认值吞掉用户 intent。同一字段在一个 batch 内多次出现时按 operation 顺序报告逐步
+change；若最终值回到原始 JSON，apply 的文件级结果仍为 `changed:false`。`locked` 只写
+Tiled advisory metadata，不阻止同一 batch 或之后
+的 tile/object/layer edit。preview 的 operation 与 summary 都回显
+`requestedFields`、`changedFields`、`wouldChange` 与 `affectsDescendants`；后者为 Group
+中实际改变的公共渲染属性标出可能的后代影响；name/class/locked 或 no-op 不置位，也不
+代表递归重写后代。
+
+apply 只为实际 changed field 生成 layer-object member-local insertion/replacement/
+deletion，不序列化整个 layer；未知成员、相邻数组、BOM、换行、缩进、键序和未触及词法
+保持原 bytes。它可与 tile `data` 和 object `objects` edits 同批；preview 固定 map
+revision 与完整 dependency revision set，apply 重新规划、比较摘要并做正常 revision
+CAS。独立 `tiled_move_layer`、`tiled_delete_layer` 与 `tiled_duplicate_layer` 仍是
+roadmap，不能从 `updateLayer` 推断为已实现。
+
+其他图层工具统一用 `layerId`（数字 id）定位；表中尚未标记“已实现”的 move/delete/
 duplicate 仍是 roadmap。
 
 ### 3.4 图块编辑 — Tile Layer（核心价值）
@@ -626,7 +673,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace 与基础 object 编辑、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建图层并修改一张有限正交 TMJ；提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑与 4 类 layer 公共属性 update、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持 layer move/delete、无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新图层并修改一张有限正交 TMJ；提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

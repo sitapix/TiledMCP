@@ -22,6 +22,25 @@ export interface JsonArrayInsertion {
 }
 
 /**
+ * Synchronizes one object member with the complete target document.
+ *
+ * The object itself must exist in both documents. A member present only in
+ * the target is inserted, a member present in both is replaced when needed,
+ * and a member absent from the target is deleted. When both values are
+ * semantically equal (including both being absent), the source is untouched.
+ */
+export interface JsonObjectMemberPatch {
+  path: JsonSourcePath;
+  key: string;
+}
+
+interface SourceReplacement {
+  offset: number;
+  length: number;
+  content: string;
+}
+
+/**
  * Replaces selected values in a strict JSON document while leaving all
  * characters outside those value ranges untouched.
  *
@@ -35,6 +54,7 @@ export function patchJsonDocumentSource(
   paths: readonly JsonSourcePath[],
   projectPath: string,
   arrayInsertions: readonly JsonArrayInsertion[] = [],
+  objectMemberPatches: readonly JsonObjectMemberPatch[] = [],
 ): Buffer {
   const sourceText = decodeSource(source, projectPath);
   const hasBom = sourceText.charCodeAt(0) === 0xfeff;
@@ -73,6 +93,13 @@ export function patchJsonDocumentSource(
     }
     seenPaths.add(key);
   }
+  validateObjectMemberPatches(
+    sourceTree,
+    targetTree,
+    paths,
+    objectMemberPatches,
+    projectPath,
+  );
 
   const selectedRanges: Array<{
     offset: number;
@@ -145,6 +172,25 @@ export function patchJsonDocumentSource(
       );
     }
     insertionPaths.add(key);
+    for (const memberPatch of objectMemberPatches) {
+      const memberPath = [
+        ...memberPatch.path,
+        memberPatch.key,
+      ];
+      if (
+        pathsOverlap(insertion.path, memberPath)
+      ) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+          `JSON array insertion path ${formatPath(insertion.path)} overlaps object member patch path ${formatPath(memberPath)} in ${projectPath}.`,
+          {
+            path: projectPath,
+            firstJsonPath: [...insertion.path],
+            secondJsonPath: memberPath,
+          },
+        );
+      }
+    }
 
     const sourceNode = requireArrayNode(
       sourceTree,
@@ -239,7 +285,16 @@ export function patchJsonDocumentSource(
     }
     replacements.push(edit);
   }
-  const patchedBody = applySourceReplacements(body, replacements);
+  let patchedBody = applySourceReplacements(
+    body,
+    replacements,
+  );
+  patchedBody = patchObjectMembersSource(
+    patchedBody,
+    targetTree,
+    objectMemberPatches,
+    projectPath,
+  );
   const patchedDocument = parseJsonDocument(patchedBody, projectPath);
   if (stableJson(patchedDocument) !== stableJson(target)) {
     throw new TiledMcpError(
@@ -252,11 +307,646 @@ export function patchJsonDocumentSource(
           path: [...insertion.path],
           index: insertion.index,
         })),
+        objectMemberPaths: objectMemberPatches.map(
+          (patch) => [...patch.path, patch.key],
+        ),
       },
     );
   }
 
   return Buffer.from(`${hasBom ? "\uFEFF" : ""}${patchedBody}`, "utf8");
+}
+
+function validateObjectMemberPatches(
+  sourceTree: Node,
+  targetTree: Node,
+  valuePaths: readonly JsonSourcePath[],
+  patches: readonly JsonObjectMemberPatch[],
+  projectPath: string,
+): void {
+  const seenMemberPaths = new Set<string>();
+  const memberPaths: JsonSourcePath[] = [];
+  for (const patch of patches) {
+    if (
+      typeof patch !== "object" ||
+      patch === null ||
+      Array.isArray(patch)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `An object member patch for ${projectPath} must be an object.`,
+        { path: projectPath },
+      );
+    }
+    if (!Array.isArray(patch.path)) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `An object member patch path for ${projectPath} must be an array.`,
+        { path: projectPath },
+      );
+    }
+    validateObjectPath(patch.path, projectPath);
+    if (typeof patch.key !== "string") {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `An object member patch key for ${projectPath} must be a string.`,
+        {
+          path: projectPath,
+          jsonPath: [...patch.path],
+        },
+      );
+    }
+    requireObjectNode(
+      sourceTree,
+      patch.path,
+      projectPath,
+      "source",
+    );
+    requireObjectNode(
+      targetTree,
+      patch.path,
+      projectPath,
+      "target",
+    );
+    const memberPath: JsonSourcePath = [
+      ...patch.path,
+      patch.key,
+    ];
+    const serializedPath = JSON.stringify(memberPath);
+    if (seenMemberPaths.has(serializedPath)) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_DUPLICATE_PATH",
+        `Duplicate JSON object member patch path ${formatPath(memberPath)} for ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...memberPath],
+        },
+      );
+    }
+    seenMemberPaths.add(serializedPath);
+    for (const valuePath of valuePaths) {
+      if (pathsOverlap(memberPath, valuePath)) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+          `JSON object member patch path ${formatPath(memberPath)} overlaps value patch path ${formatPath(valuePath)} in ${projectPath}.`,
+          {
+            path: projectPath,
+            firstJsonPath: [...valuePath],
+            secondJsonPath: [...memberPath],
+          },
+        );
+      }
+    }
+    for (const previousMemberPath of memberPaths) {
+      if (pathsOverlap(memberPath, previousMemberPath)) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+          `JSON object member patch paths ${formatPath(previousMemberPath)} and ${formatPath(memberPath)} overlap in ${projectPath}.`,
+          {
+            path: projectPath,
+            firstJsonPath: [...previousMemberPath],
+            secondJsonPath: [...memberPath],
+          },
+        );
+      }
+    }
+    memberPaths.push(memberPath);
+  }
+}
+
+function patchObjectMembersSource(
+  source: string,
+  targetTree: Node,
+  patches: readonly JsonObjectMemberPatch[],
+  projectPath: string,
+): string {
+  if (patches.length === 0) {
+    return source;
+  }
+  const sourceTree = parseTree(
+    source,
+    [],
+    STRICT_PARSE_OPTIONS,
+  );
+  if (sourceTree === undefined) {
+    throw new TiledMcpError(
+      "INVALID_JSON",
+      `Could not rebuild the JSON syntax tree for ${projectPath} while patching object members.`,
+      { path: projectPath },
+    );
+  }
+  const grouped = new Map<
+    string,
+    {
+      path: JsonSourcePath;
+      patches: JsonObjectMemberPatch[];
+    }
+  >();
+  for (const patch of patches) {
+    const key = JSON.stringify(patch.path);
+    const group = grouped.get(key);
+    if (group === undefined) {
+      grouped.set(key, {
+        path: patch.path,
+        patches: [patch],
+      });
+    } else {
+      group.patches.push(patch);
+    }
+  }
+
+  const replacements: SourceReplacement[] = [];
+  for (const group of grouped.values()) {
+    const sourceObject = requireObjectNode(
+      sourceTree,
+      group.path,
+      projectPath,
+      "source",
+    );
+    const targetObject = requireObjectNode(
+      targetTree,
+      group.path,
+      projectPath,
+      "target",
+    );
+    const sourceProperties = readObjectProperties(
+      sourceObject,
+      group.path,
+      projectPath,
+      "source",
+    );
+    const targetProperties = readObjectProperties(
+      targetObject,
+      group.path,
+      projectPath,
+      "target",
+    );
+    replacements.push(
+      ...objectMemberGroupEdits(
+        source,
+        sourceObject,
+        sourceProperties,
+        targetProperties,
+        group.patches,
+      ),
+    );
+  }
+  assertNonOverlappingSourceReplacements(
+    replacements,
+    projectPath,
+  );
+  return applySourceReplacements(source, replacements);
+}
+
+interface ObjectPropertyNode {
+  node: Node;
+  keyNode: Node;
+  valueNode: Node;
+  key: string;
+}
+
+function requireObjectNode(
+  tree: Node,
+  readonlyPath: JsonSourcePath,
+  projectPath: string,
+  document: "source" | "target",
+): Node {
+  const path: JSONPath = [...readonlyPath];
+  const node = findNodeAtLocation(tree, path);
+  if (node === undefined) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_PATH_NOT_FOUND",
+      `JSON object source patch path ${formatPath(path)} does not exist in the ${document} ${projectPath}.`,
+      {
+        path: projectPath,
+        jsonPath: path,
+        document,
+      },
+    );
+  }
+  if (node.type !== "object") {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+      `JSON object source patch path ${formatPath(path)} is not an object in the ${document} ${projectPath}.`,
+      {
+        path: projectPath,
+        jsonPath: path,
+        document,
+      },
+    );
+  }
+  return node;
+}
+
+function readObjectProperties(
+  objectNode: Node,
+  path: JsonSourcePath,
+  projectPath: string,
+  document: "source" | "target",
+): ObjectPropertyNode[] {
+  const properties: ObjectPropertyNode[] = [];
+  const seenKeys = new Set<string>();
+  for (const propertyNode of objectNode.children ?? []) {
+    const [keyNode, valueNode] =
+      propertyNode.children ?? [];
+    const key =
+      keyNode === undefined
+        ? undefined
+        : getNodeValue(keyNode);
+    if (
+      propertyNode.type !== "property" ||
+      keyNode?.type !== "string" ||
+      typeof key !== "string" ||
+      valueNode === undefined
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+        `JSON object source patch path ${formatPath(path)} has a malformed property in the ${document} ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...path],
+          document,
+        },
+      );
+    }
+    if (seenKeys.has(key)) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+        `JSON object source patch path ${formatPath(path)} has an ambiguous duplicate key in the ${document} ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...path, key],
+          document,
+        },
+      );
+    }
+    seenKeys.add(key);
+    properties.push({
+      node: propertyNode,
+      keyNode,
+      valueNode,
+      key,
+    });
+  }
+  return properties;
+}
+
+function objectMemberGroupEdits(
+  source: string,
+  objectNode: Node,
+  sourceProperties: ObjectPropertyNode[],
+  targetProperties: ObjectPropertyNode[],
+  patches: readonly JsonObjectMemberPatch[],
+): SourceReplacement[] {
+  const sourceByKey = new Map(
+    sourceProperties.map((property) => [
+      property.key,
+      property,
+    ]),
+  );
+  const targetByKey = new Map(
+    targetProperties.map((property) => [
+      property.key,
+      property,
+    ]),
+  );
+  const deletedKeys = new Set<string>();
+  const insertions: Array<{
+    key: string;
+    valueText: string;
+  }> = [];
+  const edits: SourceReplacement[] = [];
+
+  for (const patch of patches) {
+    const sourceProperty = sourceByKey.get(patch.key);
+    const targetProperty = targetByKey.get(patch.key);
+    if (
+      sourceProperty === undefined &&
+      targetProperty === undefined
+    ) {
+      continue;
+    }
+    if (
+      sourceProperty !== undefined &&
+      targetProperty !== undefined
+    ) {
+      const sourceValue = getNodeValue(
+        sourceProperty.valueNode,
+      ) as JsonValue;
+      const targetValue = getNodeValue(
+        targetProperty.valueNode,
+      ) as JsonValue;
+      if (
+        stableJson(sourceValue) !== stableJson(targetValue)
+      ) {
+        edits.push({
+          offset: sourceProperty.valueNode.offset,
+          length: sourceProperty.valueNode.length,
+          content: JSON.stringify(targetValue),
+        });
+      }
+      continue;
+    }
+    if (targetProperty === undefined) {
+      deletedKeys.add(patch.key);
+      continue;
+    }
+    insertions.push({
+      key: patch.key,
+      valueText: JSON.stringify(
+        getNodeValue(targetProperty.valueNode) as JsonValue,
+      ),
+    });
+  }
+
+  edits.push(
+    ...objectMemberStructuralEdits(
+      source,
+      objectNode,
+      sourceProperties,
+      deletedKeys,
+      insertions,
+    ),
+  );
+  return edits;
+}
+
+function objectMemberStructuralEdits(
+  source: string,
+  objectNode: Node,
+  properties: ObjectPropertyNode[],
+  deletedKeys: ReadonlySet<string>,
+  insertions: ReadonlyArray<{
+    key: string;
+    valueText: string;
+  }>,
+): SourceReplacement[] {
+  if (
+    deletedKeys.size === 0 &&
+    insertions.length === 0
+  ) {
+    return [];
+  }
+  const keptProperties = properties.filter(
+    (property) => !deletedKeys.has(property.key),
+  );
+  const innerStart = objectNode.offset + 1;
+  const innerEnd =
+    objectNode.offset + objectNode.length - 1;
+  const emptyPrefix =
+    properties.length === 0
+      ? emptyObjectMemberPrefix(
+          source,
+          source.slice(innerStart, innerEnd),
+        )
+      : "";
+  const delimiter = objectMemberDelimiter(
+    source,
+    objectNode,
+    properties,
+    emptyPrefix,
+  );
+  const colon = objectMemberColon(
+    source,
+    keptProperties.length === 0
+      ? properties
+      : keptProperties,
+    emptyPrefix,
+  );
+  const insertedMembers = insertions
+    .map(
+      ({ key, valueText }) =>
+        `${JSON.stringify(key)}${colon}${valueText}`,
+    )
+    .join(delimiter);
+
+  if (properties.length === 0) {
+    if (insertedMembers.length === 0) {
+      return [];
+    }
+    return [
+      {
+        offset: innerStart,
+        length: 0,
+        content: `${emptyPrefix}${insertedMembers}`,
+      },
+    ];
+  }
+
+  const firstProperty = properties[0];
+  const lastProperty = properties[properties.length - 1];
+  if (
+    firstProperty === undefined ||
+    lastProperty === undefined
+  ) {
+    throw new Error(
+      "Object member structural patch lost its properties.",
+    );
+  }
+  if (keptProperties.length === 0) {
+    return [
+      {
+        offset: firstProperty.node.offset,
+        length:
+          lastProperty.node.offset +
+          lastProperty.node.length -
+          firstProperty.node.offset,
+        content: insertedMembers,
+      },
+    ];
+  }
+
+  const insertionSuffix =
+    insertedMembers.length === 0
+      ? ""
+      : `${delimiter}${insertedMembers}`;
+  const edits: SourceReplacement[] = [];
+  let insertionIncluded = false;
+  let index = 0;
+  while (index < properties.length) {
+    const property = properties[index];
+    if (
+      property === undefined ||
+      !deletedKeys.has(property.key)
+    ) {
+      index += 1;
+      continue;
+    }
+    const runStart = property;
+    let runEnd = property;
+    index += 1;
+    while (index < properties.length) {
+      const candidate = properties[index];
+      if (
+        candidate === undefined ||
+        !deletedKeys.has(candidate.key)
+      ) {
+        break;
+      }
+      runEnd = candidate;
+      index += 1;
+    }
+    const nextKept = properties[index];
+    if (nextKept !== undefined) {
+      edits.push({
+        offset: runStart.node.offset,
+        length:
+          nextKept.node.offset - runStart.node.offset,
+        content: "",
+      });
+      continue;
+    }
+    const lastKept =
+      keptProperties[keptProperties.length - 1];
+    if (lastKept === undefined) {
+      throw new Error(
+        "Object member structural patch lost its final retained property.",
+      );
+    }
+    const offset =
+      lastKept.node.offset + lastKept.node.length;
+    edits.push({
+      offset,
+      length:
+        runEnd.node.offset +
+        runEnd.node.length -
+        offset,
+      content: insertionSuffix,
+    });
+    insertionIncluded = true;
+  }
+
+  if (
+    insertionSuffix.length > 0 &&
+    !insertionIncluded
+  ) {
+    const lastKept =
+      keptProperties[keptProperties.length - 1];
+    if (lastKept === undefined) {
+      throw new Error(
+        "Object member insertion lost its final retained property.",
+      );
+    }
+    edits.push({
+      offset:
+        lastKept.node.offset + lastKept.node.length,
+      length: 0,
+      content: insertionSuffix,
+    });
+  }
+  return edits;
+}
+
+function objectMemberDelimiter(
+  source: string,
+  objectNode: Node,
+  properties: ObjectPropertyNode[],
+  emptyPrefix: string,
+): string {
+  if (properties.length === 0) {
+    return `,${emptyPrefix}`;
+  }
+  const lastProperty =
+    properties[properties.length - 1];
+  if (lastProperty === undefined) {
+    throw new Error(
+      "Object member delimiter lost its final property.",
+    );
+  }
+  if (properties.length === 1) {
+    return `,${source.slice(
+      objectNode.offset + 1,
+      lastProperty.node.offset,
+    )}`;
+  }
+  const previousProperty =
+    properties[properties.length - 2];
+  if (previousProperty === undefined) {
+    throw new Error(
+      "Object member delimiter lost its previous property.",
+    );
+  }
+  const delimiter = source.slice(
+    previousProperty.node.offset +
+      previousProperty.node.length,
+    lastProperty.node.offset,
+  );
+  if (!/^\s*,\s*$/u.test(delimiter)) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+      "Could not infer an object member delimiter from the source document.",
+    );
+  }
+  return delimiter;
+}
+
+function objectMemberColon(
+  source: string,
+  properties: ObjectPropertyNode[],
+  emptyPrefix: string,
+): string {
+  const lastProperty =
+    properties[properties.length - 1];
+  if (lastProperty === undefined) {
+    return emptyPrefix.length === 0 ? ":" : ": ";
+  }
+  const colon = source.slice(
+    lastProperty.keyNode.offset +
+      lastProperty.keyNode.length,
+    lastProperty.valueNode.offset,
+  );
+  if (!/^\s*:\s*$/u.test(colon)) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+      "Could not infer an object member value separator from the source document.",
+    );
+  }
+  return colon;
+}
+
+function emptyObjectMemberPrefix(
+  source: string,
+  innerWhitespace: string,
+): string {
+  const newline = innerWhitespace.includes("\r\n")
+    ? "\r\n"
+    : innerWhitespace.includes("\n")
+      ? "\n"
+      : innerWhitespace.includes("\r")
+        ? "\r"
+        : undefined;
+  if (newline === undefined) {
+    return innerWhitespace;
+  }
+  const lastLineBreak = Math.max(
+    innerWhitespace.lastIndexOf("\n"),
+    innerWhitespace.lastIndexOf("\r"),
+  );
+  const closingIndent = innerWhitespace.slice(
+    lastLineBreak + 1,
+  );
+  return `${newline}${closingIndent}${detectIndentUnit(source)}`;
+}
+
+function detectIndentUnit(source: string): string {
+  const indents = source
+    .split(/\r\n|\r|\n/u)
+    .map((line) => line.match(/^[\t ]+/u)?.[0])
+    .filter(
+      (indent): indent is string =>
+        indent !== undefined && indent.length > 0,
+    );
+  if (
+    indents.some((indent) => indent.includes("\t"))
+  ) {
+    return "\t";
+  }
+  const widths = indents
+    .map((indent) => indent.length)
+    .filter((width) => width > 0);
+  return " ".repeat(
+    widths.length === 0 ? 2 : Math.min(...widths),
+  );
 }
 
 function requireArrayNode(
@@ -387,6 +1077,40 @@ function validatePath(path: JsonSourcePath, projectPath: string): void {
   }
 }
 
+function validateObjectPath(
+  path: JsonSourcePath,
+  projectPath: string,
+): void {
+  for (const segment of path) {
+    if (
+      typeof segment !== "string" &&
+      (!Number.isSafeInteger(segment) || segment < 0)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `Invalid segment in JSON object source patch path ${formatPath(path)} for ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...path],
+        },
+      );
+    }
+  }
+}
+
+function pathsOverlap(
+  left: JsonSourcePath,
+  right: JsonSourcePath,
+): boolean {
+  const shorter = Math.min(left.length, right.length);
+  for (let index = 0; index < shorter; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function formatPath(path: JsonSourcePath): string {
   return JSON.stringify(path);
 }
@@ -418,9 +1142,41 @@ function assertNonOverlappingRanges(
   }
 }
 
+function assertNonOverlappingSourceReplacements(
+  replacements: readonly SourceReplacement[],
+  projectPath: string,
+): void {
+  const sorted = [...replacements].sort(
+    (left, right) =>
+      left.offset - right.offset ||
+      right.length - left.length,
+  );
+  let previousOffset = -1;
+  let previousEnd = -1;
+  for (const replacement of sorted) {
+    if (
+      replacement.offset < 0 ||
+      replacement.length < 0 ||
+      replacement.offset === previousOffset ||
+      replacement.offset < previousEnd
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+        `Object member source patches overlap in ${projectPath}.`,
+        { path: projectPath },
+      );
+    }
+    previousOffset = replacement.offset;
+    previousEnd = Math.max(
+      previousEnd,
+      replacement.offset + replacement.length,
+    );
+  }
+}
+
 function applySourceReplacements(
   source: string,
-  replacements: Array<{ offset: number; length: number; content: string }>,
+  replacements: SourceReplacement[],
 ): string {
   replacements.sort((left, right) => left.offset - right.offset);
   const chunks: string[] = [];

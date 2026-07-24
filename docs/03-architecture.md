@@ -14,6 +14,8 @@ tile edits、rectangle/point 对象增删改、stdio MCP 和 `tmxrasterizer` ada
 tile edits 现包括 `setTiles`、`fillRegion` 与通用 preview union 中的
 `replaceTiles`；replacement 对包含 transform/raw flags 的完整 encoded GID 做精确匹配，
 一个 operation 内 simultaneous single-pass 求值，并分别限制 mapping、扫描和实际写入。
+同一通用 union 的第 7 种 `updateLayer` operation 已支持对 4 类 layer 的公共
+display/metadata member 做 strict patch；它不注册新工具，也不实现 layer move/delete。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -58,13 +60,14 @@ tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变�
 快照 revision。复杂 Tiled 绘制语义仍由可选 `tmxrasterizer` 覆盖。
 
 当前写回已经使用 JSON syntax tree 生成局部替换：tile 操作只替换目标 `data`，对象操作
-只替换目标 `objects`，创建对象时另替换 `nextobjectid`。创建图层不替换整个 sibling
-array，而是在 JSON syntax tree 确认“只多一个元素”后执行单元素插入，并单独替换
-`nextlayerid`；所有既有同级元素仍保持原 bytes，新元素使用紧凑 JSON。补丁后会严格重新
-解析，并将完整语义树与目标文档比较；漏列任何变更、插入之外又改变既有数组元素或路径重叠
-都会拒绝提交。普通替换目标范围之外的 BOM、CRLF、缩进、键序、数字和转义词法按 bytes
-保持，替换范围本身允许重新排版。checkpoint 恢复继续按原始 bytes 还原，不经过 JSON
-规范化。
+只替换目标 `objects`，创建对象时另替换 `nextobjectid`。`updateLayer` 对每个实际改变的
+object member 分别做插入、替换或删除，不重写完整 layer object。创建图层不替换整个
+sibling array，而是在 JSON syntax tree 确认“只多一个元素”后执行单元素插入，并单独
+替换 `nextlayerid`；所有既有同级元素仍保持原 bytes，新元素使用紧凑 JSON。补丁后会严格
+重新解析，并将完整语义树与目标文档比较；漏列任何变更、插入之外又改变既有数组元素或路径
+重叠都会拒绝提交。普通替换目标范围之外的 BOM、CRLF、缩进、键序、数字和转义词法按
+bytes 保持，替换范围本身允许重新排版。checkpoint 恢复继续按原始 bytes 还原，不经过
+JSON 规范化。
 
 当前锁能串行化合作的 TiledMCP 进程，SHA-256 CAS 也能发现最终检查前的外部保存；但
 Node 的普通 `rename` 没有 compare-and-swap 条件，非合作写者仍可在最后一次 hash 读取与
@@ -455,6 +458,44 @@ tileset unused-local-ID sample 最多 16 项，最终 JSON 最多 256 KiB。这�
 完成后重新检查所有 dependency 与 map revision；由于多文件读取无法保证同一时刻原子性，
 结果仍明确标记 `snapshotConsistency: "non-atomic-read-set"`。
 
+### 6.6 Common layer member update
+
+`updateLayer` 是 `tiled_preview_edits` 封闭 union 的第 7 种 operation；wire shape 为
+`{type:"updateLayer", layerId, patch}`。它不注册 standalone `tiled_update_layer`，
+所以 registry 仍为 18 core / 19 with rasterizer。planner 以正整数 `layerId` 递归定位
+已有 `tilelayer`、`objectgroup`、`imagelayer` 或 `group`，不接受名称 fallback，也不
+改变 layer hierarchy、sibling order 或 ID。
+
+patch 必须非空且 exact-key；公共字段到 raw TMJ member 的映射固定为：
+`name→name`、`className→class`、`visible→visible`、`opacity→opacity`、
+`offsetX/Y→offsetx/y`、`parallaxX/Y→parallaxx/y`、`tintColor→tintcolor`、
+`locked→locked`、`blendMode→mode`。name/class 各最多 1024 characters；opacity
+为有限 `0..1`；offset/parallax 为 ±1,000,000,000 内有限数；tint 是
+`#RRGGBB`、`#AARRGGBB` 或删除用 `null`。blend mode 使用 Tiled 1.12 的封闭 13 项：
+`normal`、`add`、`multiply`、`screen`、`overlay`、`darken`、`lighten`、
+`color-dodge`、`color-burn`、`hard-light`、`soft-light`、`difference`、
+`exclusion`。`locked` 只是编辑器 advisory metadata；planner 不把它解释为 ACL，同批
+tile/object edit 仍按请求执行。
+
+change detection 对 raw JSON object member 的存在性和值负责，而不是对 Tiled 默认值做
+归一化。已有 member 与请求值相同、或 `tintColor:null` 删除一个缺失 member 时是 no-op；
+缺失 `visible/opacity/offset/parallax/locked/mode` 时显式写入其语义默认值仍算 change。
+每个 operation 的 plan summary 与 bounded preview 都携带 `requestedFields`、
+`changedFields`、`wouldChange` 和 `affectsDescendants`；只有 Group 中实际改变
+visible/opacity/offset/parallax/tint/mode 时后者为 true，用来提醒显示属性可能影响
+descendants，而不是宣称递归修改了子层。name/class/locked 与 no-op 不置位。全 no-op
+plan，以及顺序 operation 最终回到原始 JSON 的 net no-op，在 apply 时都返回
+`changed:false`，不创建无意义文件 diff；逐 operation summary 仍忠实记录中间变化。
+
+source writer 将 `changedFields` 转成 layer object 上的 member-local
+insert/replace/delete，并以 layer path + raw member key 去重；它不序列化完整 layer。
+因此同一个 change set 可把 layer member patch 与 tile `data` subtree、object
+`objects` subtree edits 合并，同时保持未触及成员、相邻 layer、未知字段、BOM、CRLF、
+缩进、键序和数字/字符串词法。完整 target semantic tree 校验仍是最后防线。preview
+固定 map 与完整现有 dependency read set；apply 重新 canonicalize operation/summary，
+验证 change-set digest 和 revision pins，并在锁内做正常 CAS。move、delete、duplicate
+layer 仍是独立 roadmap。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -685,14 +726,15 @@ M0 不追求完整地图 CRUD。验收标准：
 - finite orthogonal `.tmj`；
 - 外部 atlas `.tsj` 与本地静态图片；
 - 未压缩 JSON array tile data；
-- 未使用 M1 不支持特性的基础 tile layer、object layer 和 group layer。
+- 未使用 M1 不支持特性的基础 tile、object、image 和 group layer。
 
 功能：
 
 - 文件列表、地图摘要、tileset 摘要、whole-map tile usage analysis、显式 tile metadata
   精确检索和区域读取。
 - 已实现基础 tile set/fill，以及按 encoded GID 精确、simultaneous single-pass 的
-  `replaceTiles`；已实现基础对象 create/update/delete。
+  `replaceTiles`；已实现基础对象 create/update/delete，以及 4 类 layer 的公共字段
+  `updateLayer`。layer move/delete/duplicate 仍未实现。
 - 专用 `tiled_create_layer` 为 4 种空图层生成单操作 change set，支持根/Group 0-based
   插入、`nextlayerid` 分配、tile cell 预算与 prospective image pin。
 - 已存在外部 tileset 引用的解析；专用 `tiled_add_tileset_to_map` 只生成单操作 change set，
@@ -713,7 +755,7 @@ M1 明确拒绝：
 
 这些文件仍可被 raw layer 安全列出、摘要或保留；只有语义写入被拒绝。M1 验收标准是：
 
-> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象，渲染复核；文件由 Tiled
+> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/公共 layer 字段，渲染复核；文件由 Tiled
 > 目标版本打开无警告，并能从 checkpoint 恢复。合作写者的 revision 冲突不得覆盖用户内容；
 > 未经中介的外部 GUI 保存竞态必须在 capabilities 中如实标为不受严格 CAS 保护。
 
@@ -731,6 +773,7 @@ M1 明确拒绝：
 | 未知/1.12+ 字段被 schema 丢弃 | 资产不可逆损坏 | raw document 权威、最小文本 edits | unknown-field fixture；局部 patch 前后文本切片对比 |
 | JS 有符号位或 hex flag 误解 | tile/朝向错误 | 单一 GID codec、orientation union、`>>> 0` | 4 flags 全组合、边界 GID、hex/non-hex property tests |
 | replacement 忽略 transform 或发生 mapping 级联 | 错换朝向、swap/cycle 结果错误 | encoded-GID exact match、single-pass lookup、独立 scan/write 预算 | identity/flags 精确匹配、A→B/B→C、swap、null target、零命中、预算边界 |
+| layer patch 吞掉默认值 intent 或重写完整 layer | 字段未落盘或无关 source diff 爆炸 | member existence-aware change detection、object-member local patch、完整 target tree 复核 | 4 类 layer、缺失默认字段插入、tint 删除/no-op、13 modes、BOM/CRLF、mixed batch、stale revision |
 | 稀疏 local id 被 `tilecount` 截断 | GID 指向错误 tileset | highest-id/nexttileid 区间模型 | atlas、稀疏 image collection、firstgid gap fixtures |
 | tile 语义检索误把默认/继承值当显式值 | 选错 `TileRef` | 只扫描显式 `tiles[]`/property，类型和值精确匹配，revision-pinned 分页 | type/class 优先级、all/any、false/0/空串、稀疏乱序分页、revision race |
 | chunk 被强制重切 | diff 爆炸或坐标损坏 | 原 chunk 保留、局部 rewrite | 负坐标、非 16×16、混合尺寸、重叠 chunk |

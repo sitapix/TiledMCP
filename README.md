@@ -24,6 +24,8 @@
   change set，经客户端批准后再由统一 apply 边界提交；
 - 在有限正交 TMJ 中预览创建空的 tile/object/image/group 图层，支持根级或 Group
   内的显式插入位置，批准后提交并正确维护 `nextlayerid`；
+- 通过通用 preview union 修改 4 类已有图层的 11 个公共显示/元数据字段，使用
+  member-local source patch；layer move/delete 仍未实现；
 - 无损 4-bit GID 变换编解码；
 - `setTiles` / `fillRegion` / `replaceTiles` 封闭编辑集合，以及 preview →
   approved change set → apply 的两阶段提交；replacement 按完整变换后的 encoded GID
@@ -106,7 +108,7 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
-| `tiled_preview_edits` | 校验 tile/object 编辑并生成有 TTL 的 change set |
+| `tiled_preview_edits` | 校验 tile/object/layer 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以目标 revision CAS 提交已批准的 map edit 或 checkpoint restore |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回 PNG |
 
@@ -162,6 +164,28 @@ raw flag 组合另在 transform 摘要中计数。
 1,000,000 个格子，实际发生的替换与其他 tile operation 合计最多写 100,000 个格子。
 没有命中是合法 no-op，preview 会报告 0 次替换，apply 不会改写文件。
 
+修改已有图层的通用显示/元数据字段时，在同一个 `tiled_preview_edits` 中使用第 7 种
+operation：
+`{type:"updateLayer", layerId, patch}`。它支持 `tilelayer`、`objectgroup`、
+`imagelayer` 和 `group`，patch 必须非空且只能包含 `name`、`className`、`visible`、
+`opacity`、`offsetX`、`offsetY`、`parallaxX`、`parallaxY`、`tintColor`、`locked`
+与 `blendMode`。这些 wire 字段分别写入 TMJ 的 `name`、`class`、`visible`、
+`opacity`、`offsetx`、`offsety`、`parallaxx`、`parallaxy`、`tintcolor`、`locked`
+与 `mode`。
+
+`tintColor:null` 删除 `tintcolor`；删除一个本来就缺失的 tint 或写入完全相同的 JSON
+值是 no-op。反之，即使 Tiled 在字段缺失时采用相同默认值，显式插入该字段仍算 change。
+`locked` 只是 advisory metadata，不会阻止同批 tile/object 编辑。preview 的每项
+layer update 会回显 `requestedFields`、`changedFields`、`wouldChange` 与
+`affectsDescendants`；Group 中实际改变的公共渲染属性可能影响后代，因此才会明确标记。
+
+字符串最多 1024 个字符，opacity 限 `0..1`，offset/parallax 必须是
+`-1,000,000,000..1,000,000,000` 内的有限数；tint 只接受 `#RRGGBB`、
+`#AARRGGBB` 或 `null`。blend mode 是 13 项封闭枚举：`normal`、`add`、
+`multiply`、`screen`、`overlay`、`darken`、`lighten`、`color-dodge`、
+`color-burn`、`hard-light`、`soft-light`、`difference`、`exclusion`。
+它不是新的 standalone MCP tool，所以仍是 18 个 core / 19 个含 rasterizer 的工具。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -210,6 +234,8 @@ tile 检索覆盖 class 兼容规则、`all`/`any`、标量 property 精确比�
 revision pin、扫描/查询/结果预算和 malformed metadata；
 usage analysis 覆盖递归 cell/tile-object 统计、隐藏层、base-tile/变换位聚合、
 密度/未使用/top 排序截断、exact read-set pin 和扫描/distinct/结果预算；
+common layer update 覆盖 4 种 layer、字段映射与边界、默认字段显式插入、tint 删除、
+13 种 blend mode、mixed batch、member-local source patch、no-op 与 revision conflict；
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
@@ -236,6 +262,15 @@ checkpoint restore。架构与 roadmap
   region 使用绝对 tile 坐标，省略时覆盖 layer bounds。每个 operation 最多 128 组映射，
   一个 change set 最多扫描 1,000,000 个 replacement 候选格，实际写入仍与 set/fill
   共用 100,000-cell 上限；零命中不会产生受影响 tile 子树或文件写入。
+- `updateLayer` 是通用 edit union 的第 7 种 operation，不是已注册的
+  `tiled_update_layer` standalone tool。它只修改按数字 `layerId` 找到的现有
+  tile/object/image/group layer 的 11 个公共成员；不移动、不删除、不改变父 Group 或
+  sibling 顺序。写回对每个实际改变的 object member 分别做 source patch，因此同一个
+  change set 可以同时修改 layer member、tile `data` 和 object `objects`，而不重排整个
+  layer object。插入、替换或删除的 member 之外，BOM、CRLF、缩进、键序、数字词法与未知
+  字段保持原 bytes。preview 固定 operation、requested/changed fields、Group 后代影响
+  标记、map revision 与完整 dependency set；apply 会重新计算摘要并做 revision CAS。
+  `locked:true` 不构成写保护，若需要禁止 MCP 编辑必须由更高层策略处理。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

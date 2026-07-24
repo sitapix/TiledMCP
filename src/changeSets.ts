@@ -118,6 +118,25 @@ type OperationPreview =
       patch: Extract<MapEditOperation, { type: "updateObject" }>["patch"];
     }
   | {
+      type: "updateLayer";
+      layerId: number;
+      layerType:
+        | "tilelayer"
+        | "objectgroup"
+        | "imagelayer"
+        | "group";
+      destructive: false;
+      warning: string;
+      patch: Extract<
+        MapEditOperation,
+        { type: "updateLayer" }
+      >["patch"];
+      requestedFields: string[];
+      changedFields: string[];
+      wouldChange: boolean;
+      affectsDescendants: boolean;
+    }
+  | {
       type: "deleteObjects";
       destructive: true;
       warning: string;
@@ -459,6 +478,47 @@ function summarizeOperation(
       objectId: operation.objectId,
       changedFields: Object.keys(operation.patch).sort(),
       patch: operation.patch,
+    };
+  }
+
+  if (operation.type === "updateLayer") {
+    const updateSummary = summary.layerUpdates?.find(
+      (entry) => entry.operationIndex === operationIndex,
+    );
+    const requestedFields = Object.keys(
+      operation.patch,
+    ).sort();
+    if (
+      updateSummary === undefined ||
+      updateSummary.layerId !== operation.layerId ||
+      [...updateSummary.requestedFields].sort().join("\0") !==
+        requestedFields.join("\0")
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "updateLayer preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      layerId: operation.layerId,
+      layerType: updateSummary.layerType,
+      destructive: false,
+      warning:
+        updateSummary.affectsDescendants
+          ? "Group layer properties may affect descendant rendering; locked is advisory metadata and does not block MCP edits."
+          : "This updates only common layer properties; locked is advisory metadata and does not block MCP edits.",
+      patch: structuredClone(operation.patch),
+      requestedFields: structuredClone(
+        updateSummary.requestedFields,
+      ),
+      changedFields: structuredClone(
+        updateSummary.changedFields,
+      ),
+      wouldChange: updateSummary.wouldChange,
+      affectsDescendants:
+        updateSummary.affectsDescendants,
     };
   }
 

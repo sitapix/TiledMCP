@@ -281,6 +281,14 @@ describe("createTiledMcpServer", () => {
         defaultRegion: string;
       };
       objectOperations: string[];
+      layerOperations: string[];
+      layerUpdateCapabilities: {
+        layerTypes: string[];
+        fields: string[];
+        tintColorNullDeletes: boolean;
+        lockedSemantics: string;
+        sourcePatch: string;
+      };
       tilesetSheetCapabilities: {
         supportedFormats: string[];
         pageIndexBase: number;
@@ -453,6 +461,31 @@ describe("createTiledMcpServer", () => {
         defaultRegion: "target-layer-bounds",
       },
       objectOperations: ["createObject", "updateObject", "deleteObjects"],
+      layerOperations: ["updateLayer"],
+      layerUpdateCapabilities: {
+        layerTypes: [
+          "tilelayer",
+          "objectgroup",
+          "imagelayer",
+          "group",
+        ],
+        fields: [
+          "name",
+          "className",
+          "visible",
+          "opacity",
+          "offsetX",
+          "offsetY",
+          "parallaxX",
+          "parallaxY",
+          "tintColor",
+          "locked",
+          "blendMode",
+        ],
+        tintColorNullDeletes: true,
+        lockedSemantics: "advisory-metadata",
+        sourcePatch: "object-member-local",
+      },
       tilesetSheetCapabilities: {
         supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
         pageIndexBase: 0,
@@ -1624,6 +1657,183 @@ describe("createTiledMcpServer", () => {
         text: expect.stringContaining("Input validation error"),
       }),
     ]);
+  });
+
+  it("previews and applies strict common layer-property updates", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    for (const patch of [
+      {},
+      { tintColor: "#abc" },
+      { blendMode: "source-over" },
+      { opacity: 2 },
+      { unknown: true },
+    ]) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [
+              {
+                type: "updateLayer",
+                layerId: LAYER_ID,
+                patch,
+              },
+            ],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(absoluteMapPath);
+    const patch = {
+      name: "Renamed Ground",
+      className: "TerrainLayer",
+      locked: true,
+      tintColor: "#80112233",
+      blendMode: "soft-light",
+    };
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        affectedLayerIds: number[];
+        updatedLayerIds: number[];
+        layerUpdates: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "updateLayer",
+              layerId: LAYER_ID,
+              patch,
+            },
+          ],
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      expectedRevision: summary.revision,
+      operations: [
+        {
+          type: "updateLayer",
+          layerId: LAYER_ID,
+          layerType: "tilelayer",
+          destructive: false,
+          patch,
+          requestedFields: [
+            "name",
+            "className",
+            "tintColor",
+            "locked",
+            "blendMode",
+          ],
+          changedFields: [
+            "name",
+            "className",
+            "tintColor",
+            "locked",
+            "blendMode",
+          ],
+          wouldChange: true,
+          affectsDescendants: false,
+          warning: expect.stringContaining(
+            "advisory metadata",
+          ),
+        },
+      ],
+      summary: {
+        affectedLayerIds: [LAYER_ID],
+        updatedLayerIds: [LAYER_ID],
+        layerUpdates: [
+          {
+            operationIndex: 0,
+            layerId: LAYER_ID,
+            layerType: "tilelayer",
+            requestedFields: [
+              "name",
+              "className",
+              "tintColor",
+              "locked",
+              "blendMode",
+            ],
+            changedFields: [
+              "name",
+              "className",
+              "tintColor",
+              "locked",
+              "blendMode",
+            ],
+            wouldChange: true,
+            affectsDescendants: false,
+          },
+        ],
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(before);
+
+    const applied = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision: preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied).toMatchObject({
+      changed: true,
+      revision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+    });
+    const saved = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    expect((saved.layers as JsonObject[])[0]).toMatchObject({
+      id: LAYER_ID,
+      name: "Renamed Ground",
+      class: "TerrainLayer",
+      locked: true,
+      tintcolor: "#80112233",
+      mode: "soft-light",
+    });
   });
 
   it("previews and applies exact tile replacements through the generic edit batch", async () => {

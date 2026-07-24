@@ -152,7 +152,40 @@ or silently repairs a stale counter.
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, and \`replaceTiles\`; supported object operations are
-\`createObject\`, \`updateObject\`, and \`deleteObjects\`.
+\`createObject\`, \`updateObject\`, and \`deleteObjects\`; the supported common
+layer operation is \`updateLayer\`.
+
+Use \`{type:"updateLayer", layerId, patch}\` to update an existing
+\`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
+seventh operation in the generic preview union, not a standalone tool, so the
+registry remains 18 core tools or 19 when the rasterizer is available. The
+patch must contain at least one field and may contain only:
+
+- \`name\`, \`className\`, \`visible\`, and \`opacity\`;
+- \`offsetX\`, \`offsetY\`, \`parallaxX\`, and \`parallaxY\`;
+- \`tintColor\`, \`locked\`, and \`blendMode\`.
+
+They map respectively to the Tiled JSON members \`name\`, \`class\`,
+\`visible\`, \`opacity\`, \`offsetx\`, \`offsety\`, \`parallaxx\`,
+\`parallaxy\`, \`tintcolor\`, \`locked\`, and \`mode\`. Names and classes are
+capped at 1,024 characters; opacity is 0 through 1; offset and parallax values
+must be finite numbers from -1,000,000,000 through 1,000,000,000. A tint is
+\`#RRGGBB\`, \`#AARRGGBB\`, or \`null\`; null deletes the member.
+
+Blend mode is one of \`normal\`, \`add\`, \`multiply\`, \`screen\`,
+\`overlay\`, \`darken\`, \`lighten\`, \`color-dodge\`, \`color-burn\`,
+\`hard-light\`, \`soft-light\`, \`difference\`, or \`exclusion\`.
+\`locked\` is advisory Tiled metadata, not an MCP write lock; tile and object
+edits in the same batch still run.
+
+Writing the same value, or deleting a tint member that is already absent, is a
+no-op. Writing an explicit default to an absent member is a change because the
+JSON representation changed. Inspect \`requestedFields\`, \`changedFields\`,
+\`wouldChange\`, and \`affectsDescendants\` in the preview; Group properties
+are flagged only when a changed rendering field can affect descendants. Apply
+changes only through the normal revision-pinned approval flow. Changed layer fields use
+member-local source patches and may safely share a batch with tile-data and
+object edits; moving or deleting layers is not implemented.
 
 A \`replaceTiles\` operation has a numeric \`layerId\`, one to 128
 \`mappings\` shaped as \`{from: TileRef, to: TileRef|null}\`, and an optional

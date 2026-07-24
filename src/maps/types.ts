@@ -87,13 +87,47 @@ export interface DeleteObjectsOperation {
   objectIds: number[];
 }
 
+export type LayerBlendMode =
+  | "normal"
+  | "add"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion";
+
+export interface UpdateLayerOperation {
+  type: "updateLayer";
+  layerId: number;
+  patch: {
+    name?: string;
+    className?: string;
+    visible?: boolean;
+    opacity?: number;
+    offsetX?: number;
+    offsetY?: number;
+    parallaxX?: number;
+    parallaxY?: number;
+    tintColor?: string | null;
+    locked?: boolean;
+    blendMode?: LayerBlendMode;
+  };
+}
+
 export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
   | ReplaceTilesOperation
   | CreateObjectOperation
   | UpdateObjectOperation
-  | DeleteObjectsOperation;
+  | DeleteObjectsOperation
+  | UpdateLayerOperation;
 
 /**
  * A fully resolved operation emitted only by the dedicated
@@ -164,6 +198,16 @@ export interface MapEditPlan {
     createdObjectIds: number[];
     updatedObjectIds: number[];
     deletedObjectIds: number[];
+    updatedLayerIds?: number[];
+    layerUpdates?: Array<{
+      operationIndex: number;
+      layerId: number;
+      layerType: CreatableLayerType;
+      requestedFields: string[];
+      changedFields: string[];
+      wouldChange: boolean;
+      affectsDescendants: boolean;
+    }>;
     tileReplacements?: Array<{
       operationIndex: number;
       layerId: number;

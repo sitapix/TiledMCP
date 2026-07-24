@@ -85,6 +85,18 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         defaultTopTileLimit: 64,
       },
       tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
+      layerOperations: ["updateLayer"],
+      layerUpdateCapabilities: {
+        layerTypes: [
+          "tilelayer",
+          "objectgroup",
+          "imagelayer",
+          "group",
+        ],
+        tintColorNullDeletes: true,
+        lockedSemantics: "advisory-metadata",
+        sourcePatch: "object-member-local",
+      },
       tileReplacementCapabilities: {
         match: "exact-encoded-gid",
         transformMatch: "exact",

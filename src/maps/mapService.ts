@@ -17,6 +17,7 @@ import {
 import {
   patchJsonDocumentSource,
   type JsonArrayInsertion,
+  type JsonObjectMemberPatch,
   type JsonSourcePath,
 } from "../formats/jsonSourcePatch.js";
 import { readImageFileSnapshot } from "../images/imageFile.js";
@@ -107,6 +108,61 @@ export const MAX_USAGE_TILESET_SUMMARIES = 64;
 export const MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE = 16;
 export const MAX_USAGE_RESULT_BYTES = 256 * 1024;
 const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+const TILED_COLOR_PATTERN =
+  /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+const LAYER_PATCH_FIELDS = [
+  "name",
+  "className",
+  "visible",
+  "opacity",
+  "offsetX",
+  "offsetY",
+  "parallaxX",
+  "parallaxY",
+  "tintColor",
+  "locked",
+  "blendMode",
+] as const;
+type LayerPatchField = (typeof LAYER_PATCH_FIELDS)[number];
+const LAYER_PATCH_JSON_KEYS: Record<LayerPatchField, string> = {
+  name: "name",
+  className: "class",
+  visible: "visible",
+  opacity: "opacity",
+  offsetX: "offsetx",
+  offsetY: "offsety",
+  parallaxX: "parallaxx",
+  parallaxY: "parallaxy",
+  tintColor: "tintcolor",
+  locked: "locked",
+  blendMode: "mode",
+};
+const LAYER_BLEND_MODES = new Set([
+  "normal",
+  "add",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+]);
+const GROUP_DESCENDANT_RENDER_FIELDS =
+  new Set<LayerPatchField>([
+    "visible",
+    "opacity",
+    "offsetX",
+    "offsetY",
+    "parallaxX",
+    "parallaxY",
+    "tintColor",
+    "blendMode",
+  ]);
 
 interface LayerTraversalBudget {
   count: number;
@@ -181,6 +237,13 @@ interface ObjectLocation {
   object: JsonObject;
   objectIndex: number;
   layer: ObjectLayerView;
+}
+
+interface EditableLayerLocation {
+  object: JsonObject;
+  path: JsonSourcePath;
+  id: number;
+  type: CreatableLayerType;
 }
 
 interface ObjectEditIndex {
@@ -1513,6 +1576,11 @@ export class MapService {
         appliedSummary,
         plan.mapPath,
       ),
+      sourceObjectMemberPatchesForSummary(
+        edited,
+        appliedSummary,
+        plan.mapPath,
+      ),
     );
     const result = await this.store.commitBytes(
       plan.mapPath,
@@ -2661,6 +2729,8 @@ function validateAndSummarizeOperations(
   const createdObjectIds = new Set<number>();
   const updatedObjectIds = new Set<number>();
   const deletedObjectIds = new Set<number>();
+  const updatedLayerIds = new Set<number>();
+  const changedLayerMembers = new Set<string>();
   const addedTilesets: NonNullable<
     MapEditPlan["summary"]["addedTilesets"]
   > = [];
@@ -2669,6 +2739,9 @@ function validateAndSummarizeOperations(
   > = [];
   const tileReplacements: NonNullable<
     MapEditPlan["summary"]["tileReplacements"]
+  > = [];
+  const layerUpdates: NonNullable<
+    MapEditPlan["summary"]["layerUpdates"]
   > = [];
   let objectIndex: ObjectEditIndex | undefined;
   const getObjectIndex = (): ObjectEditIndex => {
@@ -2971,6 +3044,40 @@ function validateAndSummarizeOperations(
         replacedCellCount,
         mappingCount: operation.mappings.length,
       });
+    } else if (operation.type === "updateLayer") {
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
+      const update = updateCommonLayer(
+        map,
+        operation.layerId,
+        operation.patch,
+        mapPath,
+        `operations[${operationIndex}].patch`,
+      );
+      if (update.changedFields.length > 0) {
+        affectedLayerIds.add(update.layer.id);
+        updatedLayerIds.add(update.layer.id);
+        for (const field of update.changedFields) {
+          changedLayerMembers.add(
+            `${update.layer.id}:${layerPatchJsonKey(field)}`,
+          );
+        }
+      }
+      layerUpdates.push({
+        operationIndex,
+        layerId: update.layer.id,
+        layerType: update.layer.type,
+        requestedFields: update.requestedFields,
+        changedFields: update.changedFields,
+        wouldChange: update.changedFields.length > 0,
+        affectsDescendants:
+          update.layer.type === "group" &&
+          update.changedFields.some((field) =>
+            GROUP_DESCENDANT_RENDER_FIELDS.has(field),
+          ),
+      });
     } else if (operation.type === "createObject") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
       const created = createBasicObject(
@@ -3070,6 +3177,7 @@ function validateAndSummarizeOperations(
   const patchedSubtreeCount =
     affectedTileLayerIds.size +
     affectedObjectLayerIds.size +
+    changedLayerMembers.size +
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
     (createdLayers.length > 0 ? 2 : 0);
@@ -3094,6 +3202,14 @@ function validateAndSummarizeOperations(
     createdObjectIds: [...createdObjectIds].sort((left, right) => left - right),
     updatedObjectIds: [...updatedObjectIds].sort((left, right) => left - right),
     deletedObjectIds: [...deletedObjectIds].sort((left, right) => left - right),
+    ...(layerUpdates.length === 0
+      ? {}
+      : {
+          updatedLayerIds: [...updatedLayerIds].sort(
+            (left, right) => left - right,
+          ),
+          layerUpdates,
+        }),
     ...(tileReplacements.length === 0
       ? {}
       : { tileReplacements }),
@@ -4446,6 +4562,202 @@ function findObjectLocation(
   return found;
 }
 
+function updateCommonLayer(
+  map: JsonObject,
+  layerId: number,
+  patch: Extract<
+    MapEditOperation,
+    { type: "updateLayer" }
+  >["patch"],
+  mapPath: string,
+  context: string,
+): {
+  layer: EditableLayerLocation;
+  requestedFields: LayerPatchField[];
+  changedFields: LayerPatchField[];
+} {
+  if (!isRecordValue(patch)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be an object.`,
+    );
+  }
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must contain at least one field.`,
+    );
+  }
+  const allowedFields = new Set<string>(LAYER_PATCH_FIELDS);
+  const unknownKey = keys.find(
+    (key) => !allowedFields.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} contains unsupported field ${unknownKey}.`,
+    );
+  }
+  const requestedFields = LAYER_PATCH_FIELDS.filter((field) =>
+    Object.prototype.hasOwnProperty.call(patch, field),
+  );
+  for (const field of requestedFields) {
+    assertLayerPatchValue(
+      field,
+      (patch as Record<string, unknown>)[field],
+      `${context}.${field}`,
+    );
+  }
+
+  const layer = findEditableLayer(map, layerId, mapPath);
+  const changedFields: LayerPatchField[] = [];
+  for (const field of requestedFields) {
+    const jsonKey = layerPatchJsonKey(field);
+    const value = (patch as Record<string, unknown>)[field];
+    if (field === "tintColor" && value === null) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          layer.object,
+          jsonKey,
+        )
+      ) {
+        delete layer.object[jsonKey];
+        changedFields.push(field);
+      }
+      continue;
+    }
+    const currentValue = layer.object[jsonKey];
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        layer.object,
+        jsonKey,
+      ) ||
+      stableJson(currentValue as JsonValue) !==
+        stableJson(value as JsonValue)
+    ) {
+      layer.object[jsonKey] = value as JsonValue;
+      changedFields.push(field);
+    }
+  }
+  return { layer, requestedFields, changedFields };
+}
+
+function findEditableLayer(
+  map: JsonObject,
+  layerId: number,
+  mapPath: string,
+): EditableLayerLocation {
+  const layers = expectArray(map.layers, `${mapPath}.layers`);
+  const located = findLayerRecursive(
+    layers,
+    layerId,
+    `${mapPath}.layers`,
+    ["layers"],
+  );
+  if (located === undefined) {
+    throw new TiledMcpError(
+      "LAYER_NOT_FOUND",
+      `Layer ${layerId} does not exist.`,
+      { path: mapPath, layerId },
+    );
+  }
+  const type = expectString(
+    located.object.type,
+    `layer ${layerId}.type`,
+  );
+  if (
+    type !== "tilelayer" &&
+    type !== "objectgroup" &&
+    type !== "imagelayer" &&
+    type !== "group"
+  ) {
+    throw new TiledMcpError(
+      "LAYER_TYPE_MISMATCH",
+      `Layer ${layerId} does not use a supported Tiled layer type.`,
+      { path: mapPath, layerId, layerType: type },
+    );
+  }
+  return {
+    object: located.object,
+    path: located.path,
+    id: expectInteger(
+      located.object.id,
+      `layer ${layerId}.id`,
+    ),
+    type,
+  };
+}
+
+function assertLayerPatchValue(
+  field: LayerPatchField,
+  value: unknown,
+  context: string,
+): void {
+  if (field === "name" || field === "className") {
+    assertBoundedString(value as string, context);
+    return;
+  }
+  if (field === "visible" || field === "locked") {
+    if (typeof value !== "boolean") {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context} must be a boolean.`,
+      );
+    }
+    return;
+  }
+  if (field === "opacity") {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 1
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context} must be between 0 and 1.`,
+      );
+    }
+    return;
+  }
+  if (
+    field === "offsetX" ||
+    field === "offsetY" ||
+    field === "parallaxX" ||
+    field === "parallaxY"
+  ) {
+    assertObjectNumber(value, context);
+    return;
+  }
+  if (field === "tintColor") {
+    if (
+      value !== null &&
+      (typeof value !== "string" ||
+        !TILED_COLOR_PATTERN.test(value))
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context} must be null, #RRGGBB, or #AARRGGBB.`,
+      );
+    }
+    return;
+  }
+  if (
+    typeof value !== "string" ||
+    !LAYER_BLEND_MODES.has(value)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} is not a supported Tiled blend mode.`,
+    );
+  }
+}
+
+function layerPatchJsonKey(field: LayerPatchField): string {
+  return LAYER_PATCH_JSON_KEYS[field];
+}
+
 function createBasicObject(
   map: JsonObject,
   layerId: number,
@@ -5061,6 +5373,60 @@ function sourceArrayInsertionsForSummary(
     ).path,
     index: created.index,
   }));
+}
+
+function sourceObjectMemberPatchesForSummary(
+  map: JsonObject,
+  summary: MapEditPlan["summary"],
+  mapPath: string,
+): JsonObjectMemberPatch[] {
+  const patches: JsonObjectMemberPatch[] = [];
+  const seen = new Set<string>();
+  for (const update of summary.layerUpdates ?? []) {
+    if (update.changedFields.length === 0) {
+      continue;
+    }
+    const layer = findEditableLayer(
+      map,
+      update.layerId,
+      mapPath,
+    );
+    for (const field of update.changedFields) {
+      if (!isLayerPatchField(field)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          `Layer update summary contains unsupported field ${field}.`,
+          {
+            path: mapPath,
+            layerId: update.layerId,
+            field,
+          },
+        );
+      }
+      const patch = {
+        path: layer.path,
+        key: layerPatchJsonKey(field),
+      };
+      const identity = JSON.stringify([
+        ...patch.path,
+        patch.key,
+      ]);
+      if (seen.has(identity)) {
+        continue;
+      }
+      seen.add(identity);
+      patches.push(patch);
+    }
+  }
+  return patches;
+}
+
+function isLayerPatchField(
+  value: string,
+): value is LayerPatchField {
+  return (LAYER_PATCH_FIELDS as readonly string[]).includes(
+    value,
+  );
 }
 
 function findLayerRecursive(

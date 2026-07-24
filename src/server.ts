@@ -124,6 +124,24 @@ const objectCoordinateSchema = z.number().min(-1_000_000_000).max(1_000_000_000)
 const objectExtentSchema = z.number().min(0).max(1_000_000_000);
 const objectStringSchema = z.string().max(1_024);
 const objectOpacitySchema = z.number().min(0).max(1);
+const layerBlendModeSchema = z.enum([
+  "normal",
+  "add",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+]);
+const tiledColorSchema = z
+  .string()
+  .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu);
 const tileFindSelectorSchema = z
   .string()
   .min(1)
@@ -480,6 +498,33 @@ const deleteObjectsSchema = z
   })
   .strict();
 
+const layerPatchSchema = z
+  .object({
+    name: objectStringSchema.optional(),
+    className: objectStringSchema.optional(),
+    visible: z.boolean().optional(),
+    opacity: objectOpacitySchema.optional(),
+    offsetX: objectCoordinateSchema.optional(),
+    offsetY: objectCoordinateSchema.optional(),
+    parallaxX: objectCoordinateSchema.optional(),
+    parallaxY: objectCoordinateSchema.optional(),
+    tintColor: tiledColorSchema.nullable().optional(),
+    locked: z.boolean().optional(),
+    blendMode: layerBlendModeSchema.optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Layer update patch must contain at least one field",
+  });
+
+const updateLayerSchema = z
+  .object({
+    type: z.literal("updateLayer"),
+    layerId: positiveIdSchema,
+    patch: layerPatchSchema,
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
@@ -487,6 +532,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   createObjectSchema,
   updateObjectSchema,
   deleteObjectsSchema,
+  updateLayerSchema,
 ]);
 const resultOutputSchema = z.object({ result: z.unknown() }).strict();
 
@@ -567,6 +613,31 @@ export async function createTiledMcpServer(
           defaultRegion: "target-layer-bounds",
         },
         objectOperations: ["createObject", "updateObject", "deleteObjects"],
+        layerOperations: ["updateLayer"],
+        layerUpdateCapabilities: {
+          layerTypes: [
+            "tilelayer",
+            "objectgroup",
+            "imagelayer",
+            "group",
+          ],
+          fields: [
+            "name",
+            "className",
+            "visible",
+            "opacity",
+            "offsetX",
+            "offsetY",
+            "parallaxX",
+            "parallaxY",
+            "tintColor",
+            "locked",
+            "blendMode",
+          ],
+          tintColorNullDeletes: true,
+          lockedSemantics: "advisory-metadata",
+          sourcePatch: "object-member-local",
+        },
         checkpointCapabilities: {
           automaticBeforeWrite: true,
           startupPreparedReconciliation: true,
@@ -1307,7 +1378,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, exact tile replacements, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, exact tile replacements, common layer-property updates, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
