@@ -40,11 +40,20 @@ import {
   MAX_NATIVE_PREVIEW_SCALE,
 } from "./images/mapPreview.js";
 import {
+  DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CREATE_TILE_LAYER_CELLS,
   MAX_LAYER_NAME_LENGTH,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
+  MAX_USAGE_DISTINCT_TILES,
+  MAX_USAGE_LAYER_SUMMARIES,
+  MAX_USAGE_RESULT_BYTES,
+  MAX_USAGE_SCAN_VALUES,
+  MAX_USAGE_TILESET_SUMMARIES,
+  MAX_USAGE_TOP_TILE_LIMIT,
+  MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE,
+  type AnalyzeUsageInput,
   type MapService,
 } from "./maps/mapService.js";
 import {
@@ -210,6 +219,38 @@ const dependencyRevisionsSchema = z
       context.addIssue({
         code: "custom",
         message: "At most 4096 dependency revisions may be supplied",
+      });
+    }
+  });
+
+const usageAnalysisInputSchema = z
+  .object({
+    mapPath: projectPathSchema,
+    topTileLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_USAGE_TOP_TILE_LIMIT)
+      .optional(),
+    expectedMapRevision: revisionSchema.optional(),
+    expectedDependencyRevisions:
+      dependencyRevisionsSchema.optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      (input.expectedMapRevision === undefined) !==
+      (input.expectedDependencyRevisions === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "expectedMapRevision and expectedDependencyRevisions must be provided together",
+        path: [
+          input.expectedMapRevision === undefined
+            ? "expectedMapRevision"
+            : "expectedDependencyRevisions",
+        ],
       });
     }
   });
@@ -571,6 +612,21 @@ export async function createTiledMcpServer(
           nextPageIncludesRevisionPins: true,
           inputRevisionPins: "optional",
         },
+        usageAnalysisCapabilities: {
+          profile:
+            "finite-orthogonal-tmj-external-atlas-tsj",
+          includesTileLayerCells: true,
+          includesTileObjects: true,
+          visibility: "all-serialized-layers",
+          transformAggregation: "base-tile",
+          unusedLocalIdDomain:
+            "zero-to-tilecount-exclusive",
+          output: "bounded-summary-and-samples",
+          optionalExactReadSetPins: true,
+          snapshotConsistency: "non-atomic-read-set",
+          defaultTopTileLimit:
+            DEFAULT_USAGE_TOP_TILE_LIMIT,
+        },
         tilesetReferenceCapabilities: {
           planner: "dedicated-single-operation-change-set",
           targetProfile: "project-local-external-root-atlas-tsj",
@@ -651,6 +707,18 @@ export async function createTiledMcpServer(
           maxAddTilesetGidScans: MAX_ADD_TILESET_GID_SCANS,
           maxReplaceTileMappings: MAX_REPLACE_TILE_MAPPINGS,
           maxReplaceTileScans: MAX_REPLACE_TILE_SCANS,
+          maxUsageScanValues: MAX_USAGE_SCAN_VALUES,
+          maxUsageDistinctTiles:
+            MAX_USAGE_DISTINCT_TILES,
+          maxUsageTopTileLimit:
+            MAX_USAGE_TOP_TILE_LIMIT,
+          maxUsageLayerSummaries:
+            MAX_USAGE_LAYER_SUMMARIES,
+          maxUsageTilesetSummaries:
+            MAX_USAGE_TILESET_SUMMARIES,
+          maxUsageUnusedLocalIdSample:
+            MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE,
+          maxUsageResultBytes: MAX_USAGE_RESULT_BYTES,
           maxCreateTileLayerCells:
             MAX_CREATE_TILE_LAYER_CELLS,
           maxLayerNameLength: MAX_LAYER_NAME_LENGTH,
@@ -1084,6 +1152,24 @@ export async function createTiledMcpServer(
       annotations: READ_ONLY,
     },
     async ({ mapPath }) => executeTool(() => maps.validate(mapPath)),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_analyze_usage",
+    {
+      title: "Analyze tile usage",
+      description:
+        "Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included.",
+      inputSchema: usageAnalysisInputSchema,
+      outputSchema: resultOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async (input) =>
+      executeTool(() =>
+        maps.analyzeUsage(input as AnalyzeUsageInput),
+      ),
   );
 
   register(

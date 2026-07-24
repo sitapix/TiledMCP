@@ -47,7 +47,10 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_restore",
     );
-    expect(tools.tools.length === 17 || tools.tools.length === 18).toBe(
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_analyze_usage",
+    );
+    expect(tools.tools.length === 18 || tools.tools.length === 19).toBe(
       true,
     );
 
@@ -72,6 +75,14 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         defaultQueryMode: "all",
         nextPageIncludesRevisionPins: true,
         inputRevisionPins: "optional",
+      },
+      usageAnalysisCapabilities: {
+        includesTileLayerCells: true,
+        includesTileObjects: true,
+        visibility: "all-serialized-layers",
+        transformAggregation: "base-tile",
+        optionalExactReadSetPins: true,
+        defaultTopTileLimit: 64,
       },
       tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
       tileReplacementCapabilities: {
@@ -112,6 +123,64 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     if (summary === undefined || tileset === undefined) {
       throw new Error("Expected the stdio fixture summary.");
     }
+
+    const usageResponse = await client.callTool({
+      name: "tiled_analyze_usage",
+      arguments: {
+        mapPath: "basic.tmj",
+        topTileLimit: 1,
+        expectedMapRevision: summary.revision,
+        expectedDependencyRevisions:
+          summary.dependencyRevisions,
+      },
+    });
+    expect(usageResponse.isError).not.toBe(true);
+    expect(
+      (
+        usageResponse.structuredContent as
+          | { result?: Record<string, unknown> }
+          | undefined
+      )?.result,
+    ).toMatchObject({
+      profile:
+        "finite-orthogonal-tmj-external-atlas-tsj",
+      scan: {
+        tileCellCount: 12,
+        objectCount: 0,
+        valueCount: 12,
+      },
+      totals: {
+        nonEmptyTileCellCount: 12,
+        tileObjectCount: 0,
+        referenceCount: 12,
+        distinctUsedTileCount: 4,
+        usedTilesetCount: 1,
+        unusedTilesetCount: 0,
+      },
+      topTiles: {
+        limit: 1,
+        returned: 1,
+        distinctUsedTileCount: 4,
+        truncated: true,
+        items: [
+          {
+            tile: {
+              tileset: {
+                kind: "external",
+                assetId: tileset.assetId,
+              },
+              localId: 0,
+            },
+            references: {
+              total: 3,
+              tileCells: 3,
+              tileObjects: 0,
+              transformed: 0,
+            },
+          },
+        ],
+      },
+    });
 
     const searchResponse = await client.callTool({
       name: "tiled_find_tiles",
@@ -601,6 +670,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \(1[78] tools\)/u,
+    /ready for .+ \(1[89] tools\)/u,
   );
 });

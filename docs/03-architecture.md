@@ -20,8 +20,10 @@ change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ�
 tile/object/image/group 图层，批准后才由通用 apply 写入并推进 `nextlayerid`。当前
 `tiled_preview_checkpoint_restore` 也已把单文件 exact-byte restore kernel 接入同一个
 anti-ABA change-set registry：恢复先只读固定 manifest/blob/目标 revision，经客户端批准
-后才由通用 apply 提交。registry 因此包含 17 个 core tools；探测到
-`tmxrasterizer` 时为 18 个。Tiled
+后才由通用 apply 提交。whole-map `tiled_analyze_usage` 只读投影也已落地，递归统计
+tile-layer cells 与 tile objects，并用独立扫描、distinct aggregation 和结果预算约束
+工作量。registry 因此包含 18 个 core tools；探测到
+`tmxrasterizer` 时为 19 个。Tiled
 export/evaluate、项目资产/schema/render Resource Templates、跨文件 WAL 和
 rename-stable asset registry 仍是下文的目标架构，不是当前能力。固定
 `tiled://guide` direct Resource 已落地：SDK registry 提供
@@ -406,7 +408,7 @@ checkpoint 和同目录原子替换。插入器只接受“目标数组恰好多
 ### 6.4 精确 tile replacement
 
 `replaceTiles` 已作为 `tiled_preview_edits` 的第六种封闭 operation 实现，不注册新的
-standalone MCP tool，因此 registry 仍是 17 个 core / 18 个含 rasterizer 的工具。输入为
+standalone MCP tool，因此 registry 仍是 18 个 core / 19 个含 rasterizer 的工具。输入为
 一个已有 tile layer ID、一到 128 组 `{from: TileRef, to: TileRef|null}` mapping，以及
 可选绝对 tile region `{x,y,width,height}`。`from` 不允许为空；`to:null` 才是清空。
 region 必须落在 layer 的 `x/y/width/height` bounds 中，省略时扫描完整 layer bounds，
@@ -425,6 +427,33 @@ cell，因此多组替换是 simultaneous single-pass：`A→B, B→C` 不级联
 累计最多扫描 1,000,000 个 cell；只有 source 命中且 target 不同才计入实际 tile write，
 并与 set/fill 共用 100,000-cell 上限。零命中是合法 no-op，不加入受影响 tile-layer
 source patch；preview 仍回显规范 region、mapping 数、扫描数和 `replacedCellCount:0`。
+
+### 6.5 Whole-map tile usage analysis
+
+`tiled_analyze_usage` 是独立的 read-only projection，不进入 change-set registry，也不会
+按 layer、region 或 visibility 裁剪范围。它复用有限正交 TMJ + external root-atlas TSJ
+binding 校验，递归遍历完整 layer tree；tile layer 必须是 finite numeric `data` array，
+object layer 中所有对象消耗 scan budget，带 `gid` 的对象再作为 tile-object 引用解析。
+隐藏 layer 和隐藏 Group 不会被跳过。未知 layer type、压缩/string data、chunk、malformed
+或未绑定 GID 都 fail closed，不能以部分结果伪装完整 whole-map 分析。
+
+aggregation key 是 `(bindingIndex/assetId, localId)` 对应的 base tile，encoded GID 的
+H/V/D/raw flag 位不进入 distinct key；完整 unsigned `rawFlags` 频次、
+identity/transformed 总数和每个 tile 的 transformed 引用数另行累计。cell 与 tile
+object 引用既分别计数也合并到频率。输出只保留 deterministic bounded projections：
+layer density 按密度升序再按 layer ID，tileset 按 unused-first 再按 `firstgid`，top tile
+按 cell+object 总引用降序再按 binding/local ID。每个 tileset 还报告 used local ID 数与
+`0..tilecount-1` 域内的 unused 数量/有界样本；所有列表携带 returned/omitted/truncated
+或等价信息。
+
+输入的 `topTileLimit` 默认 64、最大 128。一个调用最多扫描 1,000,000 个 tile cell +
+object、聚合 100,000 个 distinct tile；layer 与 tileset summary 各最多 64 项，单
+tileset unused-local-ID sample 最多 16 项，最终 JSON 最多 256 KiB。这些是分析专用预算，
+不与 mutation 的 cell-write budget 混用。可选 `expectedMapRevision` 与
+`expectedDependencyRevisions` 必须成对出现；dependency record 必须与 pinned map 的
+完整 external TSJ read set 精确相等。服务端先从 guarded raw-byte snapshots 构造投影，
+完成后重新检查所有 dependency 与 map revision；由于多文件读取无法保证同一时刻原子性，
+结果仍明确标记 `snapshotConsistency: "non-atomic-read-set"`。
 
 ## 7. Tile data、chunk 与压缩
 
@@ -578,6 +607,8 @@ checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`be
 | 单 change set tile 写入 | 100,000 cells |
 | 单个 `replaceTiles` operation | 128 mappings |
 | 单 change set `replaceTiles` 扫描 | 1,000,000 cells |
+| usage analysis 扫描 / distinct aggregation | 1,000,000 cells+objects / 100,000 tiles |
+| usage analysis 摘要 / 输出 | 64 layers + 64 tilesets；top tiles 1–128（默认 64）；256 KiB |
 | 单 change set 对象 mutation | 10,000 objects |
 | 单 change set 重写的 JSON 子树 | 128 |
 | 输入图片文件 | 64 MiB |
@@ -658,7 +689,8 @@ M0 不追求完整地图 CRUD。验收标准：
 
 功能：
 
-- 文件列表、地图摘要、tileset 摘要、显式 tile metadata 精确检索和区域读取。
+- 文件列表、地图摘要、tileset 摘要、whole-map tile usage analysis、显式 tile metadata
+  精确检索和区域读取。
 - 已实现基础 tile set/fill，以及按 encoded GID 精确、simultaneous single-pass 的
   `replaceTiles`；已实现基础对象 create/update/delete。
 - 专用 `tiled_create_layer` 为 4 种空图层生成单操作 change set，支持根/Group 0-based

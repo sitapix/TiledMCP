@@ -15,11 +15,12 @@
 
 ### 0.1 当前实现切片（2026-07-24）
 
-当前代码注册 17 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
-索引与单文件恢复预览、地图摘要、有界外部 atlas TSJ 详情、显式 tile metadata 精确检索、矩形 region、
+当前代码注册 18 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
+索引与单文件恢复预览、地图摘要、whole-map tile usage analysis、有界外部 atlas TSJ
+详情、显式 tile metadata 精确检索、矩形 region、
 带 local ID 的分页 tileset sheet、native tile-layer region preview、对象列表、只读
 校验、增量创建地图、空图层创建预览、map edits 预览、外部 tileset 挂载预览与 change
-set 提交；探测到 `tmxrasterizer` 时再注册第 18 个高保真地图 PNG 工具。另注册一个不依赖项目内容
+set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG 工具。另注册一个不依赖项目内容
 的 direct Resource：`tiled://guide`，通过 `resources/list` 发现并由 `resources/read`
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
@@ -435,7 +436,29 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 | `tiled_preview_validation_fixes` | 把明确选择的 `fixId` 计算为待批准 change set；不与只读 validate 共用工具名 | `path`, `expectedRevision`, `fixIds` |
 | `tiled_check_connectivity` | **游戏性校验**（后续候选）：基于碰撞图层或属性规则分析可达性、封闭区域和对象穿墙 | `mapPath`, `collisionLayerId\|collisionRule`, `from?`, `to?` |
 | `tiled_register_tile_names` | 语义 tile 注册表：把 `grass`、`water_corner_tl` 等名字映射到具体 tile，之后所有工具的 `tile` 参数可直接用名字（借鉴 hoberobin 思路；配合 `auto-name-tiles` Prompt 可由模型看图自动完成） | `tilesetPath`, `names: {name: tileId}` |
-| `tiled_analyze_usage` | 统计 tile 使用频率、找出未使用 tileset、图层密度（后续候选） | `mapPath` |
+| `tiled_analyze_usage` | **已实现/只读。** 递归统计整张地图的 tile cell/tile object 使用、raw flags、图层密度、tileset/未使用 local ID 与 top tiles，返回有界摘要 | `mapPath`, `topTileLimit?`, `expectedMapRevision?`, `expectedDependencyRevisions?` |
+
+`tiled_analyze_usage` 只接受当前有限正交 TMJ + external root-atlas TSJ profile。扫描范围
+固定为整张 map 的完整递归 layer tree：每个 finite numeric-array tile layer 的全部
+cell，以及每个 object layer 中带 `gid` 的 tile object；Group/layer 的 visibility 不
+参与筛选，隐藏内容仍计入。所有 object（包括非 tile object）都会计入扫描工作量，只有带
+合法非零 GID 的对象才计入 tile 引用。
+
+tile 身份按 external tileset `assetId + localId` 的 base tile 聚合，因此同一 tile 的
+identity/H/V/D 等变换不会被误算成多个 distinct tile；响应同时给出 identity/transformed
+总数、每种完整 unsigned `rawFlags` 的引用数，以及 top tile 中的 transformed 引用数。
+输出包括总量、按 density 升序且以 layer ID 打破平局的 layer 摘要、unused-first 且以
+`firstgid` 排序的 tileset 摘要（含未使用 local ID 总数与有界样本），以及按总引用降序、
+再按 tileset binding/local ID 排序的 top tiles。上述都是显式带截断信息的摘要，不能将
+样本解释为完整集合。
+
+单次分析最多扫描 1,000,000 个 tile cell + object、聚合 100,000 个 distinct base tile；
+layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 local ID 样本最多
+16 项。`topTileLimit` 默认 64、合法范围 `1..128`；完整序列化结果最多 256 KiB。
+`expectedMapRevision` 与 `expectedDependencyRevisions` 要么同时省略，要么同时提供；
+后者必须精确覆盖 pinned map 的完整 external TSJ dependency set。服务端在投影完成后
+再次检查 map 与全部依赖没有变化，但多文件 read set 仍标记
+`snapshotConsistency:"non-atomic-read-set"`。
 
 ### 3.11 视觉能力 ★ 差异化重点
 
@@ -603,7 +626,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace 与基础 object 编辑、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、先看 sheet，再安全创建图层并修改一张有限正交 TMJ；提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace 与基础 object 编辑、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建图层并修改一张有限正交 TMJ；提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

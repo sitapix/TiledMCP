@@ -98,6 +98,14 @@ export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
 export const MAX_REPLACE_TILE_MAPPINGS = 128;
 export const MAX_REPLACE_TILE_SCANS = 1_000_000;
+export const DEFAULT_USAGE_TOP_TILE_LIMIT = 64;
+export const MAX_USAGE_TOP_TILE_LIMIT = 128;
+export const MAX_USAGE_SCAN_VALUES = 1_000_000;
+export const MAX_USAGE_DISTINCT_TILES = 100_000;
+export const MAX_USAGE_LAYER_SUMMARIES = 64;
+export const MAX_USAGE_TILESET_SUMMARIES = 64;
+export const MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE = 16;
+export const MAX_USAGE_RESULT_BYTES = 256 * 1024;
 const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 
 interface LayerTraversalBudget {
@@ -230,6 +238,13 @@ export interface FindTilesInput {
   expectedTilesetRevision?: string;
 }
 
+export interface AnalyzeUsageInput {
+  mapPath: string;
+  topTileLimit?: number;
+  expectedMapRevision?: string;
+  expectedDependencyRevisions?: Record<string, string>;
+}
+
 export interface PlanAddTilesetToMapInput {
   mapPath: string;
   tilesetPath: string;
@@ -351,6 +366,82 @@ export class MapService {
       dependencyRevisions: context.dependencyRevisions,
       editableProfile: "finite-orthogonal-tmj-external-atlas-tsj",
     };
+  }
+
+  async analyzeUsage(
+    input: AnalyzeUsageInput,
+  ): Promise<Record<string, unknown>> {
+    const hasExpectedMapRevision =
+      input.expectedMapRevision !== undefined;
+    const hasExpectedDependencyRevisions =
+      input.expectedDependencyRevisions !== undefined;
+    if (
+      hasExpectedMapRevision !==
+      hasExpectedDependencyRevisions
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "expectedMapRevision and expectedDependencyRevisions must be provided together.",
+      );
+    }
+    if (input.expectedMapRevision !== undefined) {
+      assertRequiredRevision(
+        input.expectedMapRevision,
+        "expectedMapRevision",
+      );
+    }
+    const topTileLimit = readUsageLimit(
+      input.topTileLimit,
+      DEFAULT_USAGE_TOP_TILE_LIMIT,
+      MAX_USAGE_TOP_TILE_LIMIT,
+      "topTileLimit",
+    );
+    const context = await this.loadEditableContext(input.mapPath, {
+      ...(input.expectedMapRevision === undefined
+        ? {}
+        : {
+            expectedMapRevision:
+              input.expectedMapRevision,
+            expectedDependencyRevisions:
+              input.expectedDependencyRevisions,
+          }),
+    });
+    const projection = analyzeUsageDocument({
+      map: context.loaded.document,
+      mapPath: context.loaded.path,
+      bindings: context.bindings,
+      topTileLimit,
+    });
+
+    await this.assertDependenciesUnchanged(context.bindings);
+    const currentMapRevision = await this.store.readRevision(
+      context.loaded.path,
+    );
+    if (currentMapRevision !== context.loaded.revision) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${context.loaded.path} changed while tile usage was analyzed.`,
+        {
+          path: context.loaded.path,
+          expectedRevision: context.loaded.revision,
+          actualRevision: currentMapRevision,
+        },
+      );
+    }
+
+    const result = {
+      map: {
+        path: context.loaded.path,
+        revision: context.loaded.revision,
+      },
+      dependencyRevisions: context.dependencyRevisions,
+      profile:
+        "finite-orthogonal-tmj-external-atlas-tsj",
+      ...projection,
+      snapshotConsistency: "non-atomic-read-set",
+    };
+    assertUsageAnalysisResultSize(result);
+    return result;
   }
 
   async getTileset(input: GetTilesetInput): Promise<Record<string, unknown>> {
@@ -5320,6 +5411,599 @@ function assetIdForPath(projectPath: string): string {
 
 function assetIdForImagePath(projectPath: string): string {
   return `asset_${shortHash(`image-layer:${projectPath}`)}`;
+}
+
+interface UsageTileCounter {
+  assetId: string;
+  localId: number;
+  bindingIndex: number;
+  cellReferences: number;
+  objectReferences: number;
+  transformedReferences: number;
+}
+
+interface UsageTilesetCounter {
+  binding: TilesetBinding;
+  bindingIndex: number;
+  tiles: Map<number, UsageTileCounter>;
+  cellReferences: number;
+  objectReferences: number;
+  transformedReferences: number;
+}
+
+function analyzeUsageDocument(input: {
+  map: JsonObject;
+  mapPath: string;
+  bindings: readonly TilesetBinding[];
+  topTileLimit: number;
+}): Record<string, unknown> {
+  const counters = input.bindings.map(
+    (binding, bindingIndex): UsageTilesetCounter => ({
+      binding,
+      bindingIndex,
+      tiles: new Map<number, UsageTileCounter>(),
+      cellReferences: 0,
+      objectReferences: 0,
+      transformedReferences: 0,
+    }),
+  );
+  const counterByAssetId = new Map(
+    counters.map((counter) => [
+      counter.binding.assetId,
+      counter,
+    ]),
+  );
+  let uniqueTileCount = 0;
+  let nonEmptyCellCount = 0;
+  let tileObjectCount = 0;
+  let identityReferenceCount = 0;
+  let transformedReferenceCount = 0;
+  let tileCellCount = 0;
+  let objectCount = 0;
+  let tileLayerCount = 0;
+  let objectLayerCount = 0;
+  let imageLayerCount = 0;
+  let groupLayerCount = 0;
+  const rawFlagCounts = new Map<number, number>();
+  const layerDensities: Array<{
+    layerId: number;
+    name: string;
+    nameTruncated: boolean;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    cellCount: number;
+    nonEmptyCellCount: number;
+  }> = [];
+
+  const recordGid = (
+    value: unknown,
+    source: "cell" | "object",
+    context: string,
+  ): boolean => {
+    if (
+      typeof value !== "number" ||
+      !Number.isSafeInteger(value) ||
+      value < 0 ||
+      value > 0xffffffff
+    ) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `${context} must be an unsigned 32-bit GID.`,
+        { context },
+      );
+    }
+    const tile = gidToTileRef(
+      value,
+      "orthogonal",
+      input.bindings,
+    );
+    if (tile === null) {
+      return false;
+    }
+    const counter = counterByAssetId.get(
+      tile.tileset.assetId,
+    );
+    if (counter === undefined) {
+      throw new TiledMcpError(
+        "GID_OUT_OF_RANGE",
+        `${context} resolved to an unknown tileset binding.`,
+        { context, tilesetAssetId: tile.tileset.assetId },
+      );
+    }
+    let usage = counter.tiles.get(tile.localId);
+    if (usage === undefined) {
+      uniqueTileCount += 1;
+      if (uniqueTileCount > MAX_USAGE_DISTINCT_TILES) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `Usage analysis may aggregate at most ${MAX_USAGE_DISTINCT_TILES} distinct tiles.`,
+          {
+            path: input.mapPath,
+            limit: MAX_USAGE_DISTINCT_TILES,
+            actual: uniqueTileCount,
+          },
+        );
+      }
+      usage = {
+        assetId: tile.tileset.assetId,
+        localId: tile.localId,
+        bindingIndex: counter.bindingIndex,
+        cellReferences: 0,
+        objectReferences: 0,
+        transformedReferences: 0,
+      };
+      counter.tiles.set(tile.localId, usage);
+    }
+    if (source === "cell") {
+      usage.cellReferences += 1;
+      counter.cellReferences += 1;
+    } else {
+      usage.objectReferences += 1;
+      counter.objectReferences += 1;
+    }
+    const rawFlags = tile.transform?.rawFlags ?? 0;
+    rawFlagCounts.set(
+      rawFlags,
+      (rawFlagCounts.get(rawFlags) ?? 0) + 1,
+    );
+    const transformed = rawFlags !== 0;
+    if (transformed) {
+      usage.transformedReferences += 1;
+      counter.transformedReferences += 1;
+      transformedReferenceCount += 1;
+    } else {
+      identityReferenceCount += 1;
+    }
+    return true;
+  };
+
+  const scan = { entries: 0 };
+  const traversalBudget: LayerTraversalBudget = { count: 0 };
+  const visitLayers = (
+    layers: JsonValue[],
+    context: string,
+    depth: number,
+  ): void => {
+    assertLayerTraversalBudget(
+      layers.length,
+      depth,
+      traversalBudget,
+    );
+    for (const [layerIndex, layerValue] of layers.entries()) {
+      const layerContext = `${context}[${layerIndex}]`;
+      const layer = expectObject(layerValue, layerContext);
+      const layerId = expectInteger(
+        layer.id,
+        `${layerContext}.id`,
+      );
+      const layerType = expectString(
+        layer.type,
+        `${layerContext}.type`,
+      );
+      if (layerType === "group") {
+        groupLayerCount += 1;
+        visitLayers(
+          expectArray(
+            layer.layers,
+            `${layerContext}.layers`,
+          ),
+          `${layerContext}.layers`,
+          depth + 1,
+        );
+        continue;
+      }
+      if (layerType === "imagelayer") {
+        imageLayerCount += 1;
+        continue;
+      }
+      if (layerType === "objectgroup") {
+        objectLayerCount += 1;
+        const objects = expectArray(
+          layer.objects,
+          `${layerContext}.objects`,
+        );
+        consumeUsageScanBudget(
+          objects.length,
+          scan,
+          input.mapPath,
+        );
+        objectCount += objects.length;
+        for (const [objectIndex, objectValue] of objects.entries()) {
+          const object = expectObject(
+            objectValue,
+            `${layerContext}.objects[${objectIndex}]`,
+          );
+          if (object.gid === undefined) {
+            continue;
+          }
+          if (
+            recordGid(
+              object.gid,
+              "object",
+              `${layerContext}.objects[${objectIndex}].gid`,
+            )
+          ) {
+            tileObjectCount += 1;
+          }
+        }
+        continue;
+      }
+      if (layerType !== "tilelayer") {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${layerContext}.type is not a supported Tiled layer type.`,
+          { path: input.mapPath, layerId, layerType },
+        );
+      }
+
+      tileLayerCount += 1;
+      if ("chunks" in layer || typeof layer.data === "string") {
+        throw new TiledMcpError(
+          "UNSUPPORTED_TILE_ENCODING",
+          "Usage analysis supports only finite JSON tile layers with numeric data arrays.",
+          { path: input.mapPath, layerId },
+        );
+      }
+      const width = expectInteger(
+        layer.width,
+        `${layerContext}.width`,
+      );
+      const height = expectInteger(
+        layer.height,
+        `${layerContext}.height`,
+      );
+      assertPositiveInteger(width, `${layerContext}.width`);
+      assertPositiveInteger(height, `${layerContext}.height`);
+      const x = readOptionalInteger(
+        layer.x,
+        `${layerContext}.x`,
+        0,
+      );
+      const y = readOptionalInteger(
+        layer.y,
+        `${layerContext}.y`,
+        0,
+      );
+      const cellCount = width * height;
+      const data = expectArray(
+        layer.data,
+        `${layerContext}.data`,
+      );
+      if (
+        !Number.isSafeInteger(cellCount) ||
+        data.length !== cellCount
+      ) {
+        throw new TiledMcpError(
+          "INVALID_TILE_DATA",
+          `Layer ${layerId} data length does not match width × height.`,
+          {
+            layerId,
+            expected: cellCount,
+            actual: data.length,
+          },
+        );
+      }
+      consumeUsageScanBudget(
+        data.length,
+        scan,
+        input.mapPath,
+      );
+      tileCellCount += data.length;
+      let layerNonEmptyCellCount = 0;
+      for (const [gidIndex, gid] of data.entries()) {
+        if (
+          recordGid(
+            gid,
+            "cell",
+            `${layerContext}.data[${gidIndex}]`,
+          )
+        ) {
+          nonEmptyCellCount += 1;
+          layerNonEmptyCellCount += 1;
+        }
+      }
+      const name = boundedDisplayString(layer.name);
+      layerDensities.push({
+        layerId,
+        name: name.value,
+        nameTruncated: name.truncated,
+        x,
+        y,
+        width,
+        height,
+        cellCount,
+        nonEmptyCellCount: layerNonEmptyCellCount,
+      });
+    }
+  };
+
+  visitLayers(
+    expectArray(input.map.layers, `${input.mapPath}.layers`),
+    `${input.mapPath}.layers`,
+    0,
+  );
+
+  const allTileCounters = counters.flatMap((counter) =>
+    [...counter.tiles.values()],
+  );
+  allTileCounters.sort(compareUsageTileCounters);
+  const topTileItems = allTileCounters
+    .slice(0, input.topTileLimit)
+    .map(usageTileCounterResult);
+
+  const usedCounters = counters.filter(
+    (counter) =>
+      counter.cellReferences + counter.objectReferences > 0,
+  );
+  const unusedCounters = counters.filter(
+    (counter) =>
+      counter.cellReferences + counter.objectReferences === 0,
+  );
+  const sortedTilesetCounters = [...counters].sort(
+    (left, right) => {
+      const leftUsed =
+        left.cellReferences + left.objectReferences > 0;
+      const rightUsed =
+        right.cellReferences + right.objectReferences > 0;
+      return (
+        Number(leftUsed) - Number(rightUsed) ||
+        left.binding.firstGid - right.binding.firstGid
+      );
+    },
+  );
+  const tilesetItems = sortedTilesetCounters
+    .slice(0, MAX_USAGE_TILESET_SUMMARIES)
+    .map((counter) =>
+      usageTilesetCounterResult(
+        counter,
+        MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE,
+      ),
+    );
+  layerDensities.sort(
+    (left, right) =>
+      left.nonEmptyCellCount * right.cellCount -
+        right.nonEmptyCellCount * left.cellCount ||
+      left.layerId - right.layerId,
+  );
+  const layerDensityItems = layerDensities
+    .slice(0, MAX_USAGE_LAYER_SUMMARIES)
+    .map((layer) => ({
+      layerId: layer.layerId,
+      name: layer.name,
+      ...(layer.nameTruncated
+        ? { nameTruncated: true }
+        : {}),
+      bounds: {
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+      },
+      cellCount: layer.cellCount,
+      emptyCellCount:
+        layer.cellCount - layer.nonEmptyCellCount,
+      nonEmptyCellCount: layer.nonEmptyCellCount,
+      density:
+        layer.nonEmptyCellCount / layer.cellCount,
+    }));
+  const rawFlagUsage = [...rawFlagCounts.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([rawFlags, referenceCount]) => ({
+      rawFlags,
+      referenceCount,
+    }));
+
+  return {
+    scope: {
+      tileLayers: "all-recursive",
+      tileObjects: "all-recursive",
+      visibility: "ignored",
+      tileIdentity: "external-asset-id-plus-local-id",
+      transformAggregation: "base-tile",
+      unusedLocalIdDomain:
+        "atlas-local-ids-zero-to-tilecount-exclusive",
+    },
+    scan: {
+      tileCellCount,
+      objectCount,
+      valueCount: scan.entries,
+      limit: MAX_USAGE_SCAN_VALUES,
+    },
+    totals: {
+      tileLayerCount,
+      objectLayerCount,
+      imageLayerCount,
+      groupLayerCount,
+      emptyTileCellCount:
+        tileCellCount - nonEmptyCellCount,
+      nonEmptyTileCellCount: nonEmptyCellCount,
+      tileObjectCount,
+      referenceCount:
+        nonEmptyCellCount + tileObjectCount,
+      distinctUsedTileCount: uniqueTileCount,
+      usedTilesetCount: usedCounters.length,
+      unusedTilesetCount: unusedCounters.length,
+    },
+    transforms: {
+      identityReferenceCount,
+      transformedReferenceCount,
+      rawFlagUsage,
+    },
+    layerDensity: {
+      total: layerDensities.length,
+      returned: layerDensityItems.length,
+      omitted:
+        layerDensities.length - layerDensityItems.length,
+      truncated:
+        layerDensities.length > layerDensityItems.length,
+      order: "density-asc-then-layer-id",
+      items: layerDensityItems,
+    },
+    tilesets: {
+      total: counters.length,
+      returned: tilesetItems.length,
+      omitted: counters.length - tilesetItems.length,
+      truncated: counters.length > tilesetItems.length,
+      order: "unused-first-then-firstgid",
+      items: tilesetItems,
+    },
+    topTiles: {
+      limit: input.topTileLimit,
+      returned: topTileItems.length,
+      distinctUsedTileCount: uniqueTileCount,
+      truncated:
+        uniqueTileCount > topTileItems.length,
+      order:
+        "reference-count-desc-then-firstgid-localid",
+      items: topTileItems,
+    },
+  };
+}
+
+function consumeUsageScanBudget(
+  count: number,
+  budget: { entries: number },
+  mapPath: string,
+): void {
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    budget.entries + count > MAX_USAGE_SCAN_VALUES
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `Usage analysis may scan at most ${MAX_USAGE_SCAN_VALUES} tile cells and objects.`,
+      {
+        path: mapPath,
+        limit: MAX_USAGE_SCAN_VALUES,
+        scanned: budget.entries,
+        nextCount: count,
+      },
+    );
+  }
+  budget.entries += count;
+}
+
+function compareUsageTileCounters(
+  left: UsageTileCounter,
+  right: UsageTileCounter,
+): number {
+  const leftTotal =
+    left.cellReferences + left.objectReferences;
+  const rightTotal =
+    right.cellReferences + right.objectReferences;
+  return (
+    rightTotal - leftTotal ||
+    left.bindingIndex - right.bindingIndex ||
+    left.localId - right.localId
+  );
+}
+
+function usageTileCounterResult(
+  usage: UsageTileCounter,
+): Record<string, unknown> {
+  return {
+    tile: {
+      tileset: {
+        kind: "external",
+        assetId: usage.assetId,
+      },
+      localId: usage.localId,
+    },
+    references: {
+      total:
+        usage.cellReferences + usage.objectReferences,
+      tileCells: usage.cellReferences,
+      tileObjects: usage.objectReferences,
+      transformed: usage.transformedReferences,
+    },
+  };
+}
+
+function usageTilesetCounterResult(
+  counter: UsageTilesetCounter,
+  unusedLocalIdLimit: number,
+): Record<string, unknown> {
+  const totalReferences =
+    counter.cellReferences + counter.objectReferences;
+  const unusedLocalIdSample: number[] = [];
+  for (
+    let localId = 0;
+    localId < counter.binding.tileCount &&
+    unusedLocalIdSample.length < unusedLocalIdLimit;
+    localId += 1
+  ) {
+    if (!counter.tiles.has(localId)) {
+      unusedLocalIdSample.push(localId);
+    }
+  }
+  const unusedLocalIdCount =
+    counter.binding.tileCount - counter.tiles.size;
+  return {
+    assetId: counter.binding.assetId,
+    name: counter.binding.name,
+    ...(counter.binding.nameTruncated
+      ? { nameTruncated: true }
+      : {}),
+    firstGid: counter.binding.firstGid,
+    tileCount: counter.binding.tileCount,
+    gidSpan: counter.binding.gidSpan,
+    unused: totalReferences === 0,
+    referenceCount: totalReferences,
+    tileCellReferenceCount: counter.cellReferences,
+    tileObjectReferenceCount: counter.objectReferences,
+    transformedReferenceCount:
+      counter.transformedReferences,
+    usedLocalIdCount: counter.tiles.size,
+    unusedLocalIds: {
+      count: unusedLocalIdCount,
+      sample: unusedLocalIdSample,
+      truncated:
+        unusedLocalIdCount > unusedLocalIdSample.length,
+    },
+  };
+}
+
+function readUsageLimit(
+  value: number | undefined,
+  fallback: number,
+  maximum: number,
+  context: string,
+): number {
+  const selected = value ?? fallback;
+  if (
+    !Number.isSafeInteger(selected) ||
+    selected <= 0 ||
+    selected > maximum
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be an integer between 1 and ${maximum}.`,
+      { context, maximum },
+    );
+  }
+  return selected;
+}
+
+function assertUsageAnalysisResultSize(
+  result: Record<string, unknown>,
+): void {
+  const byteLength = Buffer.byteLength(
+    JSON.stringify(result),
+    "utf8",
+  );
+  if (byteLength > MAX_USAGE_RESULT_BYTES) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `Usage analysis results may contain at most ${MAX_USAGE_RESULT_BYTES} serialized bytes.`,
+      {
+        limit: MAX_USAGE_RESULT_BYTES,
+        actual: byteLength,
+      },
+    );
+  }
 }
 
 function validateLayers(

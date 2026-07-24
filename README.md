@@ -85,8 +85,8 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 }
 ```
 
-当前注册 17 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
-18 个可选工具：
+当前注册 18 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
+19 个可选工具：
 
 | 工具 | 作用 |
 |---|---|
@@ -95,6 +95,7 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 | `tiled_list_checkpoints` | 有界列出恢复 checkpoint，并隔离报告损坏 manifest |
 | `tiled_preview_checkpoint_restore` | 校验单文件 checkpoint 并生成 destructive 恢复 change set；不直接写盘 |
 | `tiled_get_map_summary` | 读取 revision、图层树和 tileset asset id |
+| `tiled_analyze_usage` | 只读统计整张地图的 tile 使用、图层密度、变换位和未使用 local ID |
 | `tiled_get_tileset` | 按 map + asset id 读取有界 atlas/稀疏 tile metadata/Wang 概览 |
 | `tiled_find_tiles` | 按 map + asset id 精确检索显式 class/property metadata，返回分页 `TileRef` |
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |
@@ -134,6 +135,21 @@ class（通过 `type` 保存）、property、collision objectgroup 与 Wang-set�
 `TileRef` 使用
 `{"tileset":{"kind":"external","assetId":"…"},"localId":0}`，调用方不接触裸
 GID。preview 在 map 或任一已固定的现有/待加入依赖 revision 已变化时都会拒绝签发。
+
+需要盘点地图用料时，调用只读的 `tiled_analyze_usage`，输入为
+`{mapPath, topTileLimit?, expectedMapRevision?, expectedDependencyRevisions?}`。它递归
+扫描整张有限正交地图的所有 tile layer cell 和 object layer 中的 tile object，忽略
+visibility，因此隐藏 layer/Group 也会计入。tile 频率按
+`tileset assetId + localId` 的基础 tile 聚合，不会把翻转/对角变换拆成不同 tile；完整
+raw flag 组合另在 transform 摘要中计数。
+
+结果只返回有界摘要：按密度从低到高的 layer、未使用优先的 tileset（含未使用 local ID
+数量与样本）以及按总引用数从高到低的 top tiles。单次最多扫描 1,000,000 个 tile cell
+与 object、聚合 100,000 个 distinct tile；layer/tileset 摘要各最多 64 项，
+`topTileLimit` 默认 64、最多 128，序列化结果最多 256 KiB。两个 revision pin 必须同时
+省略或同时提供；提供时 `expectedDependencyRevisions` 必须是该 map 的完整精确依赖集合。
+返回的 `snapshotConsistency` 仍是 `non-atomic-read-set`，不能把多文件复核宣称为原子
+快照。
 
 需要在一个 tile layer 中批量替换时，使用 `tiled_preview_edits` 的
 `replaceTiles` operation：
@@ -192,6 +208,8 @@ contract；TSJ 详情另覆盖稀疏分页、Tiled 1.12 tile `type`、动画采�
 collision/Wang 计数、严格 rendering 枚举、聚合扫描/256 KiB 输出预算和非法 atlas；
 tile 检索覆盖 class 兼容规则、`all`/`any`、标量 property 精确比较、稀疏分页、
 revision pin、扫描/查询/结果预算和 malformed metadata；
+usage analysis 覆盖递归 cell/tile-object 统计、隐藏层、base-tile/变换位聚合、
+密度/未使用/top 排序截断、exact read-set pin 和扫描/distinct/结果预算；
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
@@ -212,7 +230,7 @@ checkpoint restore。架构与 roadmap
   元素及其他文本保持原 bytes。当前一次 change set 只能创建一个空图层，尚不支持在同一
   preview 中继续给新 Group 添加子层、移动或删除图层。
 - `replaceTiles` 是通用 `tiled_preview_edits` 的 operation，不新增注册工具，因此仍为
-  17 个 core / 18 个含 rasterizer 的工具。它只接受非空 `from`，按包含
+  18 个 core / 19 个含 rasterizer 的工具。它只接受非空 `from`，按包含
   transform/raw flags 的完整 encoded GID 精确匹配；
   `to:null` 才表示清空。一个 operation 的多组 mapping 同时、single-pass 求值，可选
   region 使用绝对 tile 坐标，省略时覆盖 layer bounds。每个 operation 最多 128 组映射，
@@ -273,6 +291,15 @@ checkpoint restore。架构与 roadmap
   带回；两个 revision 输入在独立查询上是可选的，但携带它们的续页会在任一 revision
   改变时被拒绝。单次响应仍标记
   `snapshotConsistency: "non-atomic-read-set"`，不把多文件读取宣称为原子快照。
+- `tiled_analyze_usage` 是无筛选的 whole-map 只读扫描，不按 visibility 或 layer ID
+  裁剪；它递归统计所有 tile cell 和带 `gid` 的 tile object。聚合键只包含 external
+  tileset `assetId` 与 `localId`，transform 不拆分 tile 身份，但每种 unsigned raw
+  flags 及 identity/transformed 引用数会另行保留。响应中的 density、tileset/未使用
+  local ID 和 top-tile 都是带 `total/returned/omitted/truncated` 或等价计数的有界摘要，
+  不能把返回样本当成完整列表。扫描上限为 1,000,000 个 cell+object，distinct tile
+  上限 100,000，layer/tileset 摘要各 64，top tile 默认 64、最多 128，最终 JSON
+  上限 256 KiB。可选 revision guards 必须成对提供 map revision 与完整 dependency
+  revision record；服务端在分析前后复核 read set，但仍明确报告非原子多文件快照。
 - tileset sheet 当前只接受 PNG、JPEG、WebP 和严格受限的简单自包含 SVG（SVG 另限
   256 KiB）；拒绝动画、image collection、外部 SVG 引用、超过 64 MiB / 4096² 解码像素的输入。每页最多
   256 个 tile，输出不超过 2048 像素长边、150 万像素和 8 MiB。布局会自动减少每页容量，

@@ -55,6 +55,27 @@ For an existing map:
 6. Use \`tiled_render_preview\` to inspect the current map or a bounded region.
    Grid and coordinate overlays can make tile positions explicit.
 
+Use \`tiled_analyze_usage\` when you need a read-only inventory of the whole
+map rather than a selected region. It recursively scans every finite tile-layer
+cell and every object layer, including hidden layers and Groups; objects with a
+\`gid\` contribute tile-object references. Tile frequency is aggregated by base
+\`tileset assetId + localId\`, while identity/transformed totals and complete
+raw flag combinations remain available separately.
+
+The response contains bounded layer-density, tileset/unused-local-ID, and
+top-tile summaries. Treat their returned items and unused-ID samples as
+potentially truncated. One call may scan 1,000,000 cells plus objects and
+aggregate 100,000 distinct tiles. Layer and tileset summaries are capped at 64
+each; \`topTileLimit\` defaults to 64 and is capped at 128; the complete result
+is capped at 256 KiB.
+
+The optional \`expectedMapRevision\` and \`expectedDependencyRevisions\` inputs
+must be supplied together. When used, pass the map revision and complete
+dependency record from the same summary unchanged. The server checks that
+exact read set before and after analysis, but the result still correctly says
+\`snapshotConsistency: "non-atomic-read-set"\` because several files are not
+read as one atomic snapshot.
+
 Never construct or edit raw global IDs. A tile value is a \`TileRef\`:
 
 \`\`\`json

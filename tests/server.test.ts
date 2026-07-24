@@ -43,6 +43,7 @@ const CORE_TOOLS = [
   "tiled_render_preview",
   "tiled_list_objects",
   "tiled_validate",
+  "tiled_analyze_usage",
   "tiled_create_map",
   "tiled_add_tileset_to_map",
   "tiled_create_layer",
@@ -80,7 +81,7 @@ describe("createTiledMcpServer", () => {
     await rm(harness.root, { recursive: true, force: true });
   });
 
-  it("advertises exactly the seventeen core tools with safety annotations", async () => {
+  it("advertises exactly the eighteen core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -97,6 +98,7 @@ describe("createTiledMcpServer", () => {
       "tiled_render_preview",
       "tiled_list_objects",
       "tiled_validate",
+      "tiled_analyze_usage",
     ]) {
       expect(byName.get(name)?.annotations).toMatchObject({
         readOnlyHint: true,
@@ -315,6 +317,18 @@ describe("createTiledMcpServer", () => {
         nextPageIncludesRevisionPins: boolean;
         inputRevisionPins: string;
       };
+      usageAnalysisCapabilities: {
+        profile: string;
+        includesTileLayerCells: boolean;
+        includesTileObjects: boolean;
+        visibility: string;
+        transformAggregation: string;
+        unusedLocalIdDomain: string;
+        output: string;
+        optionalExactReadSetPins: boolean;
+        snapshotConsistency: string;
+        defaultTopTileLimit: number;
+      };
       tilesetReferenceCapabilities: {
         planner: string;
         targetProfile: string;
@@ -370,6 +384,13 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: number;
         maxTileFindResultBytes: number;
         maxAddTilesetGidScans: number;
+        maxUsageScanValues: number;
+        maxUsageDistinctTiles: number;
+        maxUsageTopTileLimit: number;
+        maxUsageLayerSummaries: number;
+        maxUsageTilesetSummaries: number;
+        maxUsageUnusedLocalIdSample: number;
+        maxUsageResultBytes: number;
         maxReplaceTileMappings: number;
         maxReplaceTileScans: number;
         maxCreateTileLayerCells: number;
@@ -475,6 +496,20 @@ describe("createTiledMcpServer", () => {
         nextPageIncludesRevisionPins: true,
         inputRevisionPins: "optional",
       },
+      usageAnalysisCapabilities: {
+        profile:
+          "finite-orthogonal-tmj-external-atlas-tsj",
+        includesTileLayerCells: true,
+        includesTileObjects: true,
+        visibility: "all-serialized-layers",
+        transformAggregation: "base-tile",
+        unusedLocalIdDomain:
+          "zero-to-tilecount-exclusive",
+        output: "bounded-summary-and-samples",
+        optionalExactReadSetPins: true,
+        snapshotConsistency: "non-atomic-read-set",
+        defaultTopTileLimit: 64,
+      },
       tilesetReferenceCapabilities: {
         planner: "dedicated-single-operation-change-set",
         targetProfile: "project-local-external-root-atlas-tsj",
@@ -537,6 +572,13 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: 800_000,
         maxTileFindResultBytes: 256 * 1024,
         maxAddTilesetGidScans: 1_000_000,
+        maxUsageScanValues: 1_000_000,
+        maxUsageDistinctTiles: 100_000,
+        maxUsageTopTileLimit: 128,
+        maxUsageLayerSummaries: 64,
+        maxUsageTilesetSummaries: 64,
+        maxUsageUnusedLocalIdSample: 16,
+        maxUsageResultBytes: 256 * 1024,
         maxReplaceTileMappings: 128,
         maxReplaceTileScans: 1_000_000,
         maxCreateTileLayerCells: 100_000,
@@ -709,6 +751,147 @@ describe("createTiledMcpServer", () => {
       revision: summary.revision,
       valid: true,
       diagnostics: [],
+    });
+  });
+
+  it("analyzes bounded whole-map tile usage with an optional exact read-set pin", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+      tilesets: Array<{ assetId: string }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const assetId = summary.tilesets[0]?.assetId;
+    if (assetId === undefined) {
+      throw new Error("Expected the fixture tileset binding.");
+    }
+
+    const missingPair = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_analyze_usage",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedMapRevision: summary.revision,
+        },
+      }),
+    );
+    expect(missingPair.isError).toBe(true);
+    expect(missingPair.structuredContent).toBeUndefined();
+    expect(missingPair.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("Input validation error"),
+      }),
+    ]);
+
+    const usage = resultOf<Record<string, unknown>>(
+      await harness.client.callTool({
+        name: "tiled_analyze_usage",
+        arguments: {
+          mapPath: MAP_PATH,
+          topTileLimit: 1,
+          expectedMapRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+        },
+      }),
+    );
+    expect(usage).toMatchObject({
+      profile:
+        "finite-orthogonal-tmj-external-atlas-tsj",
+      map: {
+        path: MAP_PATH,
+        revision: summary.revision,
+      },
+      dependencyRevisions: summary.dependencyRevisions,
+      scope: {
+        tileLayers: "all-recursive",
+        tileObjects: "all-recursive",
+        visibility: "ignored",
+        transformAggregation: "base-tile",
+      },
+      scan: {
+        tileCellCount: 4,
+        objectCount: 2,
+        valueCount: 6,
+        limit: 1_000_000,
+      },
+      totals: {
+        tileLayerCount: 1,
+        objectLayerCount: 1,
+        emptyTileCellCount: 3,
+        nonEmptyTileCellCount: 1,
+        tileObjectCount: 0,
+        referenceCount: 1,
+        distinctUsedTileCount: 1,
+        usedTilesetCount: 1,
+        unusedTilesetCount: 0,
+      },
+      transforms: {
+        identityReferenceCount: 1,
+        transformedReferenceCount: 0,
+        rawFlagUsage: [{ rawFlags: 0, referenceCount: 1 }],
+      },
+      layerDensity: {
+        total: 1,
+        returned: 1,
+        omitted: 0,
+        truncated: false,
+        order: "density-asc-then-layer-id",
+        items: [
+          {
+            layerId: LAYER_ID,
+            cellCount: 4,
+            emptyCellCount: 3,
+            nonEmptyCellCount: 1,
+            density: 0.25,
+          },
+        ],
+      },
+      tilesets: {
+        total: 1,
+        returned: 1,
+        omitted: 0,
+        truncated: false,
+        items: [
+          {
+            assetId,
+            unused: false,
+            referenceCount: 1,
+            usedLocalIdCount: 1,
+            unusedLocalIds: {
+              count: 3,
+              sample: [1, 2, 3],
+              truncated: false,
+            },
+          },
+        ],
+      },
+      topTiles: {
+        limit: 1,
+        returned: 1,
+        distinctUsedTileCount: 1,
+        truncated: false,
+        items: [
+          {
+            tile: {
+              tileset: { kind: "external", assetId },
+              localId: 0,
+            },
+            references: {
+              total: 1,
+              tileCells: 1,
+              tileObjects: 0,
+              transformed: 0,
+            },
+          },
+        ],
+      },
+      snapshotConsistency: "non-atomic-read-set",
     });
   });
 
