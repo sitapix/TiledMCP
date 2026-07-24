@@ -152,8 +152,8 @@ or silently repairs a stale counter.
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, and \`replaceTiles\`; supported object operations are
-\`createObject\`, \`updateObject\`, and \`deleteObjects\`; the supported common
-layer operation is \`updateLayer\`.
+\`createObject\`, \`updateObject\`, and \`deleteObjects\`; supported layer
+operations are \`updateLayer\` and \`deleteLayer\`.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
@@ -183,9 +183,39 @@ no-op. Writing an explicit default to an absent member is a change because the
 JSON representation changed. Inspect \`requestedFields\`, \`changedFields\`,
 \`wouldChange\`, and \`affectsDescendants\` in the preview; Group properties
 are flagged only when a changed rendering field can affect descendants. Apply
-changes only through the normal revision-pinned approval flow. Changed layer fields use
-member-local source patches and may safely share a batch with tile-data and
-object edits; moving or deleting layers is not implemented.
+changes only through the normal revision-pinned approval flow. Changed layer
+fields use member-local source patches and may safely share a batch with
+tile-data and object edits. \`updateLayer\` itself does not move or delete
+layers; deletion uses the exclusive operation below, while moving is not
+implemented.
+
+Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
+an existing layer. It is the eighth generic operation, not a standalone tool,
+so the registry remains 18 core tools or 19 with the rasterizer. A
+\`deleteLayer\` change set must contain exactly this one operation; do not mix
+it with tile, object, or layer updates.
+
+A leaf layer or empty Group can be deleted directly. A non-empty Group requires
+\`deleteDescendants:true\`; approval then removes the selected Group, every
+descendant layer, and all owned tile data, image-layer references, and objects.
+It does not delete referenced image or TSJ files. Children are not promoted and
+ancestors are neither emptied nor removed.
+
+When objects would be removed, surviving direct object properties and typed
+object items inside Tiled 1.12 lists are checked for dangling references and
+block deletion. Surviving class properties fail closed because they may hide
+typed object references. References wholly inside the deleted subtree leave
+with it. A locked layer is still deletable because \`locked\` is advisory, but
+the preview includes \`lockedLayerCount\` and a warning.
+
+Treat this preview as destructive. It reports complete deleted-layer,
+descendant, object, and locked-layer counts, but returns at most 32 layer IDs
+and 32 object IDs; use the omitted counts rather than treating samples as
+complete. Apply preserves the \`nextlayerid\` and \`nextobjectid\` high-water
+marks. Its array-element-local source patch removes one element from the direct
+parent's \`layers\` array while preserving untouched source bytes. The normal
+revision-pinned approval, checkpoint, and apply flow remains mandatory.
+Layer moving and duplication are not implemented.
 
 A \`replaceTiles\` operation has a numeric \`layerId\`, one to 128
 \`mappings\` shaped as \`{from: TileRef, to: TileRef|null}\`, and an optional

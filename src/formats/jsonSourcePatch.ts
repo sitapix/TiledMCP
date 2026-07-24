@@ -34,6 +34,17 @@ export interface JsonObjectMemberPatch {
   key: string;
 }
 
+/**
+ * Deletes one element identified by its index in the source array.
+ *
+ * Multiple deletions for the same array are all interpreted against the
+ * original source indices, regardless of the order in which they are passed.
+ */
+export interface JsonArrayDeletion {
+  path: JsonSourcePath;
+  index: number;
+}
+
 interface SourceReplacement {
   offset: number;
   length: number;
@@ -55,6 +66,7 @@ export function patchJsonDocumentSource(
   projectPath: string,
   arrayInsertions: readonly JsonArrayInsertion[] = [],
   objectMemberPatches: readonly JsonObjectMemberPatch[] = [],
+  arrayDeletions: readonly JsonArrayDeletion[] = [],
 ): Buffer {
   const sourceText = decodeSource(source, projectPath);
   const hasBom = sourceText.charCodeAt(0) === 0xfeff;
@@ -98,6 +110,15 @@ export function patchJsonDocumentSource(
     targetTree,
     paths,
     objectMemberPatches,
+    projectPath,
+  );
+  validateArrayDeletions(
+    sourceTree,
+    targetTree,
+    paths,
+    arrayInsertions,
+    objectMemberPatches,
+    arrayDeletions,
     projectPath,
   );
 
@@ -289,10 +310,11 @@ export function patchJsonDocumentSource(
     body,
     replacements,
   );
-  patchedBody = patchObjectMembersSource(
+  patchedBody = patchStructuredSource(
     patchedBody,
     targetTree,
     objectMemberPatches,
+    arrayDeletions,
     projectPath,
   );
   const patchedDocument = parseJsonDocument(patchedBody, projectPath);
@@ -309,6 +331,12 @@ export function patchJsonDocumentSource(
         })),
         objectMemberPaths: objectMemberPatches.map(
           (patch) => [...patch.path, patch.key],
+        ),
+        deletedPaths: arrayDeletions.map(
+          (deletion) => ({
+            path: [...deletion.path],
+            sourceIndex: deletion.index,
+          }),
         ),
       },
     );
@@ -414,13 +442,266 @@ function validateObjectMemberPatches(
   }
 }
 
-function patchObjectMembersSource(
+interface ArrayDeletionGroup {
+  path: JsonSourcePath;
+  indices: number[];
+}
+
+function validateArrayDeletions(
+  sourceTree: Node,
+  targetTree: Node,
+  valuePaths: readonly JsonSourcePath[],
+  insertions: readonly JsonArrayInsertion[],
+  memberPatches: readonly JsonObjectMemberPatch[],
+  deletions: readonly JsonArrayDeletion[],
+  projectPath: string,
+): void {
+  if (deletions.length > 0) {
+    for (const insertion of insertions) {
+      if (
+        typeof insertion !== "object" ||
+        insertion === null ||
+        Array.isArray(insertion) ||
+        !Array.isArray(insertion.path)
+      ) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_INVALID_PATH",
+          `A JSON array insertion for ${projectPath} must contain an array path.`,
+          { path: projectPath },
+        );
+      }
+      validatePath(insertion.path, projectPath);
+    }
+  }
+  const seen = new Set<string>();
+  const deletionPaths: JsonSourcePath[] = [];
+  for (const deletion of deletions) {
+    if (
+      typeof deletion !== "object" ||
+      deletion === null ||
+      Array.isArray(deletion) ||
+      !Array.isArray(deletion.path)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `A JSON array deletion for ${projectPath} must contain an array path.`,
+        { path: projectPath },
+      );
+    }
+    validatePath(deletion.path, projectPath);
+    if (
+      !Number.isSafeInteger(deletion.index) ||
+      deletion.index < 0
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `Invalid array deletion index ${String(deletion.index)} for ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...deletion.path],
+          index: deletion.index,
+        },
+      );
+    }
+    const identity = JSON.stringify([
+      deletion.path,
+      deletion.index,
+    ]);
+    if (seen.has(identity)) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_DUPLICATE_PATH",
+        `Duplicate JSON array deletion at source index ${deletion.index} of ${formatPath(deletion.path)} for ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...deletion.path],
+          sourceIndex: deletion.index,
+        },
+      );
+    }
+    seen.add(identity);
+
+    for (const valuePath of valuePaths) {
+      assertDeletionPathDoesNotOverlap(
+        deletion.path,
+        valuePath,
+        projectPath,
+      );
+    }
+    for (const insertion of insertions) {
+      assertDeletionPathDoesNotOverlap(
+        deletion.path,
+        insertion.path,
+        projectPath,
+      );
+    }
+    for (const memberPatch of memberPatches) {
+      assertDeletionPathDoesNotOverlap(
+        deletion.path,
+        [...memberPatch.path, memberPatch.key],
+        projectPath,
+      );
+    }
+    for (const previousPath of deletionPaths) {
+      if (
+        sameJsonPath(deletion.path, previousPath)
+      ) {
+        continue;
+      }
+      assertDeletionPathDoesNotOverlap(
+        deletion.path,
+        previousPath,
+        projectPath,
+      );
+    }
+    deletionPaths.push(deletion.path);
+  }
+
+  for (const group of groupArrayDeletions(deletions).values()) {
+    const sourceArray = requireArrayNode(
+      sourceTree,
+      group.path,
+      projectPath,
+      "source",
+      "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+    );
+    const targetArray = requireArrayNode(
+      targetTree,
+      group.path,
+      projectPath,
+      "target",
+      "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+    );
+    const sourceChildren = sourceArray.children ?? [];
+    const targetChildren = targetArray.children ?? [];
+    const sortedIndices = [...group.indices].sort(
+      (left, right) => left - right,
+    );
+    const outOfRange = sortedIndices.find(
+      (index) => index >= sourceChildren.length,
+    );
+    if (outOfRange !== undefined) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+        `Array deletion source index ${outOfRange} is outside ${formatPath(group.path)}.`,
+        {
+          path: projectPath,
+          jsonPath: [...group.path],
+          sourceIndex: outOfRange,
+          sourceLength: sourceChildren.length,
+        },
+      );
+    }
+    if (
+      targetChildren.length !==
+      sourceChildren.length - sortedIndices.length
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+        `Array deletions at ${formatPath(group.path)} do not produce the target length.`,
+        {
+          path: projectPath,
+          jsonPath: [...group.path],
+          sourceLength: sourceChildren.length,
+          targetLength: targetChildren.length,
+          deletionCount: sortedIndices.length,
+        },
+      );
+    }
+    const deletedIndices = new Set(sortedIndices);
+    let targetIndex = 0;
+    for (
+      let sourceIndex = 0;
+      sourceIndex < sourceChildren.length;
+      sourceIndex += 1
+    ) {
+      if (deletedIndices.has(sourceIndex)) {
+        continue;
+      }
+      const sourceChild = sourceChildren[sourceIndex];
+      const targetChild = targetChildren[targetIndex];
+      if (
+        sourceChild === undefined ||
+        targetChild === undefined ||
+        stableJson(getNodeValue(sourceChild) as JsonValue) !==
+          stableJson(getNodeValue(targetChild) as JsonValue)
+      ) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+          `Array deletion at ${formatPath(group.path)} also changes a retained element.`,
+          {
+            path: projectPath,
+            jsonPath: [...group.path],
+            sourceIndex,
+            targetIndex,
+          },
+        );
+      }
+      targetIndex += 1;
+    }
+  }
+}
+
+function assertDeletionPathDoesNotOverlap(
+  deletionPath: JsonSourcePath,
+  otherPath: JsonSourcePath,
+  projectPath: string,
+): void {
+  if (!pathsOverlap(deletionPath, otherPath)) {
+    return;
+  }
+  throw new TiledMcpError(
+    "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+    `JSON array deletion path ${formatPath(deletionPath)} overlaps patch path ${formatPath(otherPath)} in ${projectPath}.`,
+    {
+      path: projectPath,
+      firstJsonPath: [...deletionPath],
+      secondJsonPath: [...otherPath],
+    },
+  );
+}
+
+function sameJsonPath(
+  left: JsonSourcePath,
+  right: JsonSourcePath,
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (segment, index) => segment === right[index],
+    )
+  );
+}
+
+function groupArrayDeletions(
+  deletions: readonly JsonArrayDeletion[],
+): Map<string, ArrayDeletionGroup> {
+  const groups = new Map<string, ArrayDeletionGroup>();
+  for (const deletion of deletions) {
+    const key = JSON.stringify(deletion.path);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, {
+        path: deletion.path,
+        indices: [deletion.index],
+      });
+    } else {
+      group.indices.push(deletion.index);
+    }
+  }
+  return groups;
+}
+
+function patchStructuredSource(
   source: string,
   targetTree: Node,
-  patches: readonly JsonObjectMemberPatch[],
+  memberPatches: readonly JsonObjectMemberPatch[],
+  arrayDeletions: readonly JsonArrayDeletion[],
   projectPath: string,
 ): string {
-  if (patches.length === 0) {
+  if (
+    memberPatches.length === 0 &&
+    arrayDeletions.length === 0
+  ) {
     return source;
   }
   const sourceTree = parseTree(
@@ -442,7 +723,7 @@ function patchObjectMembersSource(
       patches: JsonObjectMemberPatch[];
     }
   >();
-  for (const patch of patches) {
+  for (const patch of memberPatches) {
     const key = JSON.stringify(patch.path);
     const group = grouped.get(key);
     if (group === undefined) {
@@ -488,6 +769,24 @@ function patchObjectMembersSource(
         sourceProperties,
         targetProperties,
         group.patches,
+      ),
+    );
+  }
+  const deletionGroups = groupArrayDeletions(
+    arrayDeletions,
+  );
+  for (const group of deletionGroups.values()) {
+    const sourceArray = requireArrayNode(
+      sourceTree,
+      group.path,
+      projectPath,
+      "source",
+      "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+    );
+    replacements.push(
+      ...arrayDeletionGroupEdits(
+        sourceArray.children ?? [],
+        group.indices,
       ),
     );
   }
@@ -949,11 +1248,101 @@ function detectIndentUnit(source: string): string {
   );
 }
 
+function arrayDeletionGroupEdits(
+  elements: Node[],
+  sourceIndices: readonly number[],
+): SourceReplacement[] {
+  if (sourceIndices.length === 0) {
+    return [];
+  }
+  const deletedIndices = new Set(sourceIndices);
+  const keptElements = elements.filter(
+    (_element, index) => !deletedIndices.has(index),
+  );
+  const firstElement = elements[0];
+  const lastElement = elements[elements.length - 1];
+  if (
+    firstElement === undefined ||
+    lastElement === undefined
+  ) {
+    throw new Error(
+      "Array deletion lost its source elements.",
+    );
+  }
+  if (keptElements.length === 0) {
+    return [
+      {
+        offset: firstElement.offset,
+        length:
+          lastElement.offset +
+          lastElement.length -
+          firstElement.offset,
+        content: "",
+      },
+    ];
+  }
+
+  const edits: SourceReplacement[] = [];
+  let index = 0;
+  while (index < elements.length) {
+    const element = elements[index];
+    if (
+      element === undefined ||
+      !deletedIndices.has(index)
+    ) {
+      index += 1;
+      continue;
+    }
+    const runStart = element;
+    let runEnd = element;
+    index += 1;
+    while (index < elements.length) {
+      const candidate = elements[index];
+      if (
+        candidate === undefined ||
+        !deletedIndices.has(index)
+      ) {
+        break;
+      }
+      runEnd = candidate;
+      index += 1;
+    }
+    const nextKept = elements[index];
+    if (nextKept !== undefined) {
+      edits.push({
+        offset: runStart.offset,
+        length: nextKept.offset - runStart.offset,
+        content: "",
+      });
+      continue;
+    }
+    const lastKept =
+      keptElements[keptElements.length - 1];
+    if (lastKept === undefined) {
+      throw new Error(
+        "Array deletion lost its final retained element.",
+      );
+    }
+    const offset = lastKept.offset + lastKept.length;
+    edits.push({
+      offset,
+      length:
+        runEnd.offset + runEnd.length - offset,
+      content: "",
+    });
+  }
+  return edits;
+}
+
 function requireArrayNode(
   tree: Node,
   readonlyPath: JsonSourcePath,
   projectPath: string,
   document: "source" | "target",
+  mismatchCode:
+    | "JSON_SOURCE_PATCH_INSERTION_MISMATCH"
+    | "JSON_SOURCE_PATCH_DELETION_MISMATCH" =
+    "JSON_SOURCE_PATCH_INSERTION_MISMATCH",
 ): Node {
   const path: JSONPath = [...readonlyPath];
   const node = findNodeAtLocation(tree, path);
@@ -966,7 +1355,7 @@ function requireArrayNode(
   }
   if (node.type !== "array") {
     throw new TiledMcpError(
-      "JSON_SOURCE_PATCH_INSERTION_MISMATCH",
+      mismatchCode,
       `JSON source patch path ${formatPath(path)} is not an array in the ${document} ${projectPath}.`,
       { path: projectPath, jsonPath: path, document },
     );

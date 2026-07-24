@@ -137,6 +137,33 @@ type OperationPreview =
       affectsDescendants: boolean;
     }
   | {
+      type: "deleteLayer";
+      layerId: number;
+      deleteDescendants: boolean;
+      destructive: true;
+      warning: string;
+      layer: {
+        id: number;
+        type:
+          | "tilelayer"
+          | "objectgroup"
+          | "imagelayer"
+          | "group";
+        name: string;
+        nameTruncated: boolean;
+      };
+      parentGroupId: number | null;
+      index: number;
+      deletedLayerCount: number;
+      descendantLayerCount: number;
+      layerIdSample: number[];
+      omittedLayerCount: number;
+      objectCount: number;
+      objectIdSample: number[];
+      omittedObjectCount: number;
+      lockedLayerCount: number;
+    }
+  | {
       type: "deleteObjects";
       destructive: true;
       warning: string;
@@ -519,6 +546,60 @@ function summarizeOperation(
       wouldChange: updateSummary.wouldChange,
       affectsDescendants:
         updateSummary.affectsDescendants,
+    };
+  }
+
+  if (operation.type === "deleteLayer") {
+    const deletionSummary = summary.deletedLayers?.find(
+      (entry) => entry.operationIndex === operationIndex,
+    );
+    if (
+      deletionSummary === undefined ||
+      deletionSummary.layerId !== operation.layerId
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "deleteLayer preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    const lockedWarning =
+      deletionSummary.lockedLayerCount === 0
+        ? ""
+        : ` ${deletionSummary.lockedLayerCount} deleted layer(s) are marked locked; locked is advisory metadata and does not block MCP edits.`;
+    return {
+      type: operation.type,
+      layerId: operation.layerId,
+      deleteDescendants:
+        operation.deleteDescendants === true,
+      destructive: true,
+      warning:
+        `This permanently removes the selected layer, all layer-owned content, and ${deletionSummary.descendantLayerCount} descendant layer(s).${lockedWarning}`,
+      layer: {
+        id: deletionSummary.layerId,
+        type: deletionSummary.layerType,
+        name: deletionSummary.name,
+        nameTruncated: deletionSummary.nameTruncated,
+      },
+      parentGroupId: deletionSummary.parentGroupId,
+      index: deletionSummary.index,
+      deletedLayerCount:
+        deletionSummary.deletedLayerCount,
+      descendantLayerCount:
+        deletionSummary.descendantLayerCount,
+      layerIdSample: structuredClone(
+        deletionSummary.layerIdSample,
+      ),
+      omittedLayerCount:
+        deletionSummary.omittedLayerCount,
+      objectCount: deletionSummary.objectCount,
+      objectIdSample: structuredClone(
+        deletionSummary.objectIdSample,
+      ),
+      omittedObjectCount:
+        deletionSummary.omittedObjectCount,
+      lockedLayerCount:
+        deletionSummary.lockedLayerCount,
     };
   }
 

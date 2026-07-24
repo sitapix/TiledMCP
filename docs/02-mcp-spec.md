@@ -24,7 +24,7 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 的 direct Resource：`tiled://guide`，通过 `resources/list` 发现并由 `resources/read`
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
-`updateObject`、`deleteObjects` 和 `updateLayer`。
+`updateObject`、`deleteObjects`、`updateLayer` 和 `deleteLayer`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
@@ -252,7 +252,7 @@ apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revi
 | `tiled_create_layer` | **已实现**；预览创建一个空图层（4 种类型），可指定父 Group 与插入位置，不直接写盘 | `mapPath`, `type`(tilelayer/objectgroup/imagelayer/group), `name`, `parentGroupId?`, `index?`, `imagePath?`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedImageRevision?` |
 | `tiled_update_layer` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 7 种 `updateLayer` operation 实现，修改 4 类 layer 的公共显示/元数据字段 | `mapPath`, `layerId`, `patch` |
 | `tiled_move_layer` | 调整图层顺序 / 移入移出 Group | `mapPath`, `layerId`, `parentGroupId?`, `index` |
-| `tiled_delete_layer` | 删除图层（**destructive**，返回待批准 change set） | `mapPath`, `layerId` |
+| `tiled_delete_layer` | 候选独立入口；当前等价 destructive 能力已通过 `tiled_preview_edits` 的第 8 种、必须独占 change set 的 `deleteLayer` operation 实现 | `mapPath`, `layerId`, `deleteDescendants?` |
 | `tiled_duplicate_layer` | 复制图层（后续候选） | `mapPath`, `layerId`, `newName?` |
 
 当前实现只接受有限正交 TMJ。省略 `parentGroupId` 表示根 `layers`；否则它必须是一个已存在
@@ -273,8 +273,9 @@ pin。
 既有 TSJ dependency set 与 prospective image revision，重新解析父 Group/index/ID 后仅
 写目标 TMJ。写回对目标 sibling array 使用单元素 source insertion，并另替换
 `nextlayerid`：原有同级元素、未知字段、BOM、换行、缩进、键序和转义保持原 bytes，新元素
-本身使用紧凑 JSON。当前一个 change set 只能创建一个空层，不能同批创建 Group 后再向它
-添加子层，也不支持 infinite/chunk、移动或删除图层。
+本身使用紧凑 JSON。当前一个 create-layer change set 只能创建一个空层，不能同批创建
+Group 后再向它添加子层，也不支持 infinite/chunk 或移动图层；删除已有层使用下述独占
+`deleteLayer` operation。
 
 当前已实现的 common-layer update wire contract 是
 `{type:"updateLayer", layerId, patch}`，并属于通用
@@ -317,11 +318,44 @@ apply 只为实际 changed field 生成 layer-object member-local insertion/repl
 deletion，不序列化整个 layer；未知成员、相邻数组、BOM、换行、缩进、键序和未触及词法
 保持原 bytes。它可与 tile `data` 和 object `objects` edits 同批；preview 固定 map
 revision 与完整 dependency revision set，apply 重新规划、比较摘要并做正常 revision
-CAS。独立 `tiled_move_layer`、`tiled_delete_layer` 与 `tiled_duplicate_layer` 仍是
-roadmap，不能从 `updateLayer` 推断为已实现。
+CAS。
 
-其他图层工具统一用 `layerId`（数字 id）定位；表中尚未标记“已实现”的 move/delete/
-duplicate 仍是 roadmap。
+当前已实现的 layer deletion wire contract 是
+`{type:"deleteLayer", layerId, deleteDescendants?}`，它是 generic
+`tiled_preview_edits.operations` union 的第 8 种 operation。由于删除检查必须针对同一个
+原始完整 map 计算，含 `deleteLayer` 的 change set 必须且只能有这一项 operation；不能
+同批 set tile、改 object 或 update layer。它不额外注册 `tiled_delete_layer`，registry
+仍是 18 个 core / 19 个含 rasterizer。
+
+正整数 `layerId` 可递归定位 4 类已有 layer。tile/object/image leaf 与空 Group 不需要
+额外确认；非空 Group 若没有 `deleteDescendants:true` 会以 `LAYER_HAS_DESCENDANTS`
+拒绝。确认后删除的是选中 Group 的整棵 subtree 及所有 layer-owned tile data、image 与
+objects；这里的 image 只是 TMJ 中的 image-layer reference，不删除外部图片或 TSJ 文件。
+children 不提升到原 Group 的父级，也不会清空、删除或重写更高层祖先。显式
+`deleteDescendants:false` 与省略等价；对 leaf 传 true 不扩展删除边界。
+
+若 subtree 含 objects，planner 会收集其 ID，并仅在将继续存活的 map 中做 typed reference
+分析。直接 `type:"object"` property 或 Tiled 1.12 `type:"list"` 中的 object item 指向
+待删 ID 时返回 `OBJECT_IN_USE`。存活的 `type:"class"` property 可能隐藏 typed object
+reference，当前无法安全展开，因此返回 `UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS`，不会
+猜测为未引用。被删 subtree 内部互相引用会随 subtree 一起消失，不阻止删除。
+
+preview 固定目标 `layerId`、类型、有界名称、直接父 Group ID 与 sibling index，并明确
+`destructive:true`。摘要给出完整 `deletedLayerCount`、`descendantLayerCount`、
+`objectCount` 与 `lockedLayerCount`；`layerIdSample` / `objectIdSample` 各最多 32 项，
+分别配套 `omittedLayerCount` / `omittedObjectCount`，调用方不得把样本当作完整集合。
+被删除 layer 中的 `locked:true` 只作为 advisory warning 与计数，不构成 ACL，也不阻止
+apply。
+
+删除不会降低或重用根 `nextlayerid` / `nextobjectid` 高水位。source writer 只对选中
+layer 的直接父 `layers` array 做一次 array-element-local deletion；完整 subtree 随该
+单一 element 消失，未触及 sibling/祖先、未知字段、BOM、CRLF、缩进、键序与词法保持原
+bytes。preview 固定 map revision 与完整 dependency set，apply 重算 operation/摘要、
+验证 digest 与 revision pins，并在锁内 CAS 后才提交。独立 layer move/duplicate 仍是
+roadmap；delete 已通过 generic operation 实现，不应再列为未实现。
+
+其他图层工具统一用 `layerId`（数字 id）定位；表中尚未标记“已实现”的 move/duplicate
+仍是 roadmap。
 
 ### 3.4 图块编辑 — Tile Layer（核心价值）
 
@@ -673,7 +707,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑与 4 类 layer 公共属性 update、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持 layer move/delete、无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新图层并修改一张有限正交 TMJ；提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑、4 类 layer 公共属性 update 与独占递归 delete、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持 layer move/duplicate、无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/删除图层并修改一张有限正交 TMJ；destructive 删除有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

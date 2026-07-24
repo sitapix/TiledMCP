@@ -25,7 +25,9 @@
 - 在有限正交 TMJ 中预览创建空的 tile/object/image/group 图层，支持根级或 Group
   内的显式插入位置，批准后提交并正确维护 `nextlayerid`；
 - 通过通用 preview union 修改 4 类已有图层的 11 个公共显示/元数据字段，使用
-  member-local source patch；layer move/delete 仍未实现；
+  member-local source patch；
+- 通过同一 union 的独占 destructive operation 删除 leaf/空 Group 或经显式确认递归
+  删除非空 Group，保留 ID 高水位并阻止存活对象引用悬空；layer move 仍未实现；
 - 无损 4-bit GID 变换编解码；
 - `setTiles` / `fillRegion` / `replaceTiles` 封闭编辑集合，以及 preview →
   approved change set → apply 的两阶段提交；replacement 按完整变换后的 encoded GID
@@ -186,6 +188,27 @@ layer update 会回显 `requestedFields`、`changedFields`、`wouldChange` 与
 `color-burn`、`hard-light`、`soft-light`、`difference`、`exclusion`。
 它不是新的 standalone MCP tool，所以仍是 18 个 core / 19 个含 rasterizer 的工具。
 
+删除已有图层使用 generic union 的第 8 种 operation：
+`{type:"deleteLayer", layerId, deleteDescendants?}`。它必须是 change set 中唯一的
+operation，不能与 tile、object 或 layer update 混批。普通 leaf 和空 Group 可直接删除；
+非空 Group 必须显式传 `deleteDescendants:true`，随后整个 Group subtree 与其中的 tile
+data、image-layer 引用、objects 一起从 TMJ 删除，但不会删除外部图片或 TSJ 文件。
+children 不会提升到父级，也不会顺便清空或删除祖先。
+
+删除含对象的 subtree 前，服务端会检查仍然存活的完整 map。直接 `object` property 或
+Tiled 1.12 `list` 内的 object reference 指向待删对象时拒绝；存活的 `class` property
+可能隐藏 typed object reference，因此 fail closed。被删 subtree 内部的引用会与其目标
+一起消失，不构成 dangling reference。`locked` 仍只是 advisory metadata：不会阻止删除，
+但 preview 会报告 `lockedLayerCount` 并给出醒目 warning。
+
+destructive preview 回显选中 layer 的类型/名称/父 Group/index，以及完整
+`deletedLayerCount`、`descendantLayerCount`、`objectCount`、`lockedLayerCount`；layer
+和 object ID 各只采样最多 32 个，并用 omitted count 明示截断。apply 不降低
+`nextlayerid` 或 `nextobjectid`，不会复用历史 ID；写回只从直接父层的 `layers` 数组删除
+一个 element，保留所有未触及 sibling、祖先和其他 source bytes。它仍通过正常的
+revision-pinned preview/批准/apply 流程，不新增 standalone tool，工具数保持
+18 core / 19 optional。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -236,6 +259,9 @@ usage analysis 覆盖递归 cell/tile-object 统计、隐藏层、base-tile/变�
 密度/未使用/top 排序截断、exact read-set pin 和扫描/distinct/结果预算；
 common layer update 覆盖 4 种 layer、字段映射与边界、默认字段显式插入、tint 删除、
 13 种 blend mode、mixed batch、member-local source patch、no-op 与 revision conflict；
+layer deletion 覆盖 leaf/nested/recursive Group、独占 plan、存活 object/list/class
+reference policy、locked warning、bounded subtree summary、ID 高水位、element-local
+source patch、tamper/stale revision 与 Tiled round trip；
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
@@ -253,8 +279,9 @@ checkpoint restore。架构与 roadmap
   另改 `nextobjectid`）；这些范围之外的 BOM、换行、缩进、键序、数字和字符串词法按
   bytes 保留。被明确替换的数组仍会重新排版；`tiled_create_layer` 是例外，它使用
   单元素 array insertion，只合成一个紧凑 JSON 新元素并替换 `nextlayerid`，原有同级
-  元素及其他文本保持原 bytes。当前一次 change set 只能创建一个空图层，尚不支持在同一
-  preview 中继续给新 Group 添加子层、移动或删除图层。
+  元素及其他文本保持原 bytes。当前一次 create-layer change set 只能创建一个空图层，
+  尚不支持在同一 preview 中继续给新 Group 添加子层或移动图层；删除则使用独占的
+  `deleteLayer` operation。
 - `replaceTiles` 是通用 `tiled_preview_edits` 的 operation，不新增注册工具，因此仍为
   18 个 core / 19 个含 rasterizer 的工具。它只接受非空 `from`，按包含
   transform/raw flags 的完整 encoded GID 精确匹配；
@@ -271,6 +298,13 @@ checkpoint restore。架构与 roadmap
   字段保持原 bytes。preview 固定 operation、requested/changed fields、Group 后代影响
   标记、map revision 与完整 dependency set；apply 会重新计算摘要并做 revision CAS。
   `locked:true` 不构成写保护，若需要禁止 MCP 编辑必须由更高层策略处理。
+- `deleteLayer` 是同一 union 的第 8 种 operation，但因其删除边界和 object-reference
+  检查基于原始完整 map，它必须独占 change set。删除目标是直接父 `layers` array 中的
+  一个完整 element：选择 Group 时 subtree 作为整体消失，不重挂 children，也不改祖先
+  内容。preview 的 ID 数组是最多 32 项的样本，调用方必须使用对应 count/omitted count
+  判断完整影响范围。apply 以 array-element-local source deletion 保留所有未触及 bytes，
+  同时保持 `nextlayerid`/`nextobjectid` 高水位；这是已实现的删除能力，但
+  `tiled_delete_layer` 仍没有作为 standalone tool 注册，layer move/duplicate 也仍未实现。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

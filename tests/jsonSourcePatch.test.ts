@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   patchJsonDocumentSource,
+  type JsonArrayDeletion,
   type JsonObjectMemberPatch,
   type JsonSourcePath,
 } from "../src/formats/jsonSourcePatch.js";
@@ -180,6 +181,341 @@ describe("patchJsonDocumentSource", () => {
     expect(text).toContain('{"id":1.0e+0}');
     expect(text).toContain('{"id":2.00}');
     expect(parseJsonDocument(text, "ordered.tmj")).toEqual(target);
+  });
+
+  it.each([
+    {
+      label: "first",
+      index: 0,
+      expected:
+        '{"items":[2e0, 3.000],"keep":"\\u0078"}',
+    },
+    {
+      label: "middle",
+      index: 1,
+      expected:
+        '{"items":[1.00, 3.000],"keep":"\\u0078"}',
+    },
+    {
+      label: "last",
+      index: 2,
+      expected:
+        '{"items":[1.00, 2e0],"keep":"\\u0078"}',
+    },
+  ])("deletes the $label array element without rewriting siblings", ({
+    index,
+    expected,
+  }) => {
+    const source =
+      '{"items":[1.00, 2e0, 3.000],"keep":"\\u0078"}';
+    const target = cloneJson(
+      parseJsonDocument(source, "array-delete.tmj"),
+    );
+    (target.items as number[]).splice(index, 1);
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "array-delete.tmj",
+      [],
+      [],
+      [{ path: ["items"], index }],
+    );
+
+    expect(result.toString("utf8")).toBe(expected);
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "array-delete.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("deletes the only element of a nested multiline array while preserving BOM and CRLF", () => {
+    const source = [
+      "\uFEFF{\r\n",
+      "  \"outer\": [{\r\n",
+      "    \"values\": [\r\n",
+      "      1.00\r\n",
+      "    ],\r\n",
+      "    \"keep\": \"\\u0078\"\r\n",
+      "  }]\r\n",
+      "}\r\n",
+    ].join("");
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "nested-array-delete.tmj",
+      ),
+    );
+    const outer = target.outer as JsonObject[];
+    (outer[0]?.values as number[]).splice(0, 1);
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "nested-array-delete.tmj",
+      [],
+      [],
+      [
+        {
+          path: ["outer", 0, "values"],
+          index: 0,
+        },
+      ],
+    );
+    const text = result.toString("utf8");
+
+    expect(text).toBe(
+      [
+        "\uFEFF{\r\n",
+        "  \"outer\": [{\r\n",
+        "    \"values\": [\r\n",
+        "      \r\n",
+        "    ],\r\n",
+        "    \"keep\": \"\\u0078\"\r\n",
+        "  }]\r\n",
+        "}\r\n",
+      ].join(""),
+    );
+    expect(
+      parseJsonDocument(
+        text,
+        "nested-array-delete.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("batches multiple source-index deletions from one array", () => {
+    const source =
+      '{"items":[0.0, 1.0, 2.0, 3.0, 4.0, 5.0],"keep":true}';
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "multi-array-delete.tmj",
+      ),
+    );
+    target.items = [0, 2, 5];
+    const deletions: JsonArrayDeletion[] = [
+      { path: ["items"], index: 4 },
+      { path: ["items"], index: 1 },
+      { path: ["items"], index: 3 },
+    ];
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "multi-array-delete.tmj",
+      [],
+      [],
+      deletions,
+    );
+
+    expect(result.toString("utf8")).toBe(
+      '{"items":[0.0, 2.0, 5.0],"keep":true}',
+    );
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "multi-array-delete.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("combines a deletion with sibling value, insertion, and object-member patches", () => {
+    const source = [
+      '{"meta":{"name":"old"},',
+      '"remove":[1.0, 2.0],',
+      '"insert":[3.0],',
+      '"counter":1.00}',
+    ].join("");
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "combined-array-delete.tmj",
+      ),
+    );
+    (target.meta as JsonObject).name = "new";
+    (target.remove as number[]).splice(0, 1);
+    (target.insert as number[]).push(4);
+    target.counter = 2;
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [["counter"]],
+      "combined-array-delete.tmj",
+      [{ path: ["insert"], index: 1 }],
+      [{ path: ["meta"], key: "name" }],
+      [{ path: ["remove"], index: 0 }],
+    );
+    const text = result.toString("utf8");
+
+    expect(text).toBe(
+      [
+        '{"meta":{"name":"new"},',
+        '"remove":[2.0],',
+        '"insert":[3.0,4],',
+        '"counter":2}',
+      ].join(""),
+    );
+    expect(
+      parseJsonDocument(
+        text,
+        "combined-array-delete.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("strictly rejects invalid or ambiguous array deletions", () => {
+    const source =
+      '{"items":[1,2,3],"nested":[[1,2]],"object":{}}';
+    const unchanged = parseJsonDocument(
+      source,
+      "invalid-array-delete.tmj",
+    );
+    const deletedMiddle = cloneJson(unchanged);
+    (deletedMiddle.items as number[]).splice(1, 1);
+    const deletion: JsonArrayDeletion = {
+      path: ["items"],
+      index: 1,
+    };
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        deletedMiddle,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [deletion, deletion],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_DUPLICATE_PATH",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        deletedMiddle,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [{ path: ["items"], index: 9 }],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+      }),
+    );
+
+    const wrongTarget = cloneJson(unchanged);
+    (wrongTarget.items as number[]).splice(0, 1);
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        wrongTarget,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [deletion],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        unchanged,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [{ path: ["object"], index: 0 }],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_DELETION_MISMATCH",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        deletedMiddle,
+        [["items", 0]],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [deletion],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        deletedMiddle,
+        [],
+        "invalid-array-delete.tmj",
+        [{ path: ["items"], index: 0 }],
+        [],
+        [deletion],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        deletedMiddle,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [{ path: [], key: "items" }],
+        [deletion],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        unchanged,
+        [],
+        "invalid-array-delete.tmj",
+        [],
+        [],
+        [
+          { path: ["nested"], index: 0 },
+          { path: ["nested", 0], index: 0 },
+        ],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
   });
 
   it("rejects duplicate patch paths", () => {

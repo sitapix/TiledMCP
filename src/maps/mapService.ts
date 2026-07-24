@@ -16,6 +16,7 @@ import {
 } from "../formats/json.js";
 import {
   patchJsonDocumentSource,
+  type JsonArrayDeletion,
   type JsonArrayInsertion,
   type JsonObjectMemberPatch,
   type JsonSourcePath,
@@ -92,6 +93,7 @@ const MAX_PATCHED_SUBTREES = 128;
 const MAX_OBJECT_LIST_LIMIT = 10_000;
 const MAX_OBJECT_STRING_LENGTH = 1_024;
 const MAX_OBJECT_DISPLAY_STRING_LENGTH = 128;
+const MAX_DELETE_PREVIEW_ID_SAMPLE = 32;
 const MAX_ABSOLUTE_OBJECT_NUMBER = 1_000_000_000;
 const MAX_TILED_SIGNED_ID = 0x7fffffff;
 export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
@@ -244,6 +246,20 @@ interface EditableLayerLocation {
   path: JsonSourcePath;
   id: number;
   type: CreatableLayerType;
+}
+
+interface DeletableLayerLocation
+  extends EditableLayerLocation {
+  container: JsonValue[];
+  containerPath: JsonSourcePath;
+  index: number;
+  parentGroupId: number | null;
+}
+
+interface DeletedLayerInspection {
+  layerIds: number[];
+  objectIds: number[];
+  lockedLayerCount: number;
 }
 
 interface ObjectEditIndex {
@@ -1581,6 +1597,11 @@ export class MapService {
         appliedSummary,
         plan.mapPath,
       ),
+      sourceArrayDeletionsForSummary(
+        edited,
+        appliedSummary,
+        plan.mapPath,
+      ),
     );
     const result = await this.store.commitBytes(
       plan.mapPath,
@@ -2719,6 +2740,21 @@ function validateAndSummarizeOperations(
       { limit: MAX_PLAN_OPERATIONS },
     );
   }
+  const deleteLayerOperationCount = operations.filter(
+    (operation) =>
+      isRecordValue(operation) &&
+      operation.type === "deleteLayer",
+  ).length;
+  if (
+    deleteLayerOperationCount > 1 ||
+    (deleteLayerOperationCount === 1 &&
+      operations.length !== 1)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "deleteLayer must be the only operation in its change set.",
+    );
+  }
 
   let cellWrites = 0;
   let replaceTileScans = 0;
@@ -2742,6 +2778,9 @@ function validateAndSummarizeOperations(
   > = [];
   const layerUpdates: NonNullable<
     MapEditPlan["summary"]["layerUpdates"]
+  > = [];
+  const deletedLayers: NonNullable<
+    MapEditPlan["summary"]["deletedLayers"]
   > = [];
   let objectIndex: ObjectEditIndex | undefined;
   const getObjectIndex = (): ObjectEditIndex => {
@@ -3078,6 +3117,18 @@ function validateAndSummarizeOperations(
             GROUP_DESCENDANT_RENDER_FIELDS.has(field),
           ),
       });
+    } else if (operation.type === "deleteLayer") {
+      const deleted = deleteExistingLayer(
+        map,
+        operation,
+        mapPath,
+        `operations[${operationIndex}]`,
+      );
+      affectedLayerIds.add(deleted.layerId);
+      deletedLayers.push({
+        operationIndex,
+        ...deleted,
+      });
     } else if (operation.type === "createObject") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
       const created = createBasicObject(
@@ -3180,7 +3231,8 @@ function validateAndSummarizeOperations(
     changedLayerMembers.size +
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
-    (createdLayers.length > 0 ? 2 : 0);
+    (createdLayers.length > 0 ? 2 : 0) +
+    (deletedLayers.length > 0 ? 1 : 0);
   if (patchedSubtreeCount > MAX_PATCHED_SUBTREES) {
     throw new TiledMcpError(
       "RESULT_LIMIT_EXCEEDED",
@@ -3215,6 +3267,7 @@ function validateAndSummarizeOperations(
       : { tileReplacements }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
     ...(createdLayers.length === 0 ? {} : { createdLayers }),
+    ...(deletedLayers.length === 0 ? {} : { deletedLayers }),
   };
 }
 
@@ -4562,6 +4615,363 @@ function findObjectLocation(
   return found;
 }
 
+function deleteExistingLayer(
+  map: JsonObject,
+  operation: Extract<
+    MapEditOperation,
+    { type: "deleteLayer" }
+  >,
+  mapPath: string,
+  context: string,
+): Omit<
+  NonNullable<
+    MapEditPlan["summary"]["deletedLayers"]
+  >[number],
+  "operationIndex"
+> {
+  const allowedKeys = new Set([
+    "type",
+    "layerId",
+    "deleteDescendants",
+  ]);
+  const unknownKey = Object.keys(operation).find(
+    (key) => !allowedKeys.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} contains unsupported field ${unknownKey}.`,
+    );
+  }
+  assertPositiveInteger(
+    operation.layerId,
+    `${context}.layerId`,
+  );
+  if (
+    operation.deleteDescendants !== undefined &&
+    typeof operation.deleteDescendants !== "boolean"
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}.deleteDescendants must be a boolean.`,
+    );
+  }
+
+  const location = findDeletableLayer(
+    map,
+    operation.layerId,
+    mapPath,
+  );
+  const inspection = inspectDeletedLayerSubtree(
+    location.object,
+    mapPath,
+  );
+  const descendantLayerCount =
+    inspection.layerIds.length - 1;
+  if (
+    location.type === "group" &&
+    descendantLayerCount > 0 &&
+    operation.deleteDescendants !== true
+  ) {
+    throw new TiledMcpError(
+      "LAYER_HAS_DESCENDANTS",
+      `Group layer ${operation.layerId} contains ${descendantLayerCount} descendant layer(s). Set deleteDescendants to true to confirm recursive deletion.`,
+      {
+        path: mapPath,
+        layerId: operation.layerId,
+        descendantLayerCount,
+      },
+    );
+  }
+
+  if (inspection.objectIds.length > 0) {
+    const objectIndex = buildObjectEditIndex(map, mapPath);
+    for (const objectId of inspection.objectIds) {
+      if (!objectIndex.byId.has(objectId)) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `Object ${objectId} disappeared while inspecting layer ${operation.layerId}.`,
+          {
+            path: mapPath,
+            layerId: operation.layerId,
+            objectId,
+          },
+        );
+      }
+    }
+  }
+
+  if (
+    location.container[location.index] !==
+    location.object
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Layer ${operation.layerId} moved during change-set planning.`,
+      { path: mapPath, layerId: operation.layerId },
+    );
+  }
+  const rawName =
+    typeof location.object.name === "string"
+      ? location.object.name
+      : `Layer ${location.id}`;
+  const displayName = boundedDisplayString(rawName);
+
+  if (inspection.objectIds.length > 0) {
+    assertNoDanglingObjectReferences(
+      map,
+      new Set(inspection.objectIds),
+      mapPath,
+      location.object,
+    );
+  }
+  location.container.splice(location.index, 1);
+
+  const layerIdSample = inspection.layerIds.slice(
+    0,
+    MAX_DELETE_PREVIEW_ID_SAMPLE,
+  );
+  const objectIdSample = inspection.objectIds.slice(
+    0,
+    MAX_DELETE_PREVIEW_ID_SAMPLE,
+  );
+  return {
+    layerId: location.id,
+    layerType: location.type,
+    name: displayName.value,
+    nameTruncated: displayName.truncated,
+    parentGroupId: location.parentGroupId,
+    index: location.index,
+    deletedLayerCount: inspection.layerIds.length,
+    descendantLayerCount,
+    layerIdSample,
+    omittedLayerCount:
+      inspection.layerIds.length - layerIdSample.length,
+    objectCount: inspection.objectIds.length,
+    objectIdSample,
+    omittedObjectCount:
+      inspection.objectIds.length - objectIdSample.length,
+    lockedLayerCount: inspection.lockedLayerCount,
+  };
+}
+
+function findDeletableLayer(
+  map: JsonObject,
+  layerId: number,
+  mapPath: string,
+): DeletableLayerLocation {
+  const layers = expectArray(map.layers, `${mapPath}.layers`);
+  const found = findDeletableLayerRecursive(
+    layers,
+    layerId,
+    mapPath,
+    `${mapPath}.layers`,
+    ["layers"],
+    null,
+  );
+  if (found === undefined) {
+    throw new TiledMcpError(
+      "LAYER_NOT_FOUND",
+      `Layer ${layerId} does not exist.`,
+      { path: mapPath, layerId },
+    );
+  }
+  return found;
+}
+
+function findDeletableLayerRecursive(
+  layers: JsonValue[],
+  layerId: number,
+  mapPath: string,
+  context: string,
+  containerPath: JsonSourcePath,
+  parentGroupId: number | null,
+  depth = 0,
+  budget: LayerTraversalBudget = { count: 0 },
+): DeletableLayerLocation | undefined {
+  assertLayerTraversalBudget(layers.length, depth, budget);
+  for (const [index, value] of layers.entries()) {
+    const layer = expectObject(value, `${context}[${index}]`);
+    const id = expectInteger(
+      layer.id,
+      `${context}[${index}].id`,
+    );
+    const type = expectString(
+      layer.type,
+      `${context}[${index}].type`,
+    );
+    if (id === layerId) {
+      if (
+        type !== "tilelayer" &&
+        type !== "objectgroup" &&
+        type !== "imagelayer" &&
+        type !== "group"
+      ) {
+        throw new TiledMcpError(
+          "LAYER_TYPE_MISMATCH",
+          `Layer ${layerId} does not use a supported Tiled layer type.`,
+          { path: mapPath, layerId, layerType: type },
+        );
+      }
+      return {
+        object: layer,
+        path: [...containerPath, index],
+        id,
+        type,
+        container: layers,
+        containerPath,
+        index,
+        parentGroupId,
+      };
+    }
+    if (type !== "group") {
+      continue;
+    }
+    const nested = findDeletableLayerRecursive(
+      expectArray(
+        layer.layers,
+        `${context}[${index}].layers`,
+      ),
+      layerId,
+      mapPath,
+      `${context}[${index}].layers`,
+      [...containerPath, index, "layers"],
+      id,
+      depth + 1,
+      budget,
+    );
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
+function inspectDeletedLayerSubtree(
+  root: JsonObject,
+  mapPath: string,
+): DeletedLayerInspection {
+  const layerIds: number[] = [];
+  const objectIds: number[] = [];
+  const seenLayerIds = new Set<number>();
+  const seenObjectIds = new Set<number>();
+  let lockedLayerCount = 0;
+
+  const visit = (
+    layer: JsonObject,
+    context: string,
+    depth: number,
+  ): void => {
+    if (
+      depth > MAX_LAYER_DEPTH ||
+      layerIds.length >= MAX_LAYER_COUNT
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Deleted layer subtree exceeds depth ${MAX_LAYER_DEPTH} or count ${MAX_LAYER_COUNT}.`,
+        {
+          path: mapPath,
+          maxDepth: MAX_LAYER_DEPTH,
+          maxLayers: MAX_LAYER_COUNT,
+        },
+      );
+    }
+    const id = expectInteger(layer.id, `${context}.id`);
+    if (id <= 0 || seenLayerIds.has(id)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        id <= 0
+          ? `${mapPath} contains a non-positive layer id.`
+          : `${mapPath} contains duplicate layer id ${id}.`,
+        { path: mapPath, layerId: id },
+      );
+    }
+    const type = expectString(
+      layer.type,
+      `${context}.type`,
+    );
+    if (
+      type !== "tilelayer" &&
+      type !== "objectgroup" &&
+      type !== "imagelayer" &&
+      type !== "group"
+    ) {
+      throw new TiledMcpError(
+        "LAYER_TYPE_MISMATCH",
+        `Layer ${id} does not use a supported Tiled layer type.`,
+        { path: mapPath, layerId: id, layerType: type },
+      );
+    }
+    seenLayerIds.add(id);
+    layerIds.push(id);
+    if (layer.locked === true) {
+      lockedLayerCount += 1;
+    }
+
+    if (type === "objectgroup") {
+      const objects = expectArray(
+        layer.objects,
+        `${context}.objects`,
+      );
+      if (
+        objectIds.length + objects.length >
+        MAX_OBJECT_COUNT
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `Deleted layer subtree contains more than ${MAX_OBJECT_COUNT} objects.`,
+          { path: mapPath, limit: MAX_OBJECT_COUNT },
+        );
+      }
+      for (const [index, value] of objects.entries()) {
+        const object = expectObject(
+          value,
+          `${context}.objects[${index}]`,
+        );
+        const objectId = expectInteger(
+          object.id,
+          `${context}.objects[${index}].id`,
+        );
+        if (
+          objectId <= 0 ||
+          seenObjectIds.has(objectId)
+        ) {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            objectId <= 0
+              ? `${mapPath} contains a non-positive object id.`
+              : `${mapPath} contains duplicate object id ${objectId}.`,
+            { path: mapPath, objectId },
+          );
+        }
+        seenObjectIds.add(objectId);
+        objectIds.push(objectId);
+      }
+      return;
+    }
+    if (type !== "group") {
+      return;
+    }
+    const children = expectArray(
+      layer.layers,
+      `${context}.layers`,
+    );
+    for (const [index, value] of children.entries()) {
+      visit(
+        expectObject(
+          value,
+          `${context}.layers[${index}]`,
+        ),
+        `${context}.layers[${index}]`,
+        depth + 1,
+      );
+    }
+  };
+
+  visit(root, `layer ${String(root.id)}`, 0);
+  return { layerIds, objectIds, lockedLayerCount };
+}
+
 function updateCommonLayer(
   map: JsonObject,
   layerId: number,
@@ -4930,6 +5340,7 @@ function assertNoDanglingObjectReferences(
   map: JsonObject,
   deletedIds: ReadonlySet<number>,
   mapPath: string,
+  ignoredSubtree?: JsonObject,
 ): void {
   let visited = 0;
 
@@ -4939,6 +5350,9 @@ function assertNoDanglingObjectReferences(
     depth: number,
     isPropertyEntry: boolean,
   ): void => {
+    if (value === ignoredSubtree) {
+      return;
+    }
     visited += 1;
     if (visited > 1_000_000 || depth > 512) {
       throw new TiledMcpError(
@@ -5372,6 +5786,28 @@ function sourceArrayInsertionsForSummary(
       mapPath,
     ).path,
     index: created.index,
+  }));
+}
+
+function sourceArrayDeletionsForSummary(
+  map: JsonObject,
+  summary: MapEditPlan["summary"],
+  mapPath: string,
+): JsonArrayDeletion[] {
+  const deletedLayers = summary.deletedLayers ?? [];
+  if (deletedLayers.length > 1) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "A layer-deletion change set may delete only one selected layer subtree.",
+    );
+  }
+  return deletedLayers.map((deleted) => ({
+    path: layerContainerForParent(
+      map,
+      deleted.parentGroupId,
+      mapPath,
+    ).path,
+    index: deleted.index,
   }));
 }
 

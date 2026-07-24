@@ -85,7 +85,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         defaultTopTileLimit: 64,
       },
       tileOperations: ["setTiles", "fillRegion", "replaceTiles"],
-      layerOperations: ["updateLayer"],
+      layerOperations: ["updateLayer", "deleteLayer"],
       layerUpdateCapabilities: {
         layerTypes: [
           "tilelayer",
@@ -96,6 +96,16 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         tintColorNullDeletes: true,
         lockedSemantics: "advisory-metadata",
         sourcePatch: "object-member-local",
+      },
+      layerDeletionCapabilities: {
+        planner: "generic-exclusive-operation-change-set",
+        nonEmptyGroupConfirmation:
+          "deleteDescendants-true",
+        objectReferencePolicy:
+          "reject-surviving-typed-references",
+        lockedSemantics: "advisory-metadata",
+        idHighWaterMarks: "preserved",
+        sourcePatch: "array-element-local",
       },
       tileReplacementCapabilities: {
         match: "exact-encoded-gid",

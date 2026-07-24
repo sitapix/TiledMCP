@@ -525,6 +525,14 @@ const updateLayerSchema = z
   })
   .strict();
 
+const deleteLayerSchema = z
+  .object({
+    type: z.literal("deleteLayer"),
+    layerId: positiveIdSchema,
+    deleteDescendants: z.boolean().optional(),
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
@@ -533,6 +541,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   updateObjectSchema,
   deleteObjectsSchema,
   updateLayerSchema,
+  deleteLayerSchema,
 ]);
 const resultOutputSchema = z.object({ result: z.unknown() }).strict();
 
@@ -613,7 +622,7 @@ export async function createTiledMcpServer(
           defaultRegion: "target-layer-bounds",
         },
         objectOperations: ["createObject", "updateObject", "deleteObjects"],
-        layerOperations: ["updateLayer"],
+        layerOperations: ["updateLayer", "deleteLayer"],
         layerUpdateCapabilities: {
           layerTypes: [
             "tilelayer",
@@ -637,6 +646,22 @@ export async function createTiledMcpServer(
           tintColorNullDeletes: true,
           lockedSemantics: "advisory-metadata",
           sourcePatch: "object-member-local",
+        },
+        layerDeletionCapabilities: {
+          planner: "generic-exclusive-operation-change-set",
+          layerTypes: [
+            "tilelayer",
+            "objectgroup",
+            "imagelayer",
+            "group",
+          ],
+          nonEmptyGroupConfirmation:
+            "deleteDescendants-true",
+          objectReferencePolicy:
+            "reject-surviving-typed-references",
+          lockedSemantics: "advisory-metadata",
+          idHighWaterMarks: "preserved",
+          sourcePatch: "array-element-local",
         },
         checkpointCapabilities: {
           automaticBeforeWrite: true,
@@ -1378,7 +1403,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, exact tile replacements, common layer-property updates, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

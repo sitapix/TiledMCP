@@ -120,6 +120,16 @@ export interface UpdateLayerOperation {
   };
 }
 
+export interface DeleteLayerOperation {
+  type: "deleteLayer";
+  layerId: number;
+  /**
+   * Required when the target is a non-empty group. Layer-owned content such
+   * as tile cells, images and objects is always deleted with its layer.
+   */
+  deleteDescendants?: boolean;
+}
+
 export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
@@ -127,7 +137,8 @@ export type MapEditOperation =
   | CreateObjectOperation
   | UpdateObjectOperation
   | DeleteObjectsOperation
-  | UpdateLayerOperation;
+  | UpdateLayerOperation
+  | DeleteLayerOperation;
 
 /**
  * A fully resolved operation emitted only by the dedicated
@@ -207,6 +218,23 @@ export interface MapEditPlan {
       changedFields: string[];
       wouldChange: boolean;
       affectsDescendants: boolean;
+    }>;
+    deletedLayers?: Array<{
+      operationIndex: number;
+      layerId: number;
+      layerType: CreatableLayerType;
+      name: string;
+      nameTruncated: boolean;
+      parentGroupId: number | null;
+      index: number;
+      deletedLayerCount: number;
+      descendantLayerCount: number;
+      layerIdSample: number[];
+      omittedLayerCount: number;
+      objectCount: number;
+      objectIdSample: number[];
+      omittedObjectCount: number;
+      lockedLayerCount: number;
     }>;
     tileReplacements?: Array<{
       operationIndex: number;
