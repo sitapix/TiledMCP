@@ -43,6 +43,9 @@ import {
   GUIDE_RESOURCE_URI,
   MAX_GUIDE_RESOURCE_BYTES,
 } from "../src/resources/guide.js";
+import {
+  ASSET_REGISTRY_RELATIVE_PATH,
+} from "../src/project/assetRegistry.js";
 import { createTiledMcpServer } from "../src/server.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
@@ -119,6 +122,54 @@ describe("createTiledMcpServer", () => {
     await harness.client.close().catch(() => undefined);
     await harness.server.close().catch(() => undefined);
     await rm(harness.root, { recursive: true, force: true });
+  });
+
+  it("fails closed on a corrupt asset registry before probing capabilities or registering tools", async () => {
+    await mkdir(
+      join(harness.root, ".tiledmcp"),
+      { recursive: true },
+    );
+    await writeFile(
+      join(
+        harness.root,
+        ASSET_REGISTRY_RELATIVE_PATH,
+      ),
+      '{"format":"truncated"',
+      "utf8",
+    );
+    const resolver =
+      await ProjectPathResolver.create(harness.root);
+    const store = new DocumentStore(resolver);
+    const maps = new MapService(resolver, store);
+    const cli = new TiledCliAdapter({
+      tiledCliPath: join(
+        harness.root,
+        "unused-tiled",
+      ),
+      rasterizerPath: join(
+        harness.root,
+        "unused-rasterizer",
+      ),
+    });
+    let probeCalls = 0;
+    cli.probeCapabilities = async () => {
+      probeCalls += 1;
+      throw new Error(
+        "capability probe must not run",
+      );
+    };
+
+    await expect(
+      createTiledMcpServer({
+        resolver,
+        store,
+        maps,
+        cli,
+      }),
+    ).rejects.toMatchObject({
+      code: "ASSET_REGISTRY_CORRUPT",
+    });
+    expect(probeCalls).toBe(0);
   });
 
   it("advertises exactly the eighteen core tools with safety annotations", async () => {
@@ -2153,6 +2204,35 @@ describe("createTiledMcpServer", () => {
         details: string;
         sdkInputErrors: string;
       };
+      assetIdentityContract: {
+        name: string;
+        version: number;
+        idFormat: string;
+        clientTreatment: string;
+        scope: string;
+        coveredKinds: string[];
+        registryFormat: string;
+        registryFormatVersion: number;
+        restartPersistence: string;
+        initialAssignment: string;
+        samePathContinuity: string;
+        resolutionOrder: string;
+        renameContinuity: string;
+        renameEvidence: string;
+        registeredPathSwap: string;
+        weakIdentityEvidence: string;
+        unobservedHardlinkThenOldPathRemoved:
+          string;
+        contentEquality: string;
+        unmatchedOrCrossFilesystemMove:
+          string;
+        corruptionPolicy: string;
+        loadLimitPolicy: string;
+        mutationLimitPolicy: string;
+        registryLossPolicy: string;
+        crashDurability: string;
+        readOnlyToolEffect: string;
+      };
       checkpointCapabilities: {
         automaticBeforeWrite: boolean;
         startupPreparedReconciliation: boolean;
@@ -2448,6 +2528,54 @@ describe("createTiledMcpServer", () => {
           "bounded-opaque-no-stable-fields-in-v1",
         sdkInputErrors:
           "excluded-sdk-owned-text-only",
+      },
+      assetIdentityContract: {
+        name: "tiled-mcp-asset-identity",
+        version: 1,
+        idFormat:
+          "asset_<24-lowercase-hex>",
+        clientTreatment: "opaque",
+        scope: "configured-project-root",
+        coveredKinds: [
+          "external-tileset",
+          "image-layer",
+        ],
+        registryFormat:
+          "tiled-mcp-asset-registry",
+        registryFormatVersion: 1,
+        restartPersistence:
+          "same-project-internal-state",
+        initialAssignment:
+          "legacy-path-hash-compatible",
+        samePathContinuity:
+          "preserve-across-content-replacement",
+        resolutionOrder:
+          "same-kind-canonical-path-before-file-identity",
+        renameContinuity:
+          "best-effort-unique-stable-file-identity",
+        renameEvidence:
+          "unique-same-kind-device-inode-nonzero-birthtime-old-path-absent",
+        registeredPathSwap:
+          "keep-path-ids-refresh-identity",
+        weakIdentityEvidence:
+          "inode-zero-or-birthtime-zero-does-not-rebind",
+        unobservedHardlinkThenOldPathRemoved:
+          "indistinguishable-from-rename-may-inherit-old-id",
+        contentEquality: "not-identity",
+        unmatchedOrCrossFilesystemMove:
+          "allocate-new-id",
+        corruptionPolicy:
+          "startup-fatal-runtime-application-error-fail-closed",
+        loadLimitPolicy:
+          "startup-fatal-as-corrupt",
+        mutationLimitPolicy:
+          "runtime-application-error-fail-closed",
+        registryLossPolicy:
+          "ids-may-be-reassigned",
+        crashDurability:
+          "not-guaranteed-first-internal-directory-parent-not-fsynced",
+        readOnlyToolEffect:
+          "may-update-project-internal-safety-metadata-only",
       },
       checkpointCapabilities: {
         automaticBeforeWrite: true,

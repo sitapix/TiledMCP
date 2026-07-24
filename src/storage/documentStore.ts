@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { constants, type BigIntStats } from "node:fs";
+import { constants } from "node:fs";
 import { link, open, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
@@ -16,6 +16,11 @@ import {
   type CorruptCheckpointEntry,
 } from "./checkpoints.js";
 import { withProjectFileLock } from "./fileLock.js";
+import {
+  fileIdentityOf,
+  sameFileSnapshot,
+  type FileIdentity,
+} from "./fileIdentity.js";
 import { KeyedMutex } from "./keyedMutex.js";
 import { revisionOf } from "./revision.js";
 
@@ -26,6 +31,7 @@ export interface DocumentSnapshot {
   revision: string;
   source: Buffer;
   size: number;
+  identity: FileIdentity;
 }
 
 export interface LoadedDocument extends DocumentSnapshot {
@@ -116,12 +122,19 @@ export class DocumentStore {
   async readSnapshot(projectPath: string): Promise<DocumentSnapshot> {
     const normalized = this.resolver.normalize(projectPath);
     const absolutePath = await this.resolver.resolveExisting(normalized);
-    const content = await this.readBounded(absolutePath, normalized);
+    const snapshot =
+      await readDocumentFileSnapshotWithIdentity(
+        absolutePath,
+        normalized,
+        this.maxDocumentBytes,
+      );
+    const content = snapshot.bytes;
     return {
       path: normalized,
       revision: revisionOf(content),
       source: content,
       size: content.byteLength,
+      identity: snapshot.identity,
     };
   }
 
@@ -721,6 +734,27 @@ export async function readDocumentFileSnapshot(
   maxBytes: number,
   observer?: DocumentReadObserver,
 ): Promise<Buffer> {
+  return (
+    await readDocumentFileSnapshotWithIdentity(
+      absolutePath,
+      projectPath,
+      maxBytes,
+      observer,
+    )
+  ).bytes;
+}
+
+interface DocumentFileSnapshot {
+  bytes: Buffer;
+  identity: FileIdentity;
+}
+
+async function readDocumentFileSnapshotWithIdentity(
+  absolutePath: string,
+  projectPath: string,
+  maxBytes: number,
+  observer?: DocumentReadObserver,
+): Promise<DocumentFileSnapshot> {
   let handle;
   try {
     handle = await open(
@@ -796,20 +830,13 @@ export async function readDocumentFileSnapshot(
         { path: projectPath },
       );
     }
-    return Buffer.concat(chunks, total);
+    return {
+      bytes: Buffer.concat(chunks, total),
+      identity: fileIdentityOf(after),
+    };
   } finally {
     await handle.close();
   }
-}
-
-function sameFileSnapshot(left: BigIntStats, right: BigIntStats): boolean {
-  return (
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    left.mtimeNs === right.mtimeNs &&
-    left.ctimeNs === right.ctimeNs
-  );
 }
 
 function boundedBigInt(value: bigint): number | string {

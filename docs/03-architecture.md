@@ -3,8 +3,9 @@
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
 > closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
-> rename-stable asset registry、create-map 例外定案与固定版本集成门槛仍未完成，接口与
-> 磁盘格式仍不视为冻结。当前 discovery contract 与 95-code v1 application-error
+> create-map 例外定案与固定版本集成门槛仍未完成，接口与全部磁盘格式仍不视为冻结。
+> 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
+> rename 边界由 capability contract 明示。当前 discovery contract 与 97-code v1 application-error
 > registry 已分别由
 > [discovery machine artifact](../contracts/mcp-contract.v1.json)、
 > [application-error machine artifact](../contracts/application-errors.v1.json) 和
@@ -49,7 +50,12 @@ tile-layer cells 与 tile objects，并用独立扫描、distinct aggregation �
 工作量。registry 因此包含 18 个 core tools；探测到
 `tmxrasterizer` 时为 19 个。Tiled
 export/evaluate、项目资产/schema/render Resource Templates、跨文件 WAL 和
-rename-stable asset registry 仍是下文的目标架构，不是当前能力。固定
+任意跨文件系统 asset move/rebind 仍是目标架构，不是当前能力。当前 wire 的 external
+TSJ 与 prospective image-layer dependency 已使用 `.tiledmcp/asset-registry.v1.json`
+保持同路径身份，并在唯一、稳定且非零的 file identity 证据下尽力保持普通同文件系统
+rename 身份；弱 identity、原路径仍存活的 copy/hardlink 与无法匹配 identity 的 move
+不合并。
+固定
 `tiled://guide` 与 `tiled://application-errors` 两个 direct Resources 已落地：SDK
 registry 提供 `resources/list` / `resources/templates/list` / `resources/read`，
 分别返回有界 Markdown playbook 与当前 application-error registry JSON，并带 SHA-256
@@ -69,7 +75,7 @@ change-set apply 不是同一个 mutation 类型。handler 内的应用错误以
 图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
 
 application code 的唯一稳定 wire 位置是
-`structuredContent.result.error.code`。当前 v1 allowlist 有 95 个 code，单一代码来源
+`structuredContent.result.error.code`。当前 v1 allowlist 有 97 个 code，单一代码来源
 生成 `contracts/application-errors.v1.json`，并把完全相同的 JSON 暴露为
 `tiled://application-errors`；`tiled_get_capabilities.applicationErrorContract` 公布
 resource URI、revision、size、wire location、`INTERNAL_ERROR` fallback 和兼容策略。
@@ -220,7 +226,7 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 能同时验证合法成功结果和 handler 内的合法应用错误。
 
 协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
-`structuredContent`。进入 handler 后的失败才经过统一错误归一化、95-code application
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、97-code application
 allowlist、长度/深度预算和 JSON 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，
 不承担 transport/application 错误 envelope 的职责。
 
@@ -368,7 +374,7 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
 安装的 Tiled 版本只影响 official adapter 的运行能力，也不等于资产兼容目标。每个已知特性
 在 `FeatureMatrix` 中声明最小目标版本、允许的文档类型、读/写状态与验证器；尚未支持写入的
 字段可以保留和展示。目标架构计划让相关 patch 返回
-`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 95-code
+`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 97-code
 v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后续 registry 前，
 客户端不得依赖它。
 
@@ -393,7 +399,7 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
   tileset，但单次工具不能顺便修改它。
 - 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
   目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
-  **planned / not current** code，不属于当前 95-code v1 application registry。
+  **planned / not current** code，不属于当前 97-code v1 application registry。
 - 新引用必须落在允许 root 中，并以拥有者为基准写成规范化相对路径；不自动把相对路径改成
   绝对路径。
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
@@ -401,6 +407,99 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 
 多 root 不等于多写 root。首版始终只有一个 primary write root，从而让锁、WAL、恢复扫描和
 配额有明确边界。
+
+### 5.1 Asset registry v1
+
+当前实现只为已经进入 wire 的 `external-tileset` 与 `image-layer` 两个 kind 分配
+`asset_[0-9a-f]{24}`。它不提前宣称 map/world/template Resources 已实现，也不改变
+`tiled_list_files` 的精确 `{path,kind}` 结果。
+
+持久格式是 `.tiledmcp/asset-registry.v1.json`：
+
+```json
+{
+  "format": "tiled-mcp-asset-registry",
+  "formatVersion": 1,
+  "generation": 2,
+  "entries": [
+    {
+      "assetId": "asset_0123456789abcdef01234567",
+      "kind": "external-tileset",
+      "path": "tiles/terrain.tsj",
+      "identity": {
+        "device": "2049",
+        "inode": "12345",
+        "birthtimeNs": "1710000000000000000"
+      }
+    }
+  ]
+}
+```
+
+root、entry 与 identity 都是拒绝 unknown key 的 closed object；format/version、safe
+integer generation、ID、kind、canonical project path、十进制 identity 字段、全局唯一
+ID 和同 kind 唯一路径都会复核。文件最多 8 MiB、20,000 entries、单 path 最多 4096
+UTF-8 bytes。读取使用 `O_NOFOLLOW | O_NONBLOCK`、strict UTF-8、duplicate-key-aware JSON
+解析和 regular-file/size 检查；未知未来版本、截断、symlink、重复或越界一律
+`ASSET_REGISTRY_CORRUPT` startup fail closed，绝不按路径静默重建一个“看起来正常”的
+registry。
+
+首次观察一个路径时，为升级兼容先尝试旧公式
+`asset_<sha256(kind + ":" + canonicalPath)[0..24]>`；候选已被其他 entry 占用时才生成
+12 random bytes，并最多重试 32 次。entries 按 ID 排序。每次 mutation 在 project-wide
+进程内 mutex 与跨进程 advisory lock 内重新读取最新 generation，写 0600 sibling temp、
+`fsync`、原子 rename 并 `fsync` 父目录，因此合作实例不会 lost update；orphan temp 不会
+参与恢复或覆盖主文件。registry 自身属于内部安全 metadata，不进入 checkpoint，也不作为
+MCP Resource 暴露。v1 不把这扩张为断电 durability 承诺：首次创建 `.tiledmcp` 时没有
+额外 `fsync` 项目根目录；掉电导致内部 registry 丢失时按 capability 的
+`registryLossPolicy` 处理，ID 可能重新分配。
+
+身份迁移采用保守顺序：
+
+1. 同 kind + 同 canonical path 总是保持原 ID；编辑器 in-place/atomic-save 只刷新记录的
+   file identity。
+2. new path 尚未注册、old path 已消失，inode 与 birthtime 都非零，并且当前
+   `(device,inode,birthtimeNs)` 在同 kind 中唯一命中一个 entry 时，才把该 ID 移到
+   new path。这是在文件系统提供稳定 birthtime 时对普通同文件系统 rename 的
+   best-effort 连续性；inode 或 birthtime 为零的弱证据不触发迁移。rename 同时原地改
+   内容不影响强 identity 匹配。
+3. 原路径仍存在的 copy/hardlink 不迁移；content revision、Tiled name 与相同 bytes
+   都不是身份。跨文件系统 copy+delete、未观察的 inode-replacing save 后立即 rename
+   和多候选歧义为尚未注册的 new path 分配新 ID。两个已注册路径 swap/replace 时按
+   path-first 规则各自保留既有 ID，只刷新 identity。若 new hardlink 尚未被 registry
+   观察，删除旧路径后与 rename 的最终 `(device,inode,birthtimeNs)` 状态不可区分，因此
+   可能按同一 file identity 迁移并继承旧 ID；两个路径都已观察时，各自保留已分配 ID。
+   实现不会伪称能够恢复已经消失的 link history。
+
+这个边界是有意可验证而非猜测。若未来要强保证任意 rename+replace 或跨 root move，必须
+提供显式 rebind，或者把文件移动、引用更新和 registry 迁移纳入第 8.3 节的跨文件 WAL；
+不能用 content hash 启发式冒充身份。
+
+server factory 在注册工具前加载并校验现有 registry。首次发现或 file identity 刷新可能
+由 read/preview handler 更新 `.tiledmcp`，但不会修改 TMJ/TSJ/图片；因此 capability 的
+`readOnlyToolEffect` 明确写为
+`may-update-project-internal-safety-metadata-only`，同时覆盖 identity registry 与短暂的
+内部 coordination lock metadata。这里把这些文件当作 server-internal safety/cache
+state：`readOnlyHint:true` 描述用户项目资产与外部世界不被修改，不代表内部 metadata
+永远无写入。目标项目应忽略 `.tiledmcp`；本仓库
+已在自己的 `.gitignore` 中排除它，但服务器不会改任意目标项目的 ignore 规则。复制或提交
+registry 会携带已有 ID，却不属于受支持的跨 clone 同步机制；删除/丢失它会丢失 rename
+历史并可能重新分配 ID。启动时损坏仍是 fatal；server 运行期观察到
+`ASSET_REGISTRY_CORRUPT` 或 `ASSET_REGISTRY_LIMIT_EXCEEDED` 则通过稳定 application error
+envelope 报告，不吞成无恢复建议的通用 fallback。capability 还用
+`resolutionOrder`、`renameEvidence`、`registeredPathSwap` 固化 path-first 判定顺序，
+用 `loadLimitPolicy` / `mutationLimitPolicy` 区分启动加载与运行期增长超限，并用
+`crashDurability` 明示首次创建内部目录时不保证断电持久性。
+
+MapService 对一个 map 的 external TSJ 采用 checked batch：先从同一个文件描述符得到 raw
+bytes、revision 与 file identity，完成有界候选读取后，在 registry 项目锁内计算 ID，
+但只在同步或异步 pre-commit checker 成功后写 registry。checker 先比较所有已捕获
+snapshot 的精确 revision guards，再报告延后的 parse/profile/image/GID-range 错误，因此
+损坏的 map 或 dependency 不会消耗新 ID、刷新 identity 或推进 generation。若 TSJ 原始
+bytes 的 64 MiB 聚合上限在第 k 项终止扫描，checker 仍允许已捕获前缀内的真实 stale
+revision conflict 优先；否则固定返回 `RESULT_LIMIT_EXCEEDED`，不继续读取后缀，也不对
+必然不完整的 dependency set 做 full-set diff。这样资源上限结果不依赖超限项是否恰好是
+最后一项，且所有拒绝路径保持 registry zero-write。
 
 ## 6. GID、tileset 区间与变换
 
@@ -1123,7 +1222,7 @@ replace，也不等同于 crash durability。磁盘/文件系统不支持所需�
 同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
 第二个写目标时，计划在 dry-run 阶段返回
 `MULTI_FILE_TRANSACTION_NOT_AVAILABLE`；该名称是 **planned / not current** code，
-不属于当前 95-code v1 application registry。
+不属于当前 97-code v1 application registry。
 
 ### 8.3 跨文件可恢复事务
 
@@ -1371,7 +1470,7 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract` 与 `applicationErrorContract`、95-code v1 registry machine
+   `textContentContract` 与 `applicationErrorContract`、97-code v1 registry machine
    artifact / `tiled://application-errors` resource 一致性、未知 code 兼容与
    `INTERNAL_ERROR` fallback、各 excluded surface 类型边界、三种图片工具的同-buffer
    artifact metadata、rasterizer
@@ -1451,7 +1550,9 @@ TiledMCP/
 │   ├── tiled-1.11/
 │   ├── tiled-1.12/
 │   └── malicious/
-└── .tiledmcp/                 # 运行时生成，不提交；objects/checkpoints/WAL/locks
+└── .tiledmcp/                 # 运行时生成；目标项目应忽略，服务器不改其 .gitignore
+    ├── asset-registry.v1.json # 当前 external TSJ/image-layer opaque identity
+    └── ...                    # objects/checkpoints/WAL/locks
 ```
 
 领域层不依赖 MCP SDK，文档层不依赖外部 Tiled 进程，adapter 不直接提交正式资产。这个依赖方向

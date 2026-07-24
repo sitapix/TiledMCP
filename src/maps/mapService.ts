@@ -57,8 +57,13 @@ import {
   MAX_RASTER_INPUT_EDGE,
   MAX_RASTER_INPUT_IMAGES,
 } from "../rasterContract.js";
-import type { CommitResult, DocumentStore, LoadedDocument } from "../storage/documentStore.js";
-import { shortHash } from "../storage/revision.js";
+import { AssetRegistry } from "../project/assetRegistry.js";
+import type {
+  CommitResult,
+  DocumentSnapshot,
+  DocumentStore,
+  LoadedDocument,
+} from "../storage/documentStore.js";
 import { decodeGid, encodeGid, type MapOrientation } from "./gid.js";
 import {
   buildPreviewScene,
@@ -252,6 +257,24 @@ interface TilesetBinding {
   name: string;
   nameTruncated: boolean;
   revision: string;
+}
+
+interface TilesetBindingCandidate {
+  firstGid: number;
+  tilesetPath: string;
+  snapshot: DocumentSnapshot;
+  validation:
+    | {
+        ok: true;
+        tileCount: number;
+        gidSpan: number;
+        name: string;
+        nameTruncated: boolean;
+      }
+    | {
+        ok: false;
+        error: unknown;
+      };
 }
 
 type TilesetUsageReference =
@@ -460,10 +483,20 @@ export interface RenderSafetySnapshot {
 }
 
 export class MapService {
+  private readonly assetRegistry: AssetRegistry;
+
   constructor(
     private readonly resolver: ProjectPathResolver,
     private readonly store: DocumentStore,
-  ) {}
+    assetRegistry?: AssetRegistry,
+  ) {
+    this.assetRegistry =
+      assetRegistry ?? new AssetRegistry(resolver);
+  }
+
+  async initializeAssetRegistry(): Promise<void> {
+    await this.assetRegistry.initialize();
+  }
 
   async createMap(input: CreateMapInput): Promise<CommitResult> {
     const mapPath = this.resolver.normalize(input.mapPath);
@@ -1556,6 +1589,7 @@ export class MapService {
       prospectiveTileset = await this.loadProspectiveTilesetBinding(
         plannedOperation.tilesetPath,
         plannedOperation.tilesetRevision,
+        plannedOperation.assetId,
       );
       assertDependencyRevisions(
         plan.prospectiveDependencyRevisions ?? {},
@@ -1594,6 +1628,7 @@ export class MapService {
         prospectiveImage = await this.loadProspectiveImageBinding(
           plannedOperation.image.path,
           plannedOperation.image.revision,
+          plannedOperation.image.assetId,
         );
         assertDependencyRevisions(
           plan.prospectiveDependencyRevisions ?? {},
@@ -2096,7 +2131,11 @@ export class MapService {
     const bindings: TilesetBinding[] = [];
     let totalDependencyBytes = 0;
     const firstGids = new Set<number>();
-    const assetIds = new Set<string>();
+    const tilesetPaths = new Set<string>();
+    const candidates:
+      TilesetBindingCandidate[] = [];
+    let aggregateLimitError:
+      TiledMcpError | undefined;
     for (const [index, entryValue] of entries.entries()) {
       const entry = expectObject(entryValue, `${mapPath}.tilesets[${index}]`);
       const firstGid = expectInteger(entry.firstgid, `${mapPath}.tilesets[${index}].firstgid`);
@@ -2127,184 +2166,442 @@ export class MapService {
           { path: tilesetPath },
         );
       }
-      const assetId = assetIdForPath(tilesetPath);
-      if (assetIds.has(assetId)) {
+      if (tilesetPaths.has(tilesetPath)) {
         throw new TiledMcpError(
           "INVALID_DOCUMENT",
           `${mapPath} references the same tileset more than once.`,
           { path: tilesetPath },
         );
       }
-      assetIds.add(assetId);
-      const guardedSelectedTileset =
-        selectedRevisionGuard !== undefined &&
-        selectedRevisionGuard.assetId === assetId;
-      const expectedDependencyRevision =
-        expectedDependencyRevisions?.[assetId];
-      if (
-        expectedDependencyRevisions !== undefined &&
-        expectedDependencyRevision === undefined
-      ) {
-        throw new TiledMcpError(
-          "DEPENDENCY_REVISION_CONFLICT",
-          "The expected dependency set does not contain every tileset referenced by the pinned map.",
-          {
-            path: mapPath,
-            assetId,
+      tilesetPaths.add(tilesetPath);
+      const snapshot =
+        await this.store.readSnapshot(tilesetPath);
+      totalDependencyBytes += snapshot.size;
+      if (totalDependencyBytes > MAX_TOTAL_DEPENDENCY_BYTES) {
+        aggregateLimitError =
+          new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `Referenced tilesets exceed the ${MAX_TOTAL_DEPENDENCY_BYTES} byte aggregate limit.`,
+            {
+              path: mapPath,
+              limit:
+                MAX_TOTAL_DEPENDENCY_BYTES,
+              actual: totalDependencyBytes,
+            },
+          );
+        if (
+          selectedRevisionGuard === undefined &&
+          expectedDependencyRevisions ===
+            undefined
+        ) {
+          throw aggregateLimitError;
+        }
+        candidates.push({
+          firstGid,
+          tilesetPath,
+          snapshot,
+          validation: {
+            ok: false,
+            error: aggregateLimitError,
+          },
+        });
+        break;
+      }
+      let validation:
+        TilesetBindingCandidate["validation"];
+      try {
+        const tileset =
+          this.store.parseSnapshot(snapshot);
+        if (tileset.document.type !== "tileset") {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `${tilesetPath} is not a Tiled tileset.`,
+          );
+        }
+        if (
+          typeof tileset.document.image !==
+          "string"
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_TILESET",
+            "MVP editing requires atlas tilesets with a root image field.",
+            { path: tilesetPath },
+          );
+        }
+        const imagePath =
+          await this.resolver.resolveReference(
             tilesetPath,
-            expectedCount:
-              Object.keys(expectedDependencyRevisions).length,
-          },
+            tileset.document.image,
+          );
+        const imageStat = await stat(
+          await this.resolver.resolveExisting(
+            imagePath,
+          ),
         );
-      }
-      if (
-        guardedSelectedTileset &&
-        expectedDependencyRevision !== undefined &&
-        selectedRevisionGuard.expectedRevision !==
-          expectedDependencyRevision
-      ) {
-        throw new TiledMcpError(
-          "DEPENDENCY_REVISION_CONFLICT",
-          "Conflicting revision guards were supplied for the same tileset.",
-          {
-            assetId,
-            selectedRevision:
-              selectedRevisionGuard.expectedRevision,
-            dependencyRevision: expectedDependencyRevision,
-          },
+        if (!imageStat.isFile()) {
+          throw new TiledMcpError(
+            "INVALID_TILESET_IMAGE",
+            `${imagePath} is not a regular image file.`,
+            { path: imagePath },
+          );
+        }
+        const tileCount = expectInteger(
+          tileset.document.tilecount,
+          `${tilesetPath}.tilecount`,
         );
+        const gidSpan = tilesetGidSpan(
+          tileset.document,
+          tilesetPath,
+          tileCount,
+        );
+        if (
+          tileCount <= 0 ||
+          firstGid + gidSpan - 1 > 0x0fffffff
+        ) {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `${tilesetPath} has an invalid tilecount.`,
+            {
+              path: tilesetPath,
+              tileCount,
+              gidSpan,
+            },
+          );
+        }
+        const displayName =
+          boundedDisplayString(
+            expectString(
+              tileset.document.name,
+              `${tilesetPath}.name`,
+            ),
+          );
+        validation = {
+          ok: true,
+          tileCount,
+          gidSpan,
+          name: displayName.value,
+          nameTruncated:
+            displayName.truncated,
+        };
+      } catch (error) {
+        if (
+          selectedRevisionGuard === undefined &&
+          expectedDependencyRevisions ===
+            undefined
+        ) {
+          throw error;
+        }
+        validation = {
+          ok: false,
+          error,
+        };
       }
-      const guardedRevision = guardedSelectedTileset
-        ? selectedRevisionGuard.expectedRevision
-        : expectedDependencyRevision;
-      const tileset = guardedRevision !== undefined
-        ? await (async () => {
-            const snapshot =
-              await this.store.readSnapshot(tilesetPath);
+      candidates.push({
+        firstGid,
+        tilesetPath,
+        snapshot,
+        validation,
+      });
+    }
+
+    const resolvedAssetIds =
+      await this.assetRegistry.resolveManyChecked(
+        candidates.map(
+          ({ tilesetPath, snapshot }) => ({
+            kind:
+              "external-tileset" as const,
+            path: tilesetPath,
+            identity: snapshot.identity,
+          }),
+        ),
+        (candidateAssetIds) => {
+          const uniqueAssetIds =
+            new Set<string>();
+          for (
+            let index = 0;
+            index < candidates.length;
+            index += 1
+          ) {
+            const candidate = candidates[index];
+            const assetId =
+              candidateAssetIds[index];
             if (
-              snapshot.revision !== guardedRevision
+              candidate === undefined ||
+              assetId === undefined
+            ) {
+              throw new TiledMcpError(
+                "INTERNAL_ERROR",
+                "Asset registry returned an incomplete batch result.",
+              );
+            }
+            if (
+              uniqueAssetIds.has(assetId)
+            ) {
+              throw new TiledMcpError(
+                "INVALID_DOCUMENT",
+                `${mapPath} references the same tileset more than once.`,
+                {
+                  path:
+                    candidate.tilesetPath,
+                },
+              );
+            }
+            uniqueAssetIds.add(assetId);
+          }
+
+          // Check every captured raw-byte candidate (the complete set unless
+          // the aggregate cap stopped scanning) before surfacing any
+          // parse/profile/image error. This preserves revision-conflict
+          // precedence even when a stale replacement is malformed.
+          for (
+            let index = 0;
+            index < candidates.length;
+            index += 1
+          ) {
+            const candidate = candidates[index];
+            const assetId =
+              candidateAssetIds[index];
+            if (
+              candidate === undefined ||
+              assetId === undefined
+            ) {
+              throw new TiledMcpError(
+                "INTERNAL_ERROR",
+                "Asset registry returned an incomplete batch result.",
+              );
+            }
+            const guardedSelectedTileset =
+              selectedRevisionGuard !==
+                undefined &&
+              selectedRevisionGuard.assetId ===
+                assetId;
+            const expectedDependencyRevision =
+              expectedDependencyRevisions?.[
+                assetId
+              ];
+            if (
+              expectedDependencyRevisions !==
+                undefined &&
+              expectedDependencyRevision ===
+                undefined
             ) {
               throw new TiledMcpError(
                 "DEPENDENCY_REVISION_CONFLICT",
-                `${tilesetPath} changed since the requested snapshot.`,
+                "The expected dependency set does not contain every tileset referenced by the pinned map.",
+                {
+                  path: mapPath,
+                  assetId,
+                  tilesetPath:
+                    candidate.tilesetPath,
+                  expectedCount:
+                    Object.keys(
+                      expectedDependencyRevisions,
+                    ).length,
+                },
+              );
+            }
+            if (
+              guardedSelectedTileset &&
+              expectedDependencyRevision !==
+                undefined &&
+              selectedRevisionGuard
+                .expectedRevision !==
+                expectedDependencyRevision
+            ) {
+              throw new TiledMcpError(
+                "DEPENDENCY_REVISION_CONFLICT",
+                "Conflicting revision guards were supplied for the same tileset.",
                 {
                   assetId,
-                  expectedRevision: guardedRevision,
-                  actualRevision: snapshot.revision,
-                  ...(expectedDependencyRevisions === undefined
+                  selectedRevision:
+                    selectedRevisionGuard
+                      .expectedRevision,
+                  dependencyRevision:
+                    expectedDependencyRevision,
+                },
+              );
+            }
+            const guardedRevision =
+              guardedSelectedTileset
+                ? selectedRevisionGuard
+                    .expectedRevision
+                : expectedDependencyRevision;
+            if (
+              guardedRevision !== undefined &&
+              candidate.snapshot.revision !==
+                guardedRevision
+            ) {
+              throw new TiledMcpError(
+                "DEPENDENCY_REVISION_CONFLICT",
+                `${candidate.tilesetPath} changed since the requested snapshot.`,
+                {
+                  assetId,
+                  expectedRevision:
+                    guardedRevision,
+                  actualRevision:
+                    candidate.snapshot
+                      .revision,
+                  ...(expectedDependencyRevisions ===
+                  undefined
                     ? {}
                     : {
-                        expectedCount: Object.keys(
-                          expectedDependencyRevisions,
-                        ).length,
-                        actualCount: entries.length,
+                        expectedCount:
+                          Object.keys(
+                            expectedDependencyRevisions,
+                          ).length,
+                        actualCount:
+                          entries.length,
                         differences: [
                           {
                             assetId,
-                            expectedRevision: guardedRevision,
-                            actualRevision: snapshot.revision,
+                            expectedRevision:
+                              guardedRevision,
+                            actualRevision:
+                              candidate.snapshot
+                                .revision,
                           },
                         ],
                       }),
                 },
               );
             }
-            return this.store.parseSnapshot(snapshot);
-          })()
-        : await this.store.read(tilesetPath);
-      totalDependencyBytes += tileset.size;
-      if (totalDependencyBytes > MAX_TOTAL_DEPENDENCY_BYTES) {
+          }
+
+          // The aggregate cap intentionally stops the scan. Check exact
+          // revision guards for the captured prefix first, then report the
+          // resource limit before comparing the necessarily incomplete full
+          // dependency set. This makes the error independent of where the
+          // over-limit entry appears.
+          if (aggregateLimitError !== undefined) {
+            throw aggregateLimitError;
+          }
+
+          if (
+            expectedDependencyRevisions !==
+            undefined
+          ) {
+            assertDependencyRevisions(
+              expectedDependencyRevisions,
+              Object.fromEntries(
+                candidates.map(
+                  (candidate, index) => [
+                    candidateAssetIds[index]!,
+                    candidate.snapshot.revision,
+                  ],
+                ),
+              ),
+            );
+          }
+
+          for (const candidate of candidates) {
+            if (!candidate.validation.ok) {
+              throw candidate.validation.error;
+            }
+          }
+
+          const ranges = candidates
+            .map((candidate, index) => {
+              if (!candidate.validation.ok) {
+                throw new TiledMcpError(
+                  "INTERNAL_ERROR",
+                  "Validated tileset range was unavailable.",
+                );
+              }
+              return {
+                assetId:
+                  candidateAssetIds[index]!,
+                firstGid:
+                  candidate.firstGid,
+                tileCount:
+                  candidate.validation
+                    .tileCount,
+                gidSpan:
+                  candidate.validation.gidSpan,
+              };
+            })
+            .sort(
+              (left, right) =>
+                left.firstGid -
+                right.firstGid,
+            );
+          for (
+            let index = 1;
+            index < ranges.length;
+            index += 1
+          ) {
+            const previous =
+              ranges[index - 1];
+            const current = ranges[index];
+            if (
+              previous !== undefined &&
+              current !== undefined &&
+              previous.firstGid +
+                previous.gidSpan >
+                current.firstGid
+            ) {
+              throw new TiledMcpError(
+                "TILESET_GID_RANGE_OVERLAP",
+                `Tileset GID ranges overlap at firstgid ${current.firstGid}.`,
+                {
+                  previousAssetId:
+                    previous.assetId,
+                  previousFirstGid:
+                    previous.firstGid,
+                  previousTileCount:
+                    previous.tileCount,
+                  previousGidSpan:
+                    previous.gidSpan,
+                  currentAssetId:
+                    current.assetId,
+                  currentFirstGid:
+                    current.firstGid,
+                },
+              );
+            }
+          }
+        },
+      );
+
+    for (
+      let index = 0;
+      index < candidates.length;
+      index += 1
+    ) {
+      const candidate = candidates[index];
+      const assetId = resolvedAssetIds[index];
+      if (
+        candidate === undefined ||
+        assetId === undefined ||
+        !candidate.validation.ok
+      ) {
         throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `Referenced tilesets exceed the ${MAX_TOTAL_DEPENDENCY_BYTES} byte aggregate limit.`,
-          {
-            path: mapPath,
-            limit: MAX_TOTAL_DEPENDENCY_BYTES,
-            actual: totalDependencyBytes,
-          },
+          "INTERNAL_ERROR",
+          "Validated asset registry batch was incomplete.",
         );
       }
-      if (tileset.document.type !== "tileset") {
-        throw new TiledMcpError("INVALID_DOCUMENT", `${tilesetPath} is not a Tiled tileset.`);
-      }
-      if (typeof tileset.document.image !== "string") {
-        throw new TiledMcpError(
-          "UNSUPPORTED_TILESET",
-          "MVP editing requires atlas tilesets with a root image field.",
-          { path: tilesetPath },
-        );
-      }
-      const imagePath = await this.resolver.resolveReference(
-        tilesetPath,
-        tileset.document.image,
-      );
-      const imageStat = await stat(await this.resolver.resolveExisting(imagePath));
-      if (!imageStat.isFile()) {
-        throw new TiledMcpError(
-          "INVALID_TILESET_IMAGE",
-          `${imagePath} is not a regular image file.`,
-          { path: imagePath },
-        );
-      }
-      const tileCount = expectInteger(
-        tileset.document.tilecount,
-        `${tilesetPath}.tilecount`,
-      );
-      const gidSpan = tilesetGidSpan(
-        tileset.document,
-        tilesetPath,
-        tileCount,
-      );
-      if (tileCount <= 0 || firstGid + gidSpan - 1 > 0x0fffffff) {
-        throw new TiledMcpError("INVALID_DOCUMENT", `${tilesetPath} has an invalid tilecount.`, {
-          path: tilesetPath,
-          tileCount,
-          gidSpan,
-        });
-      }
-      const displayName = boundedDisplayString(
-        expectString(tileset.document.name, `${tilesetPath}.name`),
-      );
       bindings.push({
         assetId,
-        path: tilesetPath,
-        firstGid,
-        tileCount,
-        gidSpan,
-        name: displayName.value,
-        nameTruncated: displayName.truncated,
-        revision: tileset.revision,
+        path: candidate.tilesetPath,
+        firstGid: candidate.firstGid,
+        tileCount:
+          candidate.validation.tileCount,
+        gidSpan:
+          candidate.validation.gidSpan,
+        name: candidate.validation.name,
+        nameTruncated:
+          candidate.validation.nameTruncated,
+        revision:
+          candidate.snapshot.revision,
       });
     }
     bindings.sort((left, right) => left.firstGid - right.firstGid);
-    for (let index = 1; index < bindings.length; index += 1) {
-      const previous = bindings[index - 1];
-      const current = bindings[index];
-      if (
-        previous !== undefined &&
-        current !== undefined &&
-        previous.firstGid + previous.gidSpan > current.firstGid
-      ) {
-        throw new TiledMcpError(
-          "TILESET_GID_RANGE_OVERLAP",
-          `Tileset GID ranges overlap at firstgid ${current.firstGid}.`,
-          {
-            previousAssetId: previous.assetId,
-            previousFirstGid: previous.firstGid,
-            previousTileCount: previous.tileCount,
-            previousGidSpan: previous.gidSpan,
-            currentAssetId: current.assetId,
-            currentFirstGid: current.firstGid,
-          },
-        );
-      }
-    }
     return bindings;
   }
 
   private async loadProspectiveTilesetBinding(
     tilesetPath: string,
     expectedRevision?: string,
+    expectedAssetId?: string,
   ): Promise<ProspectiveTilesetBinding> {
     const normalizedPath = this.resolver.normalize(tilesetPath);
     if (posix.extname(normalizedPath).toLowerCase() !== ".tsj") {
@@ -2314,7 +2611,6 @@ export class MapService {
         { path: normalizedPath },
       );
     }
-    const assetId = assetIdForPath(normalizedPath);
     const snapshot = await this.store.readSnapshot(normalizedPath);
     if (
       expectedRevision !== undefined &&
@@ -2325,7 +2621,9 @@ export class MapService {
         `${normalizedPath} changed after the prospective tileset was selected.`,
         {
           path: normalizedPath,
-          assetId,
+          ...(expectedAssetId === undefined
+            ? {}
+            : { assetId: expectedAssetId }),
           expectedRevision,
           actualRevision: snapshot.revision,
         },
@@ -2392,6 +2690,11 @@ export class MapService {
       startTileId: 0,
       limit: 1,
     });
+    const assetId = await this.assetRegistry.resolve({
+      kind: "external-tileset",
+      path: normalizedPath,
+      identity: snapshot.identity,
+    });
     return {
       assetId,
       path: normalizedPath,
@@ -2404,9 +2707,9 @@ export class MapService {
   private async loadProspectiveImageBinding(
     imagePath: string,
     expectedRevision?: string,
+    expectedAssetId?: string,
   ): Promise<ProspectiveImageBinding> {
     const normalizedPath = this.resolver.normalize(imagePath);
-    const assetId = assetIdForImagePath(normalizedPath);
     const snapshot = await readImageFileSnapshot(
       this.resolver,
       normalizedPath,
@@ -2421,7 +2724,9 @@ export class MapService {
         `${normalizedPath} changed after the image layer source was selected.`,
         {
           path: normalizedPath,
-          assetId,
+          ...(expectedAssetId === undefined
+            ? {}
+            : { assetId: expectedAssetId }),
           expectedRevision,
           actualRevision: snapshot.revision,
         },
@@ -2438,6 +2743,11 @@ export class MapService {
         maxInputPixels: MAX_TILESET_INPUT_PIXELS,
         maxInputEdge: MAX_TILESET_INPUT_EDGE,
       },
+    });
+    const assetId = await this.assetRegistry.resolve({
+      kind: "image-layer",
+      path: normalizedPath,
+      identity: snapshot.identity,
     });
     return {
       assetId,
@@ -9686,14 +9996,6 @@ function dependencyDifferenceSample(
     }
   }
   return differences;
-}
-
-function assetIdForPath(projectPath: string): string {
-  return `asset_${shortHash(`external-tileset:${projectPath}`)}`;
-}
-
-function assetIdForImagePath(projectPath: string): string {
-  return `asset_${shortHash(`image-layer:${projectPath}`)}`;
 }
 
 interface UsageTileCounter {

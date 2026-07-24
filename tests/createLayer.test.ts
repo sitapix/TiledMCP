@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -433,6 +434,62 @@ describe("MapService createLayer", () => {
         expectedRevision: originalRevision,
         actualRevision: revisionOf(replacement),
       },
+    });
+  });
+
+  it("keeps a prospective image assetId across a filesystem rename and service restart", async () => {
+    const beforeSnapshot = await mapSnapshot(
+      harness.service,
+    );
+    const beforePlan =
+      await harness.service.planCreateLayer({
+        mapPath: MAP_PATH,
+        layerType: "imagelayer",
+        name: "Before Rename",
+        imagePath: IMAGE_PATH,
+        expectedImageRevision:
+          revisionOf(harness.imageBytes),
+        expectedMapRevision:
+          beforeSnapshot.revision,
+        expectedDependencyRevisions:
+          beforeSnapshot.dependencies,
+      });
+    const beforeOperation =
+      requireCreateLayerOperation(beforePlan);
+
+    const renamedPath = "images/renamed.png";
+    await rename(
+      join(harness.root, IMAGE_PATH),
+      join(harness.root, renamedPath),
+    );
+    const resolver =
+      await ProjectPathResolver.create(harness.root);
+    const restarted = new MapService(
+      resolver,
+      new DocumentStore(resolver),
+    );
+    await restarted.initializeAssetRegistry();
+    const afterSnapshot = await mapSnapshot(restarted);
+    const afterPlan =
+      await restarted.planCreateLayer({
+        mapPath: MAP_PATH,
+        layerType: "imagelayer",
+        name: "After Rename",
+        imagePath: renamedPath,
+        expectedImageRevision:
+          revisionOf(harness.imageBytes),
+        expectedMapRevision:
+          afterSnapshot.revision,
+        expectedDependencyRevisions:
+          afterSnapshot.dependencies,
+      });
+    const afterOperation =
+      requireCreateLayerOperation(afterPlan);
+
+    expect(afterOperation.image).toMatchObject({
+      assetId: beforeOperation.image?.assetId,
+      path: renamedPath,
+      source: "../images/renamed.png",
     });
   });
 

@@ -100,10 +100,10 @@ describe("stable application error registry", () => {
   });
 
   it("is sorted, unique, scoped, and self-consistent", () => {
-    expect(TILED_MCP_ERROR_CODES).toHaveLength(118);
+    expect(TILED_MCP_ERROR_CODES).toHaveLength(120);
     expect(
       TILED_MCP_APPLICATION_ERROR_CODES,
-    ).toHaveLength(95);
+    ).toHaveLength(97);
     expect(
       TILED_MCP_CAPABILITY_ISSUE_CODES,
     ).toHaveLength(13);
@@ -144,6 +144,16 @@ describe("stable application error registry", () => {
     expect(
       isTiledMcpApplicationErrorCode(
         "REVISION_CONFLICT",
+      ),
+    ).toBe(true);
+    expect(
+      isTiledMcpApplicationErrorCode(
+        "ASSET_REGISTRY_CORRUPT",
+      ),
+    ).toBe(true);
+    expect(
+      isTiledMcpApplicationErrorCode(
+        "ASSET_REGISTRY_LIMIT_EXCEEDED",
       ),
     ).toBe(true);
     expect(
@@ -324,6 +334,42 @@ describe("stable application error registry", () => {
         },
       },
     });
+
+    for (const code of [
+      "ASSET_REGISTRY_CORRUPT",
+      "ASSET_REGISTRY_LIMIT_EXCEEDED",
+    ] as const) {
+      harness.maps.getSummary = async () => {
+        throw new TiledMcpError(
+          code,
+          `${code} recovery guidance`,
+          { registry: ".tiledmcp/asset-registry.v1.json" },
+        );
+      };
+      const registryResponse =
+        (await harness.client.callTool({
+          name: "tiled_get_map_summary",
+          arguments: {
+            mapPath: "map.tmj",
+          },
+        })) as ToolResponse;
+      expect(
+        registryResponse.structuredContent,
+      ).toEqual({
+        result: {
+          ok: false,
+          error: {
+            code,
+            message:
+              `${code} recovery guidance`,
+            details: {
+              registry:
+                ".tiledmcp/asset-registry.v1.json",
+            },
+          },
+        },
+      });
+    }
 
     const genericInternalError = {
       result: {
@@ -682,7 +728,7 @@ async function createHarness(
     rasterizerPath: "contract-tmxrasterizer",
   });
   const created =
-    createTiledMcpServerFromCapabilitySnapshot(
+    await createTiledMcpServerFromCapabilitySnapshot(
       { resolver, store, maps, cli },
       capabilityInput,
     );

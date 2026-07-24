@@ -17,7 +17,10 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
 
 1. Call \`tiled_get_capabilities\` and inspect \`registeredTools\`, the edit
    profile, renderer limits, local CLI availability, and
-   \`applicationErrorContract\`.
+   \`applicationErrorContract\`. Also inspect \`assetIdentityContract\` before
+   persisting asset IDs: it declares path-first resolution, best-effort rename
+   evidence, internal metadata effects, registry-loss behavior, and crash
+   durability.
 2. Use MCP \`resources/list\` and read \`tiled://application-errors\` when the
    complete current application-code allowlist is needed.
 3. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
@@ -53,7 +56,7 @@ application-level summary envelope.
 
 ## Handle application errors
 
-The current v1 application-error registry contains 95 codes. Its committed
+The current v1 application-error registry contains 97 codes. Its committed
 machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
 is available at the direct resource \`tiled://application-errors\`.
 \`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
@@ -72,6 +75,13 @@ does not include MCP SDK input errors, \`cli.*.issues[].code\` capability-probe
 diagnostics, startup fatal errors, \`tiled_validate\` validation diagnostics,
 checkpoint reconciliation diagnostics, or raw operating-system error codes.
 Keep those surfaces on their own contracts.
+
+\`ASSET_REGISTRY_CORRUPT\` and \`ASSET_REGISTRY_LIMIT_EXCEEDED\` are stable
+application codes when the server encounters those states during a tool call.
+Stop identity-dependent work instead of rebuilding silently. Inspect or restore
+corrupt metadata; archive or remove a full registry only when invalidating all
+saved asset IDs is explicitly acceptable. An invalid registry already present
+at startup is a fatal startup error rather than a tool envelope.
 
 When the optional \`tiled_render_map\` is registered, its successful structured
 result uses the traceable PNG contract only; there are no legacy
@@ -174,7 +184,9 @@ rendered incorrectly.
 
 \`tiled_add_tileset_to_map\` prepares a proposal for attaching one existing
 project-local external atlas TSJ. Despite its name, it is preview-only and
-does not write the map, TSJ, or source image.
+does not write the map, TSJ, or source image. Identity discovery and lock
+coordination may update the project-internal safety metadata described by
+\`assetIdentityContract.readOnlyToolEffect\`.
 
 1. Call \`tiled_get_map_summary\` immediately before planning. Keep its exact
    map \`revision\` and complete \`dependencyRevisions\`.
@@ -197,6 +209,17 @@ does not write the map, TSJ, or source image.
 The proposal pins the current map, every existing map dependency, and the
 prospective TSJ revision. A conflict requires a fresh summary and proposal.
 This operation only adds a tileset reference; it does not create a layer.
+
+Asset IDs are backed by project-internal persistent metadata. Same-path
+replacement preserves the ID. A uniquely matched ordinary same-filesystem
+rename preserves it on a best-effort basis only when inode and birthtime
+evidence are stable and nonzero. A copy or hard link gets a new ID while the
+original path remains;
+if a new hard-link path was not observed before the old path was removed, its
+final file identity is indistinguishable from a rename and may inherit the old
+ID. Cross-filesystem moves and other unmatched changes do not preserve it.
+Always fetch a fresh map snapshot after a path change; an old change set never
+follows a rename automatically.
 
 ## Detach an unused tileset safely
 
@@ -643,9 +666,12 @@ operations. If it is missing or expired, re-read the map and preview a new
 proposal.
 
 \`tiled_preview_edits\` validates and stores a proposal but does not write the
-map. \`tiled_add_tileset_to_map\` and \`tiled_create_layer\` are also
-preview-only; \`removeTilesetFromMap\` and \`copyRegion\` stay inside the
-generic preview tool and do not add standalone tools.
+map, TSJs, or images. \`tiled_add_tileset_to_map\` and
+\`tiled_create_layer\` are also preview-only; these calls may update only the
+project-internal safety metadata advertised by
+\`assetIdentityContract.readOnlyToolEffect\`. \`removeTilesetFromMap\` and
+\`copyRegion\` stay inside the generic preview tool and do not add standalone
+tools.
 \`tiled_apply_change_set\` is the write
 boundary for all proposal types. A
 textual confirmation argument, prompt, or guide instruction is never a

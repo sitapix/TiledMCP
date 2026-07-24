@@ -2,7 +2,9 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,10 +37,13 @@ import type {
   MapEditPlan,
   TileRef,
 } from "../src/maps/types.js";
+import {
+  ASSET_REGISTRY_RELATIVE_PATH,
+} from "../src/project/assetRegistry.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
   DocumentStore,
-  type LoadedDocument,
+  type DocumentSnapshot,
 } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
 
@@ -118,6 +123,663 @@ describe("MapService", () => {
     expect((second.tilesets as SummaryTileset[])[0]?.assetId).toBe(
       tilesets[0]?.assetId,
     );
+  });
+
+  it("keeps a tileset assetId across a filesystem rename and service restart", async () => {
+    const before = await harness.service.getSummary(
+      MAP_PATH,
+    );
+    const beforeTileset = (
+      before.tilesets as SummaryTileset[]
+    )[0];
+    expect(beforeTileset).toBeDefined();
+    const oldPlan =
+      await harness.service.planEdits(
+        MAP_PATH,
+        before.revision as string,
+        before.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "setTiles",
+            layerId: LAYER_ID,
+            cells: [
+              {
+                x: 0,
+                y: 0,
+                tile: {
+                  tileset: {
+                    kind: "external",
+                    assetId:
+                      beforeTileset?.assetId ?? "",
+                  },
+                  localId: 1,
+                },
+              },
+            ],
+          },
+        ],
+      );
+
+    const renamedPath = "tiles/ground.tsj";
+    await rename(
+      join(harness.root, TILESET_PATH),
+      join(harness.root, renamedPath),
+    );
+    const renamedMap = baseMap();
+    renamedMap.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/ground.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      renamedMap,
+    );
+
+    const resolver =
+      await ProjectPathResolver.create(harness.root);
+    const restarted = new MapService(
+      resolver,
+      new DocumentStore(resolver),
+    );
+    await restarted.initializeAssetRegistry();
+    const after = await restarted.getSummary(MAP_PATH);
+    const afterTileset = (
+      after.tilesets as SummaryTileset[]
+    )[0];
+
+    expect(afterTileset).toMatchObject({
+      assetId: beforeTileset?.assetId,
+      path: renamedPath,
+    });
+    await expect(
+      restarted.getTileset({
+        mapPath: MAP_PATH,
+        tilesetAssetId:
+          beforeTileset?.assetId ?? "",
+        startTileId: 0,
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({
+      source: {
+        assetId: beforeTileset?.assetId,
+      },
+      tileset: { path: renamedPath },
+    });
+    await expect(
+      restarted.applyEdits(oldPlan),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+    });
+  });
+
+  it("never combines one TSJ snapshot with another file identity when the path is replaced", async () => {
+    const before =
+      await harness.service.getSummary(MAP_PATH);
+    const beforeTileset = (
+      before.tilesets as SummaryTileset[]
+    )[0];
+    expect(beforeTileset).toBeDefined();
+
+    const originalPath =
+      "tiles/original-after-snapshot.tsj";
+    const replacement = baseTileset();
+    replacement.name = "Replacement";
+    let replacements = 0;
+    const racedService =
+      await createServiceWithReadHook(
+        harness.root,
+        async ({ path, readCount }) => {
+          if (
+            path === TILESET_PATH &&
+            readCount === 1
+          ) {
+            replacements += 1;
+            await rename(
+              join(harness.root, TILESET_PATH),
+              join(harness.root, originalPath),
+            );
+            await writeFile(
+              join(harness.root, TILESET_PATH),
+              serializeJsonDocument(replacement),
+            );
+          }
+        },
+      );
+
+    await expect(
+      racedService.getSummary(MAP_PATH),
+    ).rejects.toMatchObject({
+      code: "DOCUMENT_CHANGED_DURING_READ",
+      details: {
+        path: TILESET_PATH,
+      },
+    });
+    expect(replacements).toBe(1);
+
+    const registryBeforeRetry = JSON.parse(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+        "utf8",
+      ),
+    ) as {
+      entries: Array<{
+        assetId: string;
+        path: string;
+        identity: { inode: string };
+      }>;
+    };
+    const originalStat = await stat(
+      join(harness.root, originalPath),
+      { bigint: true },
+    );
+    expect(registryBeforeRetry.entries).toEqual([
+      expect.objectContaining({
+        assetId: beforeTileset?.assetId,
+        path: TILESET_PATH,
+        identity: expect.objectContaining({
+          inode: originalStat.ino.toString(),
+        }),
+      }),
+    ]);
+
+    const resolver =
+      await ProjectPathResolver.create(harness.root);
+    const retried = new MapService(
+      resolver,
+      new DocumentStore(resolver),
+    );
+    const after = await retried.getSummary(MAP_PATH);
+    expect(
+      (after.tilesets as SummaryTileset[])[0],
+    ).toMatchObject({
+      assetId: beforeTileset?.assetId,
+      path: TILESET_PATH,
+      name: "Replacement",
+    });
+    const replacementStat = await stat(
+      join(harness.root, TILESET_PATH),
+      { bigint: true },
+    );
+    const registryAfterRetry = JSON.parse(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+        "utf8",
+      ),
+    ) as {
+      entries: Array<{
+        identity: { inode: string };
+      }>;
+    };
+    expect(
+      registryAfterRetry.entries[0]?.identity.inode,
+    ).toBe(replacementStat.ino.toString());
+  });
+
+  it("rejects an exact duplicate tileset path before reading it twice or updating the registry", async () => {
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 10,
+        source: "../tiles/terrain.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+    let tilesetReads = 0;
+    const service =
+      await createServiceWithReadHook(
+        harness.root,
+        ({ path }) => {
+          if (path === TILESET_PATH) {
+            tilesetReads += 1;
+          }
+        },
+      );
+
+    await expect(
+      service.getSummary(MAP_PATH),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+      details: {
+        path: TILESET_PATH,
+      },
+    });
+    expect(tilesetReads).toBe(1);
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("does not persist candidate identities after an unguarded TSJ validation failure", async () => {
+    const otherPath = "tiles/other.tsj";
+    const other = baseTileset();
+    other.name = "Other";
+    await writeJson(
+      join(harness.root, otherPath),
+      other,
+    );
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 10,
+        source: "../tiles/other.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+    await writeFile(
+      join(harness.root, TILESET_PATH),
+      '{"type":',
+      "utf8",
+    );
+    const reads = new Map<string, number>();
+    const service =
+      await createServiceWithReadHook(
+        harness.root,
+        ({ path }) => {
+          reads.set(
+            path,
+            (reads.get(path) ?? 0) + 1,
+          );
+        },
+      );
+
+    await expect(
+      service.getSummary(MAP_PATH),
+    ).rejects.toMatchObject({
+      code: "INVALID_JSON",
+    });
+    expect(reads.get(TILESET_PATH)).toBe(1);
+    expect(reads.get(otherPath)).toBeUndefined();
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("checks every dependency revision before surfacing a different dependency profile error", async () => {
+    const otherPath = "tiles/other.tsj";
+    const other = baseTileset();
+    other.name = "Other";
+    await writeJson(
+      join(harness.root, otherPath),
+      other,
+    );
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 10,
+        source: "../tiles/other.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+    const before =
+      await harness.service.getSummary(MAP_PATH);
+    const otherBinding = (
+      before.tilesets as SummaryTileset[]
+    ).find(({ path }) => path === otherPath);
+    expect(otherBinding).toBeDefined();
+    const registryBefore = await readFile(
+      join(
+        harness.root,
+        ASSET_REGISTRY_RELATIVE_PATH,
+      ),
+    );
+
+    await rm(
+      join(
+        harness.root,
+        "tiles",
+        "terrain.png",
+      ),
+    );
+    other.vendorExtension = {
+      changedAfterSnapshot: true,
+    };
+    const replacementPath = join(
+      harness.root,
+      "tiles",
+      ".other-replacement.tmp",
+    );
+    await writeJson(
+      replacementPath,
+      other,
+    );
+    await rename(
+      replacementPath,
+      join(harness.root, otherPath),
+    );
+
+    await expect(
+      harness.service.planEdits(
+        MAP_PATH,
+        before.revision as string,
+        before.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "setTiles",
+            layerId: LAYER_ID,
+            cells: [
+              {
+                x: 0,
+                y: 0,
+                tile: null,
+              },
+            ],
+          },
+        ],
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_REVISION_CONFLICT",
+      details: {
+        assetId: otherBinding?.assetId,
+        expectedRevision:
+          otherBinding?.revision,
+        actualRevision:
+          expect.stringMatching(/^sha256:/),
+      },
+    });
+    expect(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).toEqual(registryBefore);
+  });
+
+  it("reports the aggregate dependency limit before diffing an unread suffix", async () => {
+    const otherPath = "tiles/other.tsj";
+    const finalPath = "tiles/final.tsj";
+    const other = baseTileset();
+    other.name = "Other";
+    const final = baseTileset();
+    final.name = "Final";
+    await writeJson(
+      join(harness.root, otherPath),
+      other,
+    );
+    await writeJson(
+      join(harness.root, finalPath),
+      final,
+    );
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 10,
+        source: "../tiles/other.tsj",
+      },
+      {
+        firstgid: 20,
+        source: "../tiles/final.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+    const before =
+      await harness.service.getSummary(MAP_PATH);
+    const registryBefore = await readFile(
+      join(
+        harness.root,
+        ASSET_REGISTRY_RELATIVE_PATH,
+      ),
+    );
+    const resolver =
+      await ProjectPathResolver.create(
+        harness.root,
+      );
+    const inflatedStore =
+      new InflatedDependencySizeStore(
+        resolver,
+      );
+    const service = new MapService(
+      resolver,
+      inflatedStore,
+    );
+
+    await expect(
+      service.planEdits(
+        MAP_PATH,
+        before.revision as string,
+        before.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "setTiles",
+            layerId: LAYER_ID,
+            cells: [
+              {
+                x: 0,
+                y: 0,
+                tile: null,
+              },
+            ],
+          },
+        ],
+      ),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        limit: 64 * 1024 * 1024,
+        actual: 68 * 1024 * 1024,
+      },
+    });
+    expect(
+      inflatedStore.readPaths.filter(
+        (path) => path.endsWith(".tsj"),
+      ),
+    ).toEqual([
+      TILESET_PATH,
+      otherPath,
+    ]);
+    expect(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).toEqual(registryBefore);
+  });
+
+  it("reports a captured stale dependency before the aggregate dependency limit", async () => {
+    const otherPath = "tiles/other.tsj";
+    const other = baseTileset();
+    other.name = "Other";
+    await writeJson(
+      join(harness.root, otherPath),
+      other,
+    );
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 10,
+        source: "../tiles/other.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+    const before =
+      await harness.service.getSummary(MAP_PATH);
+    const otherBinding = (
+      before.tilesets as SummaryTileset[]
+    ).find(({ path }) => path === otherPath);
+    expect(otherBinding).toBeDefined();
+    const registryBefore = await readFile(
+      join(
+        harness.root,
+        ASSET_REGISTRY_RELATIVE_PATH,
+      ),
+    );
+    other.vendorExtension = {
+      changedAfterSnapshot: true,
+    };
+    const replacementPath = join(
+      harness.root,
+      "tiles",
+      ".other-limit-replacement.tmp",
+    );
+    await writeJson(
+      replacementPath,
+      other,
+    );
+    await rename(
+      replacementPath,
+      join(harness.root, otherPath),
+    );
+    const resolver =
+      await ProjectPathResolver.create(
+        harness.root,
+      );
+    const service = new MapService(
+      resolver,
+      new InflatedDependencySizeStore(
+        resolver,
+      ),
+    );
+
+    await expect(
+      service.planEdits(
+        MAP_PATH,
+        before.revision as string,
+        before.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "setTiles",
+            layerId: LAYER_ID,
+            cells: [
+              {
+                x: 0,
+                y: 0,
+                tile: null,
+              },
+            ],
+          },
+        ],
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_REVISION_CONFLICT",
+      details: {
+        assetId: otherBinding?.assetId,
+        expectedRevision:
+          otherBinding?.revision,
+        actualRevision:
+          expect.stringMatching(/^sha256:/),
+      },
+    });
+    expect(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).toEqual(registryBefore);
+  });
+
+  it("rolls back identity allocation when validated tileset GID ranges overlap", async () => {
+    const otherPath = "tiles/other.tsj";
+    const other = baseTileset();
+    other.name = "Other";
+    await writeJson(
+      join(harness.root, otherPath),
+      other,
+    );
+    const map = baseMap();
+    map.tilesets = [
+      {
+        firstgid: 1,
+        source: "../tiles/terrain.tsj",
+      },
+      {
+        firstgid: 3,
+        source: "../tiles/other.tsj",
+      },
+    ];
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+
+    await expect(
+      harness.service.getSummary(MAP_PATH),
+    ).rejects.toMatchObject({
+      code: "TILESET_GID_RANGE_OVERLAP",
+    });
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("returns bounded sparse tileset metadata ordered by local ID", async () => {
@@ -2502,7 +3164,7 @@ describe("MapService", () => {
 interface DocumentReadHookContext {
   path: string;
   readCount: number;
-  loaded: LoadedDocument;
+  snapshot: DocumentSnapshot;
 }
 
 type DocumentReadHook = (
@@ -2519,12 +3181,38 @@ class HookedDocumentStore extends DocumentStore {
     super(resolver);
   }
 
-  override async read(projectPath: string): Promise<LoadedDocument> {
-    const loaded = await super.read(projectPath);
-    const readCount = (this.readCounts.get(loaded.path) ?? 0) + 1;
-    this.readCounts.set(loaded.path, readCount);
-    await this.afterRead({ path: loaded.path, readCount, loaded });
-    return loaded;
+  override async readSnapshot(
+    projectPath: string,
+  ): Promise<DocumentSnapshot> {
+    const snapshot =
+      await super.readSnapshot(projectPath);
+    const readCount =
+      (this.readCounts.get(snapshot.path) ?? 0) + 1;
+    this.readCounts.set(snapshot.path, readCount);
+    await this.afterRead({
+      path: snapshot.path,
+      readCount,
+      snapshot,
+    });
+    return snapshot;
+  }
+}
+
+class InflatedDependencySizeStore extends DocumentStore {
+  readonly readPaths: string[] = [];
+
+  override async readSnapshot(
+    projectPath: string,
+  ): Promise<DocumentSnapshot> {
+    const snapshot =
+      await super.readSnapshot(projectPath);
+    this.readPaths.push(snapshot.path);
+    return snapshot.path.endsWith(".tsj")
+      ? {
+          ...snapshot,
+          size: 34 * 1024 * 1024,
+        }
+      : snapshot;
   }
 }
 

@@ -22,6 +22,8 @@
     "operating-system-error-codes"
   ],
   "codes": [
+    "ASSET_REGISTRY_CORRUPT",
+    "ASSET_REGISTRY_LIMIT_EXCEEDED",
     "CHANGE_SET_LIMIT_EXCEEDED",
     "CHANGE_SET_NOT_FOUND",
     "CHECKPOINT_CHANGED",

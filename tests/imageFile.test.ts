@@ -41,6 +41,11 @@ describe("readImageFileSnapshot", () => {
       path: "tiles/atlas.bin",
       bytes,
       revision: revisionOf(bytes),
+      identity: {
+        device: expect.stringMatching(/^\d+$/u),
+        inode: expect.stringMatching(/^\d+$/u),
+        birthtimeNs: expect.stringMatching(/^\d+$/u),
+      },
     });
   });
 

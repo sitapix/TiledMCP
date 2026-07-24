@@ -19,12 +19,14 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:8f68cc8c82996b7d985165fdcc40e2be173754629e1c6f1d7a0655a0ea865dc8`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
   "codeLocation": "structuredContent.result.error.code",
   "codes": [
+    "ASSET_REGISTRY_CORRUPT",
+    "ASSET_REGISTRY_LIMIT_EXCEEDED",
     "CHANGE_SET_LIMIT_EXCEEDED",
     "CHANGE_SET_NOT_FOUND",
     "CHECKPOINT_CHANGED",
@@ -155,9 +157,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:8f68cc8c82996b7d985165fdcc40e2be173754629e1c6f1d7a0655a0ea865dc8",
+    "revision": "sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8",
     "serverVersion": "0.0.1",
-    "size": 3667
+    "size": 3734
   },
   "annotations": {
     "audience": [
@@ -169,7 +171,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3667,
+  "size": 3734,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -182,9 +184,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:5f40cc1a199a9ed10d77e23c5469782712651652575573872c109668311df167",
+    "revision": "sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae",
     "serverVersion": "0.0.1",
-    "size": 38493
+    "size": 40107
   },
   "annotations": {
     "audience": [
@@ -196,15 +198,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 38493,
+  "size": 40107,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3667 UTF-8 bytes, revision `sha256:8f68cc8c82996b7d985165fdcc40e2be173754629e1c6f1d7a0655a0ea865dc8`.
+Content contract: `text`, 3734 UTF-8 bytes, revision `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`.
 
-Content contract: `text`, 38493 UTF-8 bytes, revision `sha256:5f40cc1a199a9ed10d77e23c5469782712651652575573872c109668311df167`.
+Content contract: `text`, 40107 UTF-8 bytes, revision `sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae`.
 
 Resource templates: none.
 
@@ -216,7 +218,7 @@ Prompts: none.
 
 Availability: `core`
 
-Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without writing.
+Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -626,6 +628,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -770,7 +774,7 @@ Output schema:
 
 Availability: `core`
 
-Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included.
+Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -1513,6 +1517,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -1815,6 +1821,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -1959,7 +1967,7 @@ Output schema:
 
 Availability: `core`
 
-Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without writing. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.
+Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without modifying project assets. Asset discovery may update project-internal safety metadata. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.
 
 Annotations:
 
@@ -2674,6 +2682,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -2999,6 +3009,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -3143,7 +3155,7 @@ Output schema:
 
 Availability: `core`
 
-Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.
+Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -4012,6 +4024,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -4271,7 +4285,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:8f68cc8c82996b7d985165fdcc40e2be173754629e1c6f1d7a0655a0ea865dc8",
+                  "const": "sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -4279,7 +4293,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3667,
+                  "const": 3734,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -4300,6 +4314,148 @@ Output schema:
                 "messages",
                 "details",
                 "sdkInputErrors"
+              ],
+              "type": "object"
+            },
+            "assetIdentityContract": {
+              "additionalProperties": false,
+              "properties": {
+                "clientTreatment": {
+                  "const": "opaque",
+                  "type": "string"
+                },
+                "contentEquality": {
+                  "const": "not-identity",
+                  "type": "string"
+                },
+                "corruptionPolicy": {
+                  "const": "startup-fatal-runtime-application-error-fail-closed",
+                  "type": "string"
+                },
+                "coveredKinds": {
+                  "items": [
+                    {
+                      "const": "external-tileset",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image-layer",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "crashDurability": {
+                  "const": "not-guaranteed-first-internal-directory-parent-not-fsynced",
+                  "type": "string"
+                },
+                "idFormat": {
+                  "const": "asset_<24-lowercase-hex>",
+                  "type": "string"
+                },
+                "initialAssignment": {
+                  "const": "legacy-path-hash-compatible",
+                  "type": "string"
+                },
+                "loadLimitPolicy": {
+                  "const": "startup-fatal-as-corrupt",
+                  "type": "string"
+                },
+                "mutationLimitPolicy": {
+                  "const": "runtime-application-error-fail-closed",
+                  "type": "string"
+                },
+                "name": {
+                  "const": "tiled-mcp-asset-identity",
+                  "type": "string"
+                },
+                "readOnlyToolEffect": {
+                  "const": "may-update-project-internal-safety-metadata-only",
+                  "type": "string"
+                },
+                "registeredPathSwap": {
+                  "const": "keep-path-ids-refresh-identity",
+                  "type": "string"
+                },
+                "registryFormat": {
+                  "const": "tiled-mcp-asset-registry",
+                  "type": "string"
+                },
+                "registryFormatVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "registryLossPolicy": {
+                  "const": "ids-may-be-reassigned",
+                  "type": "string"
+                },
+                "renameContinuity": {
+                  "const": "best-effort-unique-stable-file-identity",
+                  "type": "string"
+                },
+                "renameEvidence": {
+                  "const": "unique-same-kind-device-inode-nonzero-birthtime-old-path-absent",
+                  "type": "string"
+                },
+                "resolutionOrder": {
+                  "const": "same-kind-canonical-path-before-file-identity",
+                  "type": "string"
+                },
+                "restartPersistence": {
+                  "const": "same-project-internal-state",
+                  "type": "string"
+                },
+                "samePathContinuity": {
+                  "const": "preserve-across-content-replacement",
+                  "type": "string"
+                },
+                "scope": {
+                  "const": "configured-project-root",
+                  "type": "string"
+                },
+                "unmatchedOrCrossFilesystemMove": {
+                  "const": "allocate-new-id",
+                  "type": "string"
+                },
+                "unobservedHardlinkThenOldPathRemoved": {
+                  "const": "indistinguishable-from-rename-may-inherit-old-id",
+                  "type": "string"
+                },
+                "version": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "weakIdentityEvidence": {
+                  "const": "inode-zero-or-birthtime-zero-does-not-rebind",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "version",
+                "idFormat",
+                "clientTreatment",
+                "scope",
+                "coveredKinds",
+                "registryFormat",
+                "registryFormatVersion",
+                "restartPersistence",
+                "initialAssignment",
+                "samePathContinuity",
+                "resolutionOrder",
+                "renameContinuity",
+                "renameEvidence",
+                "registeredPathSwap",
+                "weakIdentityEvidence",
+                "unobservedHardlinkThenOldPathRemoved",
+                "contentEquality",
+                "unmatchedOrCrossFilesystemMove",
+                "corruptionPolicy",
+                "loadLimitPolicy",
+                "mutationLimitPolicy",
+                "registryLossPolicy",
+                "crashDurability",
+                "readOnlyToolEffect"
               ],
               "type": "object"
             },
@@ -6422,6 +6578,7 @@ Output schema:
             "safetyStatus",
             "textContentContract",
             "applicationErrorContract",
+            "assetIdentityContract",
             "cli",
             "registeredTools"
           ],
@@ -6435,6 +6592,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -6579,7 +6738,7 @@ Output schema:
 
 Availability: `core`
 
-Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.
+Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -6982,6 +7141,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -7126,7 +7287,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs.
+Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -7420,6 +7581,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -7564,7 +7727,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews.
+Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -8368,6 +8531,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -8766,6 +8931,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -9031,6 +9198,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -9175,7 +9344,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded list of objects from all object layers or one selected object layer.
+Returns a bounded list of objects from all object layers or one selected object layer. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -9416,6 +9585,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -9893,6 +10064,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -10037,7 +10210,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
+Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -15298,6 +15471,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -15442,7 +15617,7 @@ Output schema:
 
 Availability: `tmxrasterizer-version-probe`
 
-Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.
+Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -15678,6 +15853,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -15822,7 +15999,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits.
+Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -16395,6 +16572,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -16539,7 +16718,7 @@ Output schema:
 
 Availability: `core`
 
-Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID.
+Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -16967,6 +17146,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",
@@ -17111,7 +17292,7 @@ Output schema:
 
 Availability: `core`
 
-Performs read-only structural and MVP-profile validation. It never modifies the file.
+Performs structural and MVP-profile validation without modifying the map, tilesets, or images. Asset discovery may update only the project-internal safety metadata advertised by capabilities.
 
 Annotations:
 
@@ -17266,6 +17447,8 @@ Output schema:
               "properties": {
                 "code": {
                   "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHECKPOINT_CHANGED",

@@ -1,14 +1,20 @@
-import { constants, type BigIntStats } from "node:fs";
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 
 import { TiledMcpError } from "../errors.js";
 import type { ProjectPathResolver } from "../project/pathResolver.js";
+import {
+  fileIdentityOf,
+  sameFileSnapshot,
+  type FileIdentity,
+} from "../storage/fileIdentity.js";
 import { revisionOf } from "../storage/revision.js";
 
 export interface ImageFileSnapshot {
   path: string;
   bytes: Buffer;
   revision: string;
+  identity: FileIdentity;
 }
 
 /**
@@ -90,6 +96,7 @@ export async function readImageFileSnapshot(
       path: normalized,
       bytes,
       revision: revisionOf(bytes),
+      identity: fileIdentityOf(after),
     };
   } finally {
     await handle.close();
@@ -112,19 +119,6 @@ function imageTooLarge(
           : actual.toString(),
       limit,
     },
-  );
-}
-
-function sameFileSnapshot(
-  left: BigIntStats,
-  right: BigIntStats,
-): boolean {
-  return (
-    left.dev === right.dev &&
-    left.ino === right.ino &&
-    left.size === right.size &&
-    left.mtimeNs === right.mtimeNs &&
-    left.ctimeNs === right.ctimeNs
   );
 }
 

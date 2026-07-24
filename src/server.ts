@@ -138,6 +138,10 @@ import {
 } from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
+  ASSET_REGISTRY_FORMAT,
+  ASSET_REGISTRY_FORMAT_VERSION,
+} from "./project/assetRegistry.js";
+import {
   APPLICATION_ERROR_RESOURCE_META,
   APPLICATION_ERROR_RESOURCE_URI,
   registerApplicationErrorResource,
@@ -1041,18 +1045,20 @@ export interface CreatedTiledMcpServer {
 export async function createTiledMcpServer(
   dependencies: TiledMcpServerDependencies,
 ): Promise<CreatedTiledMcpServer> {
+  await dependencies.maps.initializeAssetRegistry();
   const cliCapabilities =
     await dependencies.cli.probeCapabilities();
-  return createTiledMcpServerFromCapabilitySnapshot(
+  return await createTiledMcpServerFromCapabilitySnapshot(
     dependencies,
     cliCapabilities,
   );
 }
 
-export function createTiledMcpServerFromCapabilitySnapshot(
+export async function createTiledMcpServerFromCapabilitySnapshot(
   dependencies: TiledMcpServerDependencies,
   cliCapabilitiesInput: TiledCliCapabilities,
-): CreatedTiledMcpServer {
+): Promise<CreatedTiledMcpServer> {
+  await dependencies.maps.initializeAssetRegistry();
   const cliCapabilities =
     immutableCliCapabilitiesSnapshot(
       cliCapabilitiesInput,
@@ -1525,6 +1531,54 @@ export function createTiledMcpServerFromCapabilitySnapshot(
           sdkInputErrors:
             "excluded-sdk-owned-text-only",
         },
+        assetIdentityContract: {
+          name: "tiled-mcp-asset-identity",
+          version: 1,
+          idFormat:
+            "asset_<24-lowercase-hex>",
+          clientTreatment: "opaque",
+          scope: "configured-project-root",
+          coveredKinds: [
+            "external-tileset",
+            "image-layer",
+          ],
+          registryFormat: ASSET_REGISTRY_FORMAT,
+          registryFormatVersion:
+            ASSET_REGISTRY_FORMAT_VERSION,
+          restartPersistence:
+            "same-project-internal-state",
+          initialAssignment:
+            "legacy-path-hash-compatible",
+          samePathContinuity:
+            "preserve-across-content-replacement",
+          resolutionOrder:
+            "same-kind-canonical-path-before-file-identity",
+          renameContinuity:
+            "best-effort-unique-stable-file-identity",
+          renameEvidence:
+            "unique-same-kind-device-inode-nonzero-birthtime-old-path-absent",
+          registeredPathSwap:
+            "keep-path-ids-refresh-identity",
+          weakIdentityEvidence:
+            "inode-zero-or-birthtime-zero-does-not-rebind",
+          unobservedHardlinkThenOldPathRemoved:
+            "indistinguishable-from-rename-may-inherit-old-id",
+          contentEquality: "not-identity",
+          unmatchedOrCrossFilesystemMove:
+            "allocate-new-id",
+          corruptionPolicy:
+            "startup-fatal-runtime-application-error-fail-closed",
+          loadLimitPolicy:
+            "startup-fatal-as-corrupt",
+          mutationLimitPolicy:
+            "runtime-application-error-fail-closed",
+          registryLossPolicy:
+            "ids-may-be-reassigned",
+          crashDurability:
+            "not-guaranteed-first-internal-directory-parent-not-fsynced",
+          readOnlyToolEffect:
+            "may-update-project-internal-safety-metadata-only",
+        },
         cli: cliCapabilities,
         registeredTools: advertisedToolNames,
       };
@@ -1647,7 +1701,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a Tiled map summary",
       description:
-        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.",
+        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Asset discovery may update project-internal safety metadata.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema: mapSummaryToolOutputSchema,
       annotations: READ_ONLY,
@@ -1662,7 +1716,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews.",
+        "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1703,7 +1757,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Find tiles by explicit semantics",
       description:
-        "Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.",
+        "Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1761,7 +1815,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a tile region",
       description:
-        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs.",
+        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1785,7 +1839,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a labeled tileset sheet",
       description:
-        "Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID.",
+        "Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1846,7 +1900,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits.",
+        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1933,7 +1987,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "List map objects",
       description:
-        "Returns a bounded list of objects from all object layers or one selected object layer.",
+        "Returns a bounded list of objects from all object layers or one selected object layer. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -1961,7 +2015,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Validate a Tiled map",
       description:
-        "Performs read-only structural and MVP-profile validation. It never modifies the file.",
+        "Performs structural and MVP-profile validation without modifying the map, tilesets, or images. Asset discovery may update only the project-internal safety metadata advertised by capabilities.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema:
         validationToolOutputSchema,
@@ -1977,7 +2031,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Analyze tile usage",
       description:
-        "Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included.",
+        "Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included. Asset discovery may update project-internal safety metadata.",
       inputSchema: usageAnalysisInputSchema,
       outputSchema:
         usageAnalysisToolOutputSchema,
@@ -2041,7 +2095,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview adding a tileset to a map",
       description:
-        "Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without writing.",
+        "Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -2083,7 +2137,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview creating a map layer",
       description:
-        "Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without writing. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.",
+        "Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without modifying project assets. Asset discovery may update project-internal safety metadata. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.",
       inputSchema: createLayerInputSchema,
       outputSchema:
         createLayerPreviewToolOutputSchema,
@@ -2128,7 +2182,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -2216,7 +2270,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
       {
         title: "Render a Tiled map preview",
         description:
-          "Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.",
+          "Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata. Asset discovery may update project-internal safety metadata.",
         inputSchema: z
           .object({
             mapPath: projectPathSchema,

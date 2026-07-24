@@ -222,7 +222,7 @@ async function collectProfile(
     id === "with-tmxrasterizer",
   );
   const created =
-    createTiledMcpServerFromCapabilitySnapshot(
+    await createTiledMcpServerFromCapabilitySnapshot(
       { resolver, store, maps, cli },
       cliCapabilities,
     );

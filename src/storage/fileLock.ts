@@ -15,6 +15,8 @@ interface LockRecord {
   target: string;
 }
 
+const LOCK_RELEASE_RACE_RETRIES = 64;
+
 export async function withProjectFileLock<T>(
   resolver: ProjectPathResolver,
   target: string,
@@ -43,27 +45,57 @@ async function acquire(lockPath: string, record: LockRecord): Promise<void> {
   }
 
   try {
-    await link(candidatePath, lockPath);
-  } catch (error) {
-    if (!hasCode(error, "EEXIST")) {
-      throw error;
-    }
-    const existing = await readLockRecord(lockPath);
-    if (!isProcessAlive(existing.pid)) {
-      throw new TiledMcpError(
-        "STALE_FILE_LOCK",
-        `A previous TiledMCP process left a stale lock for ${record.target}. Remove the lock after verifying no editor is active.`,
-        {
-          path: record.target,
-          stalePid: existing.pid,
-          lockFile: `.tiledmcp/locks/${shortHash(record.target)}.lock`,
-        },
-      );
+    for (
+      let attempt = 0;
+      attempt < LOCK_RELEASE_RACE_RETRIES;
+      attempt += 1
+    ) {
+      try {
+        await link(candidatePath, lockPath);
+        return;
+      } catch (error) {
+        if (!hasCode(error, "EEXIST")) {
+          throw error;
+        }
+        let existing: LockRecord;
+        try {
+          existing = await readLockRecord(lockPath);
+        } catch (readError) {
+          if (
+            isVanishedLockRace(readError) &&
+            attempt <
+              LOCK_RELEASE_RACE_RETRIES - 1
+          ) {
+            await yieldEventLoop();
+            continue;
+          }
+          throw readError;
+        }
+        if (!isProcessAlive(existing.pid)) {
+          throw new TiledMcpError(
+            "STALE_FILE_LOCK",
+            `A previous TiledMCP process left a stale lock for ${record.target}. Remove the lock after verifying no editor is active.`,
+            {
+              path: record.target,
+              stalePid: existing.pid,
+              lockFile: `.tiledmcp/locks/${shortHash(record.target)}.lock`,
+            },
+          );
+        }
+        throw new TiledMcpError(
+          "FILE_LOCKED",
+          `Another TiledMCP process is editing ${record.target}. Retry after it finishes.`,
+          {
+            path: record.target,
+            ownerPid: existing.pid,
+          },
+        );
+      }
     }
     throw new TiledMcpError(
-      "FILE_LOCKED",
-      `Another TiledMCP process is editing ${record.target}. Retry after it finishes.`,
-      { path: record.target, ownerPid: existing.pid },
+      "FILE_LOCK_CORRUPT",
+      "The project lock changed too quickly to inspect safely; retry the operation.",
+      { reason: "lock-release-race-exhausted" },
     );
   } finally {
     await unlink(candidatePath).catch(() => undefined);
@@ -166,6 +198,22 @@ function isProcessAlive(pid: number): boolean {
   } catch (error) {
     return hasCode(error, "EPERM");
   }
+}
+
+function isVanishedLockRace(
+  error: unknown,
+): boolean {
+  return (
+    error instanceof TiledMcpError &&
+    error.code === "FILE_LOCK_CORRUPT" &&
+    error.details.causeCode === "ENOENT"
+  );
+}
+
+async function yieldEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 function hasCode(error: unknown, code: string): boolean {

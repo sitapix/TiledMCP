@@ -30,8 +30,12 @@
 
 - `revision`：地图原始 bytes 的 SHA-256 revision；
 - 完整的 `dependencyRevisions`：当前地图引用的外部依赖 revision 映射；
-- 响应中返回的 `assetId`：后续 tileset 读取、搜索和 TileRef 使用的不透明、当前路径内
-  身份；现阶段资产重命名后该 ID 会改变，必须重新读取。
+- 响应中返回的 `assetId`：后续 tileset 读取、搜索和 TileRef 使用的不透明身份。持久化
+  registry 会让同路径替换保持 ID，并在唯一、稳定且非零的 file identity 证据下尽力让
+  普通同文件系统 rename 保持 ID；弱 identity、原路径仍存活的 copy/hardlink、跨文件系统
+  move 或其他无法匹配 file identity 的场景取得新 ID；若
+  尚未观察的 hardlink 在旧路径删除后，最终状态无法与 rename 区分，可能继承旧 ID。
+  路径变化后仍必须重新读取 map snapshot，不能拿旧 change set 自动跟随重命名。
 
 不要自行拼接 asset ID，也不要只复制其中一部分依赖。需要 pin 的调用必须直接传递这次
 读取返回的 map revision 和**完整** dependency map。使用 `tiled_find_tiles` 的可选
@@ -40,6 +44,11 @@
 额外先验：只有调用方已从可信通道持有候选 TSJ 的当前 revision 时才传；否则省略，服务端
 仍会在 preview 时读取实际 revision、固化进 change set，并在 apply 前复核。示例 manifest
 为展示字段形状而包含了格式合法的占位值，不代表真实调用必须伪造该值。
+
+registry 是 `.tiledmcp` 下的项目内部状态；目标项目应忽略它，本仓库已这样配置，但
+服务器不会修改任意目标项目的 `.gitignore`。复制或提交该文件会携带 ID，却不属于受支持
+的跨 clone 同步机制；删除它可能重新分配 ID。相同 bytes 不是同一资产的证据，客户端不得
+自行用 content hash 把 copy 合并为旧 ID。
 
 这些 pin 会检测从读取到提交之间的变化，但读取 map 与多个依赖并不是一个文件系统原子
 快照。遇到 revision 或依赖冲突时，丢弃旧计划，重新读取全部相关状态并重新预览；不要
@@ -122,7 +131,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 ## 区分 SDK 输入错误、应用错误与诊断
 
-当前 v1 application-error registry 包含 95 个 code。code 的稳定 wire 位置是
+当前 v1 application-error registry 包含 97 个 code。code 的稳定 wire 位置是
 `structuredContent.result.error.code`；完整 allowlist 由
 [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
 和 direct Resource `tiled://application-errors` 提供，capability 中的
@@ -131,7 +140,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 不同失败/诊断表面不能共用一个枚举：
 
-| 表面 | 客户端处理 | 属于 95-code application registry |
+| 表面 | 客户端处理 | 属于 97-code application registry |
 |---|---|---|
 | MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
 | Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |

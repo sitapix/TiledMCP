@@ -49,12 +49,14 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。双 profile 的完整 discovery artifact、包含当前 95 个 v1 application code 的
+aliases。双 profile 的完整 discovery artifact、包含当前 97 个 v1 application code 的
 稳定错误 registry、生成式参考和每工具调用示例现已落地并纳入 drift gate；schema 无法
-表达的 revision/批准语义由手写安全工作流维护。外部 tileset
-`assetId` 仍是由项目路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；
-持久化 rename-stable registry 是接口冻结前的待办。`tiled_create_map` 的 no-replace
-例外定案和固定 Tiled 1.12.2 集成门槛也尚未全部固化。
+表达的 revision/批准语义由手写安全工作流维护。当前 wire 实际使用的 external TSJ 与
+image-layer dependency `assetId` 已接入版本化持久 registry：首次分配兼容旧路径哈希，
+同路径替换保持 ID，已观察文件仅在唯一、稳定且非零的同文件系统 file identity 证据下
+尽力迁移；弱 identity、原路径仍存活的 copy/hardlink、跨文件系统 move 与其他无法匹配
+file identity 的场景分配新 ID，不按内容猜身份。`tiled_create_map` 的 no-replace
+例外定案和固定 Tiled 1.12.2 集成门槛尚未全部固化。
 因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
@@ -62,6 +64,48 @@ aliases。双 profile 的完整 discovery artifact、包含当前 95 个 v1 appl
 当前 `tiled_create_map` 是一个明确的临时例外：它只做 no-replace 新建，已有路径必然拒绝，
 但还没有纳入 change set。冻结前要么把创建也改为 preview/apply，要么在本规范中正式保留
 “纯增量、不可覆盖创建”的例外；目前不能把该行为外推到其他 create/update/delete 工具。
+
+### 0.2 Asset identity v1
+
+- 当前覆盖范围只有已经进入 wire 的 external TSJ 与 prospective image-layer dependency；
+  map/world/template 的通用 asset resource identity 仍属 roadmap。
+- registry 位于项目根下 `.tiledmcp/asset-registry.v1.json`，使用 closed v1 JSON、
+  20,000-entry / 8 MiB 硬上限、项目级合作锁、0600 sibling temp、`fsync`、原子 rename
+  和父目录 `fsync`。启动注册工具前会严格校验；损坏、未来版本、symlink、超限或重复 ID/
+  路径一律 fail closed，不会退回路径哈希重建。
+- 新 registry 中的首次 ID 沿用既有 `external-tileset:<path>` /
+  `image-layer:<path>` 96-bit 候选，避免升级无故换 ID；候选已占用时才分配随机 96-bit
+  ID，ID 永不复用于另一个 registry entry。
+- 同一 canonical path 即使内容或 inode 因编辑器 atomic-save 改变也保留 ID，并刷新记录的
+  文件身份。new path 尚未注册、old path 已消失、inode 与 birthtime 都非零且
+  `device + inode + birthtime` 在同 kind 中唯一匹配时，new path 才继承 ID；这是对支持
+  稳定 birthtime 的文件系统上普通同文件系统 rename 的 best-effort 连续性。弱/零 identity
+  证据不触发 rebind。
+- 内容相同不是身份。原路径仍存在的 byte copy/hardlink、跨文件系统 move、未观察的
+  inode-replacing save 后立即 rename，以及其他无法唯一匹配的 new path 会分配新 ID。
+  两个已经注册的路径发生 swap/replace 时仍按 canonical-path-first 规则各自保留原 ID，
+  只刷新 identity。若 new hardlink 尚未被 registry 观察，删除旧路径后的最终状态与
+  rename 在 `(device,inode,birthtime)` 上不可区分，因此可能作为同一 file identity
+  迁移并继承旧 ID；两个路径都已观察时则各自保留已经分配的 ID。任意外部
+  move/rename+replace 的强保证需要未来显式 rebind 或跨文件 WAL，不属于 v1。
+- `.tiledmcp` 是运行时安全状态，目标项目应忽略它；本仓库的 `.gitignore` 已这样配置，
+  服务器不会修改任意目标项目的 ignore 规则。复制或提交 registry 会携带既有 ID，但不
+  属于受支持的跨 clone 同步机制；删除或丢失它会丢失 rename 历史并可能重新分配 ID。
+  只读/preview 工具不会修改 TMJ/TSJ/图片，但首次发现、刷新身份或协调锁时可能更新这份
+  内部 safety metadata；该边界也由 capability contract 明示。
+- capability 把损坏策略固定为启动期 fatal、运行期稳定 application error 的 fail-closed，
+  把加载已有超限文件固定为启动期 fatal-as-corrupt，并把 mutation 时的
+  entry/byte/generation 超限固定为运行期稳定 application error；两者都不会静默重建或
+  部分提交 registry。`resolutionOrder`、`renameEvidence` 与 `registeredPathSwap` 另外把
+  path-first、old-path-absent 和 swap 边界固化为 machine-readable const。
+- map 读取会先完成有界候选检查，再把 asset ID 与身份更新一起提交。带 dependency guard
+  时，已捕获 raw snapshot 的精确 revision conflict 优先于延后的解析/profile/图片错误；
+  若 64 MiB TSJ 聚合上限终止扫描，则先检查已捕获前缀的精确 guard，随后固定返回
+  `RESULT_LIMIT_EXCEEDED`，不会继续读取后缀，也不会用不完整集合伪报 dependency-set
+  conflict。任一 pre-commit 检查失败都不增长或刷新 registry。
+- v1 保证合作进程的原子可见性与 lost-update 防护，不承诺首次创建 `.tiledmcp` 目录时的
+  断电 durability；`crashDurability` 明示该边界，异常掉电后 registry 丢失按
+  `registryLossPolicy` 处理，ID 可能重分配。
 
 ## 1. 共享契约
 
@@ -210,7 +254,7 @@ type ApplyResult = CommitResult & {
 3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
    并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
    `structuredContent`；code 的精确 wire 位置是
-   `structuredContent.result.error.code`。当前 v1 application registry 有 95 个 code，
+   `structuredContent.result.error.code`。当前 v1 application registry 有 97 个 code，
    机器 artifact 为
    [`contracts/application-errors.v1.json`](../contracts/application-errors.v1.json)，
    相同 JSON 由 `tiled://application-errors` 提供；
@@ -229,7 +273,7 @@ type ApplyResult = CommitResult & {
 5. application registry 只覆盖上述 tool application envelope，不包括 MCP SDK input
    error、`cli.*.issues[].code` capability-probe 诊断、startup fatal error、
    `tiled_validate` 的 `Diagnostic[]`、checkpoint reconciliation diagnostics 或原始 OS
-   error code。这些表面各自遵循独立契约，不能与 95-code allowlist 混用。
+   error code。这些表面各自遵循独立契约，不能与 97-code allowlist 混用。
 6. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
@@ -278,6 +322,11 @@ type ApplyResult = CommitResult & {
 | 删除、裁剪、覆盖导出、自动修复、快照恢复 | `false` | `true` | 按重复调用语义填写 | `false` |
 
 - annotations 是**工具级静态值**；若同一名字同时承担读/写、预览/提交或安全/破坏性分支，必须拆成独立工具。
+- 本项目把 `.tiledmcp` asset registry/locks 视为 server-internal safety/cache state：
+  `readOnlyHint:true` 表示不修改 TMJ/TSJ/图片等用户项目资产，也不触达外部世界；首次
+  identity discovery/refresh 与 lock coordination 仍可能更新该内部状态。客户端若把
+  任何本地 metadata 写入都视为环境 mutation，应同时读取
+  `assetIdentityContract.readOnlyToolEffect`，不能只依赖 annotation。
 - `tiled_preview_edits` 每次调用都会分配新的随机 `changeSetId` 并占用有界 registry，
   因而不是幂等调用；相同 plan 也不复用旧句柄，以避免 revision ABA 后误认历史批准。
 - `tiled_apply_change_set` 固定为 `{readOnlyHint:false, destructiveHint:true, idempotentHint:true, openWorldHint:false}`：即使某个 change set 实际无破坏性，也采取保守静态标注；重复提交同一 id 只返回第一次提交结果，不重复应用。
@@ -804,7 +853,7 @@ standalone object tool，registry 仍为 18 core / 19 with rasterizer。
 |---|---|---|
 | `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞/属性计数和 Wang-set 概览；不把 `tiles.length` 冒充 `tilecount`，不读取 property values/碰撞 geometry/完整 wang assignments | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
 | `tiled_create_tileset` | 从图集图片创建 `.tsj`（自动读取图片尺寸算 tilecount/columns） | `tilesetPath`, `image`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?` |
-| `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，本工具不写盘 | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
+| `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，不修改项目资产，但可能更新项目内部 safety metadata | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
 | `tiled_update_tile` | 设置单 tile 元数据：动画帧、碰撞形状、probability、class（后续候选） | `tileset`, `tileId`, `animation?`, `collisionShapes?`, `probability?`, `class?` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
@@ -937,7 +986,7 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_validate` | **只读格式校验**：GID 越界、tileset/图片路径失效、id 一致性、重复对象 id、chunk 完整性；成功结果为 `{path, revision, valid, diagnostics: Diagnostic[]}`，绝不写盘 | `path` |
+| `tiled_validate` | **项目资产只读格式校验**：GID 越界、tileset/图片路径失效、id 一致性、重复对象 id、chunk 完整性；成功结果为 `{path, revision, valid, diagnostics: Diagnostic[]}`；不修改项目资产，但可能更新项目内部 safety metadata | `path` |
 | `tiled_preview_validation_fixes` | 把明确选择的 `fixId` 计算为待批准 change set；不与只读 validate 共用工具名 | `path`, `expectedRevision`, `fixIds` |
 | `tiled_check_connectivity` | **游戏性校验**（后续候选）：基于碰撞图层或属性规则分析可达性、封闭区域和对象穿墙 | `mapPath`, `collisionLayerId\|collisionRule`, `from?`, `to?` |
 | `tiled_register_tile_names` | 语义 tile 注册表：把 `grass`、`water_corner_tl` 等名字映射到具体 tile，之后所有工具的 `tile` 参数可直接用名字（借鉴 hoberobin 思路；配合 `auto-name-tiles` Prompt 可由模型看图自动完成） | `tilesetPath`, `names: {name: tileId}` |
@@ -1131,7 +1180,10 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
 
 ## 4. Resources
 
-Resources 是可发现的只读上下文。固定 URI 使用 direct resource；按资产展开的 URI 使用 Resource Template。任何 URI 都不得直接嵌入未转义文件路径，必须先通过 `tiled_list_files` 或项目索引取得不透明 `assetId`。
+Resources 是可发现的只读上下文。固定 URI 使用 direct resource；按资产展开的 URI 使用
+Resource Template。任何 URI 都不得直接嵌入未转义文件路径；未来 asset templates 必须从
+项目索引或已经返回 asset identity 的 map/tileset 工具结果取得不透明 `assetId`。
+当前 `tiled_list_files` 仍只返回 `{path,kind}`，不能从它推导 ID。
 
 当前仅注册下表中的 `tiled://guide` 与 `tiled://application-errors`；其他 direct
 resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。运行时以
@@ -1142,7 +1194,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 | URI | `mimeType` | 内容 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | **已实现。** 使用 playbook：能力发现 → 摘要 → tileset sheet/map preview → 预览 edits → 客户端批准 → 提交 → 校验与渲染自查 |
-| `tiled://application-errors` | `application/json` | **已实现。** 当前 95 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
+| `tiled://application-errors` | `application/json` | **已实现。** 当前 97 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
 | `tiled://project/index` | `application/json` | **Roadmap，未实现。** 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
 | `tiled://schema/tool-contracts` | `application/schema+json` | **Roadmap，未实现。** 从代码生成的已注册工具 input/output schemas |
 | `tiled://schema/tmj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
@@ -1166,9 +1218,13 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 - JSON/text direct read 的目标默认上限是 `2 MiB`，当前嵌入式 guide 使用更严格的
   `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。`RESOURCE_TOO_LARGE` 是配合未来
   asset/template Resource reads 规划的 resource-layer code，**尚未实现，也不属于当前
-  95-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
+  97-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
   截断后伪装成完整内容。
-- `assetId` 项目内稳定、跨服务器重启可复用，重命名资产时由服务器保持映射；客户端只能把它当不透明字符串。
+- 当前 v1 registry 覆盖的 `assetId` 在同一项目内部状态中跨服务器重启可复用；同路径
+  替换与可唯一验证的普通同文件系统 file-identity move 保持映射；原路径仍存活的 copy/
+  hardlink 和跨文件系统 move 分配新 ID。尚未观察的 hardlink 在旧路径删除后无法与
+  rename 区分，可能继承旧 ID。客户端只能把它当不透明字符串，并应在路径变化后重新读取
+  当前 map snapshot。
 - 当前 direct resource registry 支持 list-changed capability，但 guide 和
   application-error registry 在一个 server 实例内都是静态内容；resource subscriptions
   未实现且显式声明为 false。未来若实现资产订阅，资产提交后对已订阅 URI 发送
