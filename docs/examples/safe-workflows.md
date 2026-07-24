@@ -8,13 +8,18 @@
 
 ## 先发现能力，再选择工具
 
-连接服务器后先调用 MCP `tools/list`，再调用 `tiled_get_capabilities`：
+连接服务器后先调用 MCP `tools/list` / `resources/list`，再调用
+`tiled_get_capabilities`：
 
 1. 以 `tools/list` 返回的工具和 input schema 作为本次连接的实际 wire contract。
-2. 读取 capability 中的 `editProfiles`、`serverVersion`、`cli` 探测结果和
-   `registeredTools`，不要从旧会话或文档推断当前能力。
+2. 读取 capability 中的 `editProfiles`、`serverVersion`、`cli` 探测结果、
+   `registeredTools` 和 `applicationErrorContract`，不要从旧会话或文档推断当前能力。
 3. 核心 profile 当前包含 18 个工具。`tiled_render_map` 只有在
    `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
+4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
+   时用 `resources/read` 读取；其内容与仓库的
+   [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
+   相同。
 
 能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 18 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
@@ -115,17 +120,29 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 事务，外部非协作写入者仍可能造成 race/ABA，生产工作流应避免与 Tiled 或其他写入器并发
 修改同一资产集。
 
-## 区分 SDK 输入错误与应用错误
+## 区分 SDK 输入错误、应用错误与诊断
 
-两类失败的 wire 形状不同：
+当前 v1 application-error registry 包含 95 个 code。code 的稳定 wire 位置是
+`structuredContent.result.error.code`；完整 allowlist 由
+[`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
+和 direct Resource `tiled://application-errors` 提供，capability 中的
+`applicationErrorContract` 公布其 revision、size、wire location、fallback 与兼容策略。
+`INTERNAL_ERROR` 是未预期 handler 失败的安全 fallback。
 
-- **SDK input error**：请求未通过 strict input schema，例如 revision 格式错误、必填字段
-  缺失、额外字段或取值越界。此时 handler 不会运行，SDK 返回 text-only 错误，不提供
-  `structuredContent`。
-- **Application error**：输入 schema 合法，但项目路径不存在、revision 冲突、change set
-  过期或业务约束不满足。此时返回 `isError: true`，并在 `structuredContent` 中提供统一的
-  结构化错误 envelope；compact text 只用于人类快速浏览。
+不同失败/诊断表面不能共用一个枚举：
 
-客户端应先按 `tools/list` schema 本地校验输入，再按上述两种通道分别处理失败。业务逻辑
-必须读取 `structuredContent.result`（或结构化 error），不能依赖最多 1024 bytes 的
-compact text summary。
+| 表面 | 客户端处理 | 属于 95-code application registry |
+|---|---|---|
+| MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
+| Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |
+| Capability probe issue | 读取 `cli.*.issues[].code`，只用于判断本机可选 CLI 能力 | 否 |
+| Startup fatal error | 按进程 stderr / exit 处理，不能伪造 tool envelope | 否 |
+| Validation diagnostic | 读取 `tiled_validate` 成功结果中的 diagnostics | 否 |
+| Checkpoint reconciliation diagnostic | 按启动对账报告/诊断处理 | 否 |
+| 原始 OS error code | 仅视为底层实现信息，不直接进入稳定 application code 控制流 | 否 |
+
+客户端应先按 `tools/list` schema 本地校验输入，再按表中通道处理失败。v1 中已存在的
+application code 标识符及含义稳定，但未来 server 可以新增 code；遇到未知 code 时先
+按通用应用错误安全处理，再刷新 `tools/list`、capabilities 和 resource discovery。
+控制流只能依赖已发现的 code：不要匹配最多 1024 bytes compact summary 中的人类
+`message`，也不要依赖 opaque `details` 的字段、措辞或形状。

@@ -18,6 +18,12 @@ import {
   ChangeSetRegistry,
   DEFAULT_MAX_PENDING_CELL_WRITES,
 } from "./changeSets.js";
+import {
+  TILED_MCP_APPLICATION_ERROR_REGISTRY,
+  TILED_MCP_CAPABILITY_ISSUE_CODES,
+  isTiledMcpApplicationErrorCode,
+  type TiledMcpApplicationErrorCode,
+} from "./errorRegistry.js";
 import { TiledMcpError, asTiledMcpError } from "./errors.js";
 import type { JsonValue } from "./formats/json.js";
 import {
@@ -132,6 +138,11 @@ import {
 } from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
+  APPLICATION_ERROR_RESOURCE_META,
+  APPLICATION_ERROR_RESOURCE_URI,
+  registerApplicationErrorResource,
+} from "./resources/applicationErrors.js";
+import {
   GUIDE_RESOURCE_URI,
   registerGuideResource,
 } from "./resources/guide.js";
@@ -169,6 +180,45 @@ const MAX_ERROR_DETAIL_CHARS = 8_000;
 const MAX_ERROR_TEXT_MESSAGE_CODE_POINTS = 512;
 const TEXT_CONTENT_CONTRACT_NAME = "tiled-mcp-summary" as const;
 const TEXT_CONTENT_CONTRACT_VERSION = 1 as const;
+declare const trustedToolResultBrand: unique symbol;
+type TrustedToolResult = CallToolResult & {
+  readonly [trustedToolResultBrand]: true;
+};
+const trustedToolResults =
+  new WeakSet<CallToolResult>();
+const INTERNAL_ERROR_MESSAGE =
+  "Internal TiledMCP error." as const;
+const INTERNAL_ERROR_DETAILS = Object.freeze({});
+const INTERNAL_ERROR_RESULT = Object.freeze({
+  ok: false,
+  error: Object.freeze({
+    code: "INTERNAL_ERROR",
+    message: INTERNAL_ERROR_MESSAGE,
+    details: INTERNAL_ERROR_DETAILS,
+  }),
+});
+const INTERNAL_ERROR_STRUCTURED_CONTENT =
+  Object.freeze({
+    result: INTERNAL_ERROR_RESULT,
+  });
+const INTERNAL_ERROR_STRUCTURED_CONTENT_BYTES =
+  Buffer.byteLength(
+    JSON.stringify(
+      INTERNAL_ERROR_STRUCTURED_CONTENT,
+    ),
+    "utf8",
+  );
+const INTERNAL_ERROR_TEXT = JSON.stringify({
+  kind: TEXT_CONTENT_CONTRACT_NAME,
+  version: TEXT_CONTENT_CONTRACT_VERSION,
+  ok: false,
+  error: {
+    code: "INTERNAL_ERROR",
+    message: INTERNAL_ERROR_MESSAGE,
+  },
+  structuredContentBytes:
+    INTERNAL_ERROR_STRUCTURED_CONTENT_BYTES,
+});
 const projectPathSchema = z
   .string()
   .min(1)
@@ -841,32 +891,36 @@ const mapEditSchema = z.discriminatedUnion("type", [
 ]);
 export const TILED_MCP_PROTOCOL_BASELINE =
   "2025-11-25" as const;
-export const TILED_MCP_CORE_TOOL_NAMES = [
-  "tiled_get_capabilities",
-  "tiled_list_files",
-  "tiled_list_checkpoints",
-  "tiled_preview_checkpoint_restore",
-  "tiled_get_map_summary",
-  "tiled_get_tileset",
-  "tiled_find_tiles",
-  "tiled_get_region",
-  "tiled_render_tileset_sheet",
-  "tiled_render_preview",
-  "tiled_list_objects",
-  "tiled_validate",
-  "tiled_analyze_usage",
-  "tiled_create_map",
-  "tiled_add_tileset_to_map",
-  "tiled_create_layer",
-  "tiled_preview_edits",
-  "tiled_apply_change_set",
-] as const;
-export const TILED_MCP_OPTIONAL_TOOL_NAMES = [
-  "tiled_render_map",
-] as const;
+export const TILED_MCP_CORE_TOOL_NAMES =
+  Object.freeze([
+    "tiled_get_capabilities",
+    "tiled_list_files",
+    "tiled_list_checkpoints",
+    "tiled_preview_checkpoint_restore",
+    "tiled_get_map_summary",
+    "tiled_get_tileset",
+    "tiled_find_tiles",
+    "tiled_get_region",
+    "tiled_render_tileset_sheet",
+    "tiled_render_preview",
+    "tiled_list_objects",
+    "tiled_validate",
+    "tiled_analyze_usage",
+    "tiled_create_map",
+    "tiled_add_tileset_to_map",
+    "tiled_create_layer",
+    "tiled_preview_edits",
+    "tiled_apply_change_set",
+  ] as const);
+export const TILED_MCP_OPTIONAL_TOOL_NAMES =
+  Object.freeze([
+    "tiled_render_map",
+  ] as const);
 const capabilityIssueOutputSchema = z
   .object({
-    code: z.string(),
+    code: z.enum(
+      TILED_MCP_CAPABILITY_ISSUE_CODES,
+    ),
     message: z.string(),
   })
   .strict();
@@ -896,6 +950,53 @@ const cliCapabilitiesOutputSchema = z
       .strict(),
   })
   .strict();
+
+function immutableCliCapabilitiesSnapshot(
+  value: TiledCliCapabilities,
+): TiledCliCapabilities {
+  const parsed =
+    cliCapabilitiesOutputSchema.parse(value);
+  const freezeIssues = (
+    issues: typeof parsed.tiled.issues,
+  ) =>
+    Object.freeze(
+      issues.map((issue) =>
+        Object.freeze({
+          code: issue.code,
+          message:
+            issue.code === "INTERNAL_ERROR"
+              ? "Tiled capability probe failed internally."
+              : issue.message,
+        }),
+      ),
+    );
+  return Object.freeze({
+    tiled: Object.freeze({
+      executable: parsed.tiled.executable,
+      available: parsed.tiled.available,
+      version: parsed.tiled.version,
+      mapExportFormats: Object.freeze([
+        ...parsed.tiled.mapExportFormats,
+      ]),
+      tilesetExportFormats: Object.freeze([
+        ...parsed.tiled.tilesetExportFormats,
+      ]),
+      issues: freezeIssues(
+        parsed.tiled.issues,
+      ),
+    }),
+    rasterizer: Object.freeze({
+      executable:
+        parsed.rasterizer.executable,
+      available: parsed.rasterizer.available,
+      version: parsed.rasterizer.version,
+      issues: freezeIssues(
+        parsed.rasterizer.issues,
+      ),
+    }),
+  }) as unknown as TiledCliCapabilities;
+}
+
 const registeredToolNamesOutputSchema = z.union([
   exactJsonValueOutputSchema(
     [...TILED_MCP_CORE_TOOL_NAMES] as unknown as JsonValue,
@@ -950,8 +1051,12 @@ export async function createTiledMcpServer(
 
 export function createTiledMcpServerFromCapabilitySnapshot(
   dependencies: TiledMcpServerDependencies,
-  cliCapabilities: TiledCliCapabilities,
+  cliCapabilitiesInput: TiledCliCapabilities,
 ): CreatedTiledMcpServer {
+  const cliCapabilities =
+    immutableCliCapabilitiesSnapshot(
+      cliCapabilitiesInput,
+    );
   const { resolver, store, maps, cli } = dependencies;
   const changeSets = new ChangeSetRegistry();
   const renderMutex = new KeyedMutex();
@@ -962,6 +1067,7 @@ export function createTiledMcpServerFromCapabilitySnapshot(
   const registeredTools: string[] = [];
 
   registerGuideResource(server);
+  registerApplicationErrorResource(server);
 
   const advertisedToolNames = [
     ...TILED_MCP_CORE_TOOL_NAMES,
@@ -974,7 +1080,10 @@ export function createTiledMcpServerFromCapabilitySnapshot(
           TILED_MCP_PROTOCOL_BASELINE,
         serverVersion: SERVER_VERSION,
         resourceCapabilities: {
-          direct: [GUIDE_RESOURCE_URI],
+          direct: [
+            GUIDE_RESOURCE_URI,
+            APPLICATION_ERROR_RESOURCE_URI,
+          ],
           templates: [],
           subscriptions: false,
           listChanged: true,
@@ -1389,6 +1498,32 @@ export function createTiledMcpServerFromCapabilitySnapshot(
           fullResult: "structuredContent.result",
           structuredByteMeasure: "utf8-json-stringify",
           sdkInputErrors: "sdk-owned-text-only",
+        },
+        applicationErrorContract: {
+          name:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.name,
+          registryVersion:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.registryVersion,
+          resourceUri:
+            APPLICATION_ERROR_RESOURCE_URI,
+          revision:
+            APPLICATION_ERROR_RESOURCE_META.revision,
+          size:
+            APPLICATION_ERROR_RESOURCE_META.size,
+          wireLocation:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.wireLocation,
+          fallbackCode:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.fallbackCode,
+          codeSetPolicy:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.compatibility.additions,
+          clientUnknownCodePolicy:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.compatibility.clientUnknownCodePolicy,
+          messages:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.messages,
+          details:
+            TILED_MCP_APPLICATION_ERROR_REGISTRY.details,
+          sdkInputErrors:
+            "excluded-sdk-owned-text-only",
         },
         cli: cliCapabilities,
         registeredTools: advertisedToolNames,
@@ -2186,6 +2321,39 @@ export function createTiledMcpServerFromCapabilitySnapshot(
   return { server, cliCapabilities, registeredTools };
 }
 
+function trustToolResult(
+  result: CallToolResult,
+): TrustedToolResult {
+  trustedToolResults.add(result);
+  return result as TrustedToolResult;
+}
+
+function isTrustedToolResult(
+  value: unknown,
+): value is TrustedToolResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    trustedToolResults.has(
+      value as CallToolResult,
+    )
+  );
+}
+
+function internalToolError(): TrustedToolResult {
+  return trustToolResult({
+    isError: true,
+    content: [
+      {
+        type: "text",
+        text: INTERNAL_ERROR_TEXT,
+      },
+    ],
+    structuredContent:
+      INTERNAL_ERROR_STRUCTURED_CONTENT,
+  });
+}
+
 function register<
   InputSchema extends z.ZodType,
   OutputSchema extends z.ZodType,
@@ -2200,14 +2368,67 @@ function register<
     outputSchema: OutputSchema;
     annotations: ToolAnnotations;
   },
-  callback: (input: z.output<InputSchema>) => Promise<CallToolResult>,
+  callback: (
+    input: z.output<InputSchema>,
+  ) => Promise<TrustedToolResult>,
 ): void {
-  const sdkCallback = callback as unknown as ToolCallback<InputSchema>;
+  const sdkCallback = (async (
+    input: z.output<InputSchema>,
+  ) => {
+    try {
+      const result = await callback(input);
+      if (!isTrustedToolResult(result)) {
+        return internalToolError();
+      }
+      if (
+        !hasConsistentToolErrorSignal(
+          result,
+        )
+      ) {
+        return internalToolError();
+      }
+      const validation =
+        config.outputSchema.safeParse(
+          result.structuredContent,
+        );
+      return validation.success
+        ? result
+        : internalToolError();
+    } catch {
+      return internalToolError();
+    }
+  }) as unknown as ToolCallback<InputSchema>;
   server.registerTool(name, config, sdkCallback);
   registeredTools.push(name);
 }
 
-async function executeTool(operation: () => Promise<unknown>): Promise<CallToolResult> {
+function hasConsistentToolErrorSignal(
+  result: CallToolResult,
+): boolean {
+  const structuredContent =
+    result.structuredContent;
+  const payload =
+    structuredContent !== undefined &&
+    structuredContent !== null &&
+    typeof structuredContent === "object" &&
+    !Array.isArray(structuredContent)
+      ? structuredContent.result
+      : undefined;
+  const hasApplicationErrorEnvelope =
+    payload !== null &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    "ok" in payload &&
+    payload.ok === false;
+  return (
+    (result.isError === true) ===
+    hasApplicationErrorEnvelope
+  );
+}
+
+async function executeTool(
+  operation: () => Promise<unknown>,
+): Promise<TrustedToolResult> {
   try {
     return toolResult(await operation());
   } catch (error) {
@@ -2221,16 +2442,19 @@ function toolResult(
     mimeType: "image/png";
     bytes: number;
   },
-): CallToolResult {
-  const structuredContent = { result };
+): TrustedToolResult {
+  const {
+    structuredContent,
+    structuredContentBytes,
+  } = snapshotStructuredContent(result);
   const text = serializeTextSummary({
     kind: TEXT_CONTENT_CONTRACT_NAME,
     version: TEXT_CONTENT_CONTRACT_VERSION,
     ok: true,
-    structuredContentBytes: structuredContentJsonBytes(structuredContent),
+    structuredContentBytes,
     ...(image === undefined ? {} : { image }),
   });
-  return {
+  return trustToolResult({
     content: [
       {
         type: "text",
@@ -2238,10 +2462,45 @@ function toolResult(
       },
     ],
     structuredContent,
+  });
+}
+
+function snapshotStructuredContent(
+  result: unknown,
+): {
+  structuredContent: Record<
+    string,
+    unknown
+  >;
+  structuredContentBytes: number;
+} {
+  const serialized = JSON.stringify({ result });
+  const parsed: unknown =
+    JSON.parse(serialized);
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error(
+      "Tool structured content did not serialize to an object.",
+    );
+  }
+  return {
+    structuredContent:
+      parsed as Record<string, unknown>,
+    structuredContentBytes:
+      Buffer.byteLength(
+        serialized,
+        "utf8",
+      ),
   };
 }
 
-function imageToolResult(result: unknown, png: Buffer): CallToolResult {
+function imageToolResult(
+  result: unknown,
+  png: Buffer,
+): TrustedToolResult {
   if (png.byteLength > MAX_INLINE_IMAGE_BYTES) {
     return toolError(
       new TiledMcpError(
@@ -2255,7 +2514,7 @@ function imageToolResult(result: unknown, png: Buffer): CallToolResult {
     mimeType: "image/png",
     bytes: png.byteLength,
   });
-  return {
+  return trustToolResult({
     ...base,
     content: [
       ...base.content,
@@ -2265,7 +2524,7 @@ function imageToolResult(result: unknown, png: Buffer): CallToolResult {
         mimeType: "image/png",
       },
     ],
-  };
+  });
 }
 
 function inspectRasterPngResult(
@@ -2374,48 +2633,65 @@ async function removeRasterOutput(
   }
 }
 
-function toolError(error: unknown): CallToolResult {
-  const normalized = asTiledMcpError(error);
-  const budget = { remaining: MAX_ERROR_DETAIL_CHARS };
-  const code = normalized.code.length === 0
-    ? "INTERNAL_ERROR"
-    : normalized.code.slice(0, 128);
-  const message = truncateOutputString(
-    normalized.message,
-    MAX_ERROR_MESSAGE_CHARS,
-  );
-  const result = {
-    ok: false,
-    error: {
-      code,
-      message,
-      details: sanitizeErrorValue(normalized.details, budget, 0),
-    },
-  };
-  const structuredContent = { result };
-  return {
-    isError: true,
-    content: [
-      {
-        type: "text",
-        text: applicationErrorTextSummary(
-          code,
-          message,
-          structuredContentJsonBytes(structuredContent),
+function toolError(
+  error: unknown,
+): TrustedToolResult {
+  try {
+    const normalized = asTiledMcpError(error);
+    const isPublic =
+      isTiledMcpApplicationErrorCode(
+        normalized.code,
+      );
+    const code: TiledMcpApplicationErrorCode =
+      isPublic
+        ? normalized.code
+        : "INTERNAL_ERROR";
+    const disclose =
+      isPublic && code !== "INTERNAL_ERROR";
+    if (!disclose) {
+      return internalToolError();
+    }
+    const message = truncateOutputString(
+      normalized.message,
+      MAX_ERROR_MESSAGE_CHARS,
+    );
+    const result = {
+      ok: false,
+      error: {
+        code,
+        message,
+        details: sanitizeErrorDetails(
+          normalized.details,
         ),
       },
-    ],
-    structuredContent,
-  };
+    };
+    const structuredContent = { result };
+    return trustToolResult({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: applicationErrorTextSummary(
+            code,
+            message,
+            structuredContentJsonBytes(
+              structuredContent,
+            ),
+          ),
+        },
+      ],
+      structuredContent,
+    });
+  } catch {
+    return internalToolError();
+  }
 }
 
 function applicationErrorTextSummary(
-  code: string,
+  code: TiledMcpApplicationErrorCode,
   message: string,
   structuredContentBytes: number,
 ): string {
-  const displayCode =
-    truncateOutputString(normalizeTextLine(code), 128) || "INTERNAL_ERROR";
   const normalizedMessage = normalizeTextLine(message) || "Application error.";
   const codePoints = Array.from(normalizedMessage);
   const fullCandidate = serializeTextSummary({
@@ -2423,7 +2699,7 @@ function applicationErrorTextSummary(
     version: TEXT_CONTENT_CONTRACT_VERSION,
     ok: false,
     error: {
-      code: displayCode,
+      code,
       message: normalizedMessage,
     },
     structuredContentBytes,
@@ -2453,7 +2729,7 @@ function applicationErrorTextSummary(
       version: TEXT_CONTENT_CONTRACT_VERSION,
       ok: false,
       error: {
-        code: displayCode,
+        code,
         message: preview,
         messageTruncated: true,
       },
@@ -2561,21 +2837,64 @@ function sanitizeErrorValue(
       }
       const key = truncateOutputString(rawKey, 128);
       budget.remaining -= key.length;
-      output[key] = sanitizeErrorValue(item, budget, depth + 1);
+      Object.defineProperty(
+        output,
+        key,
+        {
+          configurable: true,
+          enumerable: true,
+          value: sanitizeErrorValue(
+            item,
+            budget,
+            depth + 1,
+          ),
+          writable: true,
+        },
+      );
     }
     const totalKeys = Object.keys(value).length;
     if (totalKeys > entries.length && budget.remaining > 0) {
-      output.__truncated__ = `${totalKeys - entries.length} keys omitted`;
+      Object.defineProperty(
+        output,
+        "__truncated__",
+        {
+          configurable: true,
+          enumerable: true,
+          value:
+            `${totalKeys - entries.length} keys omitted`,
+          writable: true,
+        },
+      );
     }
     return output;
   }
-  const fallback = String(value);
-  const output = truncateOutputString(
-    fallback,
-    Math.min(1_024, budget.remaining),
+  const unsupported = "[unsupported]";
+  budget.remaining -= unsupported.length;
+  return unsupported;
+}
+
+function sanitizeErrorDetails(
+  value: unknown,
+): Record<string, unknown> {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return {};
+  }
+  const sanitized = sanitizeErrorValue(
+    value,
+    { remaining: MAX_ERROR_DETAIL_CHARS },
+    0,
   );
-  budget.remaining -= output.length;
-  return output;
+  return (
+    sanitized !== null &&
+    typeof sanitized === "object" &&
+    !Array.isArray(sanitized)
+  )
+    ? sanitized as Record<string, unknown>
+    : {};
 }
 
 function hasAtMostCodePoints(

@@ -1,9 +1,10 @@
 # TiledMCP 功能规格（冻结前草案）
 
-> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。当前已注册工具已有代码定义的完整、封闭 `inputSchema` / `outputSchema`，并已从真实 MCP discovery 生成机器契约和参考文档；手写的每工具示例也由这些公开 schema 校验。其余冻结门槛尚未全部完成，因此本文和接口仍未进入 Frozen。
+> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。当前已注册工具已有代码定义的完整、封闭 `inputSchema` / `outputSchema`，并已从真实 MCP discovery 生成 discovery 与 application-error 两份机器契约和参考文档；手写的每工具示例也由这些公开 schema 校验。其余冻结门槛尚未全部完成，因此本文和接口仍未进入 Frozen。
 >
 > 设计依据见 [01-tiled-research.md](01-tiled-research.md)；精确 wire schema 见
-> [机器契约](../contracts/mcp-contract.v1.json) 和
+> [discovery 机器契约](../contracts/mcp-contract.v1.json)、
+> [application-error 机器契约](../contracts/application-errors.v1.json) 和
 > [生成式参考](generated/mcp-reference.md)，安全组合方式见
 > [调用工作流](examples/safe-workflows.md)。
 
@@ -13,7 +14,7 @@
 - **SDK**：使用 `@modelcontextprotocol/sdk` **v1.x**；锁定具体版本和 lockfile，在 v2 稳定且完成兼容测试前不迁移。
 - **首个 transport**：`stdio`。服务器不向 stdout 输出日志；日志只写 stderr。HTTP/远程 transport 不属于 M1。
 - **能力声明**：仅声明当前实现且通过契约测试的 Tools、Resources、Prompts；未实现的 roadmap 项不得注册空壳。
-- **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义；生成器通过真实 MCP `tools/list` / resource discovery 固化 wire JSON Schema、双 profile 清单和参考文档，测试对已提交 artifact 做 byte-level drift check。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
+- **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义；生成器通过真实 MCP `tools/list` / resource discovery 固化 wire JSON Schema、双 profile discovery contract、application-error registry 和参考文档，测试对已提交 artifact 做 byte-level drift check。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
 - **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
 
 ### 0.1 当前实现切片（2026-07-25）
@@ -23,9 +24,10 @@
 详情、显式 tile metadata 精确检索、矩形 region、
 带 local ID 的分页 tileset sheet、native tile-layer region preview、对象列表、只读
 校验、增量创建地图、空图层创建预览、map edits 预览、外部 tileset 挂载预览与 change
-set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG 工具。另注册一个不依赖项目内容
-的 direct Resource：`tiled://guide`，通过 `resources/list` 发现并由 `resources/read`
-返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
+set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG 工具。另注册两个不依赖
+项目内容的 direct Resources：Markdown playbook `tiled://guide` 和 JSON registry
+`tiled://application-errors`；二者通过 `resources/list` 发现并由 `resources/read`
+返回带内容 revision/size 的固定内容。当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
 `duplicateLayer`、`stampPattern`、`floodFill`、`updateMap` 和必须独占 change set 的
@@ -47,11 +49,12 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。双 profile 的完整 discovery artifact、生成式参考和每工具调用示例现已落地并
-纳入 drift gate；schema 无法表达的 revision/批准语义由手写安全工作流维护。外部 tileset
+aliases。双 profile 的完整 discovery artifact、包含当前 95 个 v1 application code 的
+稳定错误 registry、生成式参考和每工具调用示例现已落地并纳入 drift gate；schema 无法
+表达的 revision/批准语义由手写安全工作流维护。外部 tileset
 `assetId` 仍是由项目路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；
-持久化 rename-stable registry 是接口冻结前的待办。显式稳定错误码 registry、
-`tiled_create_map` 的 no-replace 例外定案和固定 Tiled 1.12.2 集成门槛也尚未全部固化。
+持久化 rename-stable registry 是接口冻结前的待办。`tiled_create_map` 的 no-replace
+例外定案和固定 Tiled 1.12.2 集成门槛也尚未全部固化。
 因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
@@ -206,12 +209,31 @@ type ApplyResult = CommitResult & {
    `MutationResult`。
 3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
    并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
-   `structuredContent`。`Diagnostic[]` 只属于 `tiled_validate` 的成功结果，不是通用错误
-   envelope。
-4. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
+   `structuredContent`；code 的精确 wire 位置是
+   `structuredContent.result.error.code`。当前 v1 application registry 有 95 个 code，
+   机器 artifact 为
+   [`contracts/application-errors.v1.json`](../contracts/application-errors.v1.json)，
+   相同 JSON 由 `tiled://application-errors` 提供；
+   `tiled_get_capabilities.applicationErrorContract` 公布其 URI、revision、size、wire
+   location、fallback 和兼容策略。`INTERNAL_ERROR` 是未预期 handler 失败的 fallback。
+   tool callback 返回值必须通过 server 私有的 trusted-result 边界；交给 SDK 前必须先
+   核对 `isError:true` 与 `result.ok:false` error envelope 双向一致，再对成功/错误重跑
+   该工具 output schema。错误清洗、序列化或该边界校验自身失败时必须直接返回固定、无
+   原始 message/details 的 `INTERNAL_ERROR` envelope，不能退化为可能回显底层异常的 SDK
+   text-only error。
+4. v1 中既有 application code 标识符及其含义稳定；未来 server 版本可以新增 code。客户端
+   遇到未知 code 时必须先按通用应用错误安全处理，再刷新 `tools/list`、capabilities 和
+   resource discovery，不能把“本地枚举不认识”解释为成功。控制流只能依赖已发现的
+   `error.code`，不得匹配面向人的 `message`，也不得假设 opaque `details` 在 v1 有稳定
+   字段。
+5. application registry 只覆盖上述 tool application envelope，不包括 MCP SDK input
+   error、`cli.*.issues[].code` capability-probe 诊断、startup fatal error、
+   `tiled_validate` 的 `Diagnostic[]`、checkpoint reconciliation diagnostics 或原始 OS
+   error code。这些表面各自遵循独立契约，不能与 95-code allowlist 混用。
+6. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
-5. 进入 handler 后的成功与应用错误都返回 `tiled-mcp-summary` v1 text content：使用
+7. 进入 handler 后的成功与应用错误都返回 `tiled-mcp-summary` v1 text content：使用
    compact one-line JSON 编码，UTF-8 最多 1024 bytes，并给出完整
    `structuredContent` 经 `JSON.stringify` 后的 UTF-8 byte count。success summary 只含
    `kind`、`version`、`ok`、`structuredContentBytes`；图片工具另含
@@ -223,11 +245,11 @@ type ApplyResult = CommitResult & {
    `tiled_get_capabilities.textContentContract` 公布 summary 名称、版本、编码、最大 bytes、
    完整结果位置、structured byte 计算方式及 SDK input-error 策略。图片工具另外返回 MCP
    `image` content，二进制不进入 `structuredContent`。
-6. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带
+8. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带
    `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默覆盖。
-7. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision
+9. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision
    和 TTL；它们不是“当前选区/上一步操作”之类的隐式会话状态。
-8. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入
+10. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入
    工具 schema。
 
 ### 1.1 用户授权、预览与提交
@@ -1111,18 +1133,20 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
 
 Resources 是可发现的只读上下文。固定 URI 使用 direct resource；按资产展开的 URI 使用 Resource Template。任何 URI 都不得直接嵌入未转义文件路径，必须先通过 `tiled_list_files` 或项目索引取得不透明 `assetId`。
 
-当前仅注册下表中的 `tiled://guide`；其他 direct resources 与全部 templates 仍是 roadmap，
-不得从本表推断为可读。运行时以 `resources/list` 和 `resources/templates/list` 为准。
+当前仅注册下表中的 `tiled://guide` 与 `tiled://application-errors`；其他 direct
+resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。运行时以
+`resources/list` 和 `resources/templates/list` 为准。
 
 ### 4.1 Direct resources
 
 | URI | `mimeType` | 内容 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | **已实现。** 使用 playbook：能力发现 → 摘要 → tileset sheet/map preview → 预览 edits → 客户端批准 → 提交 → 校验与渲染自查 |
-| `tiled://project/index` | `application/json` | 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
-| `tiled://schema/tool-contracts` | `application/schema+json` | 从代码生成的已注册工具 input/output schemas |
-| `tiled://schema/tmj` | `application/schema+json` | 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
-| `tiled://schema/tsj` | `application/schema+json` | 当前实现支持的 TSJ 子集 schema |
+| `tiled://application-errors` | `application/json` | **已实现。** 当前 95 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
+| `tiled://project/index` | `application/json` | **Roadmap，未实现。** 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
+| `tiled://schema/tool-contracts` | `application/schema+json` | **Roadmap，未实现。** 从代码生成的已注册工具 input/output schemas |
+| `tiled://schema/tmj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
+| `tiled://schema/tsj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TSJ 子集 schema |
 
 ### 4.2 Resource Templates
 
@@ -1139,9 +1163,17 @@ Resources 是可发现的只读上下文。固定 URI 使用 direct resource；�
 
 - `resources/list` 和 `resources/templates/list` 分别公布 direct resources 与 templates；列表支持 MCP cursor，顺序稳定。只有实现读取逻辑的条目才公布。
 - `resources/read` 的每个 content item 都包含 `uri`、准确 `mimeType`，并且 `text`/`blob` 二选一。`_meta` 至少包含内容 `revision` 与原始 `size` bytes；项目资产还包含 `assetId`，文件支持可靠时间戳时才包含 ISO 8601 `lastModified`，嵌入式/生成内容不得伪造。图片还包含 width/height。
-- JSON/text direct read 默认上限 `2 MiB`，当前嵌入式 guide 使用更严格的 `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。超限返回稳定错误 `RESOURCE_TOO_LARGE`，并建议读取 summary、region 或分页资源；不得截断后伪装成完整内容。
+- JSON/text direct read 的目标默认上限是 `2 MiB`，当前嵌入式 guide 使用更严格的
+  `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。`RESOURCE_TOO_LARGE` 是配合未来
+  asset/template Resource reads 规划的 resource-layer code，**尚未实现，也不属于当前
+  95-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
+  截断后伪装成完整内容。
 - `assetId` 项目内稳定、跨服务器重启可复用，重命名资产时由服务器保持映射；客户端只能把它当不透明字符串。
-- 当前 direct resource registry 支持 list-changed capability，但 guide 在一个 server 实例内是静态内容；resource subscriptions 未实现且显式声明为 false。未来若实现资产订阅，资产提交后对已订阅 URI 发送 `notifications/resources/updated`；新增/删除资产发送 list changed。未实现的通知不得声明对应 capability。
+- 当前 direct resource registry 支持 list-changed capability，但 guide 和
+  application-error registry 在一个 server 实例内都是静态内容；resource subscriptions
+  未实现且显式声明为 false。未来若实现资产订阅，资产提交后对已订阅 URI 发送
+  `notifications/resources/updated`；新增/删除资产发送 list changed。未实现的通知不得
+  声明对应 capability。
 
 ## 5. Prompts
 

@@ -25,6 +25,19 @@ import { parseJsonDocument } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
+  TILED_MCP_APPLICATION_ERROR_REGISTRY,
+  TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+  TILED_MCP_CAPABILITY_ISSUE_CODES,
+} from "../src/errorRegistry.js";
+import {
+  APPLICATION_ERROR_RESOURCE_META,
+  APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+  APPLICATION_ERROR_RESOURCE_REVISION,
+  APPLICATION_ERROR_RESOURCE_SIZE,
+  APPLICATION_ERROR_RESOURCE_URI,
+} from "../src/resources/applicationErrors.js";
+import { GUIDE_RESOURCE_MIME_TYPE } from "../src/resources/guide.js";
+import {
   TILED_MCP_CORE_TOOL_NAMES,
   TILED_MCP_OPTIONAL_TOOL_NAMES,
   TILED_MCP_PROTOCOL_BASELINE,
@@ -40,6 +53,8 @@ const FIXTURE_ROOT = resolve(REPOSITORY_ROOT, "fixtures/mvp");
 const EXAMPLES_RELATIVE_PATH =
   "examples/mcp-calls.v1.json";
 
+export const APPLICATION_ERRORS_RELATIVE_PATH =
+  "contracts/application-errors.v1.json";
 export const MCP_CONTRACT_RELATIVE_PATH =
   "contracts/mcp-contract.v1.json";
 export const MCP_REFERENCE_RELATIVE_PATH =
@@ -71,11 +86,11 @@ interface CallExampleDocument {
 
 interface ResourceContentContract {
   uri: string;
-  mimeType: string | null;
+  mimeType: string;
   contentKind: "text";
   byteLength: number;
   sha256: string;
-  _meta: Record<string, unknown> | null;
+  _meta: Record<string, unknown>;
 }
 
 interface ProfileSnapshot {
@@ -91,6 +106,7 @@ interface ProfileSnapshot {
 }
 
 export interface GeneratedMcpContractArtifacts {
+  applicationErrorsJson: string;
   contractJson: string;
   referenceMarkdown: string;
 }
@@ -144,6 +160,16 @@ export async function generateMcpContractArtifacts(): Promise<GeneratedMcpContra
     serverInfo: core.serverInfo,
     serverCapabilities: core.serverCapabilities,
     serverInstructions: core.serverInstructions,
+    applicationErrorRegistry: {
+      path: APPLICATION_ERRORS_RELATIVE_PATH,
+      resourceUri:
+        APPLICATION_ERROR_RESOURCE_URI,
+      registryVersion:
+        TILED_MCP_APPLICATION_ERROR_REGISTRY.registryVersion,
+      revision:
+        APPLICATION_ERROR_RESOURCE_REVISION,
+      size: APPLICATION_ERROR_RESOURCE_SIZE,
+    },
     profiles: {
       core: profileDescriptor(core),
       "with-tmxrasterizer":
@@ -162,14 +188,20 @@ export async function generateMcpContractArtifacts(): Promise<GeneratedMcpContra
     },
   };
   const contractJson = stableJson(contract);
+  const applicationErrorsJson =
+    TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON;
   const referenceMarkdown = renderReference(
     contract,
     examples,
   );
   assertNoEnvironmentLeak(contractJson);
+  assertNoEnvironmentLeak(
+    applicationErrorsJson,
+  );
   assertNoEnvironmentLeak(referenceMarkdown);
 
   return {
+    applicationErrorsJson,
     contractJson,
     referenceMarkdown,
   };
@@ -212,12 +244,16 @@ async function collectProfile(
       resourcesResponse,
       templatesResponse,
       guideResponse,
+      applicationErrorsResponse,
       capabilitiesResponse,
     ] = await Promise.all([
       client.listTools(),
       client.listResources(),
       client.listResourceTemplates(),
       client.readResource({ uri: "tiled://guide" }),
+      client.readResource({
+        uri: APPLICATION_ERROR_RESOURCE_URI,
+      }),
       client.callTool({
         name: "tiled_get_capabilities",
         arguments: {},
@@ -247,12 +283,39 @@ async function collectProfile(
       );
     }
 
+    const capabilitiesResult =
+      extractCapabilitiesResult(
+        capabilitiesResponse,
+        id,
+      );
     const registeredTools =
-      extractRegisteredTools(capabilitiesResponse);
+      extractRegisteredTools(
+        capabilitiesResult,
+        id,
+      );
     assertStringArraysEqual(
       registeredTools,
       created.registeredTools,
       `${id} capabilities registeredTools`,
+    );
+    const guideContent =
+      describeTextResourceContent(
+        guideResponse,
+        "tiled://guide",
+        GUIDE_RESOURCE_MIME_TYPE,
+      );
+    const applicationErrorContent =
+      describeTextResourceContent(
+        applicationErrorsResponse,
+        APPLICATION_ERROR_RESOURCE_URI,
+        APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+        TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+      );
+    assertApplicationErrorDiscovery(
+      id,
+      resourcesResponse.resources,
+      applicationErrorContent,
+      capabilitiesResult,
     );
 
     return wireClone({
@@ -266,8 +329,11 @@ async function collectProfile(
       resourceTemplates:
         templatesResponse.resourceTemplates,
       resourceContents: [
-        describeGuideContent(guideResponse),
-      ],
+        guideContent,
+        applicationErrorContent,
+      ].sort((left, right) =>
+        compareText(left.uri, right.uri),
+      ),
       registeredTools,
     });
   } finally {
@@ -297,14 +363,17 @@ function fixedCapabilities(
   };
 }
 
-function describeGuideContent(
+function describeTextResourceContent(
   response: Awaited<
     ReturnType<Client["readResource"]>
   >,
+  expectedUri: string,
+  expectedMimeType: string,
+  expectedText?: string,
 ): ResourceContentContract {
   if (response.contents.length !== 1) {
     throw new Error(
-      `Expected one tiled://guide content block; received ${response.contents.length}.`,
+      `Expected one ${expectedUri} content block; received ${response.contents.length}.`,
     );
   }
   const content = response.contents[0];
@@ -314,67 +383,187 @@ function describeGuideContent(
     typeof content.text !== "string"
   ) {
     throw new Error(
-      "Expected tiled://guide to return one text content block.",
+      `Expected ${expectedUri} to return one text content block.`,
+    );
+  }
+  if (
+    content.uri !== expectedUri ||
+    content.mimeType !== expectedMimeType ||
+    (expectedText !== undefined &&
+      content.text !== expectedText)
+  ) {
+    throw new Error(
+      `${expectedUri} returned unexpected content.`,
+    );
+  }
+  if (!isRecord(content._meta)) {
+    throw new Error(
+      `${expectedUri} must publish integrity metadata with its content.`,
     );
   }
   const source = Buffer.from(content.text, "utf8");
   const descriptor: ResourceContentContract = {
     uri: content.uri,
-    mimeType: content.mimeType ?? null,
+    mimeType: content.mimeType,
     contentKind: "text",
     byteLength: source.byteLength,
     sha256: `sha256:${createHash("sha256")
       .update(source)
       .digest("hex")}`,
-    _meta:
-      content._meta === undefined
-        ? null
-        : wireClone(content._meta),
+    _meta: wireClone(content._meta),
   };
   if (
-    descriptor._meta !== null &&
     (descriptor._meta.revision !==
       descriptor.sha256 ||
       descriptor._meta.size !==
         descriptor.byteLength)
   ) {
     throw new Error(
-      "tiled://guide metadata does not match its UTF-8 content.",
+      `${expectedUri} metadata does not match its UTF-8 content.`,
     );
   }
   return descriptor;
 }
 
-function extractRegisteredTools(
+function extractCapabilitiesResult(
   response: Awaited<
     ReturnType<Client["callTool"]>
   >,
-): string[] {
+  profileId: ProfileId,
+): Record<string, unknown> {
   if (response.isError === true) {
     throw new Error(
-      "tiled_get_capabilities failed while generating the MCP contract.",
+      `tiled_get_capabilities failed for profile ${profileId} while generating the MCP contract.`,
     );
   }
   const structuredContent =
     response.structuredContent;
   if (!isRecord(structuredContent)) {
     throw new Error(
-      "tiled_get_capabilities omitted structuredContent.",
+      `tiled_get_capabilities omitted structuredContent for profile ${profileId}.`,
     );
   }
   const result = structuredContent.result;
+  if (!isRecord(result)) {
+    throw new Error(
+      `tiled_get_capabilities returned an invalid result for profile ${profileId}.`,
+    );
+  }
+  return result;
+}
+
+function extractRegisteredTools(
+  result: Record<string, unknown>,
+  profileId: ProfileId,
+): string[] {
   if (
-    !isRecord(result) ||
     !Array.isArray(result.registeredTools) ||
     !result.registeredTools.every(
       (value) => typeof value === "string",
     )
   ) {
     throw new Error(
-      "tiled_get_capabilities returned an invalid registeredTools value.",
+      `tiled_get_capabilities returned an invalid registeredTools value for profile ${profileId}.`,
     );
   }
   return [...result.registeredTools];
+}
+
+function assertApplicationErrorDiscovery(
+  profileId: ProfileId,
+  resources: readonly ListedResource[],
+  content: ResourceContentContract,
+  capabilitiesResult: Record<string, unknown>,
+): void {
+  const matchingResources = resources.filter(
+    ({ uri }) =>
+      uri === APPLICATION_ERROR_RESOURCE_URI,
+  );
+  if (matchingResources.length !== 1) {
+    throw new Error(
+      `Profile ${profileId} must list exactly one ${APPLICATION_ERROR_RESOURCE_URI} resource.`,
+    );
+  }
+  const listedResource =
+    matchingResources[0];
+  if (listedResource === undefined) {
+    throw new Error(
+      `Profile ${profileId} did not list ${APPLICATION_ERROR_RESOURCE_URI}.`,
+    );
+  }
+  if (
+    listedResource.mimeType !==
+      APPLICATION_ERROR_RESOURCE_MIME_TYPE ||
+    listedResource.size !==
+      APPLICATION_ERROR_RESOURCE_SIZE ||
+    !isRecord(listedResource._meta)
+  ) {
+    throw new Error(
+      `Profile ${profileId} listed ${APPLICATION_ERROR_RESOURCE_URI} with invalid MIME, size, or metadata.`,
+    );
+  }
+  assertStableEqual(
+    listedResource._meta,
+    APPLICATION_ERROR_RESOURCE_META,
+    `${profileId} listed application-error resource metadata`,
+  );
+
+  assertStableEqual(
+    content,
+    {
+      uri: APPLICATION_ERROR_RESOURCE_URI,
+      mimeType:
+        APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+      contentKind: "text",
+      byteLength:
+        APPLICATION_ERROR_RESOURCE_SIZE,
+      sha256:
+        APPLICATION_ERROR_RESOURCE_REVISION,
+      _meta: APPLICATION_ERROR_RESOURCE_META,
+    } satisfies ResourceContentContract,
+    `${profileId} application-error resource content contract`,
+  );
+
+  const applicationErrorContract = requireRecord(
+    capabilitiesResult.applicationErrorContract,
+    `${profileId} capabilities applicationErrorContract`,
+  );
+  assertStableEqual(
+    applicationErrorContract,
+    expectedApplicationErrorContract(),
+    `${profileId} capabilities application-error contract`,
+  );
+}
+
+function expectedApplicationErrorContract(): Record<
+  string,
+  string | number | boolean | null
+> {
+  return {
+    name:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.name,
+    registryVersion:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.registryVersion,
+    resourceUri:
+      APPLICATION_ERROR_RESOURCE_URI,
+    revision:
+      APPLICATION_ERROR_RESOURCE_REVISION,
+    size: APPLICATION_ERROR_RESOURCE_SIZE,
+    wireLocation:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.wireLocation,
+    fallbackCode:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.fallbackCode,
+    codeSetPolicy:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.compatibility.additions,
+    clientUnknownCodePolicy:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.compatibility.clientUnknownCodePolicy,
+    messages:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.messages,
+    details:
+      TILED_MCP_APPLICATION_ERROR_REGISTRY.details,
+    sdkInputErrors:
+      "excluded-sdk-owned-text-only",
+  };
 }
 
 function assertProfileInvariants(
@@ -446,14 +635,27 @@ function assertProfileInvariants(
     "resource content contracts",
   );
 
-  if (
-    core.resources.length !== 1 ||
-    core.resources[0]?.uri !==
-      "tiled://guide" ||
-    core.resourceTemplates.length !== 0
-  ) {
+  assertStringArraysEqual(
+    core.resources.map(({ uri }) => uri),
+    [
+      "tiled://guide",
+      APPLICATION_ERROR_RESOURCE_URI,
+    ],
+    "direct resource order",
+  );
+  assertStringArraysEqual(
+    core.resourceContents.map(
+      ({ uri }) => uri,
+    ),
+    [
+      APPLICATION_ERROR_RESOURCE_URI,
+      "tiled://guide",
+    ],
+    "resource content contract order",
+  );
+  if (core.resourceTemplates.length !== 0) {
     throw new Error(
-      "Expected one tiled://guide resource and no resource templates.",
+      "Expected no resource templates.",
     );
   }
   if ("prompts" in core.serverCapabilities) {
@@ -510,6 +712,258 @@ function assertToolDefinition(tool: ListedTool): void {
     throw new Error(
       `${tool.name} must expose a title and all four boolean annotation hints.`,
     );
+  }
+  assertApplicationErrorCodeSchema(tool);
+  if (tool.name === "tiled_get_capabilities") {
+    assertCapabilityIssueCodeSchemas(tool);
+  }
+}
+
+function assertApplicationErrorCodeSchema(
+  tool: ListedTool,
+): void {
+  const output = requireRecord(
+    tool.outputSchema,
+    `${tool.name} output schema`,
+  );
+  const outputProperties = requireRecord(
+    output.properties,
+    `${tool.name} output properties`,
+  );
+  const resultSchema = requireRecord(
+    outputProperties.result,
+    `${tool.name} result schema`,
+  );
+  if (!Array.isArray(resultSchema.anyOf)) {
+    throw new Error(
+      `${tool.name} result schema must expose success and application-error branches.`,
+    );
+  }
+  const errorBranches =
+    resultSchema.anyOf.filter((branch) => {
+      if (!isRecord(branch)) {
+        return false;
+      }
+      const properties = branch.properties;
+      if (!isRecord(properties)) {
+        return false;
+      }
+      const ok = properties.ok;
+      return (
+        isRecord(ok) && ok.const === false
+      );
+    });
+  if (errorBranches.length !== 1) {
+    throw new Error(
+      `${tool.name} must expose exactly one application-error branch.`,
+    );
+  }
+  const branch = requireRecord(
+    errorBranches[0],
+    `${tool.name} application-error branch`,
+  );
+  const branchProperties = requireRecord(
+    branch.properties,
+    `${tool.name} application-error properties`,
+  );
+  const errorSchema = requireRecord(
+    branchProperties.error,
+    `${tool.name} application error`,
+  );
+  const errorProperties = requireRecord(
+    errorSchema.properties,
+    `${tool.name} application error properties`,
+  );
+  const codeSchema = requireRecord(
+    errorProperties.code,
+    `${tool.name} application error code`,
+  );
+  if (
+    !Array.isArray(codeSchema.enum) ||
+    !codeSchema.enum.every(
+      (code) => typeof code === "string",
+    )
+  ) {
+    throw new Error(
+      `${tool.name} application error code must be a closed enum.`,
+    );
+  }
+  assertStringArraysEqual(
+    codeSchema.enum,
+    TILED_MCP_APPLICATION_ERROR_REGISTRY.codes,
+    `${tool.name} application error code enum`,
+  );
+}
+
+function assertCapabilityIssueCodeSchemas(
+  tool: ListedTool,
+): void {
+  const output = requireRecord(
+    tool.outputSchema,
+    `${tool.name} output schema`,
+  );
+  const outputProperties = requireRecord(
+    output.properties,
+    `${tool.name} output properties`,
+  );
+  const resultSchema = requireRecord(
+    outputProperties.result,
+    `${tool.name} result schema`,
+  );
+  if (!Array.isArray(resultSchema.anyOf)) {
+    throw new Error(
+      `${tool.name} result schema must expose a capability-success branch.`,
+    );
+  }
+  const capabilityBranches =
+    resultSchema.anyOf.filter((branch) => {
+      if (!isRecord(branch)) {
+        return false;
+      }
+      const properties = branch.properties;
+      return (
+        isRecord(properties) &&
+        "cli" in properties
+      );
+    });
+  if (capabilityBranches.length !== 1) {
+    throw new Error(
+      `${tool.name} must expose exactly one capability-success branch.`,
+    );
+  }
+  const capabilityBranch = requireRecord(
+    capabilityBranches[0],
+    `${tool.name} capability-success branch`,
+  );
+  const applicationErrorContractSchema =
+    requireObjectSchemaProperty(
+      capabilityBranch,
+      "applicationErrorContract",
+      `${tool.name} capability-success branch`,
+    );
+  assertLiteralObjectSchema(
+    applicationErrorContractSchema,
+    expectedApplicationErrorContract(),
+    `${tool.name} applicationErrorContract`,
+  );
+  const cliSchema = requireObjectSchemaProperty(
+    capabilityBranch,
+    "cli",
+    `${tool.name} capability-success branch`,
+  );
+
+  for (const toolKind of [
+    "tiled",
+    "rasterizer",
+  ] as const) {
+    const toolSchema = requireObjectSchemaProperty(
+      cliSchema,
+      toolKind,
+      `${tool.name} cli`,
+    );
+    const issuesSchema =
+      requireObjectSchemaProperty(
+        toolSchema,
+        "issues",
+        `${tool.name} cli.${toolKind}`,
+      );
+    const issueSchema = requireRecord(
+      issuesSchema.items,
+      `${tool.name} cli.${toolKind}.issues items`,
+    );
+    const codeSchema =
+      requireObjectSchemaProperty(
+        issueSchema,
+        "code",
+        `${tool.name} cli.${toolKind}.issues item`,
+      );
+    if (
+      !Array.isArray(codeSchema.enum) ||
+      !codeSchema.enum.every(
+        (code) => typeof code === "string",
+      )
+    ) {
+      throw new Error(
+        `${tool.name} cli.${toolKind}.issues[].code must be a closed enum.`,
+      );
+    }
+    assertStringArraysEqual(
+      codeSchema.enum,
+      TILED_MCP_CAPABILITY_ISSUE_CODES,
+      `${tool.name} cli.${toolKind}.issues[].code enum`,
+    );
+  }
+}
+
+function requireObjectSchemaProperty(
+  schema: Record<string, unknown>,
+  propertyName: string,
+  label: string,
+): Record<string, unknown> {
+  const properties = requireRecord(
+    schema.properties,
+    `${label} properties`,
+  );
+  return requireRecord(
+    properties[propertyName],
+    `${label}.${propertyName}`,
+  );
+}
+
+function assertLiteralObjectSchema(
+  schema: Record<string, unknown>,
+  expected: Record<
+    string,
+    string | number | boolean | null
+  >,
+  label: string,
+): void {
+  if (
+    schema.type !== "object" ||
+    schema.additionalProperties !== false
+  ) {
+    throw new Error(
+      `${label} must be a closed object schema.`,
+    );
+  }
+  const properties = requireRecord(
+    schema.properties,
+    `${label} properties`,
+  );
+  const expectedKeys =
+    Object.keys(expected).sort(compareText);
+  assertStringArraysEqual(
+    Object.keys(properties).sort(compareText),
+    expectedKeys,
+    `${label} property names`,
+  );
+  if (
+    !Array.isArray(schema.required) ||
+    !schema.required.every(
+      (key) => typeof key === "string",
+    )
+  ) {
+    throw new Error(
+      `${label} must require all literal properties.`,
+    );
+  }
+  assertStringArraysEqual(
+    [...schema.required].sort(compareText),
+    expectedKeys,
+    `${label} required properties`,
+  );
+  for (const [key, expectedValue] of Object.entries(
+    expected,
+  )) {
+    const propertySchema = requireRecord(
+      properties[key],
+      `${label}.${key}`,
+    );
+    if (propertySchema.const !== expectedValue) {
+      throw new Error(
+        `${label}.${key} must be the expected literal.`,
+      );
+    }
   }
 }
 
@@ -671,6 +1125,13 @@ function renderReference(
     protocolBaseline: string;
     serverInfo: Record<string, unknown>;
     serverInstructions: string | null;
+    applicationErrorRegistry: {
+      path: string;
+      resourceUri: string;
+      registryVersion: number;
+      revision: string;
+      size: number;
+    };
     profiles: Record<
       ProfileId,
       Record<string, unknown>
@@ -713,6 +1174,16 @@ function renderReference(
     "",
     `- \`core\`: ${arrayProperty(contract.profiles.core, "toolOrder").length} tools`,
     `- \`with-tmxrasterizer\`: ${arrayProperty(contract.profiles["with-tmxrasterizer"], "toolOrder").length} tools; adds \`tiled_render_map\` only after a successful TmxRasterizer version probe`,
+    "",
+    "## Stable TiledMCP error codes",
+    "",
+    `The application-error registry is committed at \`${contract.applicationErrorRegistry.path}\` and served from \`${contract.applicationErrorRegistry.resourceUri}\`. Its current revision is \`${contract.applicationErrorRegistry.revision}\`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.`,
+    "",
+    "```json",
+    stableJson(
+      TILED_MCP_APPLICATION_ERROR_REGISTRY,
+    ).trimEnd(),
+    "```",
     "",
     "## Resources",
     "",
@@ -939,6 +1410,18 @@ function isRecord(
   );
 }
 
+function requireRecord(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(
+      `${label} must be an object.`,
+    );
+  }
+  return value;
+}
+
 function stringProperty(
   value: Record<string, unknown>,
   key: string,
@@ -971,6 +1454,12 @@ async function writeArtifacts(
   const files = [
     {
       relativePath:
+        APPLICATION_ERRORS_RELATIVE_PATH,
+      content:
+        artifacts.applicationErrorsJson,
+    },
+    {
+      relativePath:
         MCP_CONTRACT_RELATIVE_PATH,
       content: artifacts.contractJson,
     },
@@ -997,6 +1486,12 @@ async function checkArtifacts(
   artifacts: GeneratedMcpContractArtifacts,
 ): Promise<void> {
   const files = [
+    {
+      relativePath:
+        APPLICATION_ERRORS_RELATIVE_PATH,
+      expected:
+        artifacts.applicationErrorsJson,
+    },
     {
       relativePath:
         MCP_CONTRACT_RELATIVE_PATH,
@@ -1035,7 +1530,7 @@ async function checkArtifacts(
     }
   }
   process.stdout.write(
-    "MCP contract and generated reference are current.\n",
+    "MCP contracts and generated reference are current.\n",
   );
 }
 

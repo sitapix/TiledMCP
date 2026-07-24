@@ -22,9 +22,20 @@ import {
   type RenderPngOptions,
   type RenderPngResult,
 } from "../src/adapters/tiledCli.js";
+import {
+  TILED_MCP_APPLICATION_ERROR_REGISTRY,
+  TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+} from "../src/errorRegistry.js";
 import { serializeJsonDocument, type JsonObject } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
+import {
+  APPLICATION_ERROR_RESOURCE_META,
+  APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+  APPLICATION_ERROR_RESOURCE_REVISION,
+  APPLICATION_ERROR_RESOURCE_SIZE,
+  APPLICATION_ERROR_RESOURCE_URI,
+} from "../src/resources/applicationErrors.js";
 import {
   GUIDE_RESOURCE_MIME_TYPE,
   GUIDE_RESOURCE_REVISION,
@@ -1958,7 +1969,7 @@ describe("createTiledMcpServer", () => {
     }
   });
 
-  it("advertises and serves the bounded direct guide resource", async () => {
+  it("advertises and serves the bounded direct contract resources", async () => {
     expect(harness.client.getServerVersion()).toEqual({
       name: SERVER_NAME,
       version: SERVER_VERSION,
@@ -1986,6 +1997,22 @@ describe("createTiledMcpServer", () => {
           size: GUIDE_RESOURCE_SIZE,
           serverVersion: SERVER_VERSION,
         },
+      },
+      {
+        uri: APPLICATION_ERROR_RESOURCE_URI,
+        name: "application-errors",
+        title:
+          "TiledMCP stable application error registry",
+        description:
+          "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
+        mimeType:
+          APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+        size: APPLICATION_ERROR_RESOURCE_SIZE,
+        annotations: {
+          audience: ["assistant", "user"],
+          priority: 1,
+        },
+        _meta: APPLICATION_ERROR_RESOURCE_META,
       },
     ]);
     expect(await harness.client.listResourceTemplates()).toEqual({
@@ -2053,6 +2080,50 @@ describe("createTiledMcpServer", () => {
       '`snapshotConsistency:"non-atomic-read-set"`',
     );
 
+    const applicationErrors =
+      await harness.client.readResource({
+        uri: APPLICATION_ERROR_RESOURCE_URI,
+      });
+    expect(applicationErrors.contents).toHaveLength(
+      1,
+    );
+    const applicationErrorContent =
+      applicationErrors.contents[0];
+    expect(applicationErrorContent).toMatchObject({
+      uri: APPLICATION_ERROR_RESOURCE_URI,
+      mimeType:
+        APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+      _meta: APPLICATION_ERROR_RESOURCE_META,
+    });
+    if (
+      applicationErrorContent === undefined ||
+      !("text" in applicationErrorContent)
+    ) {
+      throw new Error(
+        "Expected tiled://application-errors to return text content",
+      );
+    }
+    expect(applicationErrorContent.text).toBe(
+      TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+    );
+    const applicationErrorBytes = Buffer.from(
+      applicationErrorContent.text,
+      "utf8",
+    );
+    expect(applicationErrorBytes.byteLength).toBe(
+      APPLICATION_ERROR_RESOURCE_SIZE,
+    );
+    expect(
+      revisionOf(applicationErrorBytes),
+    ).toBe(
+      APPLICATION_ERROR_RESOURCE_REVISION,
+    );
+    expect(
+      JSON.parse(applicationErrorContent.text),
+    ).toEqual(
+      TILED_MCP_APPLICATION_ERROR_REGISTRY,
+    );
+
     await expect(
       harness.client.readResource({ uri: "tiled://missing" }),
     ).rejects.toThrow("Resource tiled://missing not found");
@@ -2067,6 +2138,20 @@ describe("createTiledMcpServer", () => {
         templates: string[];
         subscriptions: boolean;
         listChanged: boolean;
+      };
+      applicationErrorContract: {
+        name: string;
+        registryVersion: number;
+        resourceUri: string;
+        revision: string;
+        size: number;
+        wireLocation: string;
+        fallbackCode: string;
+        codeSetPolicy: string;
+        clientUnknownCodePolicy: string;
+        messages: string;
+        details: string;
+        sdkInputErrors: string;
       };
       checkpointCapabilities: {
         automaticBeforeWrite: boolean;
@@ -2332,10 +2417,37 @@ describe("createTiledMcpServer", () => {
       protocolBaseline: "2025-11-25",
       registeredTools: CORE_TOOLS,
       resourceCapabilities: {
-        direct: [GUIDE_RESOURCE_URI],
+        direct: [
+          GUIDE_RESOURCE_URI,
+          APPLICATION_ERROR_RESOURCE_URI,
+        ],
         templates: [],
         subscriptions: false,
         listChanged: true,
+      },
+      applicationErrorContract: {
+        name:
+          TILED_MCP_APPLICATION_ERROR_REGISTRY.name,
+        registryVersion:
+          TILED_MCP_APPLICATION_ERROR_REGISTRY.registryVersion,
+        resourceUri:
+          APPLICATION_ERROR_RESOURCE_URI,
+        revision:
+          APPLICATION_ERROR_RESOURCE_REVISION,
+        size: APPLICATION_ERROR_RESOURCE_SIZE,
+        wireLocation:
+          TILED_MCP_APPLICATION_ERROR_REGISTRY.wireLocation,
+        fallbackCode: "INTERNAL_ERROR",
+        codeSetPolicy:
+          "new-server-versions-may-add-codes",
+        clientUnknownCodePolicy:
+          "handle-as-unknown-and-refresh-discovery",
+        messages:
+          "bounded-human-readable-not-stable-for-control-flow",
+        details:
+          "bounded-opaque-no-stable-fields-in-v1",
+        sdkInputErrors:
+          "excluded-sdk-owned-text-only",
       },
       checkpointCapabilities: {
         automaticBeforeWrite: true,

@@ -3,9 +3,11 @@
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
 > closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
-> rename-stable asset registry、显式稳定错误码 registry、create-map 例外定案与固定
-> 版本集成门槛仍未完成，接口与磁盘格式仍不视为冻结。当前 discovery contract 已由
-> [机器 artifact](../contracts/mcp-contract.v1.json) 和
+> rename-stable asset registry、create-map 例外定案与固定版本集成门槛仍未完成，接口与
+> 磁盘格式仍不视为冻结。当前 discovery contract 与 95-code v1 application-error
+> registry 已分别由
+> [discovery machine artifact](../contracts/mcp-contract.v1.json)、
+> [application-error machine artifact](../contracts/application-errors.v1.json) 和
 > [生成式参考](generated/mcp-reference.md) 固化，并在测试前做漂移检查。
 
 ### 当前落地状态（2026-07-25）
@@ -48,10 +50,11 @@ tile-layer cells 与 tile objects，并用独立扫描、distinct aggregation �
 `tmxrasterizer` 时为 19 个。Tiled
 export/evaluate、项目资产/schema/render Resource Templates、跨文件 WAL 和
 rename-stable asset registry 仍是下文的目标架构，不是当前能力。固定
-`tiled://guide` direct Resource 已落地：SDK registry 提供
-`resources/list` / `resources/templates/list` / `resources/read`，内容为有界
-Markdown，并返回 SHA-256 revision、UTF-8 byte size 和 server version；当前 templates
-列表为空，也不声明 resource subscriptions。
+`tiled://guide` 与 `tiled://application-errors` 两个 direct Resources 已落地：SDK
+registry 提供 `resources/list` / `resources/templates/list` / `resources/read`，
+分别返回有界 Markdown playbook 与当前 application-error registry JSON，并带 SHA-256
+revision、UTF-8 byte size 和 server version；当前 templates 列表为空，也不声明
+resource subscriptions。
 
 18 个核心工具和可选第 19 个 rasterizer 工具现在分别注册完整、固定字段且
 `additionalProperties: false` 的 output schema；递归 layer、operation preview 和
@@ -64,6 +67,31 @@ change-set apply 不是同一个 mutation 类型。handler 内的应用错误以
 `tiled-mcp-summary` v1 compact one-line JSON text block，UTF-8 最多 1024 bytes；摘要不
 复制完整成功 result 或错误 `details`，完整机器结果以 `structuredContent.result` 为准。
 图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
+
+application code 的唯一稳定 wire 位置是
+`structuredContent.result.error.code`。当前 v1 allowlist 有 95 个 code，单一代码来源
+生成 `contracts/application-errors.v1.json`，并把完全相同的 JSON 暴露为
+`tiled://application-errors`；`tiled_get_capabilities.applicationErrorContract` 公布
+resource URI、revision、size、wire location、`INTERNAL_ERROR` fallback 和兼容策略。
+既有 v1 标识符及其含义稳定，未来 server 可以只做增量新增；客户端遇到未知 code 时必须
+安全降级为通用应用错误并刷新 discovery。`message` 是有界的人类文本，`details` 是
+opaque 有界字典，二者都不是稳定控制流接口。
+
+tool callback 的返回值还要经过模块私有的 trusted-result 边界，并在交给 SDK 前核对
+`isError:true` 与 `result.ok:false` error envelope 必须双向一致，再对成功和错误结果一律
+重跑该工具 output schema；直接构造或信号不一致的结果不能绕过它。错误归一化、message
+截断、details 清洗、序列化或边界校验任一步再次抛错/失败时，边界不读取该异常，而是返回
+预构造的通用 `INTERNAL_ERROR` envelope，避免 SDK 退化为可能回显底层异常文本的 text-only
+错误。公开 details 只接受普通 object 形状；array、null 与 primitive 归一为空 object。
+CLI capability snapshot 在注册工具前先按 13-code 独立 schema 校验、深拷贝并冻结，
+`INTERNAL_ERROR` probe message 也固定泛化，调用方后续修改原对象不会让 capability 与已
+注册工具集合漂移。
+
+这个 registry 有意不覆盖 MCP SDK input errors、`cli.*.issues[].code`
+capability-probe diagnostics、startup fatal errors、`tiled_validate` validation
+diagnostics、checkpoint reconciliation diagnostics 或原始 OS error codes。实现层必须
+在这些独立表面与 tool application envelope 之间保持类型边界；未预期 handler 异常才
+归一化为 application fallback `INTERNAL_ERROR`。
 
 可选 `tiled_render_map` 已以 pre-Frozen clean break 删除旧
 `mapPath`/`bytes`/`width`/`height` aliases。它的 exact closed result 必须返回
@@ -192,16 +220,17 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 能同时验证合法成功结果和 handler 内的合法应用错误。
 
 协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
-`structuredContent`。进入 handler 后的失败才经过统一错误归一化、长度/深度预算和 JSON
-安全化。`Diagnostic` 是 validator 成功结果中的问题记录，不承担 transport/application
-错误 envelope 的职责。
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、95-code application
+allowlist、长度/深度预算和 JSON 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，
+不承担 transport/application 错误 envelope 的职责。
 
 text channel 只提供 `tiled-mcp-summary` v1。它由公共确定性 serializer 生成 compact
 one-line JSON，并以 UTF-8 1024 bytes 为硬上限；success 只报告 structured JSON byte
 count；error 在公共 kind/version/ok/byte-count 字段之外，只报告 code、有界单行 message
 与可选截断标志。二者都不通过 `JSON.stringify` 镜像完整 result/details。图片 summary
 另外报告 MIME type 与实际 inline buffer bytes；base64 字符长度不作为图片大小。客户端以
-`structuredContent.result` 为权威数据源。capabilities 的 `textContentContract` 固定公布
+`structuredContent.result` 为权威数据源，并且只用已发现的 `error.code` 做错误分支；
+不得解析 message 或 details 做控制流。capabilities 的 `textContentContract` 固定公布
 名称、版本、编码、上限、完整结果位置、structured byte 计量方式与
 `sdk-owned-text-only` input-error 边界。
 
@@ -338,7 +367,10 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
 
 安装的 Tiled 版本只影响 official adapter 的运行能力，也不等于资产兼容目标。每个已知特性
 在 `FeatureMatrix` 中声明最小目标版本、允许的文档类型、读/写状态与验证器；尚未支持写入的
-字段可以保留和展示，但相关 patch 必须返回 `UNSUPPORTED_FEATURE_WRITE`。
+字段可以保留和展示。目标架构计划让相关 patch 返回
+`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 95-code
+v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后续 registry 前，
+客户端不得依赖它。
 
 ## 5. 路径、roots 与外部引用策略
 
@@ -359,8 +391,9 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
   符号链接越界、NUL 和目录穿越。
 - primary root 内的引用可读写；additional root 内引用只读。地图可以引用只读 root 中的
   tileset，但单次工具不能顺便修改它。
-- 指向 allowlist 外的既有原始字符串会被原样保留并报告 `EXTERNAL_REFERENCE_BLOCKED`；
-  服务器不读取目标，也不能进行依赖该目标的编辑。
+- 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
+  目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
+  **planned / not current** code，不属于当前 95-code v1 application registry。
 - 新引用必须落在允许 root 中，并以拥有者为基准写成规范化相对路径；不自动把相对路径改成
   绝对路径。
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
@@ -1087,8 +1120,10 @@ M0/M1 的所有 mutation 必须最终只修改一个文档。提交步骤：
 replace，也不等同于 crash durability。磁盘/文件系统不支持所需语义时，服务器应拒绝写入
 或明确降级，不能仍返回原子成功。
 
-同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents；检测到第二个写目标时，在
-dry-run 阶段返回 `MULTI_FILE_TRANSACTION_NOT_AVAILABLE`。
+同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
+第二个写目标时，计划在 dry-run 阶段返回
+`MULTI_FILE_TRANSACTION_NOT_AVAILABLE`；该名称是 **planned / not current** code，
+不属于当前 95-code v1 application registry。
 
 ### 8.3 跨文件可恢复事务
 
@@ -1336,9 +1371,12 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract`、三种图片工具的同-buffer artifact metadata、rasterizer
+   `textContentContract` 与 `applicationErrorContract`、95-code v1 registry machine
+   artifact / `tiled://application-errors` resource 一致性、未知 code 兼容与
+   `INTERNAL_ERROR` fallback、各 excluded surface 类型边界、三种图片工具的同-buffer
+   artifact metadata、rasterizer
    renderer/options、有界输入图片集合的内部 pre/post revision 校验与 non-atomic 边界、
-   SDK-owned text-only 输入校验错误、错误码、annotations 和 size/page limit。
+   SDK-owned text-only 输入校验错误、annotations 和 size/page limit。
 4. **Integration**：固定版本 Tiled one-shot、`--export-formats`、`tmxrasterizer`；同时测试
    “未安装/版本不支持”的正常降级。
 5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。

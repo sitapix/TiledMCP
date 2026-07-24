@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TILED_MCP_APPLICATION_ERROR_CODES } from "../errorRegistry.js";
 import type { JsonValue } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
@@ -149,7 +150,9 @@ export const applicationErrorResultOutputSchema = z
     ok: z.literal(false),
     error: z
       .object({
-        code: z.string().min(1).max(128),
+        code: z.enum(
+          TILED_MCP_APPLICATION_ERROR_CODES,
+        ),
         message: z.string().max(4_096),
         details: z.record(
           z.string(),

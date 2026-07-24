@@ -95,7 +95,15 @@ function sortJson(value: JsonValue): JsonValue {
 function validateJsonLexemes(source: string, projectPath: string): void {
   let index = 0;
 
-  function fail(message: string, code = "INVALID_JSON"): never {
+  function fail(
+    message: string,
+    code:
+      | "DUPLICATE_JSON_KEY"
+      | "INVALID_JSON"
+      | "JSON_NESTING_LIMIT"
+      | "UNSAFE_JSON_NUMBER" =
+      "INVALID_JSON",
+  ): never {
     throw new TiledMcpError(code, `${projectPath}: ${message} at character offset ${index}.`, {
       path: projectPath,
       offset: index,

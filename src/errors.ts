@@ -1,14 +1,28 @@
+import {
+  isTiledMcpErrorCode,
+  type TiledMcpErrorCode,
+} from "./errorRegistry.js";
+
 export type ErrorDetails = Record<string, unknown>;
 
 export class TiledMcpError extends Error {
-  readonly code: string;
+  readonly code: TiledMcpErrorCode;
   readonly details: ErrorDetails;
 
-  constructor(code: string, message: string, details: ErrorDetails = {}) {
+  constructor(
+    code: TiledMcpErrorCode,
+    message: string,
+    details: ErrorDetails = {},
+  ) {
     super(message);
     this.name = "TiledMcpError";
-    this.code = code;
-    this.details = details;
+    if (isTiledMcpErrorCode(code)) {
+      this.code = code;
+      this.details = details;
+    } else {
+      this.code = "INTERNAL_ERROR";
+      this.details = {};
+    }
   }
 }
 

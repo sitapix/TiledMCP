@@ -16,9 +16,12 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
 ## Discover the active surface
 
 1. Call \`tiled_get_capabilities\` and inspect \`registeredTools\`, the edit
-   profile, renderer limits, and local CLI availability.
-2. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
-3. Only call optional tools such as \`tiled_render_map\` when they appear in
+   profile, renderer limits, local CLI availability, and
+   \`applicationErrorContract\`.
+2. Use MCP \`resources/list\` and read \`tiled://application-errors\` when the
+   complete current application-code allowlist is needed.
+3. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
+4. Only call optional tools such as \`tiled_render_map\` when they appear in
    \`registeredTools\`. The built-in \`tiled_render_preview\` is the portable
    map preview path.
 
@@ -47,6 +50,28 @@ version, encoding, byte limit, full-result location, byte measurement, and
 input-error boundary. Input-schema errors are rejected by the MCP SDK before a
 handler runs, so they remain SDK-owned text-only responses and do not use this
 application-level summary envelope.
+
+## Handle application errors
+
+The current v1 application-error registry contains 95 codes. Its committed
+machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
+is available at the direct resource \`tiled://application-errors\`.
+\`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
+URI, revision, size, wire location, fallback, and compatibility policy.
+
+For a tool application error, branch only on
+\`structuredContent.result.error.code\`. \`INTERNAL_ERROR\` is the safe fallback
+for an unexpected handler failure. Existing v1 identifiers and meanings are
+stable, but a newer server may add codes. Treat an unknown code as a generic
+application failure, refresh \`tools/list\`, capabilities, and resource
+discovery, and do not reinterpret it as success.
+
+The bounded \`message\` is for people. The bounded opaque \`details\` object has
+no stable v1 fields. Do not parse either value for control flow. The registry
+does not include MCP SDK input errors, \`cli.*.issues[].code\` capability-probe
+diagnostics, startup fatal errors, \`tiled_validate\` validation diagnostics,
+checkpoint reconciliation diagnostics, or raw operating-system error codes.
+Keep those surfaces on their own contracts.
 
 When the optional \`tiled_render_map\` is registered, its successful structured
 result uses the traceable PNG contract only; there are no legacy
@@ -700,11 +725,11 @@ if (GUIDE_RESOURCE_SIZE > MAX_GUIDE_RESOURCE_BYTES) {
   );
 }
 
-const guideMeta = {
+const guideMeta = Object.freeze({
   revision: GUIDE_RESOURCE_REVISION,
   size: GUIDE_RESOURCE_SIZE,
   serverVersion: SERVER_VERSION,
-} as const;
+} as const);
 
 export function registerGuideResource(server: McpServer): void {
   server.registerResource(

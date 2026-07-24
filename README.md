@@ -58,7 +58,8 @@
 - Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览，后者返回 map/外部 TSJ
   revision、PNG hash/尺寸、renderer 版本与实际生效选项；
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
-  `tiled://guide` 安全编辑 playbook；
+  `tiled://guide` 安全编辑 playbook 和 `tiled://application-errors` 稳定应用错误码
+  注册表；
 - stdio MCP server、严格输入 schema、每工具精确 closed output schema、统一应用错误
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
@@ -71,11 +72,12 @@ tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UT
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
 PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
-双 profile 的完整机器契约和人类参考文档，并校验手写维护的每工具 schema-valid 调用
-示例；测试前会做 byte-level drift check。接口仍未 Frozen：显式稳定错误码 registry、
-rename-stable asset registry、`tiled_create_map` 的 no-replace 例外定案与固定 Tiled
-1.12.2 集成门槛仍待完成；non-cooperative external-writer CAS 仍是公开的 M0 安全
-blocker。当前运行能力仍应以 `tiled_get_capabilities` 和 `tools/list` 为准。
+双 profile discovery contract、95-code v1 application-error contract 和人类参考文档，
+并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
+接口仍未 Frozen：rename-stable asset registry、`tiled_create_map` 的 no-replace 例外
+定案与固定 Tiled 1.12.2 集成门槛仍待完成；non-cooperative external-writer CAS 仍是
+公开的 M0 安全 blocker。当前运行能力仍应以 `tiled_get_capabilities`、`tools/list` 和
+resource discovery 为准。
 
 ## 文档索引
 
@@ -85,6 +87,7 @@ blocker。当前运行能力仍应以 `tiled_get_capabilities` 和 `tools/list` 
 | [docs/02-mcp-spec.md](docs/02-mcp-spec.md) | **MCP 功能规格草案**：Tools / Resources / Prompts 清单与分期计划 |
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
+| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 95 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 19 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
@@ -170,6 +173,21 @@ TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径
 `{"result": <该工具的成功结果>}`；合法输入触发的领域/应用错误设置 `isError: true`，并
 返回
 `{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
+应用错误码的精确 wire 位置是 `structuredContent.result.error.code`。当前 v1 注册表包含
+95 个 application code；机器 artifact 是
+[`contracts/application-errors.v1.json`](contracts/application-errors.v1.json)，运行时
+同一内容可从 direct Resource `tiled://application-errors` 读取，并由
+`tiled_get_capabilities.applicationErrorContract` 公布 URI、revision、size、fallback 和
+兼容策略。`INTERNAL_ERROR` 是未预期 handler 失败的安全 fallback。v1 中既有标识符及其
+含义保持稳定，但未来 server 可以新增 code；客户端遇到未知 code 时应按通用应用错误安全
+处理并刷新 discovery，不得把它误判为成功。
+
+控制流只能依赖已发现的 `error.code`，不能匹配人类可读的 `message`，也不能假设
+`details` 存在任何稳定字段。该 application registry 不包括 MCP SDK input error、
+`cli.*.issues[].code` capability-probe 诊断、startup fatal error、`tiled_validate`
+diagnostics、checkpoint reconciliation diagnostics 或原始 OS error code；这些表面各自
+遵循独立契约。
+
 查询/渲染结果、map-edit preview、checkpoint-restore preview、`tiled_create_map` 的
 commit 结果以及 `tiled_apply_change_set` 的 apply 结果是不同的类型，不能把它们当成同一
 `MutationResult`。输入在进入 handler 前被 MCP SDK schema 拒绝时只有 text error，不带
@@ -189,6 +207,7 @@ inline image bytes。error summary 给稳定 `code`、有界单行 `message`、�
 | URI | 类型 | 作用 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | 串联能力发现、sheet/preview 检查、change set 客户端批准、提交与提交后复核；内容带 SHA-256 revision 和 UTF-8 byte size |
+| `tiled://application-errors` | `application/json` | 当前 95 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
 
 资产、schema 和 render Resource Templates 尚未注册；应以
 `resources/list` / `resources/templates/list` 的实际响应为准。
@@ -564,10 +583,11 @@ pnpm build
 ```
 
 `pnpm contract:generate` 从两个固定 capability profile 的真实 MCP `tools/list`、
-`resources/list`、`resources/templates/list` 和 `resources/read` 响应重建机器契约与
-参考文档；它不会探测 PATH 或启动本机 Tiled。`pnpm contract:check` 只比较生成结果与已
-提交 artifact，并重新用公开 input schema 校验全部 19 个示例。`pnpm test` 会先执行该
-drift gate、构建 `dist/`，并包含真实 production stdio smoke；
+`resources/list`、`resources/templates/list` 和 `resources/read` 响应重建两份 machine
+contracts（discovery 与 application errors）和 reference；它不会探测 PATH 或启动本机
+Tiled。`pnpm contract:check` 比较这两份 contract 与 reference 的生成结果和已提交
+artifact，并重新用公开 input schema 校验全部 19 个示例。`pnpm test` 会先执行该 drift
+gate、构建 `dist/`，并包含真实 production stdio smoke；
 `pnpm test:watch` 为避免使用 stale build 而排除该单项，可随时用
 `pnpm test:stdio` 单独重建并复跑；`pnpm verify` 串联 typecheck、build、契约检查和完整
 测试。
@@ -628,8 +648,9 @@ GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group �
 tile cell 预算、prospective image pin 与单元素 source insertion；
 checkpoint 恢复覆盖 exact-byte round trip、manifest/blob 篡改、prepared 状态机、目标
 revision 冲突、preview/apply/replay 和恢复前二次 checkpoint；
-文档 fd 读取覆盖并发覆写/增长/截断检测。`tiled://guide` 另有
-list/read、空 templates、内容 revision/size 和未知 URI 契约测试；生产入口另通过真实
+文档 fd 读取覆盖并发覆写/增长/截断检测。`tiled://guide` 和
+`tiled://application-errors` 另有 list/read、空 templates、内容 revision/size 和未知
+URI 契约测试；生产入口另通过真实
 stdio client 覆盖配置、启动 checkpoint 扫描、tools/list、summary、tile search 和
 checkpoint restore。架构与 roadmap
 文档中未注册的工具或 Resources 仍是候选设计，不代表已经实现。

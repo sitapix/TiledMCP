@@ -18,6 +18,7 @@ import {
 } from "vitest";
 
 import { TiledCliAdapter } from "../src/adapters/tiledCli.js";
+import { TiledMcpError } from "../src/errors.js";
 
 describe("TiledCliAdapter.renderPng", () => {
   let root: string;
@@ -164,19 +165,31 @@ describe("TiledCliAdapter.renderPng", () => {
       FAKE_RASTER_SOURCE_PATH: sourcePngPath,
     });
 
-    await expect(
-      adapter.renderPng(
+    let caught: unknown;
+    try {
+      await adapter.renderPng(
         inputMapPath,
         outputPngPath,
         {
           maxPngBytes:
             sourcePng.byteLength - 1,
         },
-      ),
-    ).rejects.toMatchObject({
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
       name: "TiledMcpError",
       code: "IMAGE_TOO_LARGE",
+      details: {
+        bytes:
+          String(sourcePng.byteLength),
+        limit: sourcePng.byteLength - 1,
+      },
     });
+    expect(
+      JSON.stringify(caught),
+    ).not.toContain(root);
   });
 
   it.each([
@@ -324,6 +337,133 @@ describe("TiledCliAdapter.renderPng", () => {
     });
   });
 
+  it("redacts internal capability-probe messages while preserving public issues", async () => {
+    const adapter = createAdapter({});
+    adapter.getTiledVersion = async () => {
+      throw new Error("raw internal secret");
+    };
+    adapter.getExportFormats = async () => {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        "explicit internal secret",
+      );
+    };
+    adapter.getRasterizerVersion = async () => {
+      throw new TiledMcpError(
+        "TMXRASTERIZER_NOT_FOUND",
+        "public executable status",
+      );
+    };
+
+    const capabilities =
+      await adapter.probeCapabilities();
+    expect(capabilities.tiled.issues).toEqual([
+      {
+        code: "INTERNAL_ERROR",
+        message:
+          "Tiled capability probe failed internally.",
+      },
+    ]);
+    expect(
+      capabilities.rasterizer.issues,
+    ).toEqual([
+      {
+        code: "TMXRASTERIZER_NOT_FOUND",
+        message: "public executable status",
+      },
+    ]);
+    expect(
+      JSON.stringify(capabilities),
+    ).not.toContain("internal secret");
+
+    const hostileIssue =
+      new TiledMcpError(
+        "TILED_CLI_FAILED",
+        "placeholder",
+      );
+    Object.defineProperty(
+      hostileIssue,
+      "message",
+      {
+        configurable: true,
+        get() {
+          throw new Error(
+            "probe getter leaked secret",
+          );
+        },
+      },
+    );
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    adapter.getTiledVersion = async () => {
+      throw hostileIssue;
+    };
+    adapter.getExportFormats = async () => {
+      throw revoked.proxy;
+    };
+    adapter.getRasterizerVersion =
+      async () => "1.0";
+
+    const hostileCapabilities =
+      await adapter.probeCapabilities();
+    expect(
+      hostileCapabilities.tiled.issues,
+    ).toEqual([
+      {
+        code: "INTERNAL_ERROR",
+        message:
+          "Tiled capability probe failed internally.",
+      },
+    ]);
+    expect(
+      JSON.stringify(hostileCapabilities),
+    ).not.toContain("leaked secret");
+  });
+
+  it("does not expose executable paths, arguments, or subprocess output in command errors", async () => {
+    const outputPngPath = join(
+      root,
+      "private-output.png",
+    );
+    let caught: unknown;
+    try {
+      await createAdapter({}).renderPng(
+        inputMapPath,
+        outputPngPath,
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(
+      TiledMcpError,
+    );
+    if (!(caught instanceof TiledMcpError)) {
+      throw new Error(
+        "Expected a TiledMcpError",
+      );
+    }
+    expect(caught).toMatchObject({
+      code: "TMXRASTERIZER_FAILED",
+      message:
+        "TmxRasterizer exited unsuccessfully.",
+      details: {
+        argumentCount: 2,
+        exitCode: 2,
+        signal: null,
+        stdoutBytes: 0,
+        stderrBytes: expect.any(Number),
+      },
+    });
+    const publicError = JSON.stringify({
+      message: caught.message,
+      details: caught.details,
+    });
+    expect(publicError).not.toContain(root);
+    expect(publicError).not.toContain(
+      "missing fake rasterizer path",
+    );
+  });
+
   it("rejects a rasterizer symlink output without following it", async () => {
     await expectUnsafeOutput("symlink");
   });
@@ -361,16 +501,26 @@ describe("TiledCliAdapter.renderPng", () => {
         outputMode,
     });
 
-    await expect(
-      adapter.renderPng(
+    let caught: unknown;
+    try {
+      await adapter.renderPng(
         inputMapPath,
         outputPngPath,
-      ),
-    ).rejects.toMatchObject({
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
       name: "TiledMcpError",
       code:
         "TMXRASTERIZER_OUTPUT_INVALID",
+      details: {
+        reason: "not-regular-file",
+      },
     });
+    expect(
+      JSON.stringify(caught),
+    ).not.toContain(root);
   }
 
   function createAdapter(

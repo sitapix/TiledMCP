@@ -7,6 +7,20 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import sharp from "sharp";
 import { expect, it } from "vitest";
 
+import {
+  TILED_MCP_APPLICATION_ERROR_REGISTRY,
+  TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+} from "../src/errorRegistry.js";
+import {
+  APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+  APPLICATION_ERROR_RESOURCE_REVISION,
+  APPLICATION_ERROR_RESOURCE_SIZE,
+  APPLICATION_ERROR_RESOURCE_URI,
+} from "../src/resources/applicationErrors.js";
+import {
+  GUIDE_RESOURCE_MIME_TYPE,
+  GUIDE_RESOURCE_URI,
+} from "../src/resources/guide.js";
 import { revisionOf } from "../src/storage/revision.js";
 
 it("serves tiled_find_tiles through the production stdio entry point", async () => {
@@ -73,6 +87,21 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         | undefined
     )?.result;
     expect(capabilities).toMatchObject({
+      resourceCapabilities: {
+        direct: [
+          GUIDE_RESOURCE_URI,
+          APPLICATION_ERROR_RESOURCE_URI,
+        ],
+      },
+      applicationErrorContract: {
+        registryVersion: 1,
+        resourceUri:
+          APPLICATION_ERROR_RESOURCE_URI,
+        revision:
+          APPLICATION_ERROR_RESOURCE_REVISION,
+        size: APPLICATION_ERROR_RESOURCE_SIZE,
+        fallbackCode: "INTERNAL_ERROR",
+      },
       checkpointCapabilities: {
         automaticBeforeWrite: true,
         exactByteRestoreKernel: true,
@@ -1270,14 +1299,51 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       ],
     });
 
-    const guide = await client.readResource({ uri: "tiled://guide" });
+    const resources = await client.listResources();
+    expect(resources.resources.map(({ uri }) => uri)).toEqual([
+      GUIDE_RESOURCE_URI,
+      APPLICATION_ERROR_RESOURCE_URI,
+    ]);
+
+    const guide = await client.readResource({
+      uri: GUIDE_RESOURCE_URI,
+    });
     const guideText = guide.contents[0];
-    expect(guideText).toMatchObject({ mimeType: "text/markdown" });
+    expect(guideText).toMatchObject({
+      mimeType: GUIDE_RESOURCE_MIME_TYPE,
+    });
     expect(
       guideText !== undefined && "text" in guideText
         ? guideText.text
         : "",
     ).toContain("`tilesetAssetId`");
+
+    const applicationErrors =
+      await client.readResource({
+        uri: APPLICATION_ERROR_RESOURCE_URI,
+      });
+    const applicationErrorContent =
+      applicationErrors.contents[0];
+    expect(applicationErrorContent).toMatchObject({
+      mimeType:
+        APPLICATION_ERROR_RESOURCE_MIME_TYPE,
+    });
+    if (
+      applicationErrorContent === undefined ||
+      !("text" in applicationErrorContent)
+    ) {
+      throw new Error(
+        "Expected the application error registry resource to contain text",
+      );
+    }
+    expect(applicationErrorContent.text).toBe(
+      TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
+    );
+    expect(
+      JSON.parse(applicationErrorContent.text),
+    ).toEqual(
+      TILED_MCP_APPLICATION_ERROR_REGISTRY,
+    );
   } finally {
     await client.close().catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });

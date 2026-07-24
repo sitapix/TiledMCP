@@ -80,4 +80,42 @@ describe("withProjectFileLock", () => {
       withProjectFileLock(resolver, "map.tmj", async () => undefined),
     ).rejects.toMatchObject({ code: "FILE_LOCK_CORRUPT" });
   });
+
+  it("does not expose the absolute lock path when the lock entry is unsafe", async () => {
+    const locks = join(
+      root,
+      ".tiledmcp",
+      "locks",
+    );
+    await mkdir(locks, { recursive: true });
+    await mkdir(
+      join(
+        locks,
+        `${shortHash("map.tmj")}.lock`,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await withProjectFileLock(
+        resolver,
+        "map.tmj",
+        async () => undefined,
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: "FILE_LOCK_CORRUPT",
+      message:
+        "The project lock file is malformed or unsafe; inspect it before removing it.",
+      details: {
+        reason:
+          "unsafe-or-unreadable-lock",
+      },
+    });
+    expect(JSON.stringify(caught)).not.toContain(
+      root,
+    );
+  });
 });

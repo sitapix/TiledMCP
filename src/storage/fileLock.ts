@@ -102,7 +102,16 @@ async function readLockRecord(lockPath: string): Promise<LockRecord> {
     throw new TiledMcpError(
       "FILE_LOCK_CORRUPT",
       "The project lock file is malformed or unsafe; inspect it before removing it.",
-      { reason: error instanceof Error ? error.message : String(error) },
+      {
+        reason:
+          "unsafe-or-unreadable-lock",
+        ...(typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? { causeCode: error.code }
+          : {}),
+      },
     );
   }
 
