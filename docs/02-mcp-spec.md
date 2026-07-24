@@ -1,8 +1,11 @@
 # TiledMCP 功能规格（冻结前草案）
 
-> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。当前已注册工具已有代码定义的完整、封闭 `inputSchema` / `outputSchema`，但自动生成的契约文档、示例以及下列其余冻结门槛尚未全部完成，因此本文和接口仍未进入 Frozen。
+> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。当前已注册工具已有代码定义的完整、封闭 `inputSchema` / `outputSchema`，并已从真实 MCP discovery 生成机器契约和参考文档；手写的每工具示例也由这些公开 schema 校验。其余冻结门槛尚未全部完成，因此本文和接口仍未进入 Frozen。
 >
-> 设计依据见 [01-tiled-research.md](01-tiled-research.md)。
+> 设计依据见 [01-tiled-research.md](01-tiled-research.md)；精确 wire schema 见
+> [机器契约](../contracts/mcp-contract.v1.json) 和
+> [生成式参考](generated/mcp-reference.md)，安全组合方式见
+> [调用工作流](examples/safe-workflows.md)。
 
 ## 0. 协议基线与冻结条件
 
@@ -10,7 +13,7 @@
 - **SDK**：使用 `@modelcontextprotocol/sdk` **v1.x**；锁定具体版本和 lockfile，在 v2 稳定且完成兼容测试前不迁移。
 - **首个 transport**：`stdio`。服务器不向 stdout 输出日志；日志只写 stderr。HTTP/远程 transport 不属于 M1。
 - **能力声明**：仅声明当前实现且通过契约测试的 Tools、Resources、Prompts；未实现的 roadmap 项不得注册空壳。
-- **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义，由它们生成 MCP JSON Schema、本文的参数表和契约测试 fixture。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
+- **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义；生成器通过真实 MCP `tools/list` / resource discovery 固化 wire JSON Schema、双 profile 清单和参考文档，测试对已提交 artifact 做 byte-level drift check。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
 - **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
 
 ### 0.1 当前实现切片（2026-07-25）
@@ -44,12 +47,14 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。当前仍未完成全部 schema/codegen 文档与示例；外部 tileset `assetId` 也是由项目
-路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable
-registry 是接口冻结前的待办。`tiled_create_map` 的 no-replace 例外仍需在冻结前定案，
-固定 Tiled 1.12.2 集成门槛也尚未全部固化。因此本文仍是 Draft，共享契约描述的冻结目标
-不能视为已全部达成；运行时应以 `tiled_get_capabilities`、`tools/list`、
-`resources/list` 与 `resources/templates/list` 为准。
+aliases。双 profile 的完整 discovery artifact、生成式参考和每工具调用示例现已落地并
+纳入 drift gate；schema 无法表达的 revision/批准语义由手写安全工作流维护。外部 tileset
+`assetId` 仍是由项目路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；
+持久化 rename-stable registry 是接口冻结前的待办。显式稳定错误码 registry、
+`tiled_create_map` 的 no-replace 例外定案和固定 Tiled 1.12.2 集成门槛也尚未全部固化。
+因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
+`tiled_get_capabilities`、`tools/list`、`resources/list` 与
+`resources/templates/list` 为准。
 
 当前 `tiled_create_map` 是一个明确的临时例外：它只做 no-replace 新建，已有路径必然拒绝，
 但还没有纳入 change set。冻结前要么把创建也改为 preview/apply，要么在本规范中正式保留

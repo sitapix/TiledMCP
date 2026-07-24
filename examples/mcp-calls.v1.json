@@ -1,0 +1,240 @@
+{
+  "format": "tiled-mcp-call-examples",
+  "formatVersion": 1,
+  "examples": [
+    {
+      "name": "tiled_get_capabilities",
+      "profile": "core",
+      "arguments": {},
+      "purpose": "发现本次连接实际提供的 server、profile、CLI 与注册工具能力。"
+    },
+    {
+      "name": "tiled_list_files",
+      "profile": "core",
+      "arguments": {
+        "limit": 100
+      },
+      "purpose": "有界列出项目根目录下可用的 Tiled 资产。"
+    },
+    {
+      "name": "tiled_list_checkpoints",
+      "profile": "core",
+      "arguments": {
+        "status": "committed",
+        "limit": 25,
+        "scanLimit": 100
+      },
+      "purpose": "有界列出已提交的恢复 checkpoint，并单独报告损坏条目。"
+    },
+    {
+      "name": "tiled_preview_checkpoint_restore",
+      "profile": "core",
+      "arguments": {
+        "checkpointId": "00000000-0000-4000-8000-000000000000",
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "purpose": "用固定格式占位 ID 与当前目标 revision 预览单文档恢复，不立即写入。"
+    },
+    {
+      "name": "tiled_get_map_summary",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj"
+      },
+      "purpose": "读取地图摘要、map revision、完整 dependency revisions 与当前路径内的不透明 asset IDs。"
+    },
+    {
+      "name": "tiled_get_tileset",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "startTileId": 0,
+        "limit": 32
+      },
+      "purpose": "按地图响应返回的 asset ID 分页读取外部 atlas tileset 详情。"
+    },
+    {
+      "name": "tiled_find_tiles",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "query": {
+          "mode": "all",
+          "clauses": [
+            {
+              "kind": "class",
+              "equals": "Ground"
+            }
+          ]
+        },
+        "startTileId": 0,
+        "limit": 32,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "purpose": "在 pin 住 map 与 tileset revision 后按显式 class 语义检索 tile。"
+    },
+    {
+      "name": "tiled_get_region",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "x": 0,
+        "y": 0,
+        "width": 8,
+        "height": 8
+      },
+      "purpose": "读取一个有界 tile-layer 矩形区域。"
+    },
+    {
+      "name": "tiled_render_tileset_sheet",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "page": 0,
+        "pageSize": 64,
+        "columns": 8,
+        "scale": 2
+      },
+      "purpose": "渲染带 local tile ID 标注的有界 atlas 分页图。"
+    },
+    {
+      "name": "tiled_render_preview",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "layerIds": [
+          1
+        ],
+        "scale": 2,
+        "overlays": {
+          "grid": true,
+          "coordinates": true
+        }
+      },
+      "purpose": "用内建渲染器生成带网格和绝对坐标的有界地图预览。"
+    },
+    {
+      "name": "tiled_list_objects",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 2,
+        "limit": 100
+      },
+      "purpose": "有界列出指定 object layer 的对象。"
+    },
+    {
+      "name": "tiled_validate",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj"
+      },
+      "purpose": "只读执行结构与当前 MVP profile 校验。"
+    },
+    {
+      "name": "tiled_analyze_usage",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "topTileLimit": 32,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "purpose": "在同一 map/dependency 快照上分析 tile 使用率、密度与未使用 local IDs。"
+    },
+    {
+      "name": "tiled_create_map",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/new-map.tmj",
+        "width": 32,
+        "height": 24,
+        "tileWidth": 16,
+        "tileHeight": 16,
+        "backgroundColor": "#202830"
+      },
+      "purpose": "以 no-replace 语义直接创建一张新的有限正交 TMJ。"
+    },
+    {
+      "name": "tiled_add_tileset_to_map",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetPath": "tiles/example.tsj",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "expectedTilesetRevision": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "purpose": "pin 住已有依赖和候选 TSJ 后预览新增外部 tileset binding。"
+    },
+    {
+      "name": "tiled_create_layer",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "type": "tilelayer",
+        "name": "Generated",
+        "index": 1,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "purpose": "在固定 map/dependency 快照上预览创建一个空 tile layer。"
+    },
+    {
+      "name": "tiled_preview_edits",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "operations": [
+          {
+            "type": "updateMap",
+            "patch": {
+              "backgroundColor": "#334455"
+            }
+          }
+        ]
+      },
+      "purpose": "预览一次严格、非空的 map 根属性编辑并取得待批准 change set。"
+    },
+    {
+      "name": "tiled_apply_change_set",
+      "profile": "core",
+      "arguments": {
+        "changeSetId": "changeset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "purpose": "在人工批准后，用预览返回的 changeSetId 和 expectedRevision 提交变更。"
+    },
+    {
+      "name": "tiled_render_map",
+      "profile": "with-tmxrasterizer",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "size": 1024,
+        "ignoreVisibility": false
+      },
+      "purpose": "仅在探测并注册 TmxRasterizer 后生成可选的高保真整图 PNG。"
+    }
+  ]
+}

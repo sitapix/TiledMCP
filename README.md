@@ -70,11 +70,12 @@
 tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UTF-8 最多
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
-PNG 元数据，不保留冻结前的 legacy aliases。接口仍未 Frozen：自动生成的完整契约
-文档/示例、rename-stable asset registry、`tiled_create_map` 的 no-replace 例外定案与
-固定 Tiled 1.12.2 集成门槛仍待完成；non-cooperative external-writer CAS 仍是公开的
-M0 安全 blocker。当前能力与 wire schema 应以 `tiled_get_capabilities` 和
-`tools/list` 为准。
+PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
+双 profile 的完整机器契约和人类参考文档，并校验手写维护的每工具 schema-valid 调用
+示例；测试前会做 byte-level drift check。接口仍未 Frozen：显式稳定错误码 registry、
+rename-stable asset registry、`tiled_create_map` 的 no-replace 例外定案与固定 Tiled
+1.12.2 集成门槛仍待完成；non-cooperative external-writer CAS 仍是公开的 M0 安全
+blocker。当前运行能力仍应以 `tiled_get_capabilities` 和 `tools/list` 为准。
 
 ## 文档索引
 
@@ -83,6 +84,10 @@ M0 安全 blocker。当前能力与 wire schema 应以 `tiled_get_capabilities` 
 | [docs/01-tiled-research.md](docs/01-tiled-research.md) | Tiled 软件调研：核心数据模型、文件格式、自动化生态、现有同类 MCP 分析 |
 | [docs/02-mcp-spec.md](docs/02-mcp-spec.md) | **MCP 功能规格草案**：Tools / Resources / Prompts 清单与分期计划 |
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
+| [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
+| [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 19 工具 schema、annotations 与调用参考 |
+| [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
+| [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
 
 ## 一句话定位
 
@@ -553,13 +558,19 @@ checkpoint，因此恢复本身也可逆。
 
 ```bash
 pnpm typecheck
+pnpm contract:check
 pnpm test
 pnpm build
 ```
 
-`pnpm test` 会先构建 `dist/` 并包含真实 production stdio smoke；
+`pnpm contract:generate` 从两个固定 capability profile 的真实 MCP `tools/list`、
+`resources/list`、`resources/templates/list` 和 `resources/read` 响应重建机器契约与
+参考文档；它不会探测 PATH 或启动本机 Tiled。`pnpm contract:check` 只比较生成结果与已
+提交 artifact，并重新用公开 input schema 校验全部 19 个示例。`pnpm test` 会先执行该
+drift gate、构建 `dist/`，并包含真实 production stdio smoke；
 `pnpm test:watch` 为避免使用 stale build 而排除该单项，可随时用
-`pnpm test:stdio` 单独重建并复跑。
+`pnpm test:stdio` 单独重建并复跑；`pnpm verify` 串联 typecheck、build、契约检查和完整
+测试。
 
 测试覆盖路径沙箱、JSON 词法保真、revision 冲突、原子提交、checkpoint 启动对账、
 全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp、四向 flood fill、

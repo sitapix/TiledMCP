@@ -839,7 +839,9 @@ const mapEditSchema = z.discriminatedUnion("type", [
   moveLayerSchema,
   duplicateLayerSchema,
 ]);
-const CORE_TOOL_NAMES = [
+export const TILED_MCP_PROTOCOL_BASELINE =
+  "2025-11-25" as const;
+export const TILED_MCP_CORE_TOOL_NAMES = [
   "tiled_get_capabilities",
   "tiled_list_files",
   "tiled_list_checkpoints",
@@ -858,6 +860,9 @@ const CORE_TOOL_NAMES = [
   "tiled_create_layer",
   "tiled_preview_edits",
   "tiled_apply_change_set",
+] as const;
+export const TILED_MCP_OPTIONAL_TOOL_NAMES = [
+  "tiled_render_map",
 ] as const;
 const capabilityIssueOutputSchema = z
   .object({
@@ -893,12 +898,12 @@ const cliCapabilitiesOutputSchema = z
   .strict();
 const registeredToolNamesOutputSchema = z.union([
   exactJsonValueOutputSchema(
-    [...CORE_TOOL_NAMES] as unknown as JsonValue,
+    [...TILED_MCP_CORE_TOOL_NAMES] as unknown as JsonValue,
   ),
   exactJsonValueOutputSchema(
     [
-      ...CORE_TOOL_NAMES,
-      "tiled_render_map",
+      ...TILED_MCP_CORE_TOOL_NAMES,
+      ...TILED_MCP_OPTIONAL_TOOL_NAMES,
     ] as unknown as JsonValue,
   ),
 ]);
@@ -935,8 +940,19 @@ export interface CreatedTiledMcpServer {
 export async function createTiledMcpServer(
   dependencies: TiledMcpServerDependencies,
 ): Promise<CreatedTiledMcpServer> {
+  const cliCapabilities =
+    await dependencies.cli.probeCapabilities();
+  return createTiledMcpServerFromCapabilitySnapshot(
+    dependencies,
+    cliCapabilities,
+  );
+}
+
+export function createTiledMcpServerFromCapabilitySnapshot(
+  dependencies: TiledMcpServerDependencies,
+  cliCapabilities: TiledCliCapabilities,
+): CreatedTiledMcpServer {
   const { resolver, store, maps, cli } = dependencies;
-  const cliCapabilities = await cli.probeCapabilities();
   const changeSets = new ChangeSetRegistry();
   const renderMutex = new KeyedMutex();
   const server = new McpServer(
@@ -948,13 +964,14 @@ export async function createTiledMcpServer(
   registerGuideResource(server);
 
   const advertisedToolNames = [
-    ...CORE_TOOL_NAMES,
+    ...TILED_MCP_CORE_TOOL_NAMES,
     ...(cliCapabilities.rasterizer.available
-      ? ["tiled_render_map" as const]
+      ? TILED_MCP_OPTIONAL_TOOL_NAMES
       : []),
   ];
   const capabilitiesResult = {
-        protocolBaseline: "2025-11-25",
+        protocolBaseline:
+          TILED_MCP_PROTOCOL_BASELINE,
         serverVersion: SERVER_VERSION,
         resourceCapabilities: {
           direct: [GUIDE_RESOURCE_URI],
@@ -2060,7 +2077,7 @@ export async function createTiledMcpServer(
     register(
       server,
       registeredTools,
-      "tiled_render_map",
+      TILED_MCP_OPTIONAL_TOOL_NAMES[0],
       {
         title: "Render a Tiled map preview",
         description:

@@ -3,8 +3,10 @@
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
 > closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
-> 自动生成契约文档/示例、rename-stable asset registry、create-map 例外定案与固定版本
-> 集成门槛仍未完成，接口与磁盘格式仍不视为冻结。
+> rename-stable asset registry、显式稳定错误码 registry、create-map 例外定案与固定
+> 版本集成门槛仍未完成，接口与磁盘格式仍不视为冻结。当前 discovery contract 已由
+> [机器 artifact](../contracts/mcp-contract.v1.json) 和
+> [生成式参考](generated/mcp-reference.md) 固化，并在测试前做漂移检查。
 
 ### 当前落地状态（2026-07-25）
 
