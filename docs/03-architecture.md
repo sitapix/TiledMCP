@@ -1,8 +1,9 @@
 # TiledMCP 技术架构
 
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
-> [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**，接口与磁盘格式在
-> M0 验证完成前不视为冻结。
+> [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
+> closed output schema，但 text summary、可选 rasterizer 元数据等冻结门槛尚未完成，
+> 接口与磁盘格式仍不视为冻结。
 
 ### 当前落地状态（2026-07-25）
 
@@ -48,6 +49,17 @@ rename-stable asset registry 仍是下文的目标架构，不是当前能力。
 `resources/list` / `resources/templates/list` / `resources/read`，内容为有界
 Markdown，并返回 SHA-256 revision、UTF-8 byte size 和 server version；当前 templates
 列表为空，也不声明 resource subscriptions。
+
+18 个核心工具和可选第 19 个 rasterizer 工具现在分别注册完整、固定字段且
+`additionalProperties: false` 的 output schema；递归 layer、operation preview 和
+summary 的固定对象也保持 closed。统一外层是
+`{result: ToolSpecificSuccess | ApplicationErrorResult}`，但成功结果仍按职责分开：
+query/render、map-edit preview、checkpoint-restore preview、create-map commit 和
+change-set apply 不是同一个 mutation 类型。handler 内的应用错误以 `isError: true` 加
+结构化 `{ok:false,error:{code,message,details}}` 返回；SDK 在 handler 前产生的输入校验
+错误只有 text content。当前成功结果的 text content 对 64 KiB 内的结果仍重复完整 JSON，
+应用错误也镜像其有界 JSON；可选 `tiled_render_map` 仍使用不含 revision/hash 的 legacy
+metadata。这些都是接口 Frozen 前待收敛项。
 
 atlas TSJ projection 以 Tiled 1.12 为语义基线：tile class 的当前磁盘字段是
 `tiles[].type`，`tiles[].class` 仅作为 Tiled 1.9 兼容输入。详情响应只携带所选 TSJ 的
@@ -144,6 +156,18 @@ TiledMCP 的第一目标不是“能改 JSON”，而是让自动化编辑同时
 │ roots / revisions / locks / atomic replace / WAL / snapshots  │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+### 1.1 MCP 输出边界
+
+接口层不使用 `{result: unknown}` 之类的兜底 schema。每个 tool 的成功分支独立建模，公共
+外层只负责把它和 `ApplicationErrorResult` 组合；固定对象一律 closed，动态 key 只留给
+dependency revision record 与错误 `details`。这样 `tools/list` 得到的客户端 validator
+能同时验证合法成功结果和 handler 内的合法应用错误。
+
+协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、长度/深度预算和 JSON
+安全化。`Diagnostic` 是 validator 成功结果中的问题记录，不承担 transport/application
+错误 envelope 的职责。
 
 写操作遵循固定流水线：
 
@@ -1265,7 +1289,9 @@ M1 明确拒绝：
    search 和 edit 合并。
 2. **Fixture round-trip**：由目标 Tiled 版本实际生成；no-op 比 bytes，局部编辑比未触及文本与
    语义树。
-3. **Contract**：每个 MCP schema、错误码、annotations、size/page limit 和 structured result。
+3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
+   `structuredContent`、SDK text-only 输入校验错误、错误码、annotations 和 size/page
+   limit。
 4. **Integration**：固定版本 Tiled one-shot、`--export-formats`、`tmxrasterizer`；同时测试
    “未安装/版本不支持”的正常降级。
 5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。

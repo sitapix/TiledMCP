@@ -9221,23 +9221,68 @@ function collectLayerSummaries(
   return layers.map((value, index) => {
     const layer = expectObject(value, `${context}[${index}]`);
     const displayName = boundedDisplayString(layer.name);
+    const layerType = expectString(
+      layer.type,
+      `${context}[${index}].type`,
+    );
+    if (
+      layerType !== "tilelayer" &&
+      layerType !== "objectgroup" &&
+      layerType !== "imagelayer" &&
+      layerType !== "group"
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}[${index}].type is not a supported Tiled layer type.`,
+        {
+          layerType,
+        },
+      );
+    }
     const summary: Record<string, unknown> = {
       id: expectInteger(layer.id, `${context}[${index}].id`),
       name: displayName.value,
       ...(displayName.truncated ? { nameTruncated: true } : {}),
-      type: expectString(layer.type, `${context}[${index}].type`),
+      type: layerType,
       visible: layer.visible !== false,
       opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
     };
-    if (layer.type === "tilelayer") {
-      summary.width = layer.width;
-      summary.height = layer.height;
-      summary.x = layer.x ?? 0;
-      summary.y = layer.y ?? 0;
+    if (layerType === "tilelayer") {
+      const width = expectInteger(
+        layer.width,
+        `${context}[${index}].width`,
+      );
+      const height = expectInteger(
+        layer.height,
+        `${context}[${index}].height`,
+      );
+      if (width <= 0 || height <= 0) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${context}[${index}] tile layer dimensions must be positive integers.`,
+          {
+            width,
+            height,
+          },
+        );
+      }
+      summary.width = width;
+      summary.height = height;
+      summary.x = expectInteger(
+        layer.x ?? 0,
+        `${context}[${index}].x`,
+      );
+      summary.y = expectInteger(
+        layer.y ?? 0,
+        `${context}[${index}].y`,
+      );
     }
-    if (layer.type === "group" && Array.isArray(layer.layers)) {
+    if (layerType === "group") {
       summary.layers = collectLayerSummaries(
-        layer.layers,
+        expectArray(
+          layer.layers,
+          `${context}[${index}].layers`,
+        ),
         `${context}[${index}].layers`,
         depth + 1,
         budget,

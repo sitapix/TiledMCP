@@ -58,11 +58,18 @@
 - Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览；
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
   `tiled://guide` 安全编辑 playbook；
-- stdio MCP server、严格输入 schema、结构化输出 envelope 与四项 tool annotations。
+- stdio MCP server、严格输入 schema、每工具精确 closed output schema、统一应用错误
+  envelope 与四项 tool annotations。
 
 无限地图、压缩 tile data、内嵌/图片集合 tileset、tile/text/polygon/polyline
 对象、模板和跨文件事务尚未实现；
 这些输入会被明确拒绝，不会静默降级。
+
+接口尚未 Frozen：成功结果的 text content 在不超过 64 KiB 时仍会镜像完整 JSON，而不是
+稳定短摘要，应用错误也会镜像其有界 JSON；可选 `tiled_render_map` 仍使用未含
+revision/hash 的 legacy raster
+元数据；自动生成的完整契约文档/示例和 rename-stable asset registry 也仍待完成。当前
+能力与 wire schema 应以 `tiled_get_capabilities` 和 `tools/list` 为准。
 
 ## 文档索引
 
@@ -132,6 +139,15 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以目标 revision CAS 提交已批准的 map edit 或 checkpoint restore |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回 PNG |
+
+所有已注册工具都公布自己的精确、封闭 output schema。正常 handler 结果的统一外层是
+`{"result": <该工具的成功结果>}`；合法输入触发的领域/应用错误设置 `isError: true`，并
+返回
+`{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
+查询/渲染结果、map-edit preview、checkpoint-restore preview、`tiled_create_map` 的
+commit 结果以及 `tiled_apply_change_set` 的 apply 结果是不同的类型，不能把它们当成同一
+`MutationResult`。输入在进入 handler 前被 MCP SDK schema 拒绝时只有 text error，不带
+`structuredContent`。
 
 当前 direct Resource：
 

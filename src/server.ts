@@ -15,6 +15,7 @@ import {
   DEFAULT_MAX_PENDING_CELL_WRITES,
 } from "./changeSets.js";
 import { TiledMcpError, asTiledMcpError } from "./errors.js";
+import type { JsonValue } from "./formats/json.js";
 import {
   DEFAULT_TILESET_SHEET_PAGE_SIZE,
   DEFAULT_TILESET_SHEET_SCALE,
@@ -97,6 +98,34 @@ import {
   TILE_FIND_PROPERTY_EQUALS_TYPES,
 } from "./maps/tileSearch.js";
 import type { MapEditOperation } from "./maps/types.js";
+import {
+  applyResultOutputSchema,
+  commitResultOutputSchema,
+  exactJsonValueOutputSchema,
+  toolOutputSchema,
+} from "./outputSchemas/common.js";
+import {
+  addTilesetPreviewToolOutputSchema,
+  checkpointRestorePreviewToolOutputSchema,
+  createLayerPreviewToolOutputSchema,
+  previewEditsToolOutputSchema,
+} from "./outputSchemas/changeSets.js";
+import {
+  checkpointListToolOutputSchema,
+  listFilesToolOutputSchema,
+  mapSummaryToolOutputSchema,
+  nativePreviewToolOutputSchema,
+  objectListToolOutputSchema,
+  rasterMapToolOutputSchema,
+  regionToolOutputSchema,
+  tilesetSheetToolOutputSchema,
+  validationToolOutputSchema,
+} from "./outputSchemas/read.js";
+import {
+  tileFindToolOutputSchema,
+  tilesetDetailToolOutputSchema,
+  usageAnalysisToolOutputSchema,
+} from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
   GUIDE_RESOURCE_URI,
@@ -787,7 +816,69 @@ const mapEditSchema = z.discriminatedUnion("type", [
   moveLayerSchema,
   duplicateLayerSchema,
 ]);
-const resultOutputSchema = z.object({ result: z.unknown() }).strict();
+const CORE_TOOL_NAMES = [
+  "tiled_get_capabilities",
+  "tiled_list_files",
+  "tiled_list_checkpoints",
+  "tiled_preview_checkpoint_restore",
+  "tiled_get_map_summary",
+  "tiled_get_tileset",
+  "tiled_find_tiles",
+  "tiled_get_region",
+  "tiled_render_tileset_sheet",
+  "tiled_render_preview",
+  "tiled_list_objects",
+  "tiled_validate",
+  "tiled_analyze_usage",
+  "tiled_create_map",
+  "tiled_add_tileset_to_map",
+  "tiled_create_layer",
+  "tiled_preview_edits",
+  "tiled_apply_change_set",
+] as const;
+const capabilityIssueOutputSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+  })
+  .strict();
+const cliCapabilitiesOutputSchema = z
+  .object({
+    tiled: z
+      .object({
+        executable: z.string(),
+        available: z.boolean(),
+        version: z.string().nullable(),
+        mapExportFormats: z.array(z.string()),
+        tilesetExportFormats: z.array(z.string()),
+        issues: z.array(
+          capabilityIssueOutputSchema,
+        ),
+      })
+      .strict(),
+    rasterizer: z
+      .object({
+        executable: z.string(),
+        available: z.boolean(),
+        version: z.string().nullable(),
+        issues: z.array(
+          capabilityIssueOutputSchema,
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+const registeredToolNamesOutputSchema = z.union([
+  exactJsonValueOutputSchema(
+    [...CORE_TOOL_NAMES] as unknown as JsonValue,
+  ),
+  exactJsonValueOutputSchema(
+    [
+      ...CORE_TOOL_NAMES,
+      "tiled_render_map",
+    ] as unknown as JsonValue,
+  ),
+]);
 
 const READ_ONLY: ToolAnnotations = {
   title: "Read local Tiled project data",
@@ -833,20 +924,13 @@ export async function createTiledMcpServer(
 
   registerGuideResource(server);
 
-  register(
-    server,
-    registeredTools,
-    "tiled_get_capabilities",
-    {
-      title: "Inspect TiledMCP capabilities",
-      description:
-        "Returns the implemented edit profile and locally available Tiled command-line adapters.",
-      inputSchema: z.object({}).strict(),
-      outputSchema: resultOutputSchema,
-      annotations: READ_ONLY,
-    },
-    async () =>
-      toolResult({
+  const advertisedToolNames = [
+    ...CORE_TOOL_NAMES,
+    ...(cliCapabilities.rasterizer.available
+      ? ["tiled_render_map" as const]
+      : []),
+  ];
+  const capabilitiesResult = {
         protocolBaseline: "2025-11-25",
         serverVersion: SERVER_VERSION,
         resourceCapabilities: {
@@ -1232,8 +1316,42 @@ export async function createTiledMcpServer(
           },
         },
         cli: cliCapabilities,
-        registeredTools,
-      }),
+        registeredTools: advertisedToolNames,
+      };
+  const capabilitiesToolOutputSchema =
+    toolOutputSchema(
+      exactJsonValueOutputSchema(
+        capabilitiesResult as unknown as JsonValue,
+        (jsonPointer) => {
+          if (jsonPointer === "/cli") {
+            return cliCapabilitiesOutputSchema;
+          }
+          if (jsonPointer === "/serverVersion") {
+            return z.string().min(1);
+          }
+          if (jsonPointer === "/registeredTools") {
+            return registeredToolNamesOutputSchema;
+          }
+          return undefined;
+        },
+      ),
+    );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_get_capabilities",
+    {
+      title: "Inspect TiledMCP capabilities",
+      description:
+        "Returns the implemented edit profile and locally available Tiled command-line adapters.",
+      inputSchema: z.object({}).strict(),
+      outputSchema:
+        capabilitiesToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async () =>
+      toolResult(capabilitiesResult),
   );
 
   register(
@@ -1245,7 +1363,7 @@ export async function createTiledMcpServer(
       description:
         "Lists map, tileset, template, world and project assets under the configured project root.",
       inputSchema: z.object({ limit: z.number().int().min(1).max(10_000).default(10_000) }).strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: listFilesToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ limit }) => executeTool(() => resolver.listAssets(limit)),
@@ -1266,7 +1384,8 @@ export async function createTiledMcpServer(
           scanLimit: z.number().int().min(1).max(10_000).default(1_000),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        checkpointListToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ status, limit, scanLimit }) =>
@@ -1295,7 +1414,8 @@ export async function createTiledMcpServer(
           expectedRevision: revisionSchema,
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        checkpointRestorePreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({ checkpointId, expectedRevision }) =>
@@ -1319,7 +1439,7 @@ export async function createTiledMcpServer(
       description:
         "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: mapSummaryToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath }) => executeTool(() => maps.getSummary(mapPath)),
@@ -1351,7 +1471,8 @@ export async function createTiledMcpServer(
             .default(DEFAULT_TILESET_METADATA_LIMIT),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        tilesetDetailToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath, tilesetAssetId, startTileId, limit }) =>
@@ -1394,7 +1515,7 @@ export async function createTiledMcpServer(
           expectedTilesetRevision: revisionSchema.optional(),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: tileFindToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({
@@ -1441,7 +1562,7 @@ export async function createTiledMcpServer(
           height: z.number().int().positive(),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: regionToolOutputSchema,
       annotations: READ_ONLY,
     },
     async (input) => executeTool(() => maps.getRegion(input)),
@@ -1486,7 +1607,8 @@ export async function createTiledMcpServer(
             .default(DEFAULT_TILESET_SHEET_SCALE),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        tilesetSheetToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath, tilesetAssetId, page, pageSize, columns, scale }) =>
@@ -1560,7 +1682,8 @@ export async function createTiledMcpServer(
             .optional(),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        nativePreviewToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath, region, layerIds, scale, overlays }) =>
@@ -1608,7 +1731,7 @@ export async function createTiledMcpServer(
           limit: z.number().int().min(1).max(10_000).default(1_000),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: objectListToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath, layerId, limit }) =>
@@ -1630,7 +1753,8 @@ export async function createTiledMcpServer(
       description:
         "Performs read-only structural and MVP-profile validation. It never modifies the file.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        validationToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath }) => executeTool(() => maps.validate(mapPath)),
@@ -1645,7 +1769,8 @@ export async function createTiledMcpServer(
       description:
         "Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included.",
       inputSchema: usageAnalysisInputSchema,
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        usageAnalysisToolOutputSchema,
       annotations: READ_ONLY,
     },
     async (input) =>
@@ -1675,7 +1800,9 @@ export async function createTiledMcpServer(
             .optional(),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: toolOutputSchema(
+        commitResultOutputSchema,
+      ),
       annotations: {
         title: "Create a local TMJ map",
         readOnlyHint: false,
@@ -1714,7 +1841,8 @@ export async function createTiledMcpServer(
           expectedTilesetRevision: revisionSchema.optional(),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        addTilesetPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -1747,7 +1875,8 @@ export async function createTiledMcpServer(
       description:
         "Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without writing. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.",
       inputSchema: createLayerInputSchema,
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        createLayerPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async (input) =>
@@ -1798,7 +1927,8 @@ export async function createTiledMcpServer(
           operations: z.array(mapEditSchema).min(1).max(128),
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema:
+        previewEditsToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -1832,7 +1962,9 @@ export async function createTiledMcpServer(
           expectedRevision: revisionSchema,
         })
         .strict(),
-      outputSchema: resultOutputSchema,
+      outputSchema: toolOutputSchema(
+        applyResultOutputSchema,
+      ),
       annotations: {
         title: "Apply an approved local Tiled change",
         readOnlyHint: false,
@@ -1870,7 +2002,8 @@ export async function createTiledMcpServer(
             ignoreVisibility: z.boolean().optional(),
           })
           .strict(),
-        outputSchema: resultOutputSchema,
+        outputSchema:
+          rasterMapToolOutputSchema,
         annotations: READ_ONLY,
       },
       async ({ mapPath, size, ignoreVisibility }) =>
@@ -1887,6 +2020,22 @@ export async function createTiledMcpServer(
                 ...(ignoreVisibility === undefined ? {} : { ignoreVisibility }),
               };
               const rendered = await cli.renderPng(inputPath, outputPath, options);
+              if (
+                rendered.width <= 0 ||
+                rendered.height <= 0 ||
+                rendered.width > MAX_RENDER_EDGE ||
+                rendered.height > MAX_RENDER_EDGE
+              ) {
+                throw new TiledMcpError(
+                  "TMXRASTERIZER_OUTPUT_INVALID",
+                  `Rendered preview dimensions must be between 1 and ${MAX_RENDER_EDGE} pixels per edge.`,
+                  {
+                    width: rendered.width,
+                    height: rendered.height,
+                    maxEdge: MAX_RENDER_EDGE,
+                  },
+                );
+              }
               if (rendered.bytes > MAX_INLINE_IMAGE_BYTES) {
                 throw new TiledMcpError(
                   "IMAGE_TOO_LARGE",
@@ -1919,10 +2068,27 @@ export async function createTiledMcpServer(
     );
   }
 
+  if (
+    registeredTools.length !== advertisedToolNames.length ||
+    registeredTools.some(
+      (toolName, index) =>
+        toolName !== advertisedToolNames[index],
+    )
+  ) {
+    throw new Error(
+      `Registered tool order does not match the advertised capability snapshot: ${JSON.stringify(
+        { advertisedToolNames, registeredTools },
+      )}`,
+    );
+  }
+
   return { server, cliCapabilities, registeredTools };
 }
 
-function register<InputSchema extends z.ZodType>(
+function register<
+  InputSchema extends z.ZodType,
+  OutputSchema extends z.ZodType,
+>(
   server: McpServer,
   registeredTools: string[],
   name: string,
@@ -1930,7 +2096,7 @@ function register<InputSchema extends z.ZodType>(
     title: string;
     description: string;
     inputSchema: InputSchema;
-    outputSchema: typeof resultOutputSchema;
+    outputSchema: OutputSchema;
     annotations: ToolAnnotations;
   },
   callback: (input: z.output<InputSchema>) => Promise<CallToolResult>,

@@ -1,6 +1,6 @@
 # TiledMCP 功能规格（冻结前草案）
 
-> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。完整、可执行的 `inputSchema` / `outputSchema` 将以代码中的 schema 为单一事实来源并自动生成文档，完成后本文才进入 Frozen。
+> **状态：Draft。** 本文定义协议基线、共享语义和能力 roadmap；下文的工具表是候选能力清单，不是首版一次性注册全部工具的承诺。当前已注册工具已有代码定义的完整、封闭 `inputSchema` / `outputSchema`，但自动生成的契约文档、示例以及下列其余冻结门槛尚未全部完成，因此本文和接口仍未进入 Frozen。
 >
 > 设计依据见 [01-tiled-research.md](01-tiled-research.md)。
 
@@ -11,7 +11,7 @@
 - **首个 transport**：`stdio`。服务器不向 stdout 输出日志；日志只写 stderr。HTTP/远程 transport 不属于 M1。
 - **能力声明**：仅声明当前实现且通过契约测试的 Tools、Resources、Prompts；未实现的 roadmap 项不得注册空壳。
 - **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义，由它们生成 MCP JSON Schema、本文的参数表和契约测试 fixture。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
-- **冻结门槛**：所有已注册工具都必须有完整 `inputSchema`、`outputSchema`、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
+- **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
 
 ### 0.1 当前实现切片（2026-07-25）
 
@@ -33,13 +33,19 @@ union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 polygon/polyline 等复杂对象会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
-这一切片已有严格输入 schema、结构化输出 envelope、四项 annotations 和 MCP 客户端契约
-测试；tile/object/layer/map-root/tileset-reference 写入使用目标子树、object-member
-或 array-element local patch，完整语义复核
-通过后才提交。完整字段级
-output schema/codegen 尚未完成。当前外部 tileset `assetId` 是由项目路径确定性派生的
-临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
-前的待办。因此本文仍是 Draft，共享契约描述的是冻结目标；运行时应以
+这一切片已有严格输入 schema、每个工具各自的完整字段级 closed output schema、四项
+annotations 和 MCP 客户端契约测试；固定结构的嵌套对象同样拒绝额外字段。每个工具的
+`structuredContent` 都使用 `{result: Success | ApplicationErrorResult}` 外层，其中
+`Success` 是该工具自己的精确结果类型，而不是共享的宽泛对象。tile/object/layer/map-root/
+tileset-reference 写入使用目标子树、object-member 或 array-element local patch，完整
+语义复核通过后才提交。
+
+当前仍未完成全部 schema/codegen 文档与示例；普通 `content` 对不超过 64 KiB 的结果仍会
+复制完整 JSON，而不是稳定的短摘要；可选 `tiled_render_map` 仍返回 legacy raster
+元数据，尚未与两种内建图片结果的 revision/hash/pixel-size 契约统一。外部 tileset
+`assetId` 也是由项目路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；
+持久化 rename-stable registry 是接口冻结前的待办。因此本文仍是 Draft，共享契约描述的
+冻结目标不能视为已全部达成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
@@ -111,53 +117,113 @@ type Target =
   | { kind: "wangcolor"; tileset: TilesetRef; wangSetId: string; colorId: string };
 
 type Diagnostic = {
-  code: string;                         // 稳定、可机器判断
   severity: "info" | "warning" | "error";
+  code: string;                         // 稳定、可机器判断
   message: string;                      // 面向模型的人类可读说明
-  path?: ProjectPath;
+  path?: string;
   jsonPointer?: string;
-  tilePosition?: { x: number; y: number; layerId?: number };
-  help?: string;
-  candidates?: Array<{ id: string | number; label: string }>;
-  fixId?: string;
 };
 
-type MutationResult =
-  | {
-      state: "preview";
-      changeSetId: string;
-      expectedRevision: Revision;
-      expiresAt: string;
-      destructive: boolean;
-      summary: string;
-      changedLocations: number;
-      diagnostics: Diagnostic[];
-    }
-  | {
-      state: "committed";
-      changeSetId: string;
-      previousRevision: Revision;
-      revision: Revision;
-      summary: string;
-      changedLocations: number;
-      diagnostics: Diagnostic[];
-    };
+type ApplicationErrorResult = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details: Record<string, JsonValue>;
+  };
+};
+
+type ToolStructuredContent<Success> = {
+  result: Success | ApplicationErrorResult;
+};
+
+// 查询成功结果由各工具独立定义，例如 MapSummaryResult、
+// RegionResult、ValidationResult 或 TilesetSheetResult。
+
+type MapEditPreviewResult = {
+  kind: "mapEdit";
+  changeSetId: string;
+  planDigest: string;
+  mapPath: ProjectPath;
+  expectedRevision: Revision;
+  dependencyRevisions: Record<AssetId, Revision>;
+  prospectiveDependencyRevisions?: Record<AssetId, Revision>;
+  operations: OperationPreview[];
+  summary: MapEditSummary;
+  snapshotConsistency: "non-atomic-read-set";
+  createdAt: string;
+  expiresAt: string;
+};
+
+type CheckpointRestorePreviewResult = {
+  kind: "checkpointRestore";
+  changeSetId: string;
+  planDigest: string;
+  targetPath: ProjectPath;
+  expectedRevision: Revision;
+  checkpoint: CheckpointPreview;
+  restore: RestorePreview;
+  operations: [RestoreCheckpointOperationPreview];
+  summary: CheckpointRestoreSummary;
+  snapshotConsistency: "non-atomic-read-set";
+  createdAt: string;
+  expiresAt: string;
+};
+
+type CommitResult = {
+  path: ProjectPath;
+  beforeRevision: Revision | null;
+  revision: Revision;
+  checkpointId: string | null;
+  changed: boolean;
+  warnings?: string[];
+};
+
+type ApplyResult = CommitResult & {
+  changeSetId: string;
+};
 ```
 
 补充 wire 规则：
 
-1. 读工具在 `structuredContent` 返回符合 `outputSchema` 的对象，`content` 只给简短摘要；不得把超大数组退化成文本。项目资产的 mutation 预览/提交统一返回 `MutationResult`；checkpoint 索引等管理数据使用各自的 typed result。
-2. 错误使用稳定 `code` 和 `Diagnostic[]`；工具调用失败时设置 `isError: true`，并仍尽可能返回符合错误 output schema 的 `structuredContent`。
-3. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带 `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默覆盖。
-4. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision 和 TTL；它们不是“当前选区/上一步操作”之类的隐式会话状态。
-5. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入工具 schema。
+1. 所有已注册工具的 `structuredContent` 都是 closed
+   `{result: Success | ApplicationErrorResult}`；每个工具在 `tools/list` 中公布自己的精确
+   `Success` 分支，固定对象（包括递归 layer、operation preview 和 summary）都拒绝额外
+   key。只有 dependency revision 字典和错误 `details` 这类语义上确实动态的字典允许动态
+   key。
+2. 查询/渲染工具返回各自的 typed result；两个专用 map-edit preview 工具与
+   `tiled_preview_edits` 通用 preview 返回 `MapEditPreviewResult` 的受限变体，
+   checkpoint 恢复 preview 返回独立的
+   `CheckpointRestorePreviewResult`。`tiled_create_map` 成功时返回 `CommitResult`；
+   `tiled_apply_change_set` 返回带 `changeSetId` 的 `ApplyResult`。这些结果不能统称为一个
+   `MutationResult`。
+3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
+   并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
+   `structuredContent`。`Diagnostic[]` 只属于 `tiled_validate` 的成功结果，不是通用错误
+   envelope。
+4. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
+   `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
+   `ApplicationErrorResult`。
+5. 当前成功结果的 text content 会在 64 KiB 内镜像完整 JSON，超出后只给
+   `structuredContent` 提示；有长度预算的应用错误也会把完整错误 JSON 镜像为 text。
+   把两者改成稳定、简短且不会重复大数组的摘要仍是 Frozen 前待办。图片工具另外返回 MCP
+   `image` content，二进制不进入 `structuredContent`。
+6. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带
+   `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默覆盖。
+7. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision
+   和 TTL；它们不是“当前选区/上一步操作”之类的隐式会话状态。
+8. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入
+   工具 schema。
 
 ### 1.1 用户授权、预览与提交
 
 `confirm: true` **不代表用户授权**：模型本身可以填写该字段，服务器不能据此证明用户看过风险。写操作采用两阶段协议：
 
-1. 写工具或 `tiled_preview_edits` 只计算变更，返回绑定 `expectedRevision` 的 `changeSetId`、摘要、诊断和 `destructive` 标记。
-2. MCP 客户端通过自己的批准 UI（可用时使用 elicitation）把摘要呈现给用户。
+1. 三个 map-edit preview 入口或 checkpoint restore preview 只计算变更，返回绑定
+   `expectedRevision` 的 `changeSetId`、有界 `operations`/`summary`、风险字段和过期时间；
+   不返回 commit/apply 结果。
+2. MCP 客户端通过自己的批准 UI（可用时使用 elicitation）把 preview 的有界摘要与风险
+   字段呈现给用户。
 3. 只有通过客户端“重要操作”批准门的 `tiled_apply_change_set(changeSetId, expectedRevision)` 才提交；服务器再次执行 revision CAS。change set 过期、连接不匹配或 revision 改变均拒绝提交。
 
 因此工具 schema 中不使用 `confirm` 字段。服务端 annotations 是风险提示和客户端策略输入，不是授权证明。
@@ -834,7 +900,7 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_validate` | **只读格式校验**：GID 越界、tileset/图片路径失效、id 一致性、重复对象 id、chunk 完整性；返回 `Diagnostic[]` 和可选 `fixId`，绝不写盘 | `path` |
+| `tiled_validate` | **只读格式校验**：GID 越界、tileset/图片路径失效、id 一致性、重复对象 id、chunk 完整性；成功结果为 `{path, revision, valid, diagnostics: Diagnostic[]}`，绝不写盘 | `path` |
 | `tiled_preview_validation_fixes` | 把明确选择的 `fixId` 计算为待批准 change set；不与只读 validate 共用工具名 | `path`, `expectedRevision`, `fixIds` |
 | `tiled_check_connectivity` | **游戏性校验**（后续候选）：基于碰撞图层或属性规则分析可达性、封闭区域和对象穿墙 | `mapPath`, `collisionLayerId\|collisionRule`, `from?`, `to?` |
 | `tiled_register_tile_names` | 语义 tile 注册表：把 `grass`、`water_corner_tl` 等名字映射到具体 tile，之后所有工具的 `tile` 参数可直接用名字（借鉴 hoberobin 思路；配合 `auto-name-tiles` Prompt 可由模型看图自动完成） | `tilesetPath`, `names: {name: tileId}` |
@@ -876,8 +942,9 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 
 #### 3.11.1 图片 wire contract 与限制
 
-每个图片结果的 `structuredContent.result` 至少包含输出摘要；sheet 使用单数
-`source`/`image`，地图预览则使用实际影响本次像素的 `sources[]`：
+两种内建图片工具的成功 `structuredContent.result` 使用各自的 exact closed schema；
+下列代码块是它们字段的合并说明，不是可接受任意字段组合的共享 schema。sheet 使用单数
+`source`/`image`，native 地图预览使用实际影响本次像素的 `sources[]`：
 
 ```ts
 {
@@ -925,6 +992,22 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
   resourceUri?: string;
 }
 ```
+
+可选 `tmxrasterizer` 工具 `tiled_render_map` 当前也有 closed output schema，但仍沿用较窄
+的 legacy 结果：
+
+```ts
+{
+  mapPath: ProjectPath;
+  mimeType: "image/png";
+  bytes: number;
+  width: number;
+  height: number;
+}
+```
+
+它还没有返回 map revision、内容 hash 或统一的 `pixelSize` / `byteLength` 字段；冻结前
+必须把它迁移到与内建图片结果一致的可追溯元数据，或明确把这套 legacy 形状作为稳定例外。
 
 - 当前 tileset sheet 的输入上限为 `64 MiB`、`4096²` 解码像素和 `8192` 单边；输出上限为
   `2048` 单边、`1,500,000` 像素和编码后 `8 MiB`。每页请求最多 256 个 tile，

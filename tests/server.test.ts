@@ -159,8 +159,470 @@ describe("createTiledMcpServer", () => {
       });
       expect(tool.outputSchema).toMatchObject({
         type: "object",
+        properties: {
+          result: expect.any(Object),
+        },
         additionalProperties: false,
       });
+      expect(
+        (tool.outputSchema as { required?: unknown } | undefined)?.required,
+      ).toEqual(["result"]);
+      expect(
+        Object.keys(
+          (tool.outputSchema as { properties: Record<string, unknown> })
+            .properties,
+        ),
+      ).toEqual(["result"]);
+      expectNoUnconstrainedOutputSchemas(tool.outputSchema, tool.name);
+    }
+    expect(
+      JSON.stringify(
+        byName.get("tiled_get_capabilities")
+          ?.outputSchema,
+      ),
+    ).not.toContain(harness.root);
+    const capabilities = resultOf<{
+      serverVersion: string;
+      registeredTools: string[];
+      cli: {
+        tiled: { executable: string };
+        rasterizer: { executable: string };
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_capabilities",
+        arguments: {},
+      }),
+    );
+    expect(capabilities).toMatchObject({
+      serverVersion: SERVER_VERSION,
+      registeredTools: CORE_TOOLS,
+      cli: {
+        tiled: {
+          executable: expect.stringContaining(
+            harness.root,
+          ),
+        },
+        rasterizer: {
+          executable: expect.stringContaining(
+            harness.root,
+          ),
+        },
+      },
+    });
+  });
+
+  it("keeps application errors schema-valid after caching client validators while SDK input errors stay text-only", async () => {
+    await harness.client.listTools();
+
+    const applicationError = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: "../outside.tmj" },
+      }),
+    );
+    expect(applicationError).toMatchObject({
+      isError: true,
+      structuredContent: {
+        result: {
+          ok: false,
+          error: {
+            code: "INVALID_PROJECT_PATH",
+            message: expect.any(String),
+            details: { path: "../outside.tmj" },
+          },
+        },
+      },
+    });
+
+    const inputError = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_validate",
+        arguments: {
+          mapPath: MAP_PATH,
+          unexpected: true,
+        },
+      }),
+    );
+    expect(inputError.isError).toBe(true);
+    expect(inputError.structuredContent).toBeUndefined();
+    expect(inputError.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("Input validation error"),
+      }),
+    ]);
+  });
+
+  it("accepts a no-op layer update preview through the cached exact output validator", async () => {
+    await harness.client.listTools();
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+
+    const preview = resultOf<{
+      operations: Array<{
+        changedFields: string[];
+        wouldChange: boolean;
+      }>;
+      summary: {
+        affectedLayerIds: number[];
+        updatedLayerIds: number[];
+        layerUpdates: Array<{
+          changedFields: string[];
+          wouldChange: boolean;
+        }>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions: summary.dependencyRevisions,
+          operations: [
+            {
+              type: "updateLayer",
+              layerId: LAYER_ID,
+              patch: { name: "Ground" },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(preview.operations).toEqual([
+      expect.objectContaining({
+        type: "updateLayer",
+        layerId: LAYER_ID,
+        requestedFields: ["name"],
+        changedFields: [],
+        wouldChange: false,
+      }),
+    ]);
+    expect(preview.summary).toMatchObject({
+      affectedLayerIds: [],
+      updatedLayerIds: [],
+      layerUpdates: [
+        {
+          operationIndex: 0,
+          layerId: LAYER_ID,
+          requestedFields: ["name"],
+          changedFields: [],
+          wouldChange: false,
+        },
+      ],
+    });
+  });
+
+  it("validates fill-region and stamp-pattern previews through the cached exact output validator", async () => {
+    await harness.client.listTools();
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+
+    const preview = resultOf<{
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        operationCount: number;
+        cellWrites: number;
+        tileStamps: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "fillRegion",
+              layerId: LAYER_ID,
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+              tile: null,
+            },
+            {
+              type: "stampPattern",
+              layerId: LAYER_ID,
+              x: 1,
+              y: 0,
+              pattern: [[null]],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(preview.operations).toMatchObject([
+      {
+        type: "fillRegion",
+        layerId: LAYER_ID,
+        region: {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        tile: null,
+      },
+      {
+        type: "stampPattern",
+        layerId: LAYER_ID,
+        destructive: true,
+        region: {
+          x: 1,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        cellCount: 1,
+        nonEmptyCellCount: 0,
+        clearCellCount: 1,
+        sample: [{ x: 1, y: 0, tile: null }],
+        omittedCellCount: 0,
+      },
+    ]);
+    expect(preview.summary).toMatchObject({
+      operationCount: 2,
+      cellWrites: 2,
+      tileStamps: [
+        {
+          operationIndex: 1,
+          layerId: LAYER_ID,
+          region: {
+            x: 1,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+          cellCount: 1,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["width", 0],
+    ["height", -1],
+  ] as const)(
+    "returns a structured application error for a tile layer with %s=%i after caching output validators",
+    async (field, value) => {
+      await harness.client.listTools();
+      const malformed = baseMap();
+      const tileLayer = (malformed.layers as JsonObject[])[0];
+      if (tileLayer === undefined) {
+        throw new Error("Expected the fixture tile layer.");
+      }
+      tileLayer[field] = value;
+      await writeJson(join(harness.root, MAP_PATH), malformed);
+
+      const response = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_get_map_summary",
+          arguments: { mapPath: MAP_PATH },
+        }),
+      );
+      expect(response).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code: "INVALID_DOCUMENT",
+              details: {
+                width: field === "width" ? value : 2,
+                height: field === "height" ? value : 2,
+              },
+            },
+          },
+        },
+      });
+    },
+  );
+
+  it("rejects unsupported layer discriminators before projecting a map summary", async () => {
+    await harness.client.listTools();
+    const malformed = baseMap();
+    const tileLayer = (malformed.layers as JsonObject[])[0];
+    if (tileLayer === undefined) {
+      throw new Error("Expected the fixture tile layer.");
+    }
+    tileLayer.type = "future-layer";
+    await writeJson(join(harness.root, MAP_PATH), malformed);
+
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    expect(response).toMatchObject({
+      isError: true,
+      structuredContent: {
+        result: {
+          ok: false,
+          error: {
+            code: "INVALID_DOCUMENT",
+            details: {
+              layerType: "future-layer",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("lists broadly formatted checkpoint IDs and Date.parse timestamps through the cached exact output validator", async () => {
+    await harness.client.listTools();
+    const checkpointsDirectory = join(
+      harness.root,
+      ".tiledmcp",
+      "checkpoints",
+    );
+    await mkdir(checkpointsDirectory, { recursive: true });
+    const validId = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    const corruptId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+    const createdAt = "Sat, 25 Jul 2026 00:00:00 GMT";
+    expect(Number.isFinite(Date.parse(createdAt))).toBe(true);
+    await writeJson(join(checkpointsDirectory, `${validId}.json`), {
+      version: 1,
+      id: validId,
+      createdAt,
+      label: "broad parser compatibility",
+      path: MAP_PATH,
+      status: "prepared",
+      before: { existed: false },
+      afterRevision: `sha256:${"0".repeat(64)}`,
+    });
+    await writeFile(
+      join(checkpointsDirectory, `${corruptId}.json`),
+      '{"version":',
+      "utf8",
+    );
+
+    const listing = resultOf<{
+      manifests: Array<{ id: string; createdAt: string }>;
+      corruptEntries: Array<{
+        fileName: string;
+        checkpointId?: string;
+        code: string;
+      }>;
+      scannedEntries: number;
+      truncated: boolean;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_checkpoints",
+        arguments: {},
+      }),
+    );
+    expect(listing).toMatchObject({
+      manifests: [
+        {
+          id: validId,
+          createdAt,
+        },
+      ],
+      corruptEntries: [
+        {
+          fileName: `${corruptId}.json`,
+          checkpointId: corruptId,
+          code: "CHECKPOINT_CORRUPT",
+        },
+      ],
+      scannedEntries: 2,
+      truncated: false,
+    });
+  });
+
+  it("advertises an exact output schema for the optional rasterizer tool", async () => {
+    const rasterHarness = await createHarness({ rasterizerAvailable: true });
+    try {
+      const listed = await rasterHarness.client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual([
+        ...CORE_TOOLS,
+        "tiled_render_map",
+      ]);
+      const rasterTool = listed.tools.find(
+        (tool) => tool.name === "tiled_render_map",
+      );
+      expect(rasterTool?.outputSchema).toMatchObject({
+        type: "object",
+        properties: {
+          result: expect.any(Object),
+        },
+        additionalProperties: false,
+      });
+      expect(
+        (rasterTool?.outputSchema as { required?: unknown } | undefined)
+          ?.required,
+      ).toEqual(["result"]);
+      expectNoUnconstrainedOutputSchemas(
+        rasterTool?.outputSchema,
+        "tiled_render_map",
+      );
+      const capabilities = resultOf<{
+        registeredTools: string[];
+        cli: {
+          rasterizer: {
+            available: boolean;
+          };
+        };
+      }>(
+        await rasterHarness.client.callTool({
+          name: "tiled_get_capabilities",
+          arguments: {},
+        }),
+      );
+      expect(capabilities).toMatchObject({
+        registeredTools: [
+          ...CORE_TOOLS,
+          "tiled_render_map",
+        ],
+        cli: {
+          rasterizer: {
+            available: true,
+          },
+        },
+      });
+
+      const applicationError = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: { mapPath: "../outside.tmj" },
+        }),
+      );
+      expect(applicationError).toMatchObject({
+        isError: true,
+        structuredContent: {
+          result: {
+            ok: false,
+            error: {
+              code: "INVALID_PROJECT_PATH",
+            },
+          },
+        },
+      });
+    } finally {
+      await rasterHarness.client.close().catch(() => undefined);
+      await rasterHarness.server.close().catch(() => undefined);
+      await rm(rasterHarness.root, { recursive: true, force: true });
     }
   });
 
@@ -5165,7 +5627,9 @@ describe("createTiledMcpServer", () => {
   });
 });
 
-async function createHarness(): Promise<Harness> {
+async function createHarness(
+  options: { rasterizerAvailable?: boolean } = {},
+): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "tiledmcp-server-"));
   await mkdir(join(root, "maps"));
   await mkdir(join(root, "tiles"));
@@ -5179,7 +5643,9 @@ async function createHarness(): Promise<Harness> {
   const missingExecutable = join(root, "does-not-exist");
   const cli = new TiledCliAdapter({
     tiledCliPath: `${missingExecutable}-tiled`,
-    rasterizerPath: `${missingExecutable}-tmxrasterizer`,
+    rasterizerPath: options.rasterizerAvailable
+      ? process.execPath
+      : `${missingExecutable}-tmxrasterizer`,
   });
   const created = await createTiledMcpServer({ resolver, store, maps, cli });
   const client = new Client(
@@ -5222,6 +5688,96 @@ function asToolResponse(response: unknown): ToolResponse {
   expect(response).not.toBeNull();
   expect(response).toHaveProperty("content");
   return response as ToolResponse;
+}
+
+function expectNoUnconstrainedOutputSchemas(
+  schema: unknown,
+  toolName: string,
+): void {
+  const visited = new Set<object>();
+
+  const visit = (candidate: unknown, path: string): void => {
+    expect(candidate, `${toolName} ${path} must not use a boolean schema`).not
+      .toBe(true);
+    if (candidate === false) {
+      return;
+    }
+    expect(candidate, `${toolName} ${path} must be an object schema`).toEqual(
+      expect.any(Object),
+    );
+    if (!isRecord(candidate) || visited.has(candidate)) {
+      return;
+    }
+    visited.add(candidate);
+
+    expect(
+      Object.keys(candidate),
+      `${toolName} ${path} must not be an empty/unconstrained schema`,
+    ).not.toHaveLength(0);
+
+    const types = Array.isArray(candidate.type)
+      ? candidate.type
+      : [candidate.type];
+    if (
+      types.includes("object") ||
+      "properties" in candidate ||
+      "patternProperties" in candidate
+    ) {
+      expect(
+        candidate,
+        `${toolName} ${path} object schemas must constrain extra properties`,
+      ).toHaveProperty("additionalProperties");
+      expect(
+        candidate.additionalProperties,
+        `${toolName} ${path} must not allow arbitrary extra properties`,
+      ).not.toBe(true);
+    }
+
+    for (const key of [
+      "additionalProperties",
+      "unevaluatedProperties",
+      "propertyNames",
+      "items",
+      "contains",
+      "not",
+      "if",
+      "then",
+      "else",
+      "contentSchema",
+    ]) {
+      if (key in candidate && candidate[key] !== false) {
+        visit(candidate[key], `${path}/${key}`);
+      }
+    }
+    for (const key of ["allOf", "anyOf", "oneOf", "prefixItems"]) {
+      const children = candidate[key];
+      if (Array.isArray(children)) {
+        children.forEach((child, index) => {
+          visit(child, `${path}/${key}/${index}`);
+        });
+      }
+    }
+    for (const key of [
+      "properties",
+      "patternProperties",
+      "dependentSchemas",
+      "$defs",
+      "definitions",
+    ]) {
+      const children = candidate[key];
+      if (isRecord(children)) {
+        for (const [name, child] of Object.entries(children)) {
+          visit(child, `${path}/${key}/${name}`);
+        }
+      }
+    }
+  };
+
+  visit(schema, "#");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function baseMap(): JsonObject {
