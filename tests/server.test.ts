@@ -68,6 +68,22 @@ interface ToolResponse {
   isError?: boolean;
 }
 
+interface ToolTextSummary {
+  kind: "tiled-mcp-summary";
+  version: 1;
+  ok: boolean;
+  structuredContentBytes: number;
+  image?: {
+    mimeType: "image/png";
+    bytes: number;
+  };
+  error?: {
+    code: string;
+    message: string;
+    messageTruncated?: true;
+  };
+}
+
 describe("createTiledMcpServer", () => {
   let harness: Harness;
 
@@ -188,6 +204,15 @@ describe("createTiledMcpServer", () => {
         tiled: { executable: string };
         rasterizer: { executable: string };
       };
+      textContentContract: {
+        name: string;
+        version: number;
+        encoding: string;
+        maxBytes: number;
+        fullResult: string;
+        structuredByteMeasure: string;
+        sdkInputErrors: string;
+      };
     }>(
       await harness.client.callTool({
         name: "tiled_get_capabilities",
@@ -208,6 +233,15 @@ describe("createTiledMcpServer", () => {
             harness.root,
           ),
         },
+      },
+      textContentContract: {
+        name: "tiled-mcp-summary",
+        version: 1,
+        encoding: "compact-json",
+        maxBytes: 1_024,
+        fullResult: "structuredContent.result",
+        structuredByteMeasure: "utf8-json-stringify",
+        sdkInputErrors: "sdk-owned-text-only",
       },
     });
   });
@@ -234,6 +268,16 @@ describe("createTiledMcpServer", () => {
         },
       },
     });
+    const applicationErrorSummary = textSummaryOf(
+      applicationError,
+      false,
+    );
+    expect(applicationErrorSummary.error).toEqual({
+      code: "INVALID_PROJECT_PATH",
+      message:
+        "Project path is not canonical or escapes the root: ../outside.tmj",
+    });
+    expect(applicationErrorSummary.error).not.toHaveProperty("details");
 
     const inputError = asToolResponse(
       await harness.client.callTool({
@@ -252,6 +296,68 @@ describe("createTiledMcpServer", () => {
         text: expect.stringContaining("Input validation error"),
       }),
     ]);
+    expect(inputError.content[0]?.text).not.toContain(
+      '"kind":"tiled-mcp-summary"',
+    );
+  });
+
+  it("returns one-line compact v1 summaries without mirroring ordinary or large success payloads", async () => {
+    const ordinaryResponse = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_list_files",
+        arguments: {},
+      }),
+    );
+    const ordinaryStructuredJson = JSON.stringify(
+      ordinaryResponse.structuredContent,
+    );
+    expect(ordinaryStructuredJson).toContain(MAP_PATH);
+    const ordinaryTextSummary = textSummaryOf(
+      ordinaryResponse,
+      true,
+    );
+    expect(ordinaryTextSummary).toEqual({
+      kind: "tiled-mcp-summary",
+      version: 1,
+      ok: true,
+      structuredContentBytes: Buffer.byteLength(
+        ordinaryStructuredJson,
+        "utf8",
+      ),
+    });
+    expect(ordinaryResponse.content[0]?.text).not.toContain(
+      MAP_PATH,
+    );
+
+    const capabilitiesResponse = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_capabilities",
+        arguments: {},
+      }),
+    );
+    const capabilitiesStructuredJson = JSON.stringify(
+      capabilitiesResponse.structuredContent,
+    );
+    expect(capabilitiesStructuredJson).toContain(harness.root);
+    expect(capabilitiesStructuredJson).toContain(
+      '"registeredTools"',
+    );
+    const capabilitiesTextSummary = textSummaryOf(
+      capabilitiesResponse,
+      true,
+    );
+    expect(
+      capabilitiesTextSummary.structuredContentBytes,
+    ).toBeGreaterThan(1_024);
+    expect(capabilitiesResponse.content[0]?.text).not.toContain(
+      harness.root,
+    );
+    expect(capabilitiesResponse.content[0]?.text).not.toContain(
+      "registeredTools",
+    );
+    expect(capabilitiesResponse.content[0]?.text).not.toContain(
+      "tiled_apply_change_set",
+    );
   });
 
   it("accepts a no-op layer update preview through the cached exact output validator", async () => {
@@ -552,7 +658,10 @@ describe("createTiledMcpServer", () => {
   });
 
   it("advertises an exact output schema for the optional rasterizer tool", async () => {
-    const rasterHarness = await createHarness({ rasterizerAvailable: true });
+    const rasterHarness = await createHarness({
+      rasterizerAvailable: true,
+      rasterizerPng: await terrainPng(),
+    });
     try {
       const listed = await rasterHarness.client.listTools();
       expect(listed.tools.map((tool) => tool.name)).toEqual([
@@ -618,6 +727,62 @@ describe("createTiledMcpServer", () => {
             },
           },
         },
+      });
+      const rasterErrorSummary = textSummaryOf(
+        applicationError,
+        false,
+      );
+      expect(rasterErrorSummary.error).toEqual({
+        code: "INVALID_PROJECT_PATH",
+        message:
+          "Project path is not canonical or escapes the root: ../outside.tmj",
+      });
+      expect(rasterErrorSummary.error).not.toHaveProperty(
+        "details",
+      );
+
+      const rasterResponse = asToolResponse(
+        await rasterHarness.client.callTool({
+          name: "tiled_render_map",
+          arguments: {
+            mapPath: MAP_PATH,
+            size: 128,
+          },
+        }),
+      );
+      expect(rasterResponse.isError).not.toBe(true);
+      expect(
+        rasterResponse.content.map((block) => block.type),
+      ).toEqual(["text", "image"]);
+      const imageBlock = rasterResponse.content[1];
+      expect(imageBlock).toMatchObject({
+        type: "image",
+        mimeType: "image/png",
+        data: expect.any(String),
+      });
+      const png = Buffer.from(imageBlock?.data ?? "", "base64");
+      expect(textSummaryOf(rasterResponse, true).image).toEqual({
+        mimeType: "image/png",
+        bytes: png.byteLength,
+      });
+      expect(
+        (
+          rasterResponse.structuredContent as {
+            result: {
+              mapPath: string;
+              mimeType: string;
+              bytes: number;
+              width: number;
+              height: number;
+            };
+          }
+        ).result,
+      ).toEqual({
+        mapPath: MAP_PATH,
+        mimeType: "image/png",
+        bytes: png.byteLength,
+        width: 32,
+        height: 32,
       });
     } finally {
       await rasterHarness.client.close().catch(() => undefined);
@@ -708,6 +873,12 @@ describe("createTiledMcpServer", () => {
     );
     expect(content.text).toContain("client owns the approval step");
     expect(content.text).toContain("partial: true");
+    expect(content.text).toContain(
+      "treat `structuredContent.result` as the",
+    );
+    expect(content.text).toContain(
+      "`tiled-mcp-summary` v1",
+    );
 
     await expect(
       harness.client.readResource({ uri: "tiled://missing" }),
@@ -1920,6 +2091,10 @@ describe("createTiledMcpServer", () => {
     expect(png.subarray(0, 8)).toEqual(
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     );
+    expect(textSummaryOf(response, true).image).toEqual({
+      mimeType: "image/png",
+      bytes: png.byteLength,
+    });
 
     const result = (
       response.structuredContent as {
@@ -1995,6 +2170,10 @@ describe("createTiledMcpServer", () => {
       data: expect.any(String),
     });
     const png = Buffer.from(imageBlock?.data ?? "", "base64");
+    expect(textSummaryOf(response, true).image).toEqual({
+      mimeType: "image/png",
+      bytes: png.byteLength,
+    });
     const result = (
       response.structuredContent as {
         result: {
@@ -5518,12 +5697,105 @@ describe("createTiledMcpServer", () => {
         },
       },
     });
-    expect(response.content).toEqual([
-      expect.objectContaining({
-        type: "text",
-        text: expect.stringContaining('"code": "INVALID_PROJECT_PATH"'),
+    const textSummary = textSummaryOf(response, false);
+    expect(textSummary.error).toEqual({
+      code: "INVALID_PROJECT_PATH",
+      message:
+        "Project path is not canonical or escapes the root: ../outside.tmj",
+    });
+    expect(response.content[0]?.text).not.toContain(
+      '"details"',
+    );
+  });
+
+  it("normalizes hostile controls and truncates long application-error text summaries", async () => {
+    const detailsOnlySentinel =
+      "DETAILS_ONLY_SENTINEL_DO_NOT_MIRROR";
+    const hostilePath = [
+      "../hostile",
+      "\n\r\u0000\u061c\u200e\u200f\u2028\u202e",
+      "x".repeat(700),
+      detailsOnlySentinel,
+      "y".repeat(800),
+    ].join("");
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: hostilePath },
       }),
-    ]);
+    );
+
+    expect(response).toMatchObject({
+      isError: true,
+      structuredContent: {
+        result: {
+          ok: false,
+          error: {
+            code: "INVALID_PROJECT_PATH",
+            details: {
+              path: expect.stringContaining(
+                detailsOnlySentinel,
+              ),
+            },
+          },
+        },
+      },
+    });
+    const textSummary = textSummaryOf(response, false);
+    expect(textSummary.error).toMatchObject({
+      code: "INVALID_PROJECT_PATH",
+      messageTruncated: true,
+    });
+    expect(textSummary.error?.message).toMatch(/…$/u);
+    expect(textSummary.error?.message).not.toMatch(
+      /[\u0000-\u001f\u007f-\u009f\u061c\u200e-\u200f\u2028-\u202e\u2066-\u2069]/u,
+    );
+    expect(response.content[0]?.text).not.toContain(
+      detailsOnlySentinel,
+    );
+    expect(response.content[0]?.text).not.toContain(
+      '"details"',
+    );
+
+    const normalizedOnlyResponse = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: {
+          mapPath: "../short\n\u061c\u200ename.tmj",
+        },
+      }),
+    );
+    expect(
+      textSummaryOf(normalizedOnlyResponse, false).error,
+    ).toEqual({
+      code: "INVALID_PROJECT_PATH",
+      message:
+        "Project path is not canonical or escapes the root: ../short name.tmj",
+    });
+
+    const quoteHeavyResponse = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: {
+          mapPath: `../${'"'.repeat(404)}.tmj`,
+        },
+      }),
+    );
+    const quoteHeavyStructuredMessage = (
+      quoteHeavyResponse.structuredContent as {
+        result: {
+          error: {
+            message: string;
+          };
+        };
+      }
+    ).result.error.message;
+    expect(
+      textSummaryOf(quoteHeavyResponse, false).error,
+    ).toEqual({
+      code: "INVALID_PROJECT_PATH",
+      message: quoteHeavyStructuredMessage,
+    });
   });
 
   it("bounds error messages and structured details derived from hostile documents", async () => {
@@ -5554,9 +5826,10 @@ describe("createTiledMcpServer", () => {
     expect(Buffer.byteLength(serialized, "utf8")).toBeLessThan(64 * 1024);
     expect(result.error.message.length).toBeLessThanOrEqual(4_096);
     expect(result.error.details.reference?.length).toBeLessThanOrEqual(1_024);
-    expect(
-      Buffer.byteLength(response.content[0]?.text ?? "", "utf8"),
-    ).toBeLessThan(64 * 1024);
+    expect(textSummaryOf(response, false).error).toMatchObject({
+      code: expect.any(String),
+      messageTruncated: true,
+    });
   });
 
   it("creates a new map through the additive create tool", async () => {
@@ -5628,7 +5901,10 @@ describe("createTiledMcpServer", () => {
 });
 
 async function createHarness(
-  options: { rasterizerAvailable?: boolean } = {},
+  options: {
+    rasterizerAvailable?: boolean;
+    rasterizerPng?: Buffer;
+  } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "tiledmcp-server-"));
   await mkdir(join(root, "maps"));
@@ -5643,10 +5919,31 @@ async function createHarness(
   const missingExecutable = join(root, "does-not-exist");
   const cli = new TiledCliAdapter({
     tiledCliPath: `${missingExecutable}-tiled`,
-    rasterizerPath: options.rasterizerAvailable
+    rasterizerPath:
+      options.rasterizerAvailable === true ||
+      options.rasterizerPng !== undefined
       ? process.execPath
       : `${missingExecutable}-tmxrasterizer`,
   });
+  if (options.rasterizerPng !== undefined) {
+    const rasterizerPng = options.rasterizerPng;
+    const metadata = await sharp(rasterizerPng).metadata();
+    if (
+      metadata.width === undefined ||
+      metadata.height === undefined
+    ) {
+      throw new Error("Expected rasterizerPng dimensions.");
+    }
+    cli.renderPng = async (_inputMapPath, outputPngPath) => {
+      await writeFile(outputPngPath, rasterizerPng);
+      return {
+        outputPath: outputPngPath,
+        bytes: rasterizerPng.byteLength,
+        width: metadata.width!,
+        height: metadata.height!,
+      };
+    };
+  }
   const created = await createTiledMcpServer({ resolver, store, maps, cli });
   const client = new Client(
     { name: "tiled-mcp-test-client", version: "0.0.0" },
@@ -5688,6 +5985,112 @@ function asToolResponse(response: unknown): ToolResponse {
   expect(response).not.toBeNull();
   expect(response).toHaveProperty("content");
   return response as ToolResponse;
+}
+
+function textSummaryOf(
+  response: ToolResponse,
+  expectedOk: boolean,
+): ToolTextSummary {
+  const textBlock = response.content[0];
+  expect(textBlock).toMatchObject({
+    type: "text",
+    text: expect.any(String),
+  });
+  if (
+    textBlock?.type !== "text" ||
+    typeof textBlock.text !== "string"
+  ) {
+    throw new Error(
+      "Expected the first tool content block to be text.",
+    );
+  }
+
+  expect(
+    Buffer.byteLength(textBlock.text, "utf8"),
+  ).toBeLessThanOrEqual(1_024);
+  expect(textBlock.text).not.toMatch(
+    /[\r\n\u2028\u2029]/u,
+  );
+
+  const parsed = JSON.parse(
+    textBlock.text,
+  ) as unknown;
+  expect(parsed).toEqual(expect.any(Object));
+  if (!isRecord(parsed)) {
+    throw new Error(
+      "Expected the tool text block to contain a JSON object.",
+    );
+  }
+
+  expect(parsed.kind).toBe(
+    "tiled-mcp-summary",
+  );
+  expect(parsed.version).toBe(1);
+  expect(parsed.ok).toBe(expectedOk);
+  expect(parsed.structuredContentBytes).toBe(
+    Buffer.byteLength(
+      JSON.stringify(
+        response.structuredContent,
+      ),
+      "utf8",
+    ),
+  );
+  expect(textBlock.text).toBe(
+    JSON.stringify(parsed),
+  );
+  const expectedTopLevelKeys = expectedOk
+    ? parsed.image === undefined
+      ? [
+          "kind",
+          "ok",
+          "structuredContentBytes",
+          "version",
+        ]
+      : [
+          "image",
+          "kind",
+          "ok",
+          "structuredContentBytes",
+          "version",
+        ]
+    : [
+        "error",
+        "kind",
+        "ok",
+        "structuredContentBytes",
+        "version",
+      ];
+  expect(Object.keys(parsed).sort()).toEqual(
+    expectedTopLevelKeys,
+  );
+  if (parsed.image !== undefined) {
+    if (!isRecord(parsed.image)) {
+      throw new Error(
+        "Expected image summary metadata to be an object.",
+      );
+    }
+    expect(Object.keys(parsed.image).sort()).toEqual([
+      "bytes",
+      "mimeType",
+    ]);
+  }
+  if (parsed.error !== undefined) {
+    if (!isRecord(parsed.error)) {
+      throw new Error(
+        "Expected error summary metadata to be an object.",
+      );
+    }
+    expect(Object.keys(parsed.error).sort()).toEqual(
+      parsed.error.messageTruncated === undefined
+        ? ["code", "message"]
+        : [
+            "code",
+            "message",
+            "messageTruncated",
+          ],
+    );
+  }
+  return parsed as unknown as ToolTextSummary;
 }
 
 function expectNoUnconstrainedOutputSchemas(

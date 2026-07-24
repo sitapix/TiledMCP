@@ -59,17 +59,19 @@
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
   `tiled://guide` 安全编辑 playbook；
 - stdio MCP server、严格输入 schema、每工具精确 closed output schema、统一应用错误
-  envelope 与四项 tool annotations。
+  envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
+  annotations。
 
 无限地图、压缩 tile data、内嵌/图片集合 tileset、tile/text/polygon/polyline
 对象、模板和跨文件事务尚未实现；
 这些输入会被明确拒绝，不会静默降级。
 
-接口尚未 Frozen：成功结果的 text content 在不超过 64 KiB 时仍会镜像完整 JSON，而不是
-稳定短摘要，应用错误也会镜像其有界 JSON；可选 `tiled_render_map` 仍使用未含
-revision/hash 的 legacy raster
-元数据；自动生成的完整契约文档/示例和 rename-stable asset registry 也仍待完成。当前
-能力与 wire schema 应以 `tiled_get_capabilities` 和 `tools/list` 为准。
+tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UTF-8 最多
+1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
+`structuredContent.result` 为准。接口仍未 Frozen：可选 `tiled_render_map` 仍使用未含
+revision/hash 的 legacy raster 元数据；自动生成的完整契约文档/示例和 rename-stable
+asset registry 也仍待完成。当前能力与 wire schema 应以
+`tiled_get_capabilities` 和 `tools/list` 为准。
 
 ## 文档索引
 
@@ -148,6 +150,15 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 commit 结果以及 `tiled_apply_change_set` 的 apply 结果是不同的类型，不能把它们当成同一
 `MutationResult`。输入在进入 handler 前被 MCP SDK schema 拒绝时只有 text error，不带
 `structuredContent`。
+
+进入 handler 后的成功与应用错误还会返回一个最大 1024-byte 的 compact one-line JSON
+text summary。v1 success summary 只给 `kind`、`version`、`ok` 和完整
+`structuredContent` 的 UTF-8 JSON byte count；图片工具另给图片的 `mimeType` 与实际
+inline image bytes。error summary 给稳定 `code`、有界单行 `message`、可选
+`messageTruncated` 和 structured byte count，不复制错误 `details`。客户端不得从摘要
+恢复字段；`tiled_get_capabilities.textContentContract` 公布当前版本、编码、限额和完整
+结果位置。SDK 在 handler 前产生的 input-schema error 仍是 SDK-owned text-only 响应，
+不使用这套应用层摘要 envelope。
 
 当前 direct Resource：
 

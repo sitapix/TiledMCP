@@ -2,8 +2,8 @@
 
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
-> closed output schema，但 text summary、可选 rasterizer 元数据等冻结门槛尚未完成，
-> 接口与磁盘格式仍不视为冻结。
+> closed output schema 和有界 compact text summary，但可选 rasterizer 元数据等冻结门槛
+> 尚未完成，接口与磁盘格式仍不视为冻结。
 
 ### 当前落地状态（2026-07-25）
 
@@ -57,9 +57,12 @@ summary 的固定对象也保持 closed。统一外层是
 query/render、map-edit preview、checkpoint-restore preview、create-map commit 和
 change-set apply 不是同一个 mutation 类型。handler 内的应用错误以 `isError: true` 加
 结构化 `{ok:false,error:{code,message,details}}` 返回；SDK 在 handler 前产生的输入校验
-错误只有 text content。当前成功结果的 text content 对 64 KiB 内的结果仍重复完整 JSON，
-应用错误也镜像其有界 JSON；可选 `tiled_render_map` 仍使用不含 revision/hash 的 legacy
-metadata。这些都是接口 Frozen 前待收敛项。
+错误只有 SDK-owned text content。进入 handler 后的成功与应用错误都使用
+`tiled-mcp-summary` v1 compact one-line JSON text block，UTF-8 最多 1024 bytes；摘要不
+复制完整成功 result 或错误 `details`，完整机器结果以 `structuredContent.result` 为准。
+图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。可选
+`tiled_render_map` 仍使用不含 revision/hash 的 legacy structured metadata；这是接口
+Frozen 前待收敛项。
 
 atlas TSJ projection 以 Tiled 1.12 为语义基线：tile class 的当前磁盘字段是
 `tiles[].type`，`tiles[].class` 仅作为 Tiled 1.9 兼容输入。详情响应只携带所选 TSJ 的
@@ -168,6 +171,15 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 `structuredContent`。进入 handler 后的失败才经过统一错误归一化、长度/深度预算和 JSON
 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，不承担 transport/application
 错误 envelope 的职责。
+
+text channel 只提供 `tiled-mcp-summary` v1。它由公共确定性 serializer 生成 compact
+one-line JSON，并以 UTF-8 1024 bytes 为硬上限；success 只报告 structured JSON byte
+count；error 在公共 kind/version/ok/byte-count 字段之外，只报告 code、有界单行 message
+与可选截断标志。二者都不通过 `JSON.stringify` 镜像完整 result/details。图片 summary
+另外报告 MIME type 与实际 inline buffer bytes；base64 字符长度不作为图片大小。客户端以
+`structuredContent.result` 为权威数据源。capabilities 的 `textContentContract` 固定公布
+名称、版本、编码、上限、完整结果位置、structured byte 计量方式与
+`sdk-owned-text-only` input-error 边界。
 
 写操作遵循固定流水线：
 
@@ -1290,8 +1302,10 @@ M1 明确拒绝：
 2. **Fixture round-trip**：由目标 Tiled 版本实际生成；no-op 比 bytes，局部编辑比未触及文本与
    语义树。
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
-   `structuredContent`、SDK text-only 输入校验错误、错误码、annotations 和 size/page
-   limit。
+   `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
+   result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
+   `textContentContract`、SDK-owned text-only 输入校验错误、错误码、annotations 和
+   size/page limit。
 4. **Integration**：固定版本 Tiled one-shot、`--export-formats`、`tmxrasterizer`；同时测试
    “未安装/版本不支持”的正常降级。
 5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。

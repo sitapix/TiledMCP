@@ -141,9 +141,12 @@ import { KeyedMutex } from "./storage/keyedMutex.js";
 import { SERVER_NAME, SERVER_VERSION } from "./version.js";
 
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_TEXT_CONTENT_BYTES = 64 * 1024;
+const MAX_TEXT_CONTENT_BYTES = 1_024;
 const MAX_ERROR_MESSAGE_CHARS = 4_096;
 const MAX_ERROR_DETAIL_CHARS = 8_000;
+const MAX_ERROR_TEXT_MESSAGE_CODE_POINTS = 512;
+const TEXT_CONTENT_CONTRACT_NAME = "tiled-mcp-summary" as const;
+const TEXT_CONTENT_CONTRACT_VERSION = 1 as const;
 const DEFAULT_RENDER_EDGE = 1400;
 const MAX_RENDER_EDGE = 2048;
 const projectPathSchema = z
@@ -1315,6 +1318,15 @@ export async function createTiledMcpServer(
             editedRangesReformatted: true,
           },
         },
+        textContentContract: {
+          name: TEXT_CONTENT_CONTRACT_NAME,
+          version: TEXT_CONTENT_CONTRACT_VERSION,
+          encoding: "compact-json",
+          maxBytes: MAX_TEXT_CONTENT_BYTES,
+          fullResult: "structuredContent.result",
+          structuredByteMeasure: "utf8-json-stringify",
+          sdkInputErrors: "sdk-owned-text-only",
+        },
         cli: cliCapabilities,
         registeredTools: advertisedToolNames,
       };
@@ -2051,13 +2063,7 @@ export async function createTiledMcpServer(
                 width: rendered.width,
                 height: rendered.height,
               };
-              return {
-                content: [
-                  { type: "text", text: JSON.stringify({ result }, null, 2) },
-                  { type: "image", data: png.toString("base64"), mimeType: "image/png" },
-                ],
-                structuredContent: { result },
-              };
+              return imageToolResult(result, png);
             } finally {
               await unlink(outputPath).catch(() => undefined);
             }
@@ -2114,24 +2120,29 @@ async function executeTool(operation: () => Promise<unknown>): Promise<CallToolR
   }
 }
 
-function toolResult(result: unknown): CallToolResult {
-  const fullText = JSON.stringify({ result }, null, 2);
-  const text =
-    Buffer.byteLength(fullText, "utf8") <= MAX_TEXT_CONTENT_BYTES
-      ? fullText
-      : JSON.stringify(
-          {
-            result: {
-              notice: "The full result is available in structuredContent.",
-              structuredBytes: Buffer.byteLength(fullText, "utf8"),
-            },
-          },
-          null,
-          2,
-        );
+function toolResult(
+  result: unknown,
+  image?: {
+    mimeType: "image/png";
+    bytes: number;
+  },
+): CallToolResult {
+  const structuredContent = { result };
+  const text = serializeTextSummary({
+    kind: TEXT_CONTENT_CONTRACT_NAME,
+    version: TEXT_CONTENT_CONTRACT_VERSION,
+    ok: true,
+    structuredContentBytes: structuredContentJsonBytes(structuredContent),
+    ...(image === undefined ? {} : { image }),
+  });
   return {
-    content: [{ type: "text", text }],
-    structuredContent: { result },
+    content: [
+      {
+        type: "text",
+        text,
+      },
+    ],
+    structuredContent,
   };
 }
 
@@ -2145,7 +2156,10 @@ function imageToolResult(result: unknown, png: Buffer): CallToolResult {
       ),
     );
   }
-  const base = toolResult(result);
+  const base = toolResult(result, {
+    mimeType: "image/png",
+    bytes: png.byteLength,
+  });
   return {
     ...base,
     content: [
@@ -2162,22 +2176,138 @@ function imageToolResult(result: unknown, png: Buffer): CallToolResult {
 function toolError(error: unknown): CallToolResult {
   const normalized = asTiledMcpError(error);
   const budget = { remaining: MAX_ERROR_DETAIL_CHARS };
+  const code = normalized.code.length === 0
+    ? "INTERNAL_ERROR"
+    : normalized.code.slice(0, 128);
+  const message = truncateOutputString(
+    normalized.message,
+    MAX_ERROR_MESSAGE_CHARS,
+  );
   const result = {
     ok: false,
     error: {
-      code: normalized.code.slice(0, 128),
-      message: truncateOutputString(
-        normalized.message,
-        MAX_ERROR_MESSAGE_CHARS,
-      ),
+      code,
+      message,
       details: sanitizeErrorValue(normalized.details, budget, 0),
     },
   };
+  const structuredContent = { result };
   return {
     isError: true,
-    content: [{ type: "text", text: JSON.stringify({ result }, null, 2) }],
-    structuredContent: { result },
+    content: [
+      {
+        type: "text",
+        text: applicationErrorTextSummary(
+          code,
+          message,
+          structuredContentJsonBytes(structuredContent),
+        ),
+      },
+    ],
+    structuredContent,
   };
+}
+
+function applicationErrorTextSummary(
+  code: string,
+  message: string,
+  structuredContentBytes: number,
+): string {
+  const displayCode =
+    truncateOutputString(normalizeTextLine(code), 128) || "INTERNAL_ERROR";
+  const normalizedMessage = normalizeTextLine(message) || "Application error.";
+  const codePoints = Array.from(normalizedMessage);
+  const fullCandidate = serializeTextSummary({
+    kind: TEXT_CONTENT_CONTRACT_NAME,
+    version: TEXT_CONTENT_CONTRACT_VERSION,
+    ok: false,
+    error: {
+      code: displayCode,
+      message: normalizedMessage,
+    },
+    structuredContentBytes,
+  });
+  if (
+    codePoints.length <= MAX_ERROR_TEXT_MESSAGE_CODE_POINTS &&
+    Buffer.byteLength(fullCandidate, "utf8") <= MAX_TEXT_CONTENT_BYTES
+  ) {
+    return fullCandidate;
+  }
+
+  let lower = 0;
+  let upper = Math.min(
+    codePoints.length - 1,
+    MAX_ERROR_TEXT_MESSAGE_CODE_POINTS,
+  );
+  let best: string | undefined;
+
+  while (lower <= upper) {
+    const length = Math.floor(
+      (lower + upper) / 2,
+    );
+    const preview =
+      codePoints.slice(0, length).join("") + "…";
+    const candidate = serializeTextSummary({
+      kind: TEXT_CONTENT_CONTRACT_NAME,
+      version: TEXT_CONTENT_CONTRACT_VERSION,
+      ok: false,
+      error: {
+        code: displayCode,
+        message: preview,
+        messageTruncated: true,
+      },
+      structuredContentBytes,
+    });
+    if (
+      Buffer.byteLength(candidate, "utf8") <=
+      MAX_TEXT_CONTENT_BYTES
+    ) {
+      best = candidate;
+      lower = length + 1;
+    } else {
+      upper = length - 1;
+    }
+  }
+
+  if (best !== undefined) {
+    return best;
+  }
+  return serializeTextSummary({
+    kind: TEXT_CONTENT_CONTRACT_NAME,
+    version: TEXT_CONTENT_CONTRACT_VERSION,
+    ok: false,
+    error: {
+      code: "INTERNAL_ERROR",
+      message:
+        "Application error; inspect structuredContent.result.error.",
+      messageTruncated: true,
+    },
+    structuredContentBytes,
+  });
+}
+
+function normalizeTextLine(
+  value: string,
+): string {
+  return value
+    .replace(
+      /[\u0000-\u001f\u007f-\u009f\u061c\u200e-\u200f\u2028-\u202e\u2066-\u2069]+/gu,
+      " ",
+    )
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function serializeTextSummary(
+  value: Record<string, unknown>,
+): string {
+  return JSON.stringify(value);
+}
+
+function structuredContentJsonBytes(
+  structuredContent: Record<string, unknown>,
+): number {
+  return Buffer.byteLength(JSON.stringify(structuredContent), "utf8");
 }
 
 function sanitizeErrorValue(

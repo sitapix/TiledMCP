@@ -11,7 +11,7 @@
 - **首个 transport**：`stdio`。服务器不向 stdout 输出日志；日志只写 stderr。HTTP/远程 transport 不属于 M1。
 - **能力声明**：仅声明当前实现且通过契约测试的 Tools、Resources、Prompts；未实现的 roadmap 项不得注册空壳。
 - **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义，由它们生成 MCP JSON Schema、本文的参数表和契约测试 fixture。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
-- **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
+- **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
 
 ### 0.1 当前实现切片（2026-07-25）
 
@@ -40,12 +40,13 @@ annotations 和 MCP 客户端契约测试；固定结构的嵌套对象同样拒
 tileset-reference 写入使用目标子树、object-member 或 array-element local patch，完整
 语义复核通过后才提交。
 
-当前仍未完成全部 schema/codegen 文档与示例；普通 `content` 对不超过 64 KiB 的结果仍会
-复制完整 JSON，而不是稳定的短摘要；可选 `tiled_render_map` 仍返回 legacy raster
-元数据，尚未与两种内建图片结果的 revision/hash/pixel-size 契约统一。外部 tileset
-`assetId` 也是由项目路径确定性派生的临时实现：重启后稳定，但资产重命名后会改变；
-持久化 rename-stable registry 是接口冻结前的待办。因此本文仍是 Draft，共享契约描述的
-冻结目标不能视为已全部达成；运行时应以
+tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UTF-8 最多
+1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
+`structuredContent.result` 为准。当前仍未完成全部 schema/codegen 文档与示例；可选
+`tiled_render_map` 仍返回 legacy raster 元数据，尚未与两种内建图片结果的
+revision/hash/pixel-size 契约统一。外部 tileset `assetId` 也是由项目路径确定性派生的
+临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
+前的待办。因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
@@ -204,9 +205,17 @@ type ApplyResult = CommitResult & {
 4. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
-5. 当前成功结果的 text content 会在 64 KiB 内镜像完整 JSON，超出后只给
-   `structuredContent` 提示；有长度预算的应用错误也会把完整错误 JSON 镜像为 text。
-   把两者改成稳定、简短且不会重复大数组的摘要仍是 Frozen 前待办。图片工具另外返回 MCP
+5. 进入 handler 后的成功与应用错误都返回 `tiled-mcp-summary` v1 text content：使用
+   compact one-line JSON 编码，UTF-8 最多 1024 bytes，并给出完整
+   `structuredContent` 经 `JSON.stringify` 后的 UTF-8 byte count。success summary 只含
+   `kind`、`version`、`ok`、`structuredContentBytes`；图片工具另含
+   `image:{mimeType,bytes}`，其中 `bytes` 是实际 inline image 的原始 byte count。
+   application-error summary 共用 `kind`、`version`、`ok:false` 与
+   `structuredContentBytes`，其 `error` 只含稳定 `code`、有界且规范为单行的 `message`
+   以及必要时的 `messageTruncated`，不复制 `details`。完整机器结果与错误 details 只以
+   `structuredContent.result` 为准，客户端不得把 text summary 当作工具结果 schema。
+   `tiled_get_capabilities.textContentContract` 公布 summary 名称、版本、编码、最大 bytes、
+   完整结果位置、structured byte 计算方式及 SDK input-error 策略。图片工具另外返回 MCP
    `image` content，二进制不进入 `structuredContent`。
 6. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带
    `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默覆盖。
@@ -992,6 +1001,11 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
   resourceUri?: string;
 }
 ```
+
+三种图片工具（两种内建工具与可选 `tiled_render_map`）的
+`tiled-mcp-summary` v1 text block 还包含
+`image:{mimeType:"image/png",bytes}`；`bytes` 来自实际 inline PNG buffer，而不是
+base64 字符数。完整图片元数据仍以各工具自己的 `structuredContent.result` 为准。
 
 可选 `tmxrasterizer` 工具 `tiled_render_map` 当前也有 closed output schema，但仍沿用较窄
 的 legacy 结果：

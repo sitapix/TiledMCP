@@ -27,6 +27,27 @@ external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle,
 point, ellipse, or Tiled 1.12 capsule objects. Unsupported Tiled semantics
 fail closed instead of being approximated.
 
+## Read tool results
+
+For calls that reach a tool handler, treat \`structuredContent.result\` as the
+authoritative machine-readable value. The accompanying text block is
+\`tiled-mcp-summary\` v1: compact one-line JSON, at most 1024 UTF-8 bytes, and
+it intentionally does not copy the full success result or application-error
+\`details\`. Do not parse the summary to recover omitted result fields.
+
+A success summary reports the byte size of the complete structured content.
+For an image result it also reports the image MIME type and the raw inline
+image byte count; this is not the base64 character count. An application-error
+summary reports a stable code, a bounded single-line message, and whether that
+message was truncated. Read the authoritative bounded application-error
+envelope from \`structuredContent.result.error\`.
+
+\`tiled_get_capabilities.textContentContract\` advertises the active summary
+version, encoding, byte limit, full-result location, byte measurement, and
+input-error boundary. Input-schema errors are rejected by the MCP SDK before a
+handler runs, so they remain SDK-owned text-only responses and do not use this
+application-level summary envelope.
+
 ## Inspect before planning
 
 For an existing map:

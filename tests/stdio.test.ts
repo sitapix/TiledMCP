@@ -245,6 +245,58 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
       },
+      textContentContract: {
+        name: "tiled-mcp-summary",
+        version: 1,
+        encoding: "compact-json",
+        maxBytes: 1_024,
+        fullResult: "structuredContent.result",
+        structuredByteMeasure: "utf8-json-stringify",
+        sdkInputErrors: "sdk-owned-text-only",
+      },
+    });
+    const capabilitiesText = (
+      capabilitiesResponse as {
+        content: Array<{
+          type: string;
+          text?: string;
+        }>;
+      }
+    ).content[0];
+    expect(capabilitiesText).toMatchObject({
+      type: "text",
+      text: expect.any(String),
+    });
+    if (
+      capabilitiesText?.type !== "text" ||
+      typeof capabilitiesText.text !== "string"
+    ) {
+      throw new Error(
+        "Expected capabilities text summary.",
+      );
+    }
+    const serializedCapabilitiesEnvelope = JSON.stringify(
+      capabilitiesResponse.structuredContent,
+    );
+    if (serializedCapabilitiesEnvelope === undefined) {
+      throw new Error(
+        "Expected capabilities structured content.",
+      );
+    }
+    const capabilitiesTextSummary = JSON.parse(
+      capabilitiesText.text,
+    ) as unknown;
+    expect(capabilitiesText.text).toBe(
+      JSON.stringify(capabilitiesTextSummary),
+    );
+    expect(capabilitiesTextSummary).toEqual({
+      kind: "tiled-mcp-summary",
+      version: 1,
+      ok: true,
+      structuredContentBytes: Buffer.byteLength(
+        serializedCapabilitiesEnvelope,
+        "utf8",
+      ),
     });
     expect(capabilities?.objectShapeCapabilities).toEqual({
       creatable: ["rectangle", "point", "ellipse", "capsule"],
