@@ -40,6 +40,20 @@ export interface StampPatternOperation {
   pattern: Array<Array<TileRef | null>>;
 }
 
+export interface FloodFillOperation {
+  type: "floodFill";
+  layerId: number;
+  /**
+   * Absolute tile coordinate used as the four-way flood-fill seed.
+   */
+  x: number;
+  y: number;
+  /**
+   * The replacement tile. `null` explicitly clears the connected region.
+   */
+  tile: TileRef | null;
+}
+
 export interface ReplaceTilesOperation {
   type: "replaceTiles";
   layerId: number;
@@ -195,6 +209,7 @@ export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
   | StampPatternOperation
+  | FloodFillOperation
   | ReplaceTilesOperation
   | CreateObjectOperation
   | UpdateObjectOperation
@@ -388,6 +403,26 @@ export interface MapEditPlan {
       clearCellCount: number;
       transformedCellCount: number;
       changedCellCount: number;
+      wouldChange: boolean;
+    }>;
+    tileFloodFills?: Array<{
+      operationIndex: number;
+      layerId: number;
+      seed: {
+        x: number;
+        y: number;
+      };
+      connectivity: "four-way";
+      sourceTile: TileRef | null;
+      targetTile: TileRef | null;
+      scannedCellCount: number;
+      changedCellCount: number;
+      affectedBounds: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null;
       wouldChange: boolean;
     }>;
     addedTilesets?: Array<{

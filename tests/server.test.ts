@@ -282,6 +282,16 @@ describe("createTiledMcpServer", () => {
         operationOrdering: string;
         sourcePatch: string;
       };
+      tileFloodFillCapabilities: {
+        seedSourceMatch: string;
+        connectivity: string;
+        nullableTarget: boolean;
+        coordinates: string;
+        operationOrdering: string;
+        scanAccounting: string;
+        scanBudget: string;
+        sourcePatch: string;
+      };
       tileReplacementCapabilities: {
         match: string;
         transformMatch: string;
@@ -444,6 +454,8 @@ describe("createTiledMcpServer", () => {
         maxUsageUnusedLocalIdSample: number;
         maxUsageResultBytes: number;
         maxReplaceTileMappings: number;
+        maxTileOperationScans: number;
+        maxFloodFillScans: number;
         maxReplaceTileScans: number;
         maxStampPatternEdge: number;
         maxStampPatternCells: number;
@@ -501,6 +513,7 @@ describe("createTiledMcpServer", () => {
         "setTiles",
         "fillRegion",
         "stampPattern",
+        "floodFill",
         "replaceTiles",
       ],
       tileStampCapabilities: {
@@ -514,6 +527,18 @@ describe("createTiledMcpServer", () => {
           "standard-tile-ref-encoded-gid",
         operationOrdering:
           "sequential-change-set-order-last-write-wins",
+        sourcePatch: "tile-layer-data-member-local",
+      },
+      tileFloodFillCapabilities: {
+        seedSourceMatch: "exact-encoded-gid",
+        connectivity: "fixed-four-way",
+        nullableTarget: true,
+        coordinates: "absolute-tile-coordinates",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        scanAccounting: "actual-gid-reads",
+        scanBudget:
+          "shared-with-replaceTiles-per-change-set",
         sourcePatch: "tile-layer-data-member-local",
       },
       tileReplacementCapabilities: {
@@ -740,6 +765,8 @@ describe("createTiledMcpServer", () => {
         maxUsageUnusedLocalIdSample: 16,
         maxUsageResultBytes: 256 * 1024,
         maxReplaceTileMappings: 128,
+        maxTileOperationScans: 1_000_000,
+        maxFloodFillScans: 1_000_000,
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
@@ -2347,6 +2374,79 @@ describe("createTiledMcpServer", () => {
         type: "duplicateLayer",
         layerId: LAYER_ID,
         unexpected: true,
+      },
+    ];
+    for (const operation of invalidOperations) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+  });
+
+  it("rejects invalid flood-fill wire shapes before planning", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const invalidOperations: unknown[] = [
+      {
+        type: "floodFill",
+        layerId: 0,
+        x: 0,
+        y: 0,
+        tile: null,
+      },
+      {
+        type: "floodFill",
+        layerId: LAYER_ID,
+        x: Number.MAX_SAFE_INTEGER + 1,
+        y: 0,
+        tile: null,
+      },
+      {
+        type: "floodFill",
+        layerId: LAYER_ID,
+        x: 0,
+        y: Number.MIN_SAFE_INTEGER - 1,
+        tile: null,
+      },
+      {
+        type: "floodFill",
+        layerId: LAYER_ID,
+        x: 0,
+        y: 0,
+      },
+      {
+        type: "floodFill",
+        layerId: LAYER_ID,
+        x: 0,
+        y: 0,
+        tile: null,
+        connectivity: "four-way",
       },
     ];
     for (const operation of invalidOperations) {

@@ -103,7 +103,11 @@ export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
 export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
 export const MAX_REPLACE_TILE_MAPPINGS = 128;
-export const MAX_REPLACE_TILE_SCANS = 1_000_000;
+export const MAX_TILE_OPERATION_SCANS = 1_000_000;
+export const MAX_REPLACE_TILE_SCANS =
+  MAX_TILE_OPERATION_SCANS;
+export const MAX_FLOOD_FILL_SCANS =
+  MAX_TILE_OPERATION_SCANS;
 export const MAX_STAMP_PATTERN_EDGE = 256;
 export const MAX_STAMP_PATTERN_CELLS = 16_384;
 export const DEFAULT_USAGE_TOP_TILE_LIMIT = 64;
@@ -129,6 +133,12 @@ const LAYER_PATCH_FIELDS = [
   "tintColor",
   "locked",
   "blendMode",
+] as const;
+const FOUR_WAY_TILE_NEIGHBOR_OFFSETS = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
 ] as const;
 type LayerPatchField = (typeof LAYER_PATCH_FIELDS)[number];
 const LAYER_PATCH_JSON_KEYS: Record<LayerPatchField, string> = {
@@ -2808,7 +2818,7 @@ function validateAndSummarizeOperations(
   }
 
   let cellWrites = 0;
-  let replaceTileScans = 0;
+  let tileOperationScans = 0;
   let objectMutations = 0;
   const affectedLayerIds = new Set<number>();
   const affectedTileLayerIds = new Set<number>();
@@ -2829,6 +2839,9 @@ function validateAndSummarizeOperations(
   > = [];
   const tileStamps: NonNullable<
     MapEditPlan["summary"]["tileStamps"]
+  > = [];
+  const tileFloodFills: NonNullable<
+    MapEditPlan["summary"]["tileFloodFills"]
   > = [];
   const layerUpdates: NonNullable<
     MapEditPlan["summary"]["layerUpdates"]
@@ -2976,6 +2989,249 @@ function validateAndSummarizeOperations(
           writeLayerGid(layer, x, y, gid);
         }
       }
+    } else if (operation.type === "floodFill") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set([
+          "layerId",
+          "tile",
+          "type",
+          "x",
+          "y",
+        ]),
+        `operations[${operationIndex}]`,
+      );
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
+      assertSafeInteger(
+        operation.x,
+        `operations[${operationIndex}].x`,
+      );
+      assertSafeInteger(
+        operation.y,
+        `operations[${operationIndex}].y`,
+      );
+      const layer = findTileLayer(
+        map,
+        operation.layerId,
+        mapPath,
+      );
+      assertRegionInsideLayer(
+        layer,
+        operation.x,
+        operation.y,
+        1,
+        1,
+      );
+      const targetGid = tileRefToGid(
+        operation.tile,
+        orientation,
+        bindings,
+      );
+      const targetTile = gidToTileRef(
+        targetGid,
+        orientation,
+        bindings,
+      );
+      let scannedCellCount = 0;
+      const readObservedGid = (
+        x: number,
+        y: number,
+      ): {
+        gid: number;
+        tile: TileRef | null;
+      } => {
+        const nextScanCount =
+          tileOperationScans +
+          scannedCellCount +
+          1;
+        if (
+          !Number.isSafeInteger(nextScanCount) ||
+          nextScanCount >
+            MAX_TILE_OPERATION_SCANS
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles and floodFill operations.`,
+            {
+              limit: MAX_TILE_OPERATION_SCANS,
+              actual: nextScanCount,
+              operationIndex,
+            },
+          );
+        }
+        scannedCellCount += 1;
+        const gid = readLayerGid(layer, x, y);
+        return {
+          gid,
+          tile: gidToTileRef(
+            gid,
+            orientation,
+            bindings,
+          ),
+        };
+      };
+      const source = readObservedGid(
+        operation.x,
+        operation.y,
+      );
+      let changedCellCount = 0;
+      let affectedBounds: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null = null;
+
+      if (source.gid !== targetGid) {
+        if (cellWrites + 1 > MAX_CELL_WRITES) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+            {
+              limit: MAX_CELL_WRITES,
+              actual: cellWrites + 1,
+              operationIndex,
+            },
+          );
+        }
+        const seedLocalX =
+          operation.x - layer.x;
+        const seedLocalY =
+          operation.y - layer.y;
+        const queue = [
+          seedLocalY * layer.width + seedLocalX,
+        ];
+        writeLayerGid(
+          layer,
+          operation.x,
+          operation.y,
+          targetGid,
+        );
+        changedCellCount = 1;
+        let minimumX = operation.x;
+        let minimumY = operation.y;
+        let maximumX = operation.x;
+        let maximumY = operation.y;
+
+        for (
+          let queueIndex = 0;
+          queueIndex < queue.length;
+          queueIndex += 1
+        ) {
+          const index = queue[queueIndex] as number;
+          const localX = index % layer.width;
+          const localY = Math.floor(
+            index / layer.width,
+          );
+          for (const [
+            deltaX,
+            deltaY,
+          ] of FOUR_WAY_TILE_NEIGHBOR_OFFSETS) {
+            const neighborLocalX =
+              localX + deltaX;
+            const neighborLocalY =
+              localY + deltaY;
+            if (
+              neighborLocalX < 0 ||
+              neighborLocalY < 0 ||
+              neighborLocalX >= layer.width ||
+              neighborLocalY >= layer.height
+            ) {
+              continue;
+            }
+            const neighborX =
+              layer.x + neighborLocalX;
+            const neighborY =
+              layer.y + neighborLocalY;
+            const candidate = readObservedGid(
+              neighborX,
+              neighborY,
+            );
+            if (candidate.gid !== source.gid) {
+              continue;
+            }
+            const nextChangedCellCount =
+              changedCellCount + 1;
+            if (
+              cellWrites +
+                nextChangedCellCount >
+              MAX_CELL_WRITES
+            ) {
+              throw new TiledMcpError(
+                "RESULT_LIMIT_EXCEEDED",
+                `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+                {
+                  limit: MAX_CELL_WRITES,
+                  actual:
+                    cellWrites +
+                    nextChangedCellCount,
+                  operationIndex,
+                },
+              );
+            }
+            writeLayerGid(
+              layer,
+              neighborX,
+              neighborY,
+              targetGid,
+            );
+            changedCellCount =
+              nextChangedCellCount;
+            minimumX = Math.min(
+              minimumX,
+              neighborX,
+            );
+            minimumY = Math.min(
+              minimumY,
+              neighborY,
+            );
+            maximumX = Math.max(
+              maximumX,
+              neighborX,
+            );
+            maximumY = Math.max(
+              maximumY,
+              neighborY,
+            );
+            queue.push(
+              neighborLocalY * layer.width +
+                neighborLocalX,
+            );
+          }
+        }
+        affectedBounds = {
+          x: minimumX,
+          y: minimumY,
+          width: maximumX - minimumX + 1,
+          height: maximumY - minimumY + 1,
+        };
+      }
+
+      tileOperationScans +=
+        scannedCellCount;
+      cellWrites += changedCellCount;
+      if (changedCellCount > 0) {
+        affectedLayerIds.add(layer.id);
+        affectedTileLayerIds.add(layer.id);
+      }
+      tileFloodFills.push({
+        operationIndex,
+        layerId: layer.id,
+        seed: {
+          x: operation.x,
+          y: operation.y,
+        },
+        connectivity: "four-way",
+        sourceTile: source.tile,
+        targetTile,
+        scannedCellCount,
+        changedCellCount,
+        affectedBounds,
+        wouldChange: changedCellCount > 0,
+      });
     } else if (operation.type === "stampPattern") {
       assertExactObjectKeys(
         operation as unknown as Record<string, unknown>,
@@ -3179,19 +3435,21 @@ function validateAndSummarizeOperations(
       const scannedCellCount = region.width * region.height;
       if (
         !Number.isSafeInteger(scannedCellCount) ||
-        replaceTileScans + scannedCellCount >
-          MAX_REPLACE_TILE_SCANS
+        tileOperationScans + scannedCellCount >
+          MAX_TILE_OPERATION_SCANS
       ) {
         throw new TiledMcpError(
           "RESULT_LIMIT_EXCEEDED",
-          `A change set may scan at most ${MAX_REPLACE_TILE_SCANS} cells for tile replacement.`,
+          `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles and floodFill operations.`,
           {
-            limit: MAX_REPLACE_TILE_SCANS,
-            actual: replaceTileScans + scannedCellCount,
+            limit: MAX_TILE_OPERATION_SCANS,
+            actual:
+              tileOperationScans +
+              scannedCellCount,
           },
         );
       }
-      replaceTileScans += scannedCellCount;
+      tileOperationScans += scannedCellCount;
 
       const replacements = new Map<number, number>();
       const sourceMappingIndexes = new Map<number, number>();
@@ -3521,6 +3779,9 @@ function validateAndSummarizeOperations(
     ...(tileStamps.length === 0
       ? {}
       : { tileStamps }),
+    ...(tileFloodFills.length === 0
+      ? {}
+      : { tileFloodFills }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
     ...(createdLayers.length === 0 ? {} : { createdLayers }),
     ...(deletedLayers.length === 0 ? {} : { deletedLayers }),

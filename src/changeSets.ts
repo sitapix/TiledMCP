@@ -14,6 +14,13 @@ import type {
   PlannedMapEditOperation,
   TileRef,
 } from "./maps/types.js";
+import {
+  GID_DIAGONAL_OR_HEX_60,
+  GID_FLIP_HORIZONTAL,
+  GID_FLIP_VERTICAL,
+  GID_HEX_120,
+} from "./maps/gid.js";
+import { MAX_TILE_OPERATION_SCANS } from "./maps/mapService.js";
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 256;
@@ -108,6 +115,25 @@ type OperationPreview =
         tile: TileRef | null;
       }>;
       omittedCellCount: number;
+    }
+  | {
+      type: "floodFill";
+      layerId: number;
+      destructive: true;
+      warning: string;
+      seed: { x: number; y: number };
+      connectivity: "four-way";
+      sourceTile: TileRef | null;
+      targetTile: TileRef | null;
+      scannedCellCount: number;
+      changedCellCount: number;
+      affectedBounds: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null;
+      wouldChange: boolean;
     }
   | {
       type: "replaceTiles";
@@ -683,6 +709,127 @@ function summarizeOperation(
     };
   }
 
+  if (operation.type === "floodFill") {
+    const floodSummaries =
+      summary.tileFloodFills?.filter(
+        (entry) =>
+          entry.operationIndex === operationIndex,
+      ) ?? [];
+    const floodSummary = floodSummaries[0];
+    const seed = floodSummary?.seed;
+    const bounds = floodSummary?.affectedBounds;
+    const boundsArea =
+      bounds === null || bounds === undefined
+        ? null
+        : bounds.width * bounds.height;
+    const validBounds =
+      bounds === null ||
+      (bounds !== undefined &&
+        Number.isSafeInteger(bounds.x) &&
+        Number.isSafeInteger(bounds.y) &&
+        Number.isSafeInteger(bounds.width) &&
+        Number.isSafeInteger(bounds.height) &&
+        bounds.width > 0 &&
+        bounds.height > 0 &&
+        Number.isSafeInteger(boundsArea) &&
+        Number.isSafeInteger(
+          bounds.x + bounds.width - 1,
+        ) &&
+        Number.isSafeInteger(
+          bounds.y + bounds.height - 1,
+        ));
+    const boundsContainSeed =
+      bounds === null ||
+      (bounds !== undefined &&
+        operation.x >= bounds.x &&
+        operation.x < bounds.x + bounds.width &&
+        operation.y >= bounds.y &&
+        operation.y < bounds.y + bounds.height);
+    if (
+      floodSummaries.length !== 1 ||
+      floodSummary === undefined ||
+      seed === undefined ||
+      !Number.isSafeInteger(seed.x) ||
+      !Number.isSafeInteger(seed.y) ||
+      !Number.isSafeInteger(
+        floodSummary.layerId,
+      ) ||
+      floodSummary.layerId <= 0 ||
+      floodSummary.layerId !== operation.layerId ||
+      seed.x !== operation.x ||
+      seed.y !== operation.y ||
+      floodSummary.connectivity !== "four-way" ||
+      !isCanonicalPreviewTileRef(
+        floodSummary.sourceTile,
+      ) ||
+      !isCanonicalPreviewTileRef(
+        floodSummary.targetTile,
+      ) ||
+      !previewTileRefsEqual(
+        floodSummary.targetTile,
+        operation.tile,
+      ) ||
+      floodSummary.wouldChange !==
+        !previewTileRefsEqual(
+          floodSummary.sourceTile,
+          floodSummary.targetTile,
+        ) ||
+      !Number.isSafeInteger(
+        floodSummary.scannedCellCount,
+      ) ||
+      floodSummary.scannedCellCount < 1 ||
+      floodSummary.scannedCellCount >
+        MAX_TILE_OPERATION_SCANS ||
+      !Number.isSafeInteger(
+        floodSummary.changedCellCount,
+      ) ||
+      floodSummary.changedCellCount < 0 ||
+      floodSummary.changedCellCount >
+        floodSummary.scannedCellCount ||
+      !validBounds ||
+      !boundsContainSeed ||
+      (boundsArea !== null &&
+        boundsArea <
+          floodSummary.changedCellCount) ||
+      floodSummary.wouldChange !==
+        (floodSummary.changedCellCount > 0) ||
+      (!floodSummary.wouldChange &&
+        floodSummary.scannedCellCount !== 1) ||
+      (floodSummary.wouldChange
+        ? floodSummary.affectedBounds === null
+        : floodSummary.affectedBounds !== null)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "floodFill preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      layerId: operation.layerId,
+      destructive: true,
+      warning:
+        "This scans from the seed with fixed four-way connectivity and exact encoded GID equality, including transform flags; null clears the connected region, and later operations in the change set observe this result.",
+      seed: structuredClone(floodSummary.seed),
+      connectivity: floodSummary.connectivity,
+      sourceTile: structuredClone(
+        floodSummary.sourceTile,
+      ),
+      targetTile: structuredClone(
+        floodSummary.targetTile,
+      ),
+      scannedCellCount:
+        floodSummary.scannedCellCount,
+      changedCellCount:
+        floodSummary.changedCellCount,
+      affectedBounds: structuredClone(
+        floodSummary.affectedBounds,
+      ),
+      wouldChange: floodSummary.wouldChange,
+    };
+  }
+
   if (operation.type === "replaceTiles") {
     const replacementSummary = summary.tileReplacements?.find(
       (entry) => entry.operationIndex === operationIndex,
@@ -1035,4 +1182,159 @@ function summarizeOperation(
     sample: operation.cells.slice(0, 8),
     omittedCellCount: Math.max(0, operation.cells.length - 8),
   };
+}
+
+function isCanonicalPreviewTileRef(
+  value: unknown,
+): value is TileRef | null {
+  if (value === null) {
+    return true;
+  }
+  if (
+    typeof value !== "object" ||
+    value === undefined ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const tile = value as Record<string, unknown>;
+  if (
+    !hasExactKeys(tile, [
+      "tileset",
+      "localId",
+      "transform",
+    ]) ||
+    !Number.isSafeInteger(tile.localId) ||
+    (tile.localId as number) < 0 ||
+    (tile.localId as number) > 0x0fffffff
+  ) {
+    return false;
+  }
+  const tileset = tile.tileset;
+  if (
+    typeof tileset !== "object" ||
+    tileset === null ||
+    Array.isArray(tileset)
+  ) {
+    return false;
+  }
+  const tilesetRecord = tileset as Record<
+    string,
+    unknown
+  >;
+  if (
+    !hasExactKeys(tilesetRecord, [
+      "kind",
+      "assetId",
+    ]) ||
+    tilesetRecord.kind !== "external" ||
+    typeof tilesetRecord.assetId !== "string" ||
+    tilesetRecord.assetId.length === 0 ||
+    tilesetRecord.assetId.length > 128
+  ) {
+    return false;
+  }
+  const transform = tile.transform;
+  if (transform === undefined) {
+    return true;
+  }
+  if (
+    typeof transform !== "object" ||
+    transform === null ||
+    Array.isArray(transform)
+  ) {
+    return false;
+  }
+  const transformRecord = transform as Record<
+    string,
+    unknown
+  >;
+  if (
+    !hasExactKeys(transformRecord, [
+      "kind",
+      "flipH",
+      "flipV",
+      "flipD",
+      "rawFlags",
+    ]) ||
+    transformRecord.kind !== "orthogonal" ||
+    typeof transformRecord.flipH !== "boolean" ||
+    typeof transformRecord.flipV !== "boolean" ||
+    typeof transformRecord.flipD !== "boolean" ||
+    !Number.isSafeInteger(
+      transformRecord.rawFlags,
+    ) ||
+    (transformRecord.rawFlags as number) < 0 ||
+    (transformRecord.rawFlags as number) >
+      0xffffffff
+  ) {
+    return false;
+  }
+  return (
+    (transformRecord.rawFlags as number) >>> 0
+  ) === previewOrthogonalFlags(
+    value as TileRef,
+  );
+}
+
+function previewTileRefsEqual(
+  left: TileRef | null,
+  right: TileRef | null,
+): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return (
+    left.tileset.kind === right.tileset.kind &&
+    left.tileset.assetId === right.tileset.assetId &&
+    left.localId === right.localId &&
+    (left.transform?.kind ?? "orthogonal") ===
+      (right.transform?.kind ?? "orthogonal") &&
+    (left.transform?.flipH ?? false) ===
+      (right.transform?.flipH ?? false) &&
+    (left.transform?.flipV ?? false) ===
+      (right.transform?.flipV ?? false) &&
+    previewFlipD(left) === previewFlipD(right) &&
+    previewOrthogonalFlags(left) ===
+      previewOrthogonalFlags(right)
+  );
+}
+
+function previewOrthogonalFlags(tile: TileRef): number {
+  const transform = tile.transform;
+  let flags =
+    (transform?.rawFlags ?? 0) &
+    GID_HEX_120;
+  if (transform?.flipH === true) {
+    flags |= GID_FLIP_HORIZONTAL;
+  }
+  if (transform?.flipV === true) {
+    flags |= GID_FLIP_VERTICAL;
+  }
+  if (previewFlipD(tile)) {
+    flags |= GID_DIAGONAL_OR_HEX_60;
+  }
+  return flags >>> 0;
+}
+
+function previewFlipD(tile: TileRef): boolean {
+  const transform = tile.transform;
+  return transform !== undefined &&
+    "flipD" in transform
+    ? (transform.flipD ?? false)
+    : false;
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  return (
+    actual.length === expected.length &&
+    actual.every(
+      (key, index) => key === expected[index],
+    )
+  );
 }

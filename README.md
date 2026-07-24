@@ -33,10 +33,12 @@
 - 通过该 generic union 的第 10 种独占 operation 复制 4 类已有图层或完整 Group
   subtree，以高水位 preorder 分配新 layer/object ID，并安全重连副本内部对象引用；
 - 无损 4-bit GID 变换编解码；
-- `setTiles` / `fillRegion` / `replaceTiles` / `stampPattern` 封闭编辑集合，以及
+- `setTiles` / `fillRegion` / `replaceTiles` / `stampPattern` / `floodFill`
+  封闭编辑集合，以及
   preview → approved change set → apply 的两阶段提交；replacement 按完整变换后的
   encoded GID 精确匹配并在一个 operation 内单次扫描、同时求值，stamp 则按绝对坐标
-  写入有界的稠密矩形图案；
+  写入有界的稠密矩形图案，flood fill 则从绝对 seed 以固定四向连通性填充完整 encoded
+  GID 相同的区域；
 - 基础 rectangle/point 对象的有界列表与 create/update/delete（正确维护
   `nextobjectid`）；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
@@ -167,8 +169,9 @@ raw flag 组合另在 transform 摘要中计数。
 包括 transform/raw flags，省略 transform 表示 identity，并不是通配符。一个 operation
 只扫描一次原始格子，所以 `A→B, B→C` 不会把原始 A 级联成 C，swap/cycle 也可预测。
 `region` 是绝对 tile 坐标 `{x,y,width,height}`，省略时使用该 layer 自身的完整 bounds。
-每个 operation 最多 128 组映射；一个 change set 的 replacement 最多扫描
-1,000,000 个格子，实际发生的替换与其他 tile operation 合计最多写 100,000 个格子。
+每个 operation 最多 128 组映射；一个 change set 的 replacement 与 flood fill 合计最多
+执行 1,000,000 次实际 GID 读取，实际发生的替换与其他 tile operation 合计最多写
+100,000 个格子。
 没有命中是合法 no-op，preview 会报告 0 次替换，apply 不会改写文件。
 
 修改已有图层的通用显示/元数据字段时，在同一个 `tiled_preview_edits` 中使用第 7 种
@@ -310,6 +313,30 @@ rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维�
 与文件 bytes 完全不变。整块清空仍直接使用 `fillRegion` 的 `tile:null`，不需要独立
 `clearRegion` operation。
 
+油漆桶填充使用 generic union 的第 12 种 operation：
+`{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它没有
+`tiled_flood_fill` standalone tool，所以 registry 仍为 18 core / 19 with rasterizer。
+`x/y` 是目标有限 tile layer 中的绝对 seed 坐标；连通性固定为四向，不接受对角连接或
+connectivity 参数。
+
+source 在执行到该 operation 时从 seed cell 推导，并按完整 unsigned encoded GID 精确
+匹配，包含 transform/raw flags；同一 base tile 的不同翻转不会混入。`tile:null` 可清空
+相连区域，空 seed 也能用非空 `TileRef` 填充。若 source 与 target 编码相同，planner
+只读取并验证 seed 后立即报告 no-op，不扫描整个区域。
+
+flood fill 与同一 change set 中的其他 operation 按顺序执行：它会看到前序
+set/fill/stamp/replace/flood 的结果，后序 operation 则可覆盖本次填充。扫描中的每次实际
+GID 读取都计入 replace + flood 共用的 1,000,000-read 上限；同一个已填 cell 或边界邻格
+可能因四向遍历被重复观察，所以 `scannedCellCount` 是实际读取次数，不是 distinct cell
+数。所有被观察 GID 都会完整反向解析，malformed、带 flags 的空 GID 或未绑定值会
+fail closed。实际改变的 cell 计入共享 100,000-cell 写预算。
+
+preview 只回显 canonical `sourceTile` / `targetTile`、`scannedCellCount`、
+`changedCellCount`、固定的 `connectivity:"four-way"`、绝对 seed 和
+`affectedBounds`；bounds 是变化区域的外接矩形，不是完整 cell 列表，无变化时为
+`null`。写回只局部替换目标 layer 的 `data`；若整个 plan 最终没有净变化，apply 保持
+revision 与文件 bytes 完全不变。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -349,7 +376,8 @@ pnpm build
 `pnpm test:stdio` 单独重建并复跑。
 
 测试覆盖路径沙箱、JSON 词法保真、revision 冲突、原子提交、checkpoint 启动对账、
-全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp 与 object 编辑闭环，
+全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp、四向 flood fill 与
+object 编辑闭环，
 以及 atlas 几何、SVG 安全预检、图片预算和
 native preview 的图层选择、H/V/D、opacity、region/overlay/工作量预算与 MCP image wire
 contract；TSJ 详情另覆盖稀疏分页、Tiled 1.12 tile `type`、动画采样、
@@ -371,6 +399,11 @@ tamper/stale revision 和 Tiled 1.12 round trip；
 tile stamp 覆盖非零 layer origin、null 清空、变换 GID、稠密矩形/边长/格数边界、
 mixed-operation later-wins、8 格有界 preview、exact-byte no-op、局部 source patch、
 tamper/stale dependency 与 Tiled 1.12 round trip；
+tile flood fill 覆盖绝对/非零 layer origin、四向边界、完整 encoded GID 与 transform
+隔离、null source/target、source=target 单 seed no-op、mixed-operation later-wins、
+replace/flood 共享实际读取预算、100,000-cell 写预算、observed malformed GID
+fail-closed、无 cell list 的有界 preview、data-local source patch、tamper/stale
+dependency 与 Tiled 1.12 round trip；
 layer duplicate 的 37+1 项专项/集成 cases 覆盖 destination 三分支、默认/最终 insertion
 index、root-only name override、完整 subtree 的 preorder layer/object ID、direct 与
 nested-list object reference 重连、外部/零/dangling reference、class/template fail
@@ -401,8 +434,9 @@ checkpoint restore。架构与 roadmap
   transform/raw flags 的完整 encoded GID 精确匹配；
   `to:null` 才表示清空。一个 operation 的多组 mapping 同时、single-pass 求值，可选
   region 使用绝对 tile 坐标，省略时覆盖 layer bounds。每个 operation 最多 128 组映射，
-  一个 change set 最多扫描 1,000,000 个 replacement 候选格，实际写入仍与 set/fill
-  共用 100,000-cell 上限；零命中不会产生受影响 tile 子树或文件写入。
+  replacement 与 flood fill 在一个 change set 中共用 1,000,000 次实际 GID 读取预算，
+  实际写入仍与 set/fill 共用 100,000-cell 上限；零命中不会产生受影响 tile 子树或文件
+  写入。
 - `updateLayer` 是通用 edit union 的第 7 种 operation，不是已注册的
   `tiled_update_layer` standalone tool。它只修改按数字 `layerId` 找到的现有
   tile/object/image/group layer 的 11 个公共成员；不移动、不删除、不改变父 Group 或
@@ -441,6 +475,14 @@ checkpoint restore。架构与 roadmap
   总格数最多 16,384，全部 pattern cells 都计入共享 100,000-cell 写预算。operations
   依序执行且重叠时 later wins；preview 最多采样 8 格。仅目标 `data` 会局部重写，全相同
   GID 的 net no-op 保持精确 bytes。清空矩形可继续使用 `fillRegion` + `tile:null`。
+- `floodFill` 是同一 union 已实现的第 12 种 operation，也不新增 standalone tool。
+  它以绝对 seed 和固定四向连通性，从 operation 执行时的 seed 完整 encoded GID 推导
+  source；transform/raw flags 参与精确匹配，`null` 同时支持空 source 和清空 target。
+  source=target 时只验证 seed 后 no-op。每次实际 GID 读取（包括可能重复观察的已填 cell
+  与边界邻格）和 `replaceTiles` 共用 1,000,000-read 预算，observed malformed GID
+  fail closed；实际变化计入 100,000-cell 写预算。preview 不返回 cell 列表，只报告
+  canonical source/target、counts 和绝对外接 bounds；no-op/data-local patch 保持精确
+  bytes。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

@@ -88,6 +88,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         "setTiles",
         "fillRegion",
         "stampPattern",
+        "floodFill",
         "replaceTiles",
       ],
       tileStampCapabilities: {
@@ -101,6 +102,18 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           "standard-tile-ref-encoded-gid",
         operationOrdering:
           "sequential-change-set-order-last-write-wins",
+        sourcePatch: "tile-layer-data-member-local",
+      },
+      tileFloodFillCapabilities: {
+        seedSourceMatch: "exact-encoded-gid",
+        connectivity: "fixed-four-way",
+        nullableTarget: true,
+        coordinates: "absolute-tile-coordinates",
+        operationOrdering:
+          "sequential-change-set-order-last-write-wins",
+        scanAccounting: "actual-gid-reads",
+        scanBudget:
+          "shared-with-replaceTiles-per-change-set",
         sourcePatch: "tile-layer-data-member-local",
       },
       layerOperations: [
@@ -170,6 +183,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       limits: {
         maxSerializedDuplicateBytes: 16 * 1024 * 1024,
         maxReplaceTileMappings: 128,
+        maxTileOperationScans: 1_000_000,
+        maxFloodFillScans: 1_000_000,
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,

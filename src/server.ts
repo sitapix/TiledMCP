@@ -44,11 +44,13 @@ import {
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CREATE_TILE_LAYER_CELLS,
   MAX_DUPLICATE_LAYER_BYTES,
+  MAX_FLOOD_FILL_SCANS,
   MAX_LAYER_NAME_LENGTH,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
   MAX_STAMP_PATTERN_CELLS,
   MAX_STAMP_PATTERN_EDGE,
+  MAX_TILE_OPERATION_SCANS,
   MAX_USAGE_DISTINCT_TILES,
   MAX_USAGE_LAYER_SUMMARIES,
   MAX_USAGE_RESULT_BYTES,
@@ -123,6 +125,11 @@ const revisionSchema = z
   .describe("SHA-256 revision returned by a read or preview");
 const uint32Schema = z.number().int().min(0).max(0xffffffff);
 const positiveIdSchema = z.number().int().positive();
+const safeIntegerSchema = z
+  .number()
+  .int()
+  .min(Number.MIN_SAFE_INTEGER)
+  .max(Number.MAX_SAFE_INTEGER);
 const objectCoordinateSchema = z.number().min(-1_000_000_000).max(1_000_000_000);
 const objectExtentSchema = z.number().min(0).max(1_000_000_000);
 const objectStringSchema = z.string().max(1_024);
@@ -433,6 +440,20 @@ const stampPatternSchema = z
   })
   .strict();
 
+const floodFillSchema = z
+  .object({
+    type: z.literal("floodFill"),
+    layerId: z
+      .number()
+      .int()
+      .positive()
+      .max(Number.MAX_SAFE_INTEGER),
+    x: safeIntegerSchema,
+    y: safeIntegerSchema,
+    tile: tileRefSchema.nullable(),
+  })
+  .strict();
+
 const replaceTilesRegionSchema = z
   .object({
     x: z.number().int(),
@@ -644,6 +665,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
   stampPatternSchema,
+  floodFillSchema,
   replaceTilesSchema,
   createObjectSchema,
   updateObjectSchema,
@@ -726,6 +748,7 @@ export async function createTiledMcpServer(
           "setTiles",
           "fillRegion",
           "stampPattern",
+          "floodFill",
           "replaceTiles",
         ],
         tileStampCapabilities: {
@@ -739,6 +762,18 @@ export async function createTiledMcpServer(
             "standard-tile-ref-encoded-gid",
           operationOrdering:
             "sequential-change-set-order-last-write-wins",
+          sourcePatch: "tile-layer-data-member-local",
+        },
+        tileFloodFillCapabilities: {
+          seedSourceMatch: "exact-encoded-gid",
+          connectivity: "fixed-four-way",
+          nullableTarget: true,
+          coordinates: "absolute-tile-coordinates",
+          operationOrdering:
+            "sequential-change-set-order-last-write-wins",
+          scanAccounting: "actual-gid-reads",
+          scanBudget:
+            "shared-with-replaceTiles-per-change-set",
           sourcePatch: "tile-layer-data-member-local",
         },
         tileReplacementCapabilities: {
@@ -982,6 +1017,9 @@ export async function createTiledMcpServer(
           maxSerializedDuplicateBytes:
             MAX_DUPLICATE_LAYER_BYTES,
           maxReplaceTileMappings: MAX_REPLACE_TILE_MAPPINGS,
+          maxTileOperationScans:
+            MAX_TILE_OPERATION_SCANS,
+          maxFloodFillScans: MAX_FLOOD_FILL_SCANS,
           maxReplaceTileScans: MAX_REPLACE_TILE_SCANS,
           maxUsageScanValues: MAX_USAGE_SCAN_VALUES,
           maxUsageDistinctTiles:
@@ -1583,7 +1621,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, dense rectangular pattern stamps, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

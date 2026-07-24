@@ -151,10 +151,10 @@ or silently repairs a stale counter.
 ## Preview, approve, then apply
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
-\`fillRegion\`, \`replaceTiles\`, and \`stampPattern\`; supported object
-operations are \`createObject\`, \`updateObject\`, and \`deleteObjects\`;
-supported layer operations are \`updateLayer\`, \`deleteLayer\`,
-\`moveLayer\`, and \`duplicateLayer\`.
+\`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, and \`floodFill\`;
+supported object operations are \`createObject\`, \`updateObject\`, and
+\`deleteObjects\`; supported layer operations are \`updateLayer\`,
+\`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
@@ -332,11 +332,11 @@ one operation are evaluated simultaneously in a single pass: with \`A->B\`
 and \`B->C\`, cells that originally held A become B rather than C. Swaps and
 cycles follow the same rule.
 
-Across one change set, replacement operations may scan at most 1,000,000
-cells. Only actual matches count toward the 100,000 total tile-cell write
-limit shared with set/fill. Zero matches are a valid no-op: inspect the
-preview's scanned and replaced counts, and expect apply not to rewrite the
-map.
+Across one change set, replacement and flood-fill operations share a limit of
+1,000,000 actual GID reads. Only actual matches count toward the 100,000 total
+tile-cell write limit shared with set/fill. Zero replacement matches are a
+valid no-op: inspect the preview's scanned and replaced counts, and expect
+apply not to rewrite the map.
 
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
@@ -368,6 +368,41 @@ Apply uses a member-local patch for only the target layer's \`data\`. If all
 encoded GIDs already match, the stamp is a no-op; when the whole plan is also
 a no-op, apply returns \`changed:false\` and preserves the exact file bytes
 and revision.
+
+Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
+paint-bucket edit. This is the twelfth generic operation, not a standalone
+tool, so the registry remains 18 core tools or 19 with the rasterizer.
+\`x\` and \`y\` are an absolute seed coordinate inside the finite tile
+layer. Connectivity is always four-way; there is no connectivity input and
+diagonal-only cells are not connected.
+
+The source is the seed's value at the point this operation executes, after
+any earlier operations in the same change set. Matching compares the complete
+encoded GID, including transform and raw flag bits, so differently flipped
+copies of one base tile remain separate. The target \`tile\` may be
+\`null\` to clear the connected region. An empty seed is also a valid source
+and can be filled with a non-null TileRef.
+
+Operations still execute in array order: flood fill observes earlier
+set/fill/stamp/replace/flood results, and later operations can overwrite its
+result. If source and target encode to the same GID, the planner reads and
+validates only the seed, reports a no-op, and does not scan the complete
+component.
+
+\`scannedCellCount\` reports actual GID reads, not distinct coordinates. The
+four-way traversal may read an already filled cell or a nonmatching boundary
+neighbor more than once. Every observed value is fully resolved before
+comparison; malformed, flag-only empty, or unbound GIDs fail closed. These
+reads share the 1,000,000-read change-set limit with replacement, while actual
+changed cells share the 100,000-cell write limit with all tile edits.
+
+The preview returns canonical \`sourceTile\` and \`targetTile\`, absolute
+\`seed\`, \`connectivity:"four-way"\`, scan/change counts,
+\`wouldChange\`, and \`affectedBounds\`. Bounds are only the absolute
+bounding box of changed cells, not a complete cell list; no cell sample is
+returned, and a no-op has null bounds. Apply uses only a member-local patch
+for the target layer's \`data\`. A net no-op preserves the exact bytes and
+revision.
 
 1. Call \`tiled_preview_edits\` with:
    - the project-relative \`mapPath\`;
