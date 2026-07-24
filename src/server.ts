@@ -47,6 +47,7 @@ import {
   MAX_FLOOD_FILL_SCANS,
   MAX_LAYER_NAME_LENGTH,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_REMOVE_TILESET_GID_SCANS,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
   MAX_STAMP_PATTERN_CELLS,
@@ -697,8 +698,18 @@ const duplicateLayerSchema = z
   })
   .strict();
 
+const removeTilesetFromMapSchema = z
+  .object({
+    type: z.literal("removeTilesetFromMap"),
+    tilesetAssetId: z
+      .string()
+      .regex(/^asset_[0-9a-f]{24}$/u),
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   updateMapSchema,
+  removeTilesetFromMapSchema,
   setTilesSchema,
   fillRegionSchema,
   stampPatternSchema,
@@ -997,6 +1008,11 @@ export async function createTiledMcpServer(
           existingDependencyPins: "required-exact",
           targetRevisionPin: "optional-capture-current",
           writeTarget: "map-only",
+          removalPlanner:
+            "generic-exclusive-operation-change-set",
+          removalPolicy: "unused-only",
+          removalLocator: "tileset-asset-id",
+          removalSourcePatch: "array-element-local",
         },
         layerCreationCapabilities: {
           planner: "dedicated-single-operation-change-set",
@@ -1071,6 +1087,8 @@ export async function createTiledMcpServer(
           maxTileFindEvaluations: MAX_TILE_FIND_EVALUATIONS,
           maxTileFindResultBytes: MAX_TILE_FIND_RESULT_BYTES,
           maxAddTilesetGidScans: MAX_ADD_TILESET_GID_SCANS,
+          maxRemoveTilesetGidScans:
+            MAX_REMOVE_TILESET_GID_SCANS,
           maxSerializedDuplicateBytes:
             MAX_DUPLICATE_LAYER_BYTES,
           maxReplaceTileMappings: MAX_REPLACE_TILE_MAPPINGS,
@@ -1678,7 +1696,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

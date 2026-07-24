@@ -72,6 +72,15 @@ export interface UpdateMapOperation {
   };
 }
 
+export interface RemoveTilesetFromMapOperation {
+  type: "removeTilesetFromMap";
+  /**
+   * Opaque identifier returned by the map summary. The operation is allowed
+   * only when no tile cell or tile object still resolves to this binding.
+   */
+  tilesetAssetId: string;
+}
+
 export interface ReplaceTilesOperation {
   type: "replaceTiles";
   layerId: number;
@@ -225,6 +234,7 @@ export interface DuplicateLayerOperation {
 
 export type MapEditOperation =
   | UpdateMapOperation
+  | RemoveTilesetFromMapOperation
   | SetTilesOperation
   | FillRegionOperation
   | StampPatternOperation
@@ -313,6 +323,22 @@ export interface MapEditPlan {
       changedFields: string[];
       wouldChange: boolean;
       renderingMayChange: boolean;
+    }>;
+    removedTilesets?: Array<{
+      operationIndex: number;
+      assetId: string;
+      tilesetPath: string;
+      source: string;
+      tilesetRevision: string;
+      name: string;
+      nameTruncated: boolean;
+      index: number;
+      tileCount: number;
+      gidSpan: number;
+      firstGid: number;
+      lastGid: number;
+      scannedCellCount: number;
+      scannedObjectCount: number;
     }>;
     updatedLayerIds?: number[];
     layerUpdates?: Array<{

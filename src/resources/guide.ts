@@ -128,6 +128,45 @@ The proposal pins the current map, every existing map dependency, and the
 prospective TSJ revision. A conflict requires a fresh summary and proposal.
 This operation only adds a tileset reference; it does not create a layer.
 
+## Detach an unused tileset safely
+
+Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
+to detach one current external atlas binding. This is the fourteenth generic
+operation, not a standalone tool, so the registry remains 18 core tools or 19
+when the rasterizer is available. The strict operation must be the only item
+in its change set. Copy the opaque \`tilesetAssetId\` from a current map
+summary; do not substitute a path, tileset name, or derived ID.
+
+The planner recursively scans every finite tile-layer cell and every object
+in every object layer, including hidden or locked layers and all Group
+descendants. Tile objects with a \`gid\` are references too. Cells and objects
+share a 1,000,000-entry scan limit, and every non-zero encoded GID is resolved
+with its transform/raw flags. If any cell or tile object uses the target
+binding, the proposal fails with \`TILESET_IN_USE\`; this operation never
+clears cells, deletes objects, or remaps local IDs to another tileset. Any
+object with a \`template\` member fails closed with
+\`UNSUPPORTED_TILESET_REMOVAL_TEMPLATE\`, because an unpinned template can
+hide a tile-object GID.
+
+A successful plan records flat fields in \`summary.removedTilesets[]\`:
+\`operationIndex\`, \`assetId\`, \`tilesetPath\`, \`source\`,
+\`tilesetRevision\`, \`name\`, \`nameTruncated\`, \`index\`, \`tileCount\`,
+\`gidSpan\`, \`firstGid\`, \`lastGid\`, \`scannedCellCount\`, and
+\`scannedObjectCount\`. The operation preview has no \`operationIndex\`; its
+position in the operations array is the association. Its full shape has
+top-level \`type\`, \`destructive\`, \`warning\`, \`source\`, and \`index\`,
+plus
+\`tileset:{kind,assetId,path,revision,name,nameTruncated?,tileCount,gidSpan}\`,
+\`gidRange:{first,last}\`, and \`scanned:{tileCells,objects}\`.
+\`tileset.nameTruncated\` appears only when true, and \`destructive\` is
+always true. Present all fields for approval. The proposal pins the complete
+dependency record from before removal, including the target TSJ.
+
+Apply reloads and verifies that complete old dependency set, reruns the scan
+and summary, and then removes only the selected element from the TMJ
+\`tilesets\` array. Other bindings retain their exact \`firstgid\` and source
+bytes. The TSJ, atlas image, and every other external file remain on disk.
+
 ## Create an empty layer safely
 
 \`tiled_create_layer\` prepares one preview-only proposal for a finite
@@ -157,8 +196,8 @@ All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, and \`floodFill\`;
 supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
-\`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; the supported root
-map operation is \`updateMap\`.
+\`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; supported map-level
+operations are \`updateMap\` and the exclusive \`removeTilesetFromMap\`.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
@@ -451,8 +490,9 @@ proposal.
 
 \`tiled_preview_edits\` validates and stores a proposal but does not write the
 map. \`tiled_add_tileset_to_map\` and \`tiled_create_layer\` are also
-preview-only. \`tiled_apply_change_set\` is the write boundary for all
-proposal types. A
+preview-only; \`removeTilesetFromMap\` stays inside the generic preview tool
+and does not add a standalone tool. \`tiled_apply_change_set\` is the write
+boundary for all proposal types. A
 textual confirmation argument, prompt, or guide instruction is never a
 substitute for client-side approval.
 
@@ -493,6 +533,10 @@ a new file cannot be used to delete that file.
 - On \`REVISION_CONFLICT\`, stop. Re-read the map summary and dependencies,
   reconsider the operations against the new state, and issue a fresh preview.
   Never blindly replay a stale plan.
+- On \`TILESET_IN_USE\`, keep the binding. Inspect the current usage and
+  explicitly edit or remove every reported tile-cell/tile-object reference
+  in separately approved changes before proposing removal again; this
+  operation will not clear or remap them for you.
 - On an unsupported-profile or rendering error, narrow the request or use an
   advertised adapter. Do not assume omitted content was validated visually.
 - On a size, region, cell, layer, atlas, or image budget error, split the work

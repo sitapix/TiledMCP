@@ -100,6 +100,7 @@ const MAX_TILED_SIGNED_ID = 0x7fffffff;
 const MAX_EDITABLE_DOCUMENT_BYTES = 64 * 1024 * 1024;
 export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
 export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
+export const MAX_REMOVE_TILESET_GID_SCANS = 1_000_000;
 export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
 export const MAX_MAP_CLASS_NAME_CODE_POINTS = 1_024;
@@ -120,6 +121,7 @@ export const MAX_USAGE_TILESET_SUMMARIES = 64;
 export const MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE = 16;
 export const MAX_USAGE_RESULT_BYTES = 256 * 1024;
 const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+const ASSET_ID_PATTERN = /^asset_[0-9a-f]{24}$/u;
 const TILED_COLOR_PATTERN =
   /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
 const MAP_PATCH_FIELDS = [
@@ -234,6 +236,24 @@ interface TilesetBinding {
   name: string;
   nameTruncated: boolean;
   revision: string;
+}
+
+type TilesetUsageReference =
+  | {
+      kind: "cell";
+      layerId: number;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "object";
+      layerId: number;
+      objectId: number;
+    };
+
+interface TilesetUsageInspection {
+  scannedCellCount: number;
+  scannedObjectCount: number;
 }
 
 interface ProspectiveTilesetBinding {
@@ -2798,6 +2818,21 @@ function validateAndSummarizeOperations(
       { limit: MAX_PLAN_OPERATIONS },
     );
   }
+  const removeTilesetOperationCount = operations.filter(
+    (operation) =>
+      isRecordValue(operation) &&
+      operation.type === "removeTilesetFromMap",
+  ).length;
+  if (
+    removeTilesetOperationCount > 1 ||
+    (removeTilesetOperationCount === 1 &&
+      operations.length !== 1)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "removeTilesetFromMap must be the only operation in its change set.",
+    );
+  }
   const deleteLayerOperationCount = operations.filter(
     (operation) =>
       isRecordValue(operation) &&
@@ -2858,6 +2893,9 @@ function validateAndSummarizeOperations(
   const changedLayerMembers = new Set<string>();
   const addedTilesets: NonNullable<
     MapEditPlan["summary"]["addedTilesets"]
+  > = [];
+  const removedTilesets: NonNullable<
+    MapEditPlan["summary"]["removedTilesets"]
   > = [];
   const createdLayers: NonNullable<
     MapEditPlan["summary"]["createdLayers"]
@@ -2959,6 +2997,34 @@ function validateAndSummarizeOperations(
         tileCount: operation.tileCount,
         gidSpan: operation.gidSpan,
         firstGid: operation.firstGid,
+      });
+    } else if (
+      operation.type === "removeTilesetFromMap"
+    ) {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["tilesetAssetId", "type"]),
+        `operations[${operationIndex}]`,
+      );
+      if (
+        typeof operation.tilesetAssetId !== "string" ||
+        !ASSET_ID_PATTERN.test(
+          operation.tilesetAssetId,
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}].tilesetAssetId must be an opaque asset id returned by the map summary.`,
+        );
+      }
+      removedTilesets.push({
+        operationIndex,
+        ...removeUnusedTilesetReference(
+          map,
+          bindings,
+          operation.tilesetAssetId,
+          mapPath,
+        ),
       });
     } else if (operation.type === "updateMap") {
       assertExactObjectKeys(
@@ -3779,6 +3845,7 @@ function validateAndSummarizeOperations(
     changedLayerMembers.size +
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
+    (removedTilesets.length > 0 ? 1 : 0) +
     (createdLayers.length > 0 ? 2 : 0) +
     duplicatedLayers.reduce(
       (count, duplicated) =>
@@ -3841,6 +3908,9 @@ function validateAndSummarizeOperations(
       ? {}
       : { tileFloodFills }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
+    ...(removedTilesets.length === 0
+      ? {}
+      : { removedTilesets }),
     ...(createdLayers.length === 0 ? {} : { createdLayers }),
     ...(deletedLayers.length === 0 ? {} : { deletedLayers }),
     ...(movedLayers.length === 0 ? {} : { movedLayers }),
@@ -3975,6 +4045,394 @@ function resolveAddTilesetToMapOperation(
     gidSpan: prospective.gidSpan,
     firstGid,
   };
+}
+
+function removeUnusedTilesetReference(
+  map: JsonObject,
+  bindings: readonly TilesetBinding[],
+  tilesetAssetId: string,
+  mapPath: string,
+): Omit<
+  NonNullable<
+    MapEditPlan["summary"]["removedTilesets"]
+  >[number],
+  "operationIndex"
+> {
+  const binding = bindings.find(
+    (candidate) =>
+      candidate.assetId === tilesetAssetId,
+  );
+  if (binding === undefined) {
+    throw new TiledMcpError(
+      "TILESET_NOT_FOUND",
+      `The requested tileset asset is not referenced by ${mapPath}.`,
+      { mapPath, tilesetAssetId },
+    );
+  }
+
+  const entries = expectArray(
+    map.tilesets,
+    `${mapPath}.tilesets`,
+  );
+  const index = entries.findIndex((value, entryIndex) => {
+    const entry = expectObject(
+      value,
+      `${mapPath}.tilesets[${entryIndex}]`,
+    );
+    return (
+      expectInteger(
+        entry.firstgid,
+        `${mapPath}.tilesets[${entryIndex}].firstgid`,
+      ) === binding.firstGid
+    );
+  });
+  if (index < 0) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `The serialized tileset entry for ${tilesetAssetId} is missing.`,
+      {
+        path: mapPath,
+        tilesetAssetId,
+        firstGid: binding.firstGid,
+      },
+    );
+  }
+  const entry = expectObject(
+    entries[index],
+    `${mapPath}.tilesets[${index}]`,
+  );
+  const source = expectString(
+    entry.source,
+    `${mapPath}.tilesets[${index}].source`,
+  );
+  const usage = inspectTilesetUsage(
+    map,
+    bindings,
+    tilesetAssetId,
+    mapPath,
+  );
+
+  entries.splice(index, 1);
+  map.tilesets = entries;
+  return {
+    assetId: binding.assetId,
+    tilesetPath: binding.path,
+    source,
+    tilesetRevision: binding.revision,
+    name: binding.name,
+    nameTruncated: binding.nameTruncated,
+    index,
+    tileCount: binding.tileCount,
+    gidSpan: binding.gidSpan,
+    firstGid: binding.firstGid,
+    lastGid:
+      binding.firstGid + binding.gidSpan - 1,
+    scannedCellCount: usage.scannedCellCount,
+    scannedObjectCount: usage.scannedObjectCount,
+  };
+}
+
+function inspectTilesetUsage(
+  map: JsonObject,
+  bindings: readonly TilesetBinding[],
+  tilesetAssetId: string,
+  mapPath: string,
+): TilesetUsageInspection {
+  const result: TilesetUsageInspection = {
+    scannedCellCount: 0,
+    scannedObjectCount: 0,
+  };
+  const targetBinding = bindings.find(
+    (binding) =>
+      binding.assetId === tilesetAssetId,
+  );
+  if (targetBinding === undefined) {
+    throw new TiledMcpError(
+      "TILESET_NOT_FOUND",
+      `The requested tileset asset is not referenced by ${mapPath}.`,
+      { mapPath, tilesetAssetId },
+    );
+  }
+  const traversalBudget: LayerTraversalBudget = {
+    count: 0,
+  };
+
+  const record = (
+    gid: JsonValue | undefined,
+    reference: TilesetUsageReference,
+    context: string,
+  ): void => {
+    if (
+      typeof gid !== "number" ||
+      !Number.isSafeInteger(gid) ||
+      gid < 0 ||
+      gid > 0xffffffff
+    ) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `${context} must be an unsigned 32-bit GID.`,
+        { context },
+      );
+    }
+    const tile = gidToTileRef(
+      gid,
+      "orthogonal",
+      bindings,
+    );
+    if (
+      tile?.tileset.assetId !==
+      tilesetAssetId
+    ) {
+      return;
+    }
+    throw new TiledMcpError(
+      "TILESET_IN_USE",
+      `Tileset ${tilesetAssetId} is still referenced by a ${reference.kind === "cell" ? "tile cell" : "tile object"}. Clear or replace every matching reference before removing the binding.`,
+      {
+        path: mapPath,
+        tilesetAssetId,
+        tilesetPath: targetBinding.path,
+        firstGid: targetBinding.firstGid,
+        lastGid:
+          targetBinding.firstGid +
+          targetBinding.gidSpan -
+          1,
+        cellReferenceCount:
+          reference.kind === "cell" ? 1 : 0,
+        objectReferenceCount:
+          reference.kind === "object" ? 1 : 0,
+        referenceCount: 1,
+        referenceCountIsLowerBound: true,
+        referenceSample: [reference],
+        reference,
+        scanStoppedAtFirstReference: true,
+        scannedCellCount:
+          result.scannedCellCount,
+        scannedObjectCount:
+          result.scannedObjectCount,
+      },
+    );
+  };
+
+  const visitLayers = (
+    layers: JsonValue[],
+    context: string,
+    depth: number,
+  ): void => {
+    assertLayerTraversalBudget(
+      layers.length,
+      depth,
+      traversalBudget,
+    );
+    for (const [layerIndex, layerValue] of layers.entries()) {
+      const layerContext = `${context}[${layerIndex}]`;
+      const layer = expectObject(
+        layerValue,
+        layerContext,
+      );
+      const layerId = expectInteger(
+        layer.id,
+        `${layerContext}.id`,
+      );
+      const layerType = expectString(
+        layer.type,
+        `${layerContext}.type`,
+      );
+      if (layerType === "group") {
+        visitLayers(
+          expectArray(
+            layer.layers,
+            `${layerContext}.layers`,
+          ),
+          `${layerContext}.layers`,
+          depth + 1,
+        );
+        continue;
+      }
+      if (layerType === "imagelayer") {
+        continue;
+      }
+      if (layerType === "objectgroup") {
+        const objects = expectArray(
+          layer.objects,
+          `${layerContext}.objects`,
+        );
+        for (
+          const [objectIndex, objectValue]
+          of objects.entries()
+        ) {
+          consumeRemoveTilesetScanBudget(
+            0,
+            1,
+            result,
+            mapPath,
+          );
+          const objectContext =
+            `${layerContext}.objects[${objectIndex}]`;
+          const object = expectObject(
+            objectValue,
+            objectContext,
+          );
+          const objectId = expectInteger(
+            object.id,
+            `${objectContext}.id`,
+          );
+          if (
+            Object.prototype.hasOwnProperty.call(
+              object,
+              "template",
+            )
+          ) {
+            throw new TiledMcpError(
+              "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+              `Object ${objectId} uses a template whose hidden tile reference cannot be revision-pinned for tileset removal. Instantiate or remove the template object first, or keep the tileset binding.`,
+              {
+                path: mapPath,
+                layerId,
+                objectId,
+              },
+            );
+          }
+          if (object.gid === undefined) {
+            continue;
+          }
+          record(
+            object.gid,
+            {
+              kind: "object",
+              layerId,
+              objectId,
+            },
+            `${objectContext}.gid`,
+          );
+        }
+        continue;
+      }
+      if (layerType !== "tilelayer") {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${layerContext}.type is not a supported Tiled layer type.`,
+          { path: mapPath, layerId, layerType },
+        );
+      }
+      if (
+        "chunks" in layer ||
+        typeof layer.data === "string"
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_TILE_ENCODING",
+          "Removing a tileset reference supports only finite JSON tile layers with numeric data arrays.",
+          { path: mapPath, layerId },
+        );
+      }
+      const width = expectInteger(
+        layer.width,
+        `${layerContext}.width`,
+      );
+      const height = expectInteger(
+        layer.height,
+        `${layerContext}.height`,
+      );
+      assertPositiveInteger(
+        width,
+        `${layerContext}.width`,
+      );
+      assertPositiveInteger(
+        height,
+        `${layerContext}.height`,
+      );
+      const cellCount = width * height;
+      const data = expectArray(
+        layer.data,
+        `${layerContext}.data`,
+      );
+      if (
+        !Number.isSafeInteger(cellCount) ||
+        data.length !== cellCount
+      ) {
+        throw new TiledMcpError(
+          "INVALID_TILE_DATA",
+          `Layer ${layerId} data length does not match width × height.`,
+          {
+            layerId,
+            expected: cellCount,
+            actual: data.length,
+          },
+        );
+      }
+      const layerX = readOptionalInteger(
+        layer.x,
+        `${layerContext}.x`,
+        0,
+      );
+      const layerY = readOptionalInteger(
+        layer.y,
+        `${layerContext}.y`,
+        0,
+      );
+      for (const [gidIndex, gid] of data.entries()) {
+        consumeRemoveTilesetScanBudget(
+          1,
+          0,
+          result,
+          mapPath,
+        );
+        record(
+          gid,
+          {
+            kind: "cell",
+            layerId,
+            x: layerX + (gidIndex % width),
+            y:
+              layerY +
+              Math.floor(gidIndex / width),
+          },
+          `${layerContext}.data[${gidIndex}]`,
+        );
+      }
+    }
+  };
+
+  visitLayers(
+    expectArray(map.layers, `${mapPath}.layers`),
+    `${mapPath}.layers`,
+    0,
+  );
+  return result;
+}
+
+function consumeRemoveTilesetScanBudget(
+  cellCount: number,
+  objectCount: number,
+  usage: TilesetUsageInspection,
+  mapPath: string,
+): void {
+  const nextCount = cellCount + objectCount;
+  const scanned =
+    usage.scannedCellCount +
+    usage.scannedObjectCount;
+  if (
+    !Number.isSafeInteger(cellCount) ||
+    cellCount < 0 ||
+    !Number.isSafeInteger(objectCount) ||
+    objectCount < 0 ||
+    !Number.isSafeInteger(nextCount) ||
+    scanned + nextCount >
+      MAX_REMOVE_TILESET_GID_SCANS
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `Removing a tileset may scan at most ${MAX_REMOVE_TILESET_GID_SCANS} existing tile cells and objects.`,
+      {
+        path: mapPath,
+        limit: MAX_REMOVE_TILESET_GID_SCANS,
+        scanned,
+        nextCount,
+      },
+    );
+  }
+  usage.scannedCellCount += cellCount;
+  usage.scannedObjectCount += objectCount;
 }
 
 function resolveCreateLayerOperation(
@@ -7931,20 +8389,32 @@ function sourceArrayDeletionsForSummary(
   mapPath: string,
 ): JsonArrayDeletion[] {
   const deletedLayers = summary.deletedLayers ?? [];
-  if (deletedLayers.length > 1) {
+  const removedTilesets =
+    summary.removedTilesets ?? [];
+  if (
+    deletedLayers.length +
+      removedTilesets.length >
+    1
+  ) {
     throw new TiledMcpError(
       "INVALID_CHANGE_SET",
-      "A layer-deletion change set may delete only one selected layer subtree.",
+      "A change set may delete only one selected array element.",
     );
   }
-  return deletedLayers.map((deleted) => ({
-    path: layerContainerForParent(
-      map,
-      deleted.parentGroupId,
-      mapPath,
-    ).path,
-    index: deleted.index,
-  }));
+  return [
+    ...deletedLayers.map((deleted) => ({
+      path: layerContainerForParent(
+        map,
+        deleted.parentGroupId,
+        mapPath,
+      ).path,
+      index: deleted.index,
+    })),
+    ...removedTilesets.map((removed) => ({
+      path: ["tilesets"],
+      index: removed.index,
+    })),
+  ];
 }
 
 function sourceArrayMovesForSummary(

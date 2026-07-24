@@ -25,14 +25,16 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 19 个高保真地图 PNG
 返回带内容 revision/size 的 Markdown；当前 Resource Templates 列表为空。已实现的编辑
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
-`duplicateLayer`、`stampPattern`、`floodFill` 和 `updateMap`。
+`duplicateLayer`、`stampPattern`、`floodFill`、`updateMap` 和必须独占 change set 的
+`removeTilesetFromMap`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入暂限基础 rectangle/point；模板、tile object、文本、多边形等复杂对象会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、结构化输出 envelope、四项 annotations 和 MCP 客户端契约
-测试；tile/object/layer/map-root 写入使用目标子树或 object-member local patch，完整语义复核
+测试；tile/object/layer/map-root/tileset-reference 写入使用目标子树、object-member
+或 array-element local patch，完整语义复核
 通过后才提交。完整字段级
 output schema/codegen 尚未完成。当前外部 tileset `assetId` 是由项目路径确定性派生的
 临时实现：重启后稳定，但资产重命名后会改变；持久化 rename-stable registry 是接口冻结
@@ -272,7 +274,7 @@ apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revi
 `before.existed:false` 会稳定报 `REVERT_WOULD_DELETE`：当前工具不会以恢复之名删除后来
 创建的文件，也不会隐式恢复任何依赖闭包。
 
-`operations` 只允许当前版本列出的 tile/layer/object 纯文档编辑，不允许嵌套 operations、
+`operations` 只允许当前版本列出的 tile/layer/object/map/tileset-reference 纯文档编辑，不允许嵌套 operations、
 删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。不得退回接受
 任意工具名与参数的通用 batch。
 
@@ -612,7 +614,7 @@ layer 生成 `data`-member-local source patch。source=target 或 mixed operatio
 | `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞/属性计数和 Wang-set 概览；不把 `tiles.length` 冒充 `tilecount`，不读取 property values/碰撞 geometry/完整 wang assignments | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
 | `tiled_create_tileset` | 从图集图片创建 `.tsj`（自动读取图片尺寸算 tilecount/columns） | `tilesetPath`, `image`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，本工具不写盘 | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
-| `tiled_remove_tileset_from_map` | 从地图移除 tileset 引用；仍在使用或会改变解析结果时标为 destructive | `mapPath`, `tileset` |
+| `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
 | `tiled_update_tile` | 设置单 tile 元数据：动画帧、碰撞形状、probability、class（后续候选） | `tileset`, `tileId`, `animation?`, `collisionShapes?`, `probability?`, `class?` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 
@@ -640,6 +642,43 @@ preview 需要依次读取 map、当前依赖和 prospective TSJ，这个 read s
 快照。响应明确声明 `snapshotConsistency: "non-atomic-read-set"`；revision pin、返回前
 复核与 apply 时再次复核能检测已观察到的变化，但不能把普通文件系统读取宣称为原子
 snapshot。
+
+当前已实现的 tileset-reference removal wire contract 是
+`{type:"removeTilesetFromMap", tilesetAssetId}`。它属于
+`tiled_preview_edits.operations` 封闭 union 的第 14 种 operation，不额外注册
+`tiled_remove_tileset_from_map`，因此 registry 保持 18 core / 19 with rasterizer。
+operation 是 exact-key strict object，`tilesetAssetId` 必须是非空 opaque ID，并精确
+定位当前 map 已引用、已通过 M1 external root-atlas profile 校验的 binding。路径、名称、
+embedded tileset、未引用 asset ID 和额外 key 都不能作为 fallback。
+
+该 operation 必须且只能独占一个 change set，不能与 tile/object/layer/map update 或另一个
+removal 混批。planner 递归访问完整 layer tree：所有 finite tile-layer cells 和所有
+object-layer objects 都计入扫描，visibility、`locked` 与 Group 嵌套不构成过滤条件；
+带 `gid` 的 tile object 与非零 tile cell 都按完整 unsigned encoded GID（含 transform/raw
+flags）解析到当前 binding。tile cells 与 objects 合计最多扫描 1,000,000 项，超限在签发
+proposal 前以 `RESULT_LIMIT_EXCEEDED` 拒绝。目标 binding 只要被任一 cell 或 tile object
+引用，就返回稳定错误 `TILESET_IN_USE`；当前能力不会清空 cell、删除 object、重映射
+local ID 或留下无法解析的 GID。任一 object 带 `template` member 时返回
+`UNSUPPORTED_TILESET_REMOVAL_TEMPLATE`；在模板依赖尚未独立固定 revision 并解析前，不能
+把“实例未内联 gid”当作未使用证明。
+
+成功 plan 的 `summary.removedTilesets[]` 使用扁平字段 `operationIndex`、`assetId`、
+`tilesetPath`、`source`、`tilesetRevision`、`name`、`nameTruncated`、原
+`tilesets` array `index`、`tileCount`、`gidSpan`、`firstGid`、`lastGid`、
+`scannedCellCount` 与 `scannedObjectCount`。bounded operation preview 不含
+`operationIndex`，而是按 operations 数组位置关联；其完整 shape 是顶层
+`type` / `destructive` / `warning` / `source` / `index`，以及
+`tileset:{kind,assetId,path,revision,name,nameTruncated?,tileCount,gidSpan}`、
+`gidRange:{first,last}`、`scanned:{tileCells,objects}`。`tileset.nameTruncated` 只在
+true 时出现，且 `destructive` 固定为 true。这些字段、map revision 和**移除前的完整**
+`dependencyRevisions` 都参与 plan digest，不能把目标 TSJ 提前从 expected dependency
+set 省略。
+
+apply 在锁内从 pinned source 重新加载 map 与完整旧 dependency set，重算 binding 选择、
+全图 GID 解析、零引用结论、扫描预算和摘要，并复核 change-set digest/revision pins 后才
+提交。source writer 只从 TMJ 根 `tilesets` array 删除原 index 的一个 element；其他
+binding 的 `firstgid`、数组元素及所有 layer/source bytes 保持不变。该 operation 只解除
+map 引用，不删除或改写 TSJ、atlas 图片及其他文件。
 
 `tiled_get_tileset` 的 revision 元数据只描述本次选择的外部 TSJ：
 `source = { assetId, revision }`。它不返回或承诺地图的完整
@@ -901,7 +940,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性并创建/更新/移动/复制/删除图层及编辑有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill、基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑有限正交 TMJ；move/delete/duplicate/tileset removal 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

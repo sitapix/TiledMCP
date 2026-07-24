@@ -1,6 +1,13 @@
-import { randomBytes } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+} from "node:crypto";
 
 import { TiledMcpError } from "./errors.js";
+import {
+  stableJson,
+  type JsonValue,
+} from "./formats/json.js";
 import type { CommitResult } from "./storage/documentStore.js";
 import {
   checkpointRestoreOperationPreview,
@@ -22,6 +29,7 @@ import {
 } from "./maps/gid.js";
 import {
   MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_REMOVE_TILESET_GID_SCANS,
   MAX_TILE_OPERATION_SCANS,
 } from "./maps/mapService.js";
 
@@ -45,6 +53,8 @@ const MAP_RENDER_ORDERS = new Set([
 ]);
 const TILED_COLOR_PATTERN =
   /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+const ASSET_ID_PATTERN = /^asset_[0-9a-f]{24}$/u;
+const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 
 export type ChangeSetPlan =
   | MapEditPlan
@@ -342,6 +352,28 @@ type OperationPreview =
       gidRange: { first: number; last: number };
     }
   | {
+      type: "removeTilesetFromMap";
+      destructive: true;
+      warning: string;
+      tileset: {
+        kind: "external";
+        assetId: string;
+        path: string;
+        revision: string;
+        name: string;
+        nameTruncated?: true;
+        tileCount: number;
+        gidSpan: number;
+      };
+      source: string;
+      index: number;
+      gidRange: { first: number; last: number };
+      scanned: {
+        tileCells: number;
+        objects: number;
+      };
+    }
+  | {
       type: "createLayer";
       destructive: false;
       warning: string;
@@ -514,6 +546,16 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
   }
   const plan = entry.plan;
   assertMapUpdateSummaryCoverage(plan);
+  assertRemoveTilesetSummaryCoverage(plan);
+  const operations = plan.operations.map(
+    (operation, operationIndex) =>
+      summarizeOperation(
+        operation,
+        operationIndex,
+        plan.summary,
+      ),
+  );
+  assertMapEditPlanDigest(plan);
   return {
     kind: plan.kind,
     changeSetId: entry.id,
@@ -531,18 +573,33 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
               plan.prospectiveDependencyRevisions,
             ),
         }),
-    operations: plan.operations.map((operation, operationIndex) =>
-      summarizeOperation(
-        operation,
-        operationIndex,
-        plan.summary,
-      ),
-    ),
+    operations,
     summary: structuredClone(plan.summary),
     snapshotConsistency: "non-atomic-read-set",
     createdAt: entry.createdAt,
     expiresAt: new Date(entry.expiresAt).toISOString(),
   };
+}
+
+function assertMapEditPlanDigest(
+  plan: MapEditPlan,
+): void {
+  const { id, ...unsignedPlan } = plan;
+  const expectedId =
+    `changeset:${createHash("sha256")
+      .update(
+        stableJson(
+          unsignedPlan as unknown as JsonValue,
+        ),
+      )
+      .digest("hex")}`;
+  if (id !== expectedId) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "The map edit plan contents do not match its digest.",
+      { suppliedId: id, expectedId },
+    );
+  }
 }
 
 function assertMapUpdateSummaryCoverage(
@@ -582,6 +639,50 @@ function assertMapUpdateSummaryCoverage(
   }
 }
 
+function assertRemoveTilesetSummaryCoverage(
+  plan: MapEditPlan,
+): void {
+  const operationIndexes = plan.operations.flatMap(
+    (operation, operationIndex) =>
+      operation.type === "removeTilesetFromMap"
+        ? [operationIndex]
+        : [],
+  );
+  const summaries =
+    plan.summary.removedTilesets;
+  if (operationIndexes.length === 0) {
+    if (summaries === undefined) {
+      return;
+    }
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "removeTilesetFromMap summaries do not match the operations.",
+    );
+  }
+  if (
+    operationIndexes.length !== 1 ||
+    plan.operations.length !== 1 ||
+    !Array.isArray(summaries) ||
+    summaries.length !==
+      operationIndexes.length ||
+    summaries.some(
+      (summary, index) =>
+        !isRemovedTilesetSummaryShape(
+          summary,
+          operationIndexes[index],
+        ) ||
+        plan.dependencyRevisions[
+          summary.assetId
+        ] !== summary.tilesetRevision,
+    )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "removeTilesetFromMap summaries do not match the operations.",
+    );
+  }
+}
+
 function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
   if (plan.kind === "mapEdit") {
     return { ...plan, operations: [] };
@@ -613,6 +714,85 @@ function summarizeOperation(
       gidRange: {
         first: operation.firstGid,
         last: operation.firstGid + operation.gidSpan - 1,
+      },
+    };
+  }
+
+  if (
+    operation.type ===
+    "removeTilesetFromMap"
+  ) {
+    if (
+      !hasExactKeys(
+        operation as unknown as Record<
+          string,
+          unknown
+        >,
+        ["tilesetAssetId", "type"],
+      ) ||
+      typeof operation.tilesetAssetId !==
+        "string" ||
+      !ASSET_ID_PATTERN.test(
+        operation.tilesetAssetId,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "removeTilesetFromMap preview contains an invalid operation.",
+        { operationIndex },
+      );
+    }
+    const removalSummaries =
+      summary.removedTilesets?.filter(
+        (entry) =>
+          entry.operationIndex ===
+          operationIndex,
+      ) ?? [];
+    const removal = removalSummaries[0];
+    if (
+      removalSummaries.length !== 1 ||
+      !isRemovedTilesetSummaryShape(
+        removal,
+        operationIndex,
+      ) ||
+      removal.assetId !==
+        operation.tilesetAssetId
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "removeTilesetFromMap preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      destructive: true,
+      warning:
+        "This removes one unused external tileset reference from the map. It does not delete or modify the TSJ or image, does not renumber remaining firstgid values, and is allowed only after a full zero-reference scan.",
+      tileset: {
+        kind: "external",
+        assetId: removal.assetId,
+        path: removal.tilesetPath,
+        revision:
+          removal.tilesetRevision,
+        name: removal.name,
+        ...(removal.nameTruncated
+          ? { nameTruncated: true as const }
+          : {}),
+        tileCount: removal.tileCount,
+        gidSpan: removal.gidSpan,
+      },
+      source: removal.source,
+      index: removal.index,
+      gidRange: {
+        first: removal.firstGid,
+        last: removal.lastGid,
+      },
+      scanned: {
+        tileCells:
+          removal.scannedCellCount,
+        objects:
+          removal.scannedObjectCount,
       },
     };
   }
@@ -1454,6 +1634,92 @@ function isMapUpdateSummaryShape(
     ) &&
     typeof summary.wouldChange === "boolean" &&
     typeof summary.renderingMayChange === "boolean"
+  );
+}
+
+function isRemovedTilesetSummaryShape(
+  value: unknown,
+  expectedOperationIndex: number | undefined,
+): value is NonNullable<
+  MapEditPlan["summary"]["removedTilesets"]
+>[number] {
+  if (
+    expectedOperationIndex === undefined ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const summary = value as Record<
+    string,
+    unknown
+  >;
+  const firstGid = summary.firstGid;
+  const gidSpan = summary.gidSpan;
+  const lastGid = summary.lastGid;
+  const scannedCellCount =
+    summary.scannedCellCount;
+  const scannedObjectCount =
+    summary.scannedObjectCount;
+  return (
+    hasExactKeys(summary, [
+      "operationIndex",
+      "assetId",
+      "tilesetPath",
+      "source",
+      "tilesetRevision",
+      "name",
+      "nameTruncated",
+      "index",
+      "tileCount",
+      "gidSpan",
+      "firstGid",
+      "lastGid",
+      "scannedCellCount",
+      "scannedObjectCount",
+    ]) &&
+    Number.isSafeInteger(summary.operationIndex) &&
+    summary.operationIndex ===
+      expectedOperationIndex &&
+    typeof summary.assetId === "string" &&
+    ASSET_ID_PATTERN.test(summary.assetId) &&
+    typeof summary.tilesetPath === "string" &&
+    summary.tilesetPath.length > 0 &&
+    typeof summary.source === "string" &&
+    summary.source.length > 0 &&
+    typeof summary.tilesetRevision ===
+      "string" &&
+    REVISION_PATTERN.test(
+      summary.tilesetRevision,
+    ) &&
+    typeof summary.name === "string" &&
+    typeof summary.nameTruncated ===
+      "boolean" &&
+    Number.isSafeInteger(summary.index) &&
+    (summary.index as number) >= 0 &&
+    Number.isSafeInteger(summary.tileCount) &&
+    (summary.tileCount as number) > 0 &&
+    Number.isSafeInteger(gidSpan) &&
+    (gidSpan as number) >=
+      (summary.tileCount as number) &&
+    Number.isSafeInteger(firstGid) &&
+    (firstGid as number) > 0 &&
+    Number.isSafeInteger(lastGid) &&
+    lastGid ===
+      (firstGid as number) +
+        (gidSpan as number) -
+        1 &&
+    (lastGid as number) <= 0x0fffffff &&
+    Number.isSafeInteger(scannedCellCount) &&
+    (scannedCellCount as number) >= 0 &&
+    Number.isSafeInteger(
+      scannedObjectCount,
+    ) &&
+    (scannedObjectCount as number) >= 0 &&
+    (scannedCellCount as number) +
+      (scannedObjectCount as number) <=
+      MAX_REMOVE_TILESET_GID_SCANS
   );
 }
 

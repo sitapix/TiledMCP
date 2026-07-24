@@ -25,7 +25,9 @@ source insertion 复制 4 类 layer 或完整 Group subtree；第 11 种 `stampP
 明确清空语义、no-clipping bounds 检查和 later-wins 顺序写入；第 12 种
 `floodFill` 从 operation 执行时的 seed 推导 source，支持 null source/target、observed
 GID fail-closed 和有界四向遍历；第 13 种 `updateMap` 以 strict root-member patch
-修改 render order、背景色和 class。这些能力都不注册新工具。
+修改 render order、背景色和 class；第 14 种、必须独占 change set 的
+`removeTilesetFromMap` 则只移除全图零引用的 external atlas binding，并对隐藏、锁定及
+Group 后代中的 tile cells/tile objects 做有界扫描。这些能力都不注册新工具。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -75,6 +77,8 @@ tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变�
 no-op 不生成 source patch，保持原始 bytes。
 `updateLayer` 对每个实际改变的 object member 分别做插入、替换或删除，不重写完整 layer
 object；`updateMap` 同样只 patch 实际改变的根对象 member，不重写完整 TMJ。
+`removeTilesetFromMap` 只从根 `tilesets` array 删除已验证的一个 source element，不重排
+其他 binding，也不压紧或重写其 `firstgid`。
 `deleteLayer` 只从目标
 直接父层的 `layers` array 删除一个 element；`moveLayer` 则由 `JsonArrayMove` 按原始
 source snapshot 中的 source/target container paths 捕获并原样搬运 element bytes。
@@ -794,6 +798,51 @@ preview 固定 map revision 与完整 dependency read set，apply 重算 operati
 但最终根成员回到 pinned source，文件级结果为 `changed:false`，不生成 source patch，
 revision 和原始 bytes 精确不变。
 
+### 6.13 Exclusive unused external-tileset reference removal
+
+`removeTilesetFromMap` 是 `tiled_preview_edits` 封闭 union 的第 14 种 operation，wire
+shape 为 `{type:"removeTilesetFromMap", tilesetAssetId}`。它不注册 standalone
+`tiled_remove_tileset_from_map`，所以 registry 仍为 18 core / 19 with rasterizer。
+operation 使用 exact-key strict schema；`tilesetAssetId` 只能精确定位当前 map 已引用且
+通过 M1 external root-atlas profile 的 binding，不接受 path/name fallback、embedded
+tileset、未知 ID 或额外 key。
+
+removal 必须是 change set 中唯一的 operation。它不能与 tile/object/layer/map update、
+另一个 removal 或会改变 dependency closure 的专用 proposal 混批；否则“仍在使用”检查
+可能依赖同批顺序并产生含糊的授权边界。该能力也不接受 clear/remap policy：只要 binding
+仍被引用，整个 proposal 就失败，不把引用如何处理的额外 destructive 决策藏在“移除引用”
+之内。
+
+planner 首先固定当前完整 external tileset binding 表，然后递归扫描 map 的完整 layer
+tree。每个 finite tile-layer cell 和每个 object-layer object 都消耗预算，隐藏 layer、
+不可见祖先 Group、`locked:true` 以及任意 Group 深度均不能跳过；带 `gid` 的 tile object
+和非零 cell 都用现有 GID codec 按完整 unsigned encoded GID 解析，transform/raw flags
+不会改变其 base binding 身份。tile cells 与 objects 合计上限为 1,000,000，超限在继续
+读取前返回 `RESULT_LIMIT_EXCEEDED`。任一解析结果命中目标 `assetId` 时返回
+`TILESET_IN_USE`；planner 不清空 tile cell、不删除 tile object、不把 local ID 映射到
+相邻 `firstgid` 区间，也不留下 unresolved GID。object 只要存在 `template` member 就以
+`UNSUPPORTED_TILESET_REMOVAL_TEMPLATE` fail closed；在模板文档及其依赖 revision 尚未
+纳入 read set 前，不能从实例缺少内联 `gid` 推断目标 binding 未使用。
+
+成功 plan 的 `summary.removedTilesets[]` 使用扁平字段 `operationIndex`、`assetId`、
+`tilesetPath`、`source`、`tilesetRevision`、`name`、`nameTruncated`、原
+`tilesets` array `index`、`tileCount`、`gidSpan`、`firstGid`、`lastGid`、
+`scannedCellCount` 与 `scannedObjectCount`。bounded operation preview 不含
+`operationIndex`，而是按 operations 数组位置关联；其完整 shape 是顶层
+`type` / `destructive` / `warning` / `source` / `index`，以及
+`tileset:{kind,assetId,path,revision,name,nameTruncated?,tileCount,gidSpan}`、
+`gidRange:{first,last}`、`scanned:{tileCells,objects}`，其中
+`tileset.nameTruncated` 只在 true 时出现。`destructive` 固定为 true：虽然 TSJ 和 atlas
+图片仍保留，map 会永久丢失这条 binding，未来相同 GID 也不会被隐式赋予别的含义。完整
+字段和扫描计数进入 plan digest，避免客户端批准一个比 apply 实际删除目标更模糊的摘要。
+
+dependency CAS 使用**移除前的完整 dependency set**。preview 不能提前排除目标 TSJ；
+apply 在 map 锁内重新加载所有旧 external dependencies，复核每个 raw-byte revision，
+然后重算 binding 解析、扫描预算、零引用结论和完整 summary。source writer 使用单个
+array-element-local deletion，只删除 pinned `tilesets[index]`；其余 binding 的
+`firstgid`、相对 source、顺序和 exact bytes 都保持不变。提交仍只修改 TMJ，并走正常
+checkpoint/CAS/原子替换；不会删除或改写目标 TSJ、atlas image 或其他项目文件。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -1042,7 +1091,8 @@ M0 不追求完整地图 CRUD。验收标准：
 - 专用 `tiled_create_layer` 为 4 种空图层生成单操作 change set，支持根/Group 0-based
   插入、`nextlayerid` 分配、tile cell 预算与 prospective image pin。
 - 已存在外部 tileset 引用的解析；专用 `tiled_add_tileset_to_map` 只生成单操作 change set，
-  apply 后也只修改 map 文件。
+  apply 后也只修改 map 文件；generic union 的独占 `removeTilesetFromMap` 只移除全图
+  tile cells/tile objects 零引用的 external binding，保留其他 `firstgid` 和外部文件。
 - 同一 map 内的 batch/dry-run、validate，以及已接入 preview/apply 的单文件
   checkpoint exact-byte restore。
 - 已实现 tileset contact sheet，以及正交 tile-layer region preview、图层筛选、
@@ -1059,8 +1109,9 @@ M1 明确拒绝：
 
 这些文件仍可被 raw layer 安全列出、摘要或保留；只有语义写入被拒绝。M1 验收标准是：
 
-> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/map 根属性/公共 layer 字段，并经
-> preview 移动、复制或 destructive 删除 layer subtree；文件由 Tiled
+> 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/map 根属性/公共 layer 字段，
+> 管理未使用的 external atlas binding，并经 preview 移动、复制或 destructive 删除 layer
+> subtree；文件由 Tiled
 > 目标版本打开无警告，并能从 checkpoint 恢复。合作写者的 revision 冲突不得覆盖用户内容；
 > 未经中介的外部 GUI 保存竞态必须在 capabilities 中如实标为不受严格 CAS 保护。
 
@@ -1080,6 +1131,7 @@ M1 明确拒绝：
 | replacement 忽略 transform 或发生 mapping 级联 | 错换朝向、swap/cycle 结果错误 | encoded-GID exact match、single-pass lookup、共享 scan / 独立实际 write 计数 | identity/flags 精确匹配、A→B/B→C、swap、null target、零命中、预算边界 |
 | flood fill 忽略 transform、误用对角连通或扫描无界 | 错填区域、CPU/写入过量或坏 GID 隐藏 | 固定四向、seed 完整 encoded-GID match、observed GID reverse validation、与 replacement 共享实际读取预算及 tile write cap | 四向/纯对角、非零 origin、flags 隔离、null source/target、source=target scan-one no-op、重复边界读取、malformed observed GID、shared scan/write 边界、later-wins |
 | map-root patch 接受宽松 key、吞掉默认值 intent 或重写完整 TMJ | 错误字段落盘、渲染变化漏报或无关 source diff | strict/nonempty schema、member existence-aware detection、root-member-local patch、完整 target tree 复核 | 4 render orders、颜色写入/删除、class 长度边界、extra/empty rejection、later-wins、rendering flag、BOM/CRLF、net no-op、tamper/stale revision |
+| tileset removal 漏扫隐藏/锁定/Group/template 引用、把相邻 `firstgid` 当重映射目标或漏 pin 被移除依赖 | 留下 unresolved/错绑 GID，或批准后删除了不同 binding | exclusive strict operation、完整 cell/object scan、encoded-GID binding identity、template fail-closed、`TILESET_IN_USE`、旧 dependency-set CAS、array-element-local deletion | nested hidden/locked tile layers、tile objects、template、transform flags、malformed/目标/非目标 GID、1,000,000 scan 边界、乱序 binding 原 index、其他 firstgid/source 保持、TSJ 保留、summary tamper/stale map/dependency、Tiled round trip |
 | layer patch 吞掉默认值 intent 或重写完整 layer | 字段未落盘或无关 source diff 爆炸 | member existence-aware change detection、object-member local patch、完整 target tree 复核 | 4 类 layer、缺失默认字段插入、tint 删除/no-op、13 modes、BOM/CRLF、mixed batch、stale revision |
 | layer subtree 删除提升 children、留下 object 悬挂引用或降低 ID 高水位 | 层级/逻辑损坏、未来 ID 复用 | exclusive plan、显式 descendant confirmation、surviving-document typed-reference scan、array-element local patch | leaf/empty/non-empty Group、direct/list/class refs、locked warning、32-ID samples、high-water marks、BOM/CRLF、tamper/stale revision |
 | layer subtree move 发生同父 off-by-one、cycle、深度溢出或 source lexeme 丢失 | 绘制顺序错误、层级损坏或不可逆 diff | final-index contract、exclusive plan、cycle/depth-64 guard、source-snapshot `JsonArrayMove`、完整 target tree 复核 | 同父前后/首尾/no-op、跨父空目标/root omission、self/descendant、effective lock、32-ID sample、BOM/CRLF/unknown lexeme、target path shift、tamper/stale revision |

@@ -42,6 +42,9 @@
 - 通过该 generic union 的第 13 种 `updateMap` operation 严格修改 map 根级
   `renderorder`、`backgroundcolor` 与 `class`，以 member-local source patch 保留其他
   原始 bytes；
+- 通过同一 union 的第 14 种、必须独占 change set 的
+  `removeTilesetFromMap` operation 移除全图零引用的 external atlas binding；隐藏、
+  锁定和 Group 内的 tile cells/tile objects 都会纳入有界扫描，绝不清空或重映射 GID；
 - 基础 rectangle/point 对象的有界列表与 create/update/delete（正确维护
   `nextobjectid`）；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
@@ -120,7 +123,7 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
-| `tiled_preview_edits` | 校验 map/tile/object/layer 编辑并生成有 TTL 的 change set |
+| `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以目标 revision CAS 提交已批准的 map edit 或 checkpoint restore |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回 PNG |
 
@@ -369,6 +372,34 @@ change detection 以根对象 member 的实际存在性和值为准：写入相�
 apply 只对实际变化的根对象 member 做 insertion/replacement/deletion，不重排完整 TMJ；
 顺序 operation 最终还原原始根对象时是 exact-byte net no-op，不改变 revision。
 
+移除 map 中一个当前 external atlas binding 时，使用 generic union 的第 14 种 operation：
+`{type:"removeTilesetFromMap", tilesetAssetId}`。operation 是拒绝额外 key 的 strict
+object，并且必须独占 change set；它不注册 standalone tool，所以 registry 仍为
+18 core / 19 with rasterizer。`tilesetAssetId` 必须精确匹配当前 map summary 返回的
+opaque asset ID，不能用路径、名称或自行推导的 ID 代替。
+
+planner 会递归扫描全图每个有限 tile layer cell 和每个 object layer object，包括隐藏、
+锁定及任意 Group 后代；带 `gid` 的 tile object 与 tile cell 都按完整 encoded GID
+反向解析。tile cells 与 objects 合计最多扫描 1,000,000 项。目标 binding 只要有一次
+引用就以 `TILESET_IN_USE` 拒绝整个 proposal，不清空 cell、不删除 tile object，也不把
+引用重映射到其他 tileset。对象只要带 `template` member 就会以
+`UNSUPPORTED_TILESET_REMOVAL_TEMPLATE` fail closed，因为未固定的外部模板可能隐藏 tile
+object/GID。
+
+成功 plan 的 `summary.removedTilesets[]` 以扁平字段固定 `operationIndex`、`assetId`、
+`tilesetPath`、`source`、`tilesetRevision`、`name`、`nameTruncated`、原 `tilesets`
+array `index`、`tileCount`、`gidSpan`、`firstGid`、`lastGid`、
+`scannedCellCount` 与 `scannedObjectCount`。对应 operation preview 不含
+`operationIndex`，而是按 operations 数组位置关联；其完整 shape 是顶层
+`type` / `destructive` / `warning` / `source` / `index`，以及
+`tileset:{kind,assetId,path,revision,name,nameTruncated?,tileCount,gidSpan}`、
+`gidRange:{first,last}`、`scanned:{tileCells,objects}`。其中
+`tileset.nameTruncated` 只在值为 true 时出现。apply 从 pinned map 重新加载并复核
+**移除前的完整**
+`dependencyRevisions`，重做解析、零引用检查、扫描预算和摘要；提交只从 TMJ 的
+`tilesets` array 删除目标 element，其他 binding 的 `firstgid` 与 source bytes 不变。
+它不会删除 TSJ、atlas 图片或其他文件。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -440,6 +471,12 @@ map update 覆盖 strict/nonempty patch、4 种 render order、背景色写入/�
 1024-code-point class 边界与安全摘要截断、顺序 later-wins、`mapUpdates` 摘要与渲染影响标记、
 root-member-local source patch、exact-byte net no-op、tamper/stale revision 与
 Tiled 1.12 round trip；
+tileset reference removal 覆盖 strict/exclusive operation、opaque asset-id 定位、
+隐藏/锁定/嵌套 layer 的 cell/tile-object 全图扫描、`TILESET_IN_USE`、1,000,000-entry
+预算、非目标 malformed/flagged GID fail-closed、template object 拒绝、乱序 binding
+原 index、destructive bounded preview、旧 dependency-set pin、plan/summary tamper、
+array-element-local 删除、firstgid 保持、外部 TSJ 不删除、stale revision 与 Tiled 1.12
+round trip；
 layer duplicate 的 37+1 项专项/集成 cases 覆盖 destination 三分支、默认/最终 insertion
 index、root-only name override、完整 subtree 的 preorder layer/object ID、direct 与
 nested-list object reference 重连、外部/零/dangling reference、class/template fail
@@ -525,6 +562,14 @@ checkpoint restore。架构与 roadmap
   `null`，class 最多 1024 个 Unicode code points。operations 顺序执行且 later wins；preview 的
   `mapUpdates` 会区分 requested/changed fields、no-op 与 rendering impact。apply 只做
   root-object-member-local patch，最终还原原值的 net no-op 保持 exact bytes。
+- `removeTilesetFromMap` 是同一 union 已实现的第 14 种、必须独占 change set 的
+  operation，也没有 standalone tool。它只接受当前 map summary 中 external atlas
+  binding 的 opaque `tilesetAssetId`，并在隐藏、锁定和 Group 后代中扫描全部 tile
+  cells 与 objects；合计上限为 1,000,000。任何 tile cell/tile object 引用目标 binding
+  都返回 `TILESET_IN_USE`，不会清空或重映射；任一 template object 也会因模板依赖尚未
+  revision-pin 而 fail closed。preview 固定目标身份、数组位置、GID 区间、旧完整
+  dependency set 与扫描 counts，并标为 destructive；apply 重算后只删除对应
+  `tilesets` array element，保留其他 `firstgid`，也不删除 TSJ/图片。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

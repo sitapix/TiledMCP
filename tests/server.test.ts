@@ -406,6 +406,10 @@ describe("createTiledMcpServer", () => {
         existingDependencyPins: string;
         targetRevisionPin: string;
         writeTarget: string;
+        removalPlanner: string;
+        removalPolicy: string;
+        removalLocator: string;
+        removalSourcePatch: string;
       };
       layerCreationCapabilities: {
         planner: string;
@@ -454,6 +458,7 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: number;
         maxTileFindResultBytes: number;
         maxAddTilesetGidScans: number;
+        maxRemoveTilesetGidScans: number;
         maxSerializedDuplicateBytes: number;
         maxUsageScanValues: number;
         maxUsageDistinctTiles: number;
@@ -729,6 +734,11 @@ describe("createTiledMcpServer", () => {
         existingDependencyPins: "required-exact",
         targetRevisionPin: "optional-capture-current",
         writeTarget: "map-only",
+        removalPlanner:
+          "generic-exclusive-operation-change-set",
+        removalPolicy: "unused-only",
+        removalLocator: "tileset-asset-id",
+        removalSourcePatch: "array-element-local",
       },
       layerCreationCapabilities: {
         planner: "dedicated-single-operation-change-set",
@@ -784,6 +794,7 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: 800_000,
         maxTileFindResultBytes: 256 * 1024,
         maxAddTilesetGidScans: 1_000_000,
+        maxRemoveTilesetGidScans: 1_000_000,
         maxSerializedDuplicateBytes: 16 * 1024 * 1024,
         maxUsageScanValues: 1_000_000,
         maxUsageDistinctTiles: 100_000,
@@ -3115,6 +3126,324 @@ describe("createTiledMcpServer", () => {
         },
       ],
     });
+  });
+
+  it("strictly previews and applies removal of one unused external tileset through the generic edit batch", async () => {
+    const used = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+      tilesets: Array<{
+        assetId: string;
+        revision: string;
+      }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const target = used.tilesets[0];
+    if (target === undefined) {
+      throw new Error("Expected the fixture tileset binding.");
+    }
+    const stillUsed = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: used.revision,
+          expectedDependencyRevisions:
+            used.dependencyRevisions,
+          operations: [
+            {
+              type: "removeTilesetFromMap",
+              tilesetAssetId: target.assetId,
+            },
+          ],
+        },
+      }),
+    );
+    expect(stillUsed.isError).toBe(true);
+    expect(stillUsed.structuredContent).toMatchObject({
+      result: {
+        ok: false,
+        error: {
+          code: "TILESET_IN_USE",
+          details: {
+            tilesetAssetId: target.assetId,
+            cellReferenceCount: 1,
+            objectReferenceCount: 0,
+          },
+        },
+      },
+    });
+
+    const unusedMap = baseMap();
+    const tileLayer = (unusedMap.layers as JsonObject[])[0];
+    if (tileLayer === undefined) {
+      throw new Error("Expected the fixture tile layer.");
+    }
+    tileLayer.data = [0, 0, 0, 0];
+    unusedMap.layers = [tileLayer];
+    await writeJson(join(harness.root, MAP_PATH), unusedMap);
+    const tilesetBytesBefore = await readFile(
+      join(harness.root, TILESET_PATH),
+    );
+
+    const attached = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+      tilesets: Array<{
+        assetId: string;
+        path: string;
+        firstGid: number;
+        tileCount: number;
+        revision: string;
+      }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    expect(attached).toMatchObject({
+      dependencyRevisions: {
+        [target.assetId]: target.revision,
+      },
+      tilesets: [
+        {
+          assetId: target.assetId,
+          path: TILESET_PATH,
+          firstGid: 1,
+          tileCount: 4,
+          revision: target.revision,
+        },
+      ],
+    });
+
+    const invalidOperations: unknown[] = [
+      { type: "removeTilesetFromMap" },
+      {
+        type: "removeTilesetFromMap",
+        tilesetAssetId: "",
+      },
+      {
+        type: "removeTilesetFromMap",
+        tilesetAssetId: "not-an-asset-id",
+      },
+      {
+        type: "removeTilesetFromMap",
+        tilesetAssetId: target.assetId,
+        unexpected: true,
+      },
+      {
+        type: "removeTilesetFromMap",
+        tilesetPath: TILESET_PATH,
+      },
+    ];
+    for (const operation of invalidOperations) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: attached.revision,
+            expectedDependencyRevisions:
+              attached.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+
+    const mixed = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: attached.revision,
+          expectedDependencyRevisions:
+            attached.dependencyRevisions,
+          operations: [
+            {
+              type: "removeTilesetFromMap",
+              tilesetAssetId: target.assetId,
+            },
+            {
+              type: "updateMap",
+              patch: { className: "MustNotApply" },
+            },
+          ],
+        },
+      }),
+    );
+    expect(mixed.isError).toBe(true);
+    expect(mixed.structuredContent).toMatchObject({
+      result: {
+        ok: false,
+        error: {
+          code: "INVALID_ARGUMENT",
+        },
+      },
+    });
+    expect(mixed.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining(
+          "removeTilesetFromMap",
+        ),
+      }),
+    ]);
+
+    const mapBytesBeforePreview = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      dependencyRevisions: Record<string, string>;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        operationCount: number;
+        cellWrites: number;
+        removedTilesets: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: attached.revision,
+          expectedDependencyRevisions:
+            attached.dependencyRevisions,
+          operations: [
+            {
+              type: "removeTilesetFromMap",
+              tilesetAssetId: target.assetId,
+            },
+          ],
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      expectedRevision: attached.revision,
+      dependencyRevisions: {
+        [target.assetId]: target.revision,
+      },
+      operations: [
+        {
+          type: "removeTilesetFromMap",
+          destructive: true,
+          warning: expect.any(String),
+          tileset: {
+            kind: "external",
+            assetId: target.assetId,
+            path: TILESET_PATH,
+            revision: target.revision,
+            name: "Terrain",
+            tileCount: 4,
+            gidSpan: 4,
+          },
+          source: "../tiles/terrain.tsj",
+          index: 0,
+          gidRange: { first: 1, last: 4 },
+          scanned: {
+            tileCells: 4,
+            objects: 0,
+          },
+        },
+      ],
+      summary: {
+        operationCount: 1,
+        cellWrites: 0,
+        removedTilesets: [
+          {
+            operationIndex: 0,
+            assetId: target.assetId,
+            tilesetPath: TILESET_PATH,
+            source: "../tiles/terrain.tsj",
+            tilesetRevision: target.revision,
+            name: "Terrain",
+            nameTruncated: false,
+            index: 0,
+            tileCount: 4,
+            gidSpan: 4,
+            firstGid: 1,
+            lastGid: 4,
+            scannedCellCount: 4,
+            scannedObjectCount: 0,
+          },
+        ],
+      },
+    });
+    expect(
+      await readFile(join(harness.root, MAP_PATH)),
+    ).toEqual(mapBytesBeforePreview);
+
+    const applied = resultOf<{
+      changeSetId: string;
+      changed: boolean;
+      checkpointId: string;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision: preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied).toMatchObject({
+      changeSetId: preview.changeSetId,
+      changed: true,
+      checkpointId: expect.stringMatching(
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      ),
+      revision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+    });
+    expect(await readFile(join(harness.root, TILESET_PATH))).toEqual(
+      tilesetBytesBefore,
+    );
+
+    const removed = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+      tilesets: unknown[];
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    expect(removed).toMatchObject({
+      revision: applied.revision,
+      dependencyRevisions: {},
+      tilesets: [],
+    });
+    const saved = JSON.parse(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
+      ),
+    ) as JsonObject;
+    expect(saved.tilesets).toEqual([]);
+    expect(saved.class).toBeUndefined();
   });
 
   it("previews and applies one empty layer through the dedicated tool", async () => {

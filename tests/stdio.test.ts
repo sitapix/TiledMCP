@@ -53,6 +53,9 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.length === 18 || tools.tools.length === 19).toBe(
       true,
     );
+    expect(tools.tools.map(({ name }) => name)).not.toContain(
+      "tiled_remove_tileset_from_map",
+    );
 
     const capabilitiesResponse = await client.callTool({
       name: "tiled_get_capabilities",
@@ -83,6 +86,13 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         transformAggregation: "base-tile",
         optionalExactReadSetPins: true,
         defaultTopTileLimit: 64,
+      },
+      tilesetReferenceCapabilities: {
+        removalPlanner:
+          "generic-exclusive-operation-change-set",
+        removalPolicy: "unused-only",
+        removalLocator: "tileset-asset-id",
+        removalSourcePatch: "array-element-local",
       },
       mapOperations: ["updateMap"],
       mapUpdateCapabilities: {
@@ -201,6 +211,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       },
       limits: {
         maxSerializedDuplicateBytes: 16 * 1024 * 1024,
+        maxRemoveTilesetGidScans: 1_000_000,
         maxReplaceTileMappings: 128,
         maxTileOperationScans: 1_000_000,
         maxFloodFillScans: 1_000_000,
