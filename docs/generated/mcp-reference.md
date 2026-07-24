@@ -184,9 +184,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae",
+    "revision": "sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e",
     "serverVersion": "0.0.1",
-    "size": 40107
+    "size": 41025
   },
   "annotations": {
     "audience": [
@@ -198,7 +198,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 40107,
+  "size": 41025,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -206,7 +206,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3734 UTF-8 bytes, revision `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`.
 
-Content contract: `text`, 40107 UTF-8 bytes, revision `sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae`.
+Content contract: `text`, 41025 UTF-8 bytes, revision `sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e`.
 
 Resource templates: none.
 
@@ -2828,7 +2828,7 @@ Output schema:
 
 Availability: `core`
 
-Creates a new TMJ file and refuses to overwrite an existing path. Parent directories must exist.
+Directly creates a new empty TMJ as the sole additive no-preview mutation exception. The caller must confirm the target path; parent directories must exist, and any existing destination—including identical bytes—is never overwritten or treated as success.
 
 Annotations:
 
@@ -4474,6 +4474,10 @@ Output schema:
                   "const": true,
                   "type": "boolean"
                 },
+                "preparedCreateExactMatch": {
+                  "const": "conflict-provenance-ambiguous",
+                  "type": "string"
+                },
                 "previewAndApplyRestore": {
                   "const": true,
                   "type": "boolean"
@@ -4494,6 +4498,7 @@ Output schema:
               "required": [
                 "automaticBeforeWrite",
                 "startupPreparedReconciliation",
+                "preparedCreateExactMatch",
                 "boundedListing",
                 "exactByteRestoreKernel",
                 "previewAndApplyRestore",
@@ -5060,6 +5065,14 @@ Output schema:
                   "const": 100000,
                   "type": "number"
                 },
+                "maxCreateMapDimension": {
+                  "const": 100000,
+                  "type": "number"
+                },
+                "maxCreateMapTileEdge": {
+                  "const": 16384,
+                  "type": "number"
+                },
                 "maxCreateTileLayerCells": {
                   "const": 100000,
                   "type": "number"
@@ -5340,6 +5353,8 @@ Output schema:
               "required": [
                 "maxDocumentBytes",
                 "maxAggregateTilesetDependencyBytes",
+                "maxCreateMapDimension",
+                "maxCreateMapTileEdge",
                 "maxRegionCells",
                 "maxChangeSetCellWrites",
                 "maxPendingChangeSetCellWrites",
@@ -5410,6 +5425,79 @@ Output schema:
                 "maxNativePreviewLayerLabelLength",
                 "maxNativePreviewAggregateImageBytes",
                 "maxNativePreviewAggregateDecodedPixels"
+              ],
+              "type": "object"
+            },
+            "mapCreationCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "approvalBoundary": {
+                  "const": "client-tool-call",
+                  "type": "string"
+                },
+                "atomicPromotion": {
+                  "const": "same-directory-hard-link-no-replace",
+                  "type": "string"
+                },
+                "checkpointBeforeState": {
+                  "const": "existed-false",
+                  "type": "string"
+                },
+                "checkpointRestore": {
+                  "const": "revert-would-delete-not-supported",
+                  "type": "string"
+                },
+                "commitMode": {
+                  "const": "direct-additive-no-preview-no-replace",
+                  "type": "string"
+                },
+                "contentEquality": {
+                  "const": "existing-identical-bytes-still-file-already-exists",
+                  "type": "string"
+                },
+                "destinationPrecondition": {
+                  "const": "must-not-exist",
+                  "type": "string"
+                },
+                "failedAttemptCheckpoint": {
+                  "const": "may-remain-prepared",
+                  "type": "string"
+                },
+                "mapFormatVersion": {
+                  "const": "1.10",
+                  "type": "string"
+                },
+                "parentDirectory": {
+                  "const": "must-already-exist",
+                  "type": "string"
+                },
+                "profile": {
+                  "const": "finite-orthogonal-empty-tmj",
+                  "type": "string"
+                },
+                "retrySemantics": {
+                  "const": "non-idempotent-reinspect-target-before-retry",
+                  "type": "string"
+                },
+                "tiledCompatibilityBaseline": {
+                  "const": "1.12.2",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "profile",
+                "mapFormatVersion",
+                "tiledCompatibilityBaseline",
+                "commitMode",
+                "approvalBoundary",
+                "destinationPrecondition",
+                "contentEquality",
+                "parentDirectory",
+                "retrySemantics",
+                "failedAttemptCheckpoint",
+                "atomicPromotion",
+                "checkpointBeforeState",
+                "checkpointRestore"
               ],
               "type": "object"
             },
@@ -6566,6 +6654,7 @@ Output schema:
             "layerMoveCapabilities",
             "layerDuplicationCapabilities",
             "checkpointCapabilities",
+            "mapCreationCapabilities",
             "tilesetSheetCapabilities",
             "tilesetDetailCapabilities",
             "tileFindCapabilities",

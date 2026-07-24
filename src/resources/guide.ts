@@ -20,7 +20,9 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
    \`applicationErrorContract\`. Also inspect \`assetIdentityContract\` before
    persisting asset IDs: it declares path-first resolution, best-effort rename
    evidence, internal metadata effects, registry-loss behavior, and crash
-   durability.
+   durability. Inspect \`mapCreationCapabilities\` before creating a map: it
+   declares the one direct no-preview exception, exact format/version limits,
+   approval boundary, retry semantics, and no-replace behavior.
 2. Use MCP \`resources/list\` and read \`tiled://application-errors\` when the
    complete current application-code allowlist is needed.
 3. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
@@ -732,10 +734,22 @@ a new file cannot be used to delete that file.
 ## Creating a map
 
 \`tiled_create_map\` creates a new finite orthogonal TMJ and refuses to
-overwrite an existing path. Parent directories must already exist. After
-creation, use its returned revision for subsequent reads and proposals. The
-new map starts without tileset references or layers. You may attach an
-existing atlas with \`tiled_add_tileset_to_map\`, create an empty layer with
+overwrite an existing path, even when the existing bytes are identical.
+It is the sole direct additive no-preview mutation exception; the client must
+confirm the target path before the tool call, and parent directories must
+already exist. It is intentionally marked \`idempotentHint:false\`: a failed
+attempt can leave a distinct prepared checkpoint, while a retry after a
+successful create returns \`FILE_ALREADY_EXISTS\`. Never retry it blindly. If
+a response is lost, inspect the target instead of inferring ownership from
+equal bytes.
+
+After creation, use the returned revision for subsequent reads and proposals.
+The new map starts without tileset references or layers. Its automatic
+checkpoint records \`before.existed:false\` and cannot be restored as deletion.
+If the file landed but its checkpoint stayed prepared, automatic recovery
+reports provenance ambiguity rather than claiming the creator from a hash
+match. You may attach an existing atlas with
+\`tiled_add_tileset_to_map\`, create an empty layer with
 \`tiled_create_layer\`, then re-read the map summary before planning tile or
 object edits.
 `;

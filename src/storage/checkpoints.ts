@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
-import { link, open, opendir, rename, unlink } from "node:fs/promises";
+import {
+  link,
+  open,
+  opendir,
+  rename,
+  unlink,
+  type FileHandle,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { TiledMcpError } from "../errors.js";
@@ -325,15 +332,20 @@ export class CheckpointStore {
 
 async function writeOnce(path: string, content: Buffer): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  const handle = await open(temporaryPath, "wx", 0o600);
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryCreated = false;
   try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+    temporaryHandle = await open(
+      temporaryPath,
+      "wx",
+      0o600,
+    );
+    temporaryCreated = true;
+    await temporaryHandle.writeFile(content);
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
 
-  try {
     try {
       await link(temporaryPath, path);
       await syncDirectory(dirname(path));
@@ -354,26 +366,47 @@ async function writeOnce(path: string, content: Buffer): Promise<void> {
       }
     }
   } finally {
-    await unlink(temporaryPath).catch(() => undefined);
+    await temporaryHandle
+      ?.close()
+      .catch(() => undefined);
+    if (temporaryCreated) {
+      await unlink(temporaryPath).catch(
+        () => undefined,
+      );
+    }
   }
 }
 
 async function atomicWriteJson(path: string, value: CheckpointManifest): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  const handle = await open(temporaryPath, "wx", 0o600);
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryCreated = false;
   try {
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+    temporaryHandle = await open(
+      temporaryPath,
+      "wx",
+      0o600,
+    );
+    temporaryCreated = true;
+    await temporaryHandle.writeFile(
+      `${JSON.stringify(value, null, 2)}\n`,
+      "utf8",
+    );
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
 
-  try {
     await rename(temporaryPath, path);
     await syncDirectory(dirname(path));
-  } catch (error) {
-    await unlink(temporaryPath).catch(() => undefined);
-    throw error;
+  } finally {
+    await temporaryHandle
+      ?.close()
+      .catch(() => undefined);
+    if (temporaryCreated) {
+      await unlink(temporaryPath).catch(
+        () => undefined,
+      );
+    }
   }
 }
 

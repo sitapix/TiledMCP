@@ -5,6 +5,7 @@ import {
   open,
   rename,
   unlink,
+  type FileHandle,
 } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -782,19 +783,20 @@ export class AssetRegistry {
       directory,
       `.asset-registry.v1.${randomUUID()}.tmp`,
     );
-    const handle = await open(
-      temporaryPath,
-      "wx",
-      0o600,
-    );
+    let temporaryHandle: FileHandle | undefined;
+    let temporaryCreated = false;
     try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
+      temporaryHandle = await open(
+        temporaryPath,
+        "wx",
+        0o600,
+      );
+      temporaryCreated = true;
+      await temporaryHandle.writeFile(bytes);
+      await temporaryHandle.sync();
+      await temporaryHandle.close();
+      temporaryHandle = undefined;
 
-    try {
       await rename(temporaryPath, registryPath);
       const directoryHandle = await open(
         directory,
@@ -805,11 +807,15 @@ export class AssetRegistry {
       } finally {
         await directoryHandle.close();
       }
-    } catch (error) {
-      await unlink(temporaryPath).catch(
-        () => undefined,
-      );
-      throw error;
+    } finally {
+      await temporaryHandle
+        ?.close()
+        .catch(() => undefined);
+      if (temporaryCreated) {
+        await unlink(temporaryPath).catch(
+          () => undefined,
+        );
+      }
     }
   }
 

@@ -3,7 +3,9 @@
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
 > closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
-> create-map 例外定案与固定版本集成门槛仍未完成，接口与全部磁盘格式仍不视为冻结。
+> non-cooperative external-writer CAS、hostile parent swap 与运维边界仍未全部定案，
+> 接口与全部磁盘格式仍不视为冻结。create-map direct no-replace 例外已经正式定案，
+> 固定 Tiled 1.12.2 的不可跳过集成门也已落地。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
 > rename 边界由 capability contract 明示。当前 discovery contract 与 97-code v1 application-error
 > registry 已分别由
@@ -61,6 +63,15 @@ registry 提供 `resources/list` / `resources/templates/list` / `resources/read`
 分别返回有界 Markdown playbook 与当前 application-error registry JSON，并带 SHA-256
 revision、UTF-8 byte size 和 server version；当前 templates 列表为空，也不声明
 resource subscriptions。
+
+`tiled_create_map` 是唯一不经过 preview/apply 的 additive mutation：客户端在 tool call
+前确认目标路径，服务器只创建空的 finite orthogonal TMJ。领域层与 input schema 共用
+100,000 map dimension / 16,384 tile-edge 上限；输出固定 map format 1.10 与 Tiled 1.12.2
+compatibility baseline。写入使用同目录 temp + hard-link no-replace promotion，目标即使
+已有相同 bytes 也返回 `FILE_ALREADY_EXISTS`。工具固定为 `idempotentHint:false`：
+pre-install 失败可能留下新的 prepared checkpoint，成功后的重复调用也返回
+`FILE_ALREADY_EXISTS`；客户端必须先重新检查目标，不能盲目自动重试。完整 machine
+boundary 由 `mapCreationCapabilities` 公布。
 
 18 个核心工具和可选第 19 个 rasterizer 工具现在分别注册完整、固定字段且
 `additionalProperties: false` 的 output schema；递归 layer、operation preview 和
@@ -178,17 +189,23 @@ broker），或让 Tiled 扩展遵守同一锁协议。现阶段这是公开的 
 同理，现有 `lstat`/`realpath`/`O_NOFOLLOW` 能拒绝静态越界和最终组件 symlink，但无法
 消除恶意进程在检查后替换中间父目录的 TOCTOU；真正的 hostile-local sandbox 需要
 `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS)`、容器或等价 OS 机制。checkpoint
-启动扫描已经有界实现：只有当前目标精确等于 `afterRevision` 才补记 `committed`；旧版仍在、
-目标缺失、无关 revision、symlink 与坏 manifest 都隔离报告，不自动回滚或删除。总容量配额
-与 GC 仍待实现。
+启动扫描已经有界实现：existing-file checkpoint 只有在当前目标精确等于
+`afterRevision` 时才补记 `committed`；旧版仍在、目标缺失、无关 revision、symlink 与坏
+manifest 都隔离报告，不自动回滚或删除。prepared create checkpoint 即使精确命中
+`afterRevision` 也无法只凭 hash 证明创建者，固定保留 prepared 并报告
+`CHECKPOINT_STATE_CONFLICT`；真正由本进程完成写入却在 committed marker 前崩溃也采取
+同一 provenance-ambiguous fail-closed 结果。总容量配额与 GC 仍待实现。
 
 ## 0. 架构目标与硬边界
 
 TiledMCP 的第一目标不是“能改 JSON”，而是让自动化编辑同时满足以下约束：
 
 1. **无损**：未知字段、未来版本字段以及未被编辑的 JSON 文本不因一次局部修改而丢失或被规范化。
-2. **并发安全**：每次写入都基于明确 revision；用户在 Tiled 中保存后，旧请求不能静默覆盖新内容。
-3. **可恢复**：单文件提交使用原子替换；跨文件提交通过 WAL 恢复，不把多次 `rename` 宣称为天然原子。
+2. **并发安全**：既有目标写入基于明确 revision；唯一 direct create 使用 missing
+   precondition。用户在 Tiled 中保存后，旧请求不能静默覆盖新内容。
+3. **可恢复**：既有目标的单文件提交使用 checkpoint + 原子替换；direct create 使用
+   hard-link no-replace，当前不会把 `before.existed:false` 恢复成删除。未来跨文件提交
+   必须通过 WAL 恢复，不能把多次 `rename` 宣称为天然原子。
 4. **能力可探测**：直接 JSON 能力始终可用；Tiled、导出器、栅格化器和压缩 codec 按运行时探测结果启用。
 5. **逐步支持**：可以读取和保留尚未支持编辑的内容，但必须拒绝不安全的语义修改，不能“尽力写出”。
 
@@ -385,18 +402,17 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 
 | 区域 | 默认权限 | 说明 |
 |---|---|---|
-| Primary project root | 读写 | `TILED_PROJECT_DIR` 或启动 cwd；所有新文件和 `.tiledmcp/` 都必须位于其中 |
-| Additional read roots | 只读 | 显式配置的共享 tileset/图片目录；默认空 |
+| Primary project root | 读写 | 必须由 `--project-dir` 或 `TILED_PROJECT_DIR` 显式指定；所有新文件和 `.tiledmcp/` 都必须位于其中 |
 | 其他路径 | 拒绝 | 包括未授权的绝对路径、网络 URL 和符号链接逃逸 |
 
 具体规则：
 
-- API 使用 `{rootId, relativePath}` 语义；不把宿主绝对路径作为稳定 asset id 暴露给模型。
+- 当前 API 的 path 字段使用 primary root 下规范化的 project-relative POSIX string；
+  opaque asset id 另行分配，不暴露宿主绝对路径，也没有 `{rootId, relativePath}` wire。
 - 相对引用以**拥有该字段的文档目录**为基准解析，而不是进程 cwd。
-- 已存在路径对最终目标执行 `realpath`；新建文件对最近存在父目录执行 `realpath`，并逐段拒绝
-  符号链接越界、NUL 和目录穿越。
-- primary root 内的引用可读写；additional root 内引用只读。地图可以引用只读 root 中的
-  tileset，但单次工具不能顺便修改它。
+- 已存在路径对最终目标执行 `realpath`；新建文件要求直接父目录已存在，并对该父目录执行
+  `realpath`，同时逐段拒绝符号链接越界、NUL 和目录穿越。
+- 当前只允许 primary root 内的引用，没有 additional read roots。
 - 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
   目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
   **planned / not current** code，不属于当前 97-code v1 application registry。
@@ -405,8 +421,9 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
   同一策略。内置 evaluate 脚本不提供任意文件 API 参数。
 
-多 root 不等于多写 root。首版始终只有一个 primary write root，从而让锁、WAL、恢复扫描和
-配额有明确边界。
+未来若增加共享 tileset/图片 read roots，wire 才会独立设计
+`{rootId, relativePath}`，且仍只保留一个 primary write root。当前单 root 让锁、WAL、
+恢复扫描和配额有明确边界，不能把这项未来方案视为已实现配置。
 
 ### 5.1 Asset registry v1
 
@@ -1181,9 +1198,11 @@ tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区
 
 ### 8.1 Revision 与 CAS
 
-`Revision` 是显式 tagged union：已存在文件为原始 bytes 的 SHA-256，不存在文件为
-`{ kind: "missing" }`；mtime 只可用于缓存快速失效提示，不能作为并发判断。所有写请求和
-change set 都携带 `expectedRevision`。
+公开 `Revision` 是已存在文件原始 bytes 的 SHA-256；mtime 只可用于缓存快速失效提示，
+不能作为并发判断。所有既有目标的写请求和 change set 都携带
+`expectedRevision`。唯一 direct create-map 例外不接收调用方构造的 missing revision：
+服务器在锁内验证目标缺失，并以 hard-link no-replace promotion 把“仍不存在”作为原子
+precondition。
 
 每个目标文件使用两层锁：
 
@@ -1209,11 +1228,19 @@ revision。rename 后已打开的旧 inode 仍是内部一致快照，上层需�
 M0/M1 的所有 mutation 必须最终只修改一个文档。提交步骤：
 
 1. 在内存应用 edits，重新 parse 和 validate。
-2. 在目标同一目录创建权限受控的 sibling staging 文件。
-3. 写入、`fsync` staging；创建 content-addressed checkpoint。
+2. 创建 content-addressed checkpoint 并持久化 `prepared` manifest。
+3. 在目标同一目录创建权限受控的 sibling staging，写入并 `fsync`。
 4. 锁内再次比较 revision（对遵守本锁的写者构成 CAS）。
 5. 用同文件系统原子 `rename` 替换目标，并在支持的平台 `fsync` 父目录。
 6. 返回新 revision、checkpoint id 和变更摘要。
+
+上述 rename 路径用于既有目标。`tiled_create_map` 单独使用 no-replace 分支：锁内确认
+父目录/目标安全且初次缺失，先准备 `before.existed:false` checkpoint，再写并 `fsync`
+同目录 staging；promotion 前二次检查缺失，随后以 hard link 原子提升 staging。二次检查或
+link 的 `EEXIST` 都无条件返回 `FILE_ALREADY_EXISTS`，即使目标与 proposed bytes 相同。
+只有本次调用已经成功 link 后的 unlink/目录 `fsync` 失败才允许通过回读相同 bytes 返回
+durability warning，不能用内容相等认领外部抢占。创建成功后再尽力标记 checkpoint
+committed；失败 warning 会明确自动对账无法证明创建者。
 
 这里的“原子”只描述单次同文件系统替换的可见性，不代表对非合作写者做了 conditional
 replace，也不等同于 crash durability。磁盘/文件系统不支持所需语义时，服务器应拒绝写入
@@ -1270,9 +1297,12 @@ checkpoint/WAL 引用的 blob。
 
 当前单文件实现的 manifest 状态为 `prepared | committed`。`tiled_list_checkpoints` 以
 manifest 数量和目录扫描条目双重预算流式枚举；异常文件名、symlink、超限/坏 JSON、非法路径
-与内部路径目标会进入独立的 `corruptEntries`，不拖垮其余结果。启动 reconcile 只补记已经
-精确落盘的 `afterRevision`；“写入未落地”和冲突状态保留给操作者判断。枚举阶段不逐个读取
-最大 64 MiB 的 blob，实际 restore 前由 `readBefore()` 再验证 size、revision 和内容 hash。
+与内部路径目标会进入独立的 `corruptEntries`，不拖垮其余结果。启动 reconcile 只会把
+`before.existed:true` 且目标精确等于 `afterRevision` 的 prepared manifest 补记
+committed；prepared create 的 exact match 仍因 provenance ambiguity 保持 prepared 并
+报告 `CHECKPOINT_STATE_CONFLICT`。“写入未落地”和其他冲突状态保留给操作者判断。枚举
+阶段不逐个读取最大 64 MiB 的 blob，实际 restore 前由 `readBefore()` 再验证 size、
+revision 和内容 hash。
 
 当前 MCP 恢复只接受 `{checkpointId, expectedRevision}`，一次只针对一个 checkpoint
 对应的既有 JSON 文档。preview 不保存原始 blob，而是把 manifest 的
@@ -1281,10 +1311,11 @@ id/createdAt/label/path/status/afterRevision、before revision/object hash/size�
 destructive，并提醒依赖 TSJ、图片和其他文件不会被连带恢复。apply 在 plan 固定的目标路径
 上获取同一套进程内与跨进程锁，重新读取 manifest 并只允许 `prepared → committed` 的状态
 前进；随后先做目标 revision CAS，再重新校验 blob、安全 JSON 和当前 DocumentStore 大小
-上限。若 `prepared` 写入已精确落盘，必须成功持久化 `committed` 状态后才覆盖目标；状态
-含混、manifest/blob 篡改或 revision 过期均 fail closed。实际写入前仍为当前版本创建新的
-checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`before.existed:false` 代表
-创建文件前状态，当前版本拒绝把它解释为删除操作。
+上限。若 existing-file `prepared` 写入已精确落盘，必须成功持久化 `committed` 状态后才
+覆盖目标；状态含混、manifest/blob 篡改或 revision 过期均 fail closed。实际写入前仍为
+当前版本创建新的 checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。
+`before.existed:false` 代表创建文件前状态，prepared exact match 不会被自动认领，当前版本
+也拒绝把它解释为删除操作。
 
 ## 10. 图像、资源与进程安全
 
@@ -1367,7 +1398,8 @@ checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。`be
 
 - 配置、primary/read roots、路径与外部引用解析。
 - source-preserving raw JSON、窄 typed views、目标版本 `FeatureMatrix`。
-- revision hash、CAS、进程内/跨进程锁、单文件原子提交。
+- revision hash、既有目标 CAS、create missing precondition、进程内/跨进程锁，以及对应
+  的单文件 rename / hard-link no-replace 提交。
 - content-addressed checkpoint、restore 和启动恢复扫描。
 - `ChangePlan`、dry-run、稳定 diagnostics、结构 validator。
 - GID codec 及所有 flags 的 property-based tests。
@@ -1378,8 +1410,11 @@ M0 不追求完整地图 CRUD。验收标准：
 - 所有 fixture no-op 均不写文件，未知字段不会在局部 patch 中丢失。
 - 对合作写者，revision 过期时 100% 拒绝覆盖；若要把同一承诺扩展到未修改的 Tiled GUI，
   必须启用 mediated backend，默认文件系统 backend 明确报告不具备该能力。
-- 单文件提交在每个故障注入点都保持旧版或新版之一，并可恢复 checkpoint。
-- 路径逃逸、symlink race、重复 key、超限输入和恶意压缩数据均被安全拒绝。
+- 既有目标的单文件提交在每个故障注入点都保持旧版或新版之一，并可恢复 checkpoint；
+  direct create 保持不存在或完整新版之一，checkpoint 只用于审计，不恢复为删除。
+- 路径逃逸、静态 symlink/最终组件替换、重复 key 与当前已实现 codec 的超限输入均被安全
+  拒绝。恶意本机进程交换中间父目录不在当前保证内，由
+  `safetyStatus.hostileParentSwapProtection:false` 明示。
 
 ### M1：可用的最小正交编辑闭环
 
@@ -1476,24 +1511,30 @@ M1 明确拒绝：
    artifact metadata、rasterizer
    renderer/options、有界输入图片集合的内部 pre/post revision 校验与 non-atomic 边界、
    SDK-owned text-only 输入校验错误、annotations 和 size/page limit。
-4. **Integration**：固定版本 Tiled one-shot、`--export-formats`、`tmxrasterizer`；同时测试
-   “未安装/版本不支持”的正常降级。
+4. **Integration**：普通单元/契约套件继续允许可选 CLI 缺失并测试正常降级；独立
+   `pnpm run verify:tiled-1.12.2` 门则不可 skip，精确拒绝缺失/错版本，检查真实
+   `--export-formats`、fixture JSON round-trip、64×48 `tmxrasterizer` PNG，以及
+   `tiled_create_map` 输出被 Tiled 1.12.2 重新导出后的 parsed equivalence。
 5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。
 6. **Security**：恶意 JSON、压缩、图片、路径、symlink race、超时和子进程输出洪泛。
 
 ## 13. 配置
 
+当前实现只接受下列配置：
+
 | 配置 | 说明 | 默认 |
 |---|---|---|
-| `TILED_PROJECT_DIR` | 唯一 primary read/write root | cwd |
-| `TILED_READ_ROOTS` | 额外 read-only roots，使用平台路径分隔符 | 空 |
-| `TILED_CLI_PATH` | `tiled` 路径 | 自动探测 |
-| `TILED_RASTERIZER_PATH` | `tmxrasterizer` 路径 | 与 Tiled 一起自动探测 |
-| `TILED_TARGET_VERSION` | 默认 compatibility target；不从 `tiledversion` 推断 | `1.11` |
-| `TILEDMCP_LIMITS_FILE` | 可选 limits JSON；只能收紧或由管理员显式放宽 | 内建默认 |
-| `TILEDMCP_CHECKPOINT_BYTES` | checkpoint blob 总配额 | 1 GiB |
+| `--project-dir` / `TILED_PROJECT_DIR` | 唯一 primary read/write root；缺失时 fail closed | **必填，无默认值** |
+| `--tiled-cli` / `TILED_CLI_PATH` | Tiled executable | `tiled` |
+| `--rasterizer` / `TILED_RASTERIZER_PATH` | TmxRasterizer executable | `tmxrasterizer` |
 
-启动时输出 capability summary，但不因可选 Tiled adapter 缺失而阻止 Direct JSON 能力启动。
+`TILED_READ_ROOTS`、`TILED_TARGET_VERSION`、`TILEDMCP_LIMITS_FILE` 与
+`TILEDMCP_CHECKPOINT_BYTES` 仍是未来配置提案，当前进程不会读取，不能在部署中假设它们
+生效。兼容基线当前由代码与固定 Tiled 1.12.2 集成门锁定；limits 只能使用内建值，
+checkpoint 总配额/GC 尚未实现。
+
+启动 capability 会报告实际 CLI probe，但不因可选 Tiled adapter 缺失而阻止 direct JSON
+能力启动。
 
 ## 14. 仓库结构（拟）
 

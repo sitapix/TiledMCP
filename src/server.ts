@@ -54,6 +54,8 @@ import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CELL_WRITES,
+  MAX_CREATE_MAP_DIMENSION,
+  MAX_CREATE_MAP_TILE_EDGE,
   MAX_CREATE_TILE_LAYER_CELLS,
   MAX_DUPLICATE_LAYER_BYTES,
   MAX_FLOOD_FILL_SCANS,
@@ -1276,11 +1278,40 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         checkpointCapabilities: {
           automaticBeforeWrite: true,
           startupPreparedReconciliation: true,
+          preparedCreateExactMatch:
+            "conflict-provenance-ambiguous",
           boundedListing: true,
           exactByteRestoreKernel: true,
           previewAndApplyRestore: true,
           restoreScope: "single-existing-json-document",
           restoresReferencedDependencies: false,
+        },
+        mapCreationCapabilities: {
+          profile:
+            "finite-orthogonal-empty-tmj",
+          mapFormatVersion: "1.10",
+          tiledCompatibilityBaseline:
+            "1.12.2",
+          commitMode:
+            "direct-additive-no-preview-no-replace",
+          approvalBoundary:
+            "client-tool-call",
+          destinationPrecondition:
+            "must-not-exist",
+          contentEquality:
+            "existing-identical-bytes-still-file-already-exists",
+          parentDirectory:
+            "must-already-exist",
+          retrySemantics:
+            "non-idempotent-reinspect-target-before-retry",
+          failedAttemptCheckpoint:
+            "may-remain-prepared",
+          atomicPromotion:
+            "same-directory-hard-link-no-replace",
+          checkpointBeforeState:
+            "existed-false",
+          checkpointRestore:
+            "revert-would-delete-not-supported",
         },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
@@ -1391,6 +1422,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         limits: {
           maxDocumentBytes: 64 * 1024 * 1024,
           maxAggregateTilesetDependencyBytes: 64 * 1024 * 1024,
+          maxCreateMapDimension:
+            MAX_CREATE_MAP_DIMENSION,
+          maxCreateMapTileEdge:
+            MAX_CREATE_MAP_TILE_EDGE,
           maxRegionCells: 20_000,
           maxChangeSetCellWrites: MAX_CELL_WRITES,
           maxPendingChangeSetCellWrites: DEFAULT_MAX_PENDING_CELL_WRITES,
@@ -2050,14 +2085,30 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Create a finite orthogonal TMJ map",
       description:
-        "Creates a new TMJ file and refuses to overwrite an existing path. Parent directories must exist.",
+        "Directly creates a new empty TMJ as the sole additive no-preview mutation exception. The caller must confirm the target path; parent directories must exist, and any existing destination—including identical bytes—is never overwritten or treated as success.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          width: z.number().int().positive().max(100_000),
-          height: z.number().int().positive().max(100_000),
-          tileWidth: z.number().int().positive().max(16_384),
-          tileHeight: z.number().int().positive().max(16_384),
+          width: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_MAP_DIMENSION),
+          height: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_MAP_DIMENSION),
+          tileWidth: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_MAP_TILE_EDGE),
+          tileHeight: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_MAP_TILE_EDGE),
           backgroundColor: z
             .string()
             .regex(/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/u)

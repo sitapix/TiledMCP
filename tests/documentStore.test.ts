@@ -303,6 +303,82 @@ describe("DocumentStore", () => {
     expect(await readFile(join(root, "maps", "level.tmj"))).toEqual(existing);
   });
 
+  it("serializes same-process concurrent creates so exactly one no-replace request wins", async () => {
+    const projectPath =
+      "maps/concurrent-create.tmj";
+    const proposals: JsonObject[] = [
+      {
+        type: "map",
+        version: "1.10",
+        owner: "first",
+      },
+      {
+        type: "map",
+        version: "1.10",
+        owner: "second",
+      },
+    ];
+    const outcomes =
+      await Promise.allSettled(
+        proposals.map((proposal) =>
+          store.create(
+            projectPath,
+            proposal,
+          ),
+        ),
+      );
+    const winnerIndex =
+      outcomes.findIndex(
+        (outcome) =>
+          outcome.status === "fulfilled",
+      );
+    const rejected =
+      outcomes.filter(
+        (outcome) =>
+          outcome.status === "rejected",
+      );
+
+    expect(winnerIndex).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(
+      outcomes.filter(
+        (outcome) =>
+          outcome.status === "fulfilled",
+      ),
+    ).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      reason: {
+        code: "FILE_ALREADY_EXISTS",
+      },
+    });
+    expect(
+      await readFile(
+        join(root, projectPath),
+      ),
+    ).toEqual(
+      serializeJsonDocument(
+        proposals[winnerIndex]!,
+      ),
+    );
+    expect(
+      await store.checkpoints.list({
+        status: "committed",
+      }),
+    ).toMatchObject({
+      manifests: [
+        {
+          path: projectPath,
+          before: {
+            existed: false,
+          },
+        },
+      ],
+      corruptEntries: [],
+    });
+  });
+
   it("reverts a committed checkpoint under CAS and records the revert", async () => {
     const initial = serializeJsonDocument(INITIAL_DOCUMENT);
     await writeFile(join(root, "maps", "level.tmj"), initial);

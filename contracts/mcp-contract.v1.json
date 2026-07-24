@@ -87,14 +87,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae",
+        "revision": "sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e",
         "serverVersion": "0.0.1",
-        "size": 40107
+        "size": 41025
       },
-      "byteLength": 40107,
+      "byteLength": 41025,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae",
+      "sha256": "sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e",
       "uri": "tiled://guide"
     }
   ],
@@ -122,9 +122,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:f79f9bf9c58f37f7232c727cf845cfdd4f22d1636a04359c77d19b2b3c937aae",
+        "revision": "sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e",
         "serverVersion": "0.0.1",
-        "size": 40107
+        "size": 41025
       },
       "annotations": {
         "audience": [
@@ -136,7 +136,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 40107,
+      "size": 41025,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -2680,7 +2680,7 @@
         "readOnlyHint": false,
         "title": "Create a local TMJ map"
       },
-      "description": "Creates a new TMJ file and refuses to overwrite an existing path. Parent directories must exist.",
+      "description": "Directly creates a new empty TMJ as the sole additive no-preview mutation exception. The caller must confirm the target path; parent directories must exist, and any existing destination—including identical bytes—is never overwritten or treated as success.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -4233,6 +4233,10 @@
                         "const": true,
                         "type": "boolean"
                       },
+                      "preparedCreateExactMatch": {
+                        "const": "conflict-provenance-ambiguous",
+                        "type": "string"
+                      },
                       "previewAndApplyRestore": {
                         "const": true,
                         "type": "boolean"
@@ -4253,6 +4257,7 @@
                     "required": [
                       "automaticBeforeWrite",
                       "startupPreparedReconciliation",
+                      "preparedCreateExactMatch",
                       "boundedListing",
                       "exactByteRestoreKernel",
                       "previewAndApplyRestore",
@@ -4819,6 +4824,14 @@
                         "const": 100000,
                         "type": "number"
                       },
+                      "maxCreateMapDimension": {
+                        "const": 100000,
+                        "type": "number"
+                      },
+                      "maxCreateMapTileEdge": {
+                        "const": 16384,
+                        "type": "number"
+                      },
                       "maxCreateTileLayerCells": {
                         "const": 100000,
                         "type": "number"
@@ -5099,6 +5112,8 @@
                     "required": [
                       "maxDocumentBytes",
                       "maxAggregateTilesetDependencyBytes",
+                      "maxCreateMapDimension",
+                      "maxCreateMapTileEdge",
                       "maxRegionCells",
                       "maxChangeSetCellWrites",
                       "maxPendingChangeSetCellWrites",
@@ -5169,6 +5184,79 @@
                       "maxNativePreviewLayerLabelLength",
                       "maxNativePreviewAggregateImageBytes",
                       "maxNativePreviewAggregateDecodedPixels"
+                    ],
+                    "type": "object"
+                  },
+                  "mapCreationCapabilities": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "approvalBoundary": {
+                        "const": "client-tool-call",
+                        "type": "string"
+                      },
+                      "atomicPromotion": {
+                        "const": "same-directory-hard-link-no-replace",
+                        "type": "string"
+                      },
+                      "checkpointBeforeState": {
+                        "const": "existed-false",
+                        "type": "string"
+                      },
+                      "checkpointRestore": {
+                        "const": "revert-would-delete-not-supported",
+                        "type": "string"
+                      },
+                      "commitMode": {
+                        "const": "direct-additive-no-preview-no-replace",
+                        "type": "string"
+                      },
+                      "contentEquality": {
+                        "const": "existing-identical-bytes-still-file-already-exists",
+                        "type": "string"
+                      },
+                      "destinationPrecondition": {
+                        "const": "must-not-exist",
+                        "type": "string"
+                      },
+                      "failedAttemptCheckpoint": {
+                        "const": "may-remain-prepared",
+                        "type": "string"
+                      },
+                      "mapFormatVersion": {
+                        "const": "1.10",
+                        "type": "string"
+                      },
+                      "parentDirectory": {
+                        "const": "must-already-exist",
+                        "type": "string"
+                      },
+                      "profile": {
+                        "const": "finite-orthogonal-empty-tmj",
+                        "type": "string"
+                      },
+                      "retrySemantics": {
+                        "const": "non-idempotent-reinspect-target-before-retry",
+                        "type": "string"
+                      },
+                      "tiledCompatibilityBaseline": {
+                        "const": "1.12.2",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "mapFormatVersion",
+                      "tiledCompatibilityBaseline",
+                      "commitMode",
+                      "approvalBoundary",
+                      "destinationPrecondition",
+                      "contentEquality",
+                      "parentDirectory",
+                      "retrySemantics",
+                      "failedAttemptCheckpoint",
+                      "atomicPromotion",
+                      "checkpointBeforeState",
+                      "checkpointRestore"
                     ],
                     "type": "object"
                   },
@@ -6325,6 +6413,7 @@
                   "layerMoveCapabilities",
                   "layerDuplicationCapabilities",
                   "checkpointCapabilities",
+                  "mapCreationCapabilities",
                   "tilesetSheetCapabilities",
                   "tilesetDetailCapabilities",
                   "tileFindCapabilities",

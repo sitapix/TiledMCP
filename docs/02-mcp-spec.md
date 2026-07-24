@@ -15,7 +15,7 @@
 - **首个 transport**：`stdio`。服务器不向 stdout 输出日志；日志只写 stderr。HTTP/远程 transport 不属于 M1。
 - **能力声明**：仅声明当前实现且通过契约测试的 Tools、Resources、Prompts；未实现的 roadmap 项不得注册空壳。
 - **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义；生成器通过真实 MCP `tools/list` / resource discovery 固化 wire JSON Schema、双 profile discovery contract、application-error registry 和参考文档，测试对已提交 artifact 做 byte-level drift check。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
-- **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。
+- **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。仓库的 `pnpm run verify:tiled-1.12.2` 是独立强制门：CLI 缺失或版本不精确匹配都失败，不允许以 skip 代替验收。
 
 ### 0.1 当前实现切片（2026-07-25）
 
@@ -55,15 +55,26 @@ aliases。双 profile 的完整 discovery artifact、包含当前 97 个 v1 appl
 image-layer dependency `assetId` 已接入版本化持久 registry：首次分配兼容旧路径哈希，
 同路径替换保持 ID，已观察文件仅在唯一、稳定且非零的同文件系统 file identity 证据下
 尽力迁移；弱 identity、原路径仍存活的 copy/hardlink、跨文件系统 move 与其他无法匹配
-file identity 的场景分配新 ID，不按内容猜身份。`tiled_create_map` 的 no-replace
-例外定案和固定 Tiled 1.12.2 集成门槛尚未全部固化。
-因此本文仍是 Draft，共享契约描述的冻结目标不能视为已全部达成；运行时应以
+file identity 的场景分配新 ID，不按内容猜身份。`tiled_create_map` 已正式定案为唯一
+direct additive no-preview 例外，固定 Tiled 1.12.2 的不可跳过集成门也已落地。
+本文仍是 Draft，因为 non-cooperative external-writer CAS、hostile parent swap 与其他
+威胁模型/运维门槛尚未全部定案；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
-当前 `tiled_create_map` 是一个明确的临时例外：它只做 no-replace 新建，已有路径必然拒绝，
-但还没有纳入 change set。冻结前要么把创建也改为 preview/apply，要么在本规范中正式保留
-“纯增量、不可覆盖创建”的例外；目前不能把该行为外推到其他 create/update/delete 工具。
+`tiled_create_map` 正式保留为唯一直接提交例外。它只生成空的有限正交 TMJ，目标父目录
+必须已存在；目标采用 missing-only 的同目录 hard-link no-replace promotion，已有路径
+即使 bytes 完全相同也必然返回 `FILE_ALREADY_EXISTS`，绝不覆盖或把外部写者的文件认作
+本次成功。调用前由客户端确认目标路径。工具固定为 `idempotentHint:false`：目标提交前
+失败也可能留下一个新的 prepared checkpoint；首次成功后的第二次调用则返回
+`FILE_ALREADY_EXISTS`。客户端不得自动重试，响应丢失时必须先重新检查目标。
+创建前 checkpoint 的 `before.existed:false` 不支持恢复为删除；若进程在写入后、标记
+checkpoint committed 前崩溃，启动时也不会仅凭相同 hash 认领来源，而是保持 prepared 并
+报告 provenance-ambiguous conflict。该例外不能外推到其他 create/update/delete 工具。
+`mapCreationCapabilities` 把 `mapFormatVersion:"1.10"`、
+`tiledCompatibilityBaseline:"1.12.2"`、`approvalBoundary:"client-tool-call"`、同目录
+hard-link promotion、checkpoint/重试边界固化为 machine-readable const；map width/height
+各最多 100,000，tile width/height 各最多 16,384，schema 与领域层使用同一组常量。
 
 ### 0.2 Asset identity v1
 
@@ -119,7 +130,7 @@ type AssetId = string
 // 服务器分配的不透明、项目内稳定标识。客户端不得从路径猜测或自行构造。
 
 type Revision = `sha256:${string}`
-// 对原始文件 bytes（含“文件不存在”状态）的内容 revision；写入前以 expectedRevision 做 CAS。
+// 对已存在文件原始 bytes 的内容 revision；既有目标写入前以 expectedRevision 做 CAS。
 
 type TilesetRef =
   | { kind: "external"; assetId: AssetId }
@@ -289,8 +300,10 @@ type ApplyResult = CommitResult & {
    `tiled_get_capabilities.textContentContract` 公布 summary 名称、版本、编码、最大 bytes、
    完整结果位置、structured byte 计算方式及 SDK input-error 策略。图片工具另外返回 MCP
    `image` content，二进制不进入 `structuredContent`。
-8. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有项目资产写入必须携带
-   `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默覆盖。
+8. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有**既有目标**的项目资产
+   写入必须携带 `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默
+   覆盖。唯一例外 `tiled_create_map` 以服务器内部 missing precondition + 原子
+   no-replace link 实现不存在状态的 CAS，不接受调用方伪造 missing revision。
 9. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision
    和 TTL；它们不是“当前选区/上一步操作”之类的隐式会话状态。
 10. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入
@@ -298,7 +311,7 @@ type ApplyResult = CommitResult & {
 
 ### 1.1 用户授权、预览与提交
 
-`confirm: true` **不代表用户授权**：模型本身可以填写该字段，服务器不能据此证明用户看过风险。写操作采用两阶段协议：
+`confirm: true` **不代表用户授权**：模型本身可以填写该字段，服务器不能据此证明用户看过风险。除正式冻结的 additive missing-only `tiled_create_map` 外，写操作采用两阶段协议：
 
 1. 三个 map-edit preview 入口或 checkpoint restore preview 只计算变更，返回绑定
    `expectedRevision` 的 `changeSetId`、有界 `operations`/`summary`、风险字段和过期时间；
@@ -318,6 +331,7 @@ type ApplyResult = CommitResult & {
 | 本地读取、摘要、渲染、纯校验 | `true` | `false` | `true` | `false` |
 | 预览 change set（每次签发新的 anti-ABA id） | `true` | `false` | `false` | `false` |
 | 设置为指定最终状态 | `false` | 依能力静态标注 | `true` | `false` |
+| missing-only no-replace 创建 | `false` | `false` | `false` | `false` |
 | 创建、追加、随机生成或依赖当前状态的编辑 | `false` | 依能力静态标注 | `false` | `false` |
 | 删除、裁剪、覆盖导出、自动修复、快照恢复 | `false` | `true` | 按重复调用语义填写 | `false` |
 
@@ -330,6 +344,12 @@ type ApplyResult = CommitResult & {
 - `tiled_preview_edits` 每次调用都会分配新的随机 `changeSetId` 并占用有界 registry，
   因而不是幂等调用；相同 plan 也不复用旧句柄，以避免 revision ABA 后误认历史批准。
 - `tiled_apply_change_set` 固定为 `{readOnlyHint:false, destructiveHint:true, idempotentHint:true, openWorldHint:false}`：即使某个 change set 实际无破坏性，也采取保守静态标注；重复提交同一 id 只返回第一次提交结果，不重复应用。
+- `tiled_create_map` 固定为 `{false,false,false,false}`。即使 destination 的 no-replace
+  效果天然有界，目标提交前的失败也可能留下不同的 prepared checkpoint，因此整个工具
+  不能标成 MCP 幂等调用；首次成功后的重复调用还会返回 `FILE_ALREADY_EXISTS`。客户端
+  不得自动重试，必须先检查目标与 checkpoint 状态。其
+  `mapCreationCapabilities.approvalBoundary` 明示授权由客户端在 tool call 前确认，
+  服务器不把任意输入布尔值当作授权证明。
 - `tiled_create_checkpoint` 固定为 `{false,false,false,false}`；checkpoint 列表为 `{true,false,true,false}`。恢复预览每次签发新的 anti-ABA change set，固定为 `{true,false,false,false}`。写目标文件的转换、导出和 rasterize 保守标为 destructive。
 - 本地 Tiled CLI 子进程仍为 `openWorldHint: false`；未来任何访问网络的工具必须设为 `true`。
 - `destructiveHint: false` 不免除 revision CAS；`destructiveHint: true` 必须走客户端批准门。
@@ -340,7 +360,10 @@ type ApplyResult = CommitResult & {
 2. **命名惯例**：`tiled_{动词}_{名词}` 蛇形命名（与现有生态惯例一致，便于用户迁移）。
 3. **GID 变换位对模型透明且无损**：工具使用 `TileRef`；服务器区分正交翻转与六边形 60°/120° 旋转，并保留 raw flags。模型不需要手工编码 GID。
 4. **大数据走摘要**：任何工具都不整块返回完整地图 JSON；读取用区域/摘要视图，完整数据走 Resource。
-5. **单文档原子化 + 路径沙箱**：所有路径限制在项目根目录（`TILED_PROJECT_DIR`）内；M0/M1 写盘使用锁、revision CAS、同目录 temp + rename。跨文件只承诺“可恢复事务”且延后到 M2。
+5. **单文档原子化 + 路径沙箱**：所有路径限制在项目根目录（`TILED_PROJECT_DIR`）内；
+   M0/M1 对既有目标使用锁、revision CAS、同目录 temp + rename；唯一 create-map 例外使用
+   内部 missing precondition、同目录 temp + hard-link no-replace promotion。跨文件只承诺
+   “可恢复事务”且延后到 M2。
 6. **保持 Tiled 兼容**：首版以 Tiled 1.12.2 为兼容基线（正确维护 `nextlayerid`/`nextobjectid`、版本字段、外部 tileset 引用）；兼容矩阵扩展后再承诺其他版本。
 7. **坐标约定**：tile 坐标以 tile 为单位（左上角为原点），对象坐标以像素为单位 —— 与 Tiled 本身一致；工具描述中显式注明。
 8. **视觉闭环是一等能力**：多模态模型能直接看图。所有渲染类工具以 MCP `image` content（PNG）返回结果，让模型**先看 tileset 长什么样再选 tile、改完地图后看渲染结果自查**。地图数据是视觉资产，纯文本的 GID 数组对模型几乎不可读，"渲染→观察→修正"的循环是本 MCP 区别于纯数据编辑器的核心体验。
@@ -361,7 +384,7 @@ type ApplyResult = CommitResult & {
 |---|---|---|
 | `tiled_list_files` | 列出项目内的 Tiled 资产（地图/图块集/模板/世界），返回路径+类型+基本信息 | `pattern?` |
 | `tiled_get_map_summary` | 地图摘要：尺寸、方向、规范化 render order、可选背景色/class、图层树（含 id/类型/可见性）、tileset 引用表（含 firstgid 区间）、对象统计。**模型动手前必读** | `mapPath` |
-| `tiled_create_map` | 新建地图 | `mapPath`, `orientation`, `width`, `height`, `tileWidth`, `tileHeight`, `infinite?`, `staggerAxis?`, `staggerIndex?`, `hexSideLength?`, `backgroundColor?` |
+| `tiled_create_map` | **已实现并正式保留 direct no-replace 例外**；新建空的有限正交 TMJ，目标已存在时绝不覆盖 | `mapPath`, `width`, `height`, `tileWidth`, `tileHeight`, `backgroundColor?` |
 | `tiled_update_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 13 种 `updateMap` operation 实现，修改根级 render order、背景色与 class | `mapPath`, `patch` |
 | `tiled_resize_map` | 调整地图尺寸；只要可能裁剪内容，该工具就静态标为 destructive 并走 change set 批准 | `mapPath`, `width`, `height`, `offsetX?`, `offsetY?` |
 | `tiled_delete_file` | 删除资产文件（**destructive**，只生成待批准 change set） | `path` |
@@ -422,16 +445,22 @@ preview 本身不写盘，但 operation 摘要明确 `destructive:true`，并报
 恢复 revision、精确 byte count、`wouldChange` 和“不会恢复 TSJ/图片/其他文件”的警告。
 apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revision CAS，再验证 blob；
 唯一允许的 manifest 漂移是 `prepared → committed`。若 source checkpoint 仍是
-`prepared`，只有目标精确等于其 `afterRevision` 才允许先持久化为 `committed` 后恢复。
-恢复通过正常 checkpoint + 原子替换路径写回原始 bytes，因此恢复本身可再次恢复。
+`prepared` 且 `before.existed:true`，只有目标精确等于其 `afterRevision` 才允许先持久化
+为 `committed` 后恢复。恢复通过正常 checkpoint + 原子替换路径写回原始 bytes，因此
+恢复本身可再次恢复。
 `before.existed:false` 会稳定报 `REVERT_WOULD_DELETE`：当前工具不会以恢复之名删除后来
-创建的文件，也不会隐式恢复任何依赖闭包。
+创建的文件，也不会隐式恢复任何依赖闭包。对于仍为 `prepared` 的 create checkpoint，
+目标即使精确等于 `afterRevision` 也不能证明创建者；启动对账固定报告
+`CHECKPOINT_STATE_CONFLICT` 并保留 manifest，不会仅凭 hash 自动标记 committed。
 
 `operations` 只允许当前版本列出的 tile/layer/object/map/tileset-reference 纯文档编辑，不允许嵌套 operations、
 删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。不得退回接受
 任意工具名与参数的通用 batch。
 
-除 `tiled_apply_change_set` 外，roadmap 中表达“创建/更新/删除”的项目资产工具都只构造 preview，不直接写盘；因此其 annotations 按 preview 填写。若未来提供直接提交入口，必须使用不同工具名并单独标注，不能用 `dryRun` 或 `commit` 布尔分支混合两种语义。
+除 `tiled_apply_change_set` 与正式冻结的 missing-only `tiled_create_map` 外，roadmap 中
+表达“创建/更新/删除”的项目资产工具都只构造 preview，不直接写盘；因此其 annotations
+按 preview 填写。未来不得从这个唯一例外推导新的直接提交入口；若确有新增，必须使用不同
+工具名、独立安全设计与 annotations，不能用 `dryRun` 或 `commit` 布尔分支混合语义。
 
 ### 3.3 图层管理
 

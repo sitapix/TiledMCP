@@ -116,6 +116,8 @@ export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
 export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
 export const MAX_REMOVE_TILESET_GID_SCANS = 1_000_000;
 export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
+export const MAX_CREATE_MAP_DIMENSION = 100_000;
+export const MAX_CREATE_MAP_TILE_EDGE = 16_384;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
 export const MAX_MAP_CLASS_NAME_CODE_POINTS = 1_024;
 export const MAX_REPLACE_TILE_MAPPINGS = 128;
@@ -503,10 +505,26 @@ export class MapService {
     if (posix.extname(mapPath).toLowerCase() !== ".tmj") {
       throw new TiledMcpError("UNSUPPORTED_FORMAT", "MVP map creation requires a .tmj path.");
     }
-    assertPositiveInteger(input.width, "width");
-    assertPositiveInteger(input.height, "height");
-    assertPositiveInteger(input.tileWidth, "tileWidth");
-    assertPositiveInteger(input.tileHeight, "tileHeight");
+    assertPositiveIntegerAtMost(
+      input.width,
+      "width",
+      MAX_CREATE_MAP_DIMENSION,
+    );
+    assertPositiveIntegerAtMost(
+      input.height,
+      "height",
+      MAX_CREATE_MAP_DIMENSION,
+    );
+    assertPositiveIntegerAtMost(
+      input.tileWidth,
+      "tileWidth",
+      MAX_CREATE_MAP_TILE_EDGE,
+    );
+    assertPositiveIntegerAtMost(
+      input.tileHeight,
+      "tileHeight",
+      MAX_CREATE_MAP_TILE_EDGE,
+    );
     if (
       input.backgroundColor !== undefined &&
       !/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(input.backgroundColor)
@@ -10923,6 +10941,25 @@ function unsupportedRenderFeature(
 function assertPositiveInteger(value: number, context: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new TiledMcpError("INVALID_ARGUMENT", `${context} must be a positive integer.`);
+  }
+}
+
+function assertPositiveIntegerAtMost(
+  value: number,
+  context: string,
+  limit: number,
+): void {
+  assertPositiveInteger(value, context);
+  if (value > limit) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be at most ${limit}.`,
+      {
+        option: context,
+        limit,
+        actual: value,
+      },
+    );
   }
 }
 

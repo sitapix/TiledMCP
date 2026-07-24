@@ -3059,6 +3059,93 @@ describe("MapService", () => {
     expect(await readFile(absoluteMapPath)).toEqual(before);
   });
 
+  it.each([
+    {
+      field: "width",
+      value: 100_001,
+      limit: 100_000,
+    },
+    {
+      field: "height",
+      value: 100_001,
+      limit: 100_000,
+    },
+    {
+      field: "tileWidth",
+      value: 16_385,
+      limit: 16_384,
+    },
+    {
+      field: "tileHeight",
+      value: 16_385,
+      limit: 16_384,
+    },
+  ] as const)(
+    "enforces the create-map $field domain limit below the MCP schema",
+    async ({ field, value, limit }) => {
+      const mapPath =
+        `maps/invalid-${field}.tmj`;
+      await expect(
+        harness.service.createMap({
+          mapPath,
+          width: 2,
+          height: 2,
+          tileWidth: 16,
+          tileHeight: 16,
+          [field]: value,
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        details: {
+          option: field,
+          limit,
+          actual: value,
+        },
+      });
+      await expect(
+        readFile(
+          join(harness.root, mapPath),
+        ),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it("accepts the exact create-map dimension and tile-size limits", async () => {
+    const mapPath =
+      "maps/create-limits.tmj";
+    const result =
+      await harness.service.createMap({
+        mapPath,
+        width: 100_000,
+        height: 100_000,
+        tileWidth: 16_384,
+        tileHeight: 16_384,
+      });
+
+    expect(result).toMatchObject({
+      path: mapPath,
+      beforeRevision: null,
+      changed: true,
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(harness.root, mapPath),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({
+      width: 100_000,
+      height: 100_000,
+      tilewidth: 16_384,
+      tileheight: 16_384,
+      layers: [],
+      tilesets: [],
+    });
+  });
+
   it("validates the supported fixture and reports actionable diagnostics for an invalid map", async () => {
     const valid = await harness.service.validate(MAP_PATH);
     expect(valid).toMatchObject({

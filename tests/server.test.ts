@@ -2236,11 +2236,27 @@ describe("createTiledMcpServer", () => {
       checkpointCapabilities: {
         automaticBeforeWrite: boolean;
         startupPreparedReconciliation: boolean;
+        preparedCreateExactMatch: string;
         boundedListing: boolean;
         exactByteRestoreKernel: boolean;
         previewAndApplyRestore: boolean;
         restoreScope: string;
         restoresReferencedDependencies: boolean;
+      };
+      mapCreationCapabilities: {
+        profile: string;
+        mapFormatVersion: string;
+        tiledCompatibilityBaseline: string;
+        commitMode: string;
+        approvalBoundary: string;
+        destinationPrecondition: string;
+        contentEquality: string;
+        parentDirectory: string;
+        retrySemantics: string;
+        failedAttemptCheckpoint: string;
+        atomicPromotion: string;
+        checkpointBeforeState: string;
+        checkpointRestore: string;
       };
       mapOperations: string[];
       mapUpdateCapabilities: {
@@ -2418,6 +2434,8 @@ describe("createTiledMcpServer", () => {
         reportsOmittedVisibleLayers: boolean;
       };
       limits: {
+        maxCreateMapDimension: number;
+        maxCreateMapTileEdge: number;
         maxTilesetImageBytes: number;
         maxSimpleSvgBytes: number;
         maxTilesetImageEdge: number;
@@ -2580,11 +2598,40 @@ describe("createTiledMcpServer", () => {
       checkpointCapabilities: {
         automaticBeforeWrite: true,
         startupPreparedReconciliation: true,
+        preparedCreateExactMatch:
+          "conflict-provenance-ambiguous",
         boundedListing: true,
         exactByteRestoreKernel: true,
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+      },
+      mapCreationCapabilities: {
+        profile:
+          "finite-orthogonal-empty-tmj",
+        mapFormatVersion: "1.10",
+        tiledCompatibilityBaseline:
+          "1.12.2",
+        commitMode:
+          "direct-additive-no-preview-no-replace",
+        approvalBoundary:
+          "client-tool-call",
+        destinationPrecondition:
+          "must-not-exist",
+        contentEquality:
+          "existing-identical-bytes-still-file-already-exists",
+        parentDirectory:
+          "must-already-exist",
+        retrySemantics:
+          "non-idempotent-reinspect-target-before-retry",
+        failedAttemptCheckpoint:
+          "may-remain-prepared",
+        atomicPromotion:
+          "same-directory-hard-link-no-replace",
+        checkpointBeforeState:
+          "existed-false",
+        checkpointRestore:
+          "revert-would-delete-not-supported",
       },
       mapOperations: ["updateMap"],
       mapUpdateCapabilities: {
@@ -2852,6 +2899,8 @@ describe("createTiledMcpServer", () => {
         reportsOmittedVisibleLayers: true,
       },
       limits: {
+        maxCreateMapDimension: 100_000,
+        maxCreateMapTileEdge: 16_384,
         maxTilesetImageBytes: 64 * 1024 * 1024,
         maxSimpleSvgBytes: 256 * 1024,
         maxTilesetImageEdge: 8_192,
@@ -7270,8 +7319,14 @@ describe("createTiledMcpServer", () => {
       changed: true,
     });
 
+    const createdBytes = await readFile(
+      join(
+        harness.root,
+        "maps/created.tmj",
+      ),
+    );
     const created = JSON.parse(
-      await readFile(join(harness.root, "maps/created.tmj"), "utf8"),
+      createdBytes.toString("utf8"),
     ) as JsonObject;
     expect(created).toMatchObject({
       type: "map",
@@ -7284,6 +7339,38 @@ describe("createTiledMcpServer", () => {
       layers: [],
       tilesets: [],
     });
+
+    const repeated = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_create_map",
+        arguments: {
+          mapPath: "maps/created.tmj",
+          width: 3,
+          height: 2,
+          tileWidth: 16,
+          tileHeight: 16,
+        },
+      }),
+    );
+    expect(repeated).toMatchObject({
+      isError: true,
+      structuredContent: {
+        result: {
+          ok: false,
+          error: {
+            code: "FILE_ALREADY_EXISTS",
+          },
+        },
+      },
+    });
+    expect(
+      await readFile(
+        join(
+          harness.root,
+          "maps/created.tmj",
+        ),
+      ),
+    ).toEqual(createdBytes);
 
     const checkpoints = resultOf<{
       manifests: Array<{

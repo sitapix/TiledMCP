@@ -107,11 +107,14 @@ checkpoint restore 只恢复 manifest 指向的单个 JSON 文档，不会连带
 
 - 目标必须是项目内规范化的相对 POSIX 路径，且父目录必须已经存在；
 - 目标文件已存在时一定拒绝，不覆盖，也不把“内容相同”视为成功；
-- 它是 non-idempotent：同一请求成功一次后，再次调用会因目标已存在而失败；
+- 它固定为 `idempotentHint:false`：目标落盘前失败也可能留下新的 prepared checkpoint，
+  而同一请求成功一次后再次调用会因目标已存在而失败；不要自动重试；
 - 成功响应中的 revision 才是新地图后续编辑的起点。
 
 这个例外只适用于创建一个此前不存在的 TMJ，不能据此绕过其他 mutation 的预览批准流程。
 调用前由用户确认目标路径；如果重试原因不明，先用 `tiled_list_files` 或读取工具确认状态。
+其自动 checkpoint 记录 `before.existed:false`，当前恢复工具不会把它解释成删除；进程若在
+落盘后、标记 committed 前崩溃，启动对账也不会仅凭相同 hash 猜测文件来源。
 
 ## Raster 预览是可选能力
 

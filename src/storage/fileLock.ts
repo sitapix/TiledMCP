@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, open, unlink } from "node:fs/promises";
+import {
+  link,
+  open,
+  unlink,
+  type FileHandle,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import { TiledMcpError } from "../errors.js";
@@ -36,15 +41,23 @@ export async function withProjectFileLock<T>(
 
 async function acquire(lockPath: string, record: LockRecord): Promise<void> {
   const candidatePath = `${lockPath}.${record.token}.candidate`;
-  const handle = await open(candidatePath, "wx", 0o600);
+  let candidateHandle: FileHandle | undefined;
+  let candidateCreated = false;
   try {
-    await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
+    candidateHandle = await open(
+      candidatePath,
+      "wx",
+      0o600,
+    );
+    candidateCreated = true;
+    await candidateHandle.writeFile(
+      `${JSON.stringify(record)}\n`,
+      "utf8",
+    );
+    await candidateHandle.sync();
+    await candidateHandle.close();
+    candidateHandle = undefined;
 
-  try {
     for (
       let attempt = 0;
       attempt < LOCK_RELEASE_RACE_RETRIES;
@@ -98,7 +111,14 @@ async function acquire(lockPath: string, record: LockRecord): Promise<void> {
       { reason: "lock-release-race-exhausted" },
     );
   } finally {
-    await unlink(candidatePath).catch(() => undefined);
+    await candidateHandle
+      ?.close()
+      .catch(() => undefined);
+    if (candidateCreated) {
+      await unlink(candidatePath).catch(
+        () => undefined,
+      );
+    }
   }
 }
 

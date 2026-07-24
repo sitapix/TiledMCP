@@ -80,9 +80,13 @@ PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现�
 并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
 asset identity v1 已经落地并通过 `tiled_get_capabilities.assetIdentityContract`
 公布精确边界；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
-hardlink 在旧路径删除后与 rename 的最终状态不可区分，可能继承旧 ID。接口仍未 Frozen：
-`tiled_create_map` 的 no-replace 例外定案与固定 Tiled 1.12.2 集成门槛仍待完成；
-non-cooperative external-writer CAS 仍是公开的 M0 安全 blocker。当前运行能力仍应以
+hardlink 在旧路径删除后与 rename 的最终状态不可区分，可能继承旧 ID。
+`tiled_create_map` 已正式冻结为唯一 direct additive no-preview 例外：只创建此前不存在的
+有限正交 TMJ，已有目标即使 bytes 相同也返回 `FILE_ALREADY_EXISTS`；精确边界由
+`mapCreationCapabilities` 公布。仓库另提供不可静默跳过、精确要求 Tiled 1.12.2 的
+`pnpm run verify:tiled-1.12.2` 集成门。接口仍未 Frozen：non-cooperative
+external-writer CAS 与 hostile parent-directory swap 的威胁模型仍是公开的 M0 决策项。
+当前运行能力仍应以
 `tiled_get_capabilities`、`tools/list` 和 resource discovery 为准。
 
 ## 文档索引
@@ -115,6 +119,16 @@ pnpm install --frozen-lockfile
 pnpm build
 node dist/index.js --project-dir /absolute/path/to/your/tiled-project
 ```
+
+本机安装精确的 Tiled 1.12.2 与随附 `tmxrasterizer` 后，可运行不可跳过的真实集成门：
+
+```bash
+pnpm run verify:tiled-1.12.2
+```
+
+该门校验版本、运行时导出格式、checked-in fixture 的 JSON round-trip 与 PNG
+rasterization，并确认 `tiled_create_map` 产物可由目标版本重新导出。普通
+`pnpm test` 仍不把可选 Tiled CLI 变成核心 direct-JSON 能力的运行依赖。
 
 服务使用 stdio transport；stdout 只承载 MCP 协议，诊断写入 stderr。项目根目录是必填
 的 fail-closed 安全边界，也可以通过 `TILED_PROJECT_DIR` 设置。一个通用的客户端配置为：
@@ -762,8 +776,9 @@ checkpoint restore。架构与 roadmap
 - 现有路径检查会拒绝静态 symlink 和越界引用，但还不是 `openat2`/容器级 OS 沙箱；
   主动在调用过程中替换父目录的本地攻击者不在当前保证内。
 - 崩溃遗留的 stale lock 会 fail closed，并要求确认无活跃写者后手动删除；不会冒险
-  自动抢锁。启动扫描只会在目标精确等于 `afterRevision` 时把 `prepared` 补记为
-  `committed`；其他状态只报告，不会自动回滚或删除。
+  自动抢锁。启动扫描只会把目标精确等于 `afterRevision` 的 existing-file `prepared`
+  checkpoint 补记为 `committed`；prepared create 即使 hash 相同也因来源不明报告
+  conflict。其他状态只报告，不会自动回滚或删除。
 - checkpoint 目前按内容去重，但还没有总容量配额和 GC；长期高频编辑时需要监控项目内
   `.tiledmcp/objects` 的磁盘占用。恢复当前严格限于一个已存在的安全 JSON 文档；
   checkpoint 的 manifest 意图与 blob hash/revision/size 在 apply 时都会复核，唯一允许

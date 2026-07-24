@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, open, rename, stat, unlink } from "node:fs/promises";
+import {
+  link,
+  open,
+  rename,
+  stat,
+  unlink,
+  type FileHandle,
+} from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { TiledMcpError, asTiledMcpError } from "../errors.js";
@@ -43,6 +50,15 @@ export interface DocumentReadObserver {
     projectPath: string;
     chunkCount: number;
     totalBytes: number;
+  }): void | Promise<void>;
+}
+
+/**
+ * Optional deterministic fault-injection seam for storage tests.
+ */
+export interface DocumentWriteObserver {
+  afterTemporaryFileOpened?(progress: {
+    projectPath: string;
   }): void | Promise<void>;
 }
 
@@ -111,6 +127,7 @@ export class DocumentStore {
   constructor(
     private readonly resolver: ProjectPathResolver,
     private readonly maxDocumentBytes = DEFAULT_MAX_DOCUMENT_BYTES,
+    private readonly writeObserver?: DocumentWriteObserver,
   ) {
     this.checkpoints = new CheckpointStore(resolver);
   }
@@ -292,6 +309,21 @@ export class DocumentStore {
                   currentRevision,
                   "The checkpoint manifest changed while it was being reconciled.",
                   "CHECKPOINT_CHANGED",
+                ),
+              );
+              continue;
+            }
+            if (
+              latest.status === "prepared" &&
+              !latest.before.existed
+            ) {
+              outcomes.push(
+                reconciliationOutcome(
+                  manifest,
+                  "conflict",
+                  currentRevision,
+                  "The target matches a prepared create checkpoint, but hash equality cannot prove which writer created it.",
+                  "CHECKPOINT_STATE_CONFLICT",
                 ),
               );
               continue;
@@ -585,6 +617,9 @@ export class DocumentStore {
     content: Buffer,
     expectedRevision: string | undefined,
     projectPath: string,
+    progress: {
+      destinationInstalled: boolean;
+    },
   ): Promise<void> {
     const directory = dirname(absolutePath);
     const temporaryPath = join(
@@ -600,15 +635,24 @@ export class DocumentStore {
       }
     }
 
-    const handle = await open(temporaryPath, "wx", mode);
+    let temporaryHandle: FileHandle | undefined;
+    let temporaryCreated = false;
     try {
-      await handle.writeFile(content);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
+      temporaryHandle = await open(
+        temporaryPath,
+        "wx",
+        mode,
+      );
+      temporaryCreated = true;
+      await this.writeObserver
+        ?.afterTemporaryFileOpened?.({
+          projectPath,
+        });
+      await temporaryHandle.writeFile(content);
+      await temporaryHandle.sync();
+      await temporaryHandle.close();
+      temporaryHandle = undefined;
 
-    try {
       if (expectedRevision) {
         const current = await this.readBounded(absolutePath, projectPath);
         assertExpectedRevision(projectPath, expectedRevision, revisionOf(current));
@@ -629,6 +673,7 @@ export class DocumentStore {
 
       if (expectedRevision) {
         await rename(temporaryPath, absolutePath);
+        progress.destinationInstalled = true;
       } else {
         try {
           // A hard link in the same directory gives creation no-replace
@@ -645,6 +690,7 @@ export class DocumentStore {
           }
           throw error;
         }
+        progress.destinationInstalled = true;
         await unlink(temporaryPath);
       }
       const directoryHandle = await open(directory, "r");
@@ -654,7 +700,14 @@ export class DocumentStore {
         await directoryHandle.close();
       }
     } catch (error) {
-      await unlink(temporaryPath).catch(() => undefined);
+      await temporaryHandle
+        ?.close()
+        .catch(() => undefined);
+      if (temporaryCreated) {
+        await unlink(temporaryPath).catch(
+          () => undefined,
+        );
+      }
       throw error;
     }
   }
@@ -665,10 +718,22 @@ export class DocumentStore {
     expectedRevision: string | undefined,
     projectPath: string,
   ): Promise<string[]> {
+    const progress = {
+      destinationInstalled: false,
+    };
     try {
-      await this.atomicReplace(absolutePath, content, expectedRevision, projectPath);
+      await this.atomicReplace(
+        absolutePath,
+        content,
+        expectedRevision,
+        projectPath,
+        progress,
+      );
       return [];
     } catch (error) {
+      if (!progress.destinationInstalled) {
+        throw error;
+      }
       try {
         const observed = await this.readBounded(absolutePath, projectPath);
         if (revisionOf(observed) === revisionOf(content)) {
@@ -694,6 +759,11 @@ export class DocumentStore {
       process.stderr.write(
         `tiled-mcp: checkpoint ${checkpoint.id} remains prepared: ${normalized.message}\n`,
       );
+      if (!checkpoint.before.existed) {
+        return [
+          `Checkpoint ${checkpoint.id} remains prepared; automatic reconciliation cannot prove who created the target, so inspect it manually: ${normalized.message}`,
+        ];
+      }
       return [
         `Checkpoint ${checkpoint.id} remains prepared and needs reconciliation: ${normalized.message}`,
       ];

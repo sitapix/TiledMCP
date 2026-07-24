@@ -18,7 +18,8 @@
     "test:watch": "vitest --exclude tests/stdio.test.ts",
     "test:stdio": "pnpm run build && vitest run tests/stdio.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "pnpm run typecheck && pnpm run build && pnpm run contract:check && vitest run"
+    "verify": "pnpm run typecheck && pnpm run build && pnpm run contract:check && vitest run",
+    "verify:tiled-1.12.2": "tsx scripts/verify-tiled-1.12.2.ts"
   },
   "engines": {
     "node": ">=20.19.0"
