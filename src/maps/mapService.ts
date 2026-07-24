@@ -97,6 +97,8 @@ const MAX_OBJECT_DISPLAY_STRING_LENGTH = 128;
 const MAX_LAYER_OPERATION_ID_SAMPLE = 32;
 const MAX_ABSOLUTE_OBJECT_NUMBER = 1_000_000_000;
 const MAX_TILED_SIGNED_ID = 0x7fffffff;
+const MAX_EDITABLE_DOCUMENT_BYTES = 64 * 1024 * 1024;
+export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
 export const MAX_ADD_TILESET_GID_SCANS = 1_000_000;
 export const MAX_CREATE_TILE_LAYER_CELLS = MAX_CELL_WRITES;
 export const MAX_LAYER_NAME_LENGTH = MAX_OBJECT_STRING_LENGTH;
@@ -1220,7 +1222,10 @@ export class MapService {
       context.bindings,
       operations,
       context.loaded.path,
-      { allowResolvedAddTileset: true },
+      {
+        allowResolvedAddTileset: true,
+        sourceBytes: context.loaded.size,
+      },
     );
     const unsignedPlan: Omit<MapEditPlan, "id"> = {
       kind: "mapEdit",
@@ -1310,7 +1315,10 @@ export class MapService {
       context.bindings,
       operations,
       context.loaded.path,
-      { allowResolvedCreateLayer: true },
+      {
+        allowResolvedCreateLayer: true,
+        sourceBytes: context.loaded.size,
+      },
     );
     const unsignedPlan: Omit<MapEditPlan, "id"> = {
       kind: "mapEdit",
@@ -1378,6 +1386,7 @@ export class MapService {
       context.bindings,
       copiedOperations,
       mapPath,
+      { sourceBytes: context.loaded.size },
     );
     const unsignedPlan = {
       kind: "mapEdit" as const,
@@ -1559,6 +1568,7 @@ export class MapService {
         allowResolvedAddTileset: addTilesetOperations.length === 1,
         allowResolvedCreateLayer:
           createLayerOperations.length === 1,
+        sourceBytes: context.loaded.size,
       },
     );
     if (
@@ -2736,6 +2746,7 @@ function validateAndSummarizeOperations(
   options: {
     allowResolvedAddTileset?: boolean;
     allowResolvedCreateLayer?: boolean;
+    sourceBytes?: number;
   } = {},
 ): MapEditPlan["summary"] {
   if (!Array.isArray(operations) || operations.length === 0) {
@@ -2778,6 +2789,21 @@ function validateAndSummarizeOperations(
       "moveLayer must be the only operation in its change set.",
     );
   }
+  const duplicateLayerOperationCount = operations.filter(
+    (operation) =>
+      isRecordValue(operation) &&
+      operation.type === "duplicateLayer",
+  ).length;
+  if (
+    duplicateLayerOperationCount > 1 ||
+    (duplicateLayerOperationCount === 1 &&
+      operations.length !== 1)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "duplicateLayer must be the only operation in its change set.",
+    );
+  }
 
   let cellWrites = 0;
   let replaceTileScans = 0;
@@ -2807,6 +2833,9 @@ function validateAndSummarizeOperations(
   > = [];
   const movedLayers: NonNullable<
     MapEditPlan["summary"]["movedLayers"]
+  > = [];
+  const duplicatedLayers: NonNullable<
+    MapEditPlan["summary"]["duplicatedLayers"]
   > = [];
   let objectIndex: ObjectEditIndex | undefined;
   const getObjectIndex = (): ObjectEditIndex => {
@@ -3169,6 +3198,24 @@ function validateAndSummarizeOperations(
         operationIndex,
         ...moved,
       });
+    } else if (operation.type === "duplicateLayer") {
+      const duplicated = duplicateExistingLayer(
+        map,
+        operation,
+        bindings,
+        mapPath,
+        `operations[${operationIndex}]`,
+        options.sourceBytes,
+      );
+      affectedLayerIds.add(
+        duplicated.createdRootLayerId,
+      );
+      cellWrites += duplicated.allocatedCellCount;
+      objectMutations += duplicated.copiedObjectCount;
+      duplicatedLayers.push({
+        operationIndex,
+        ...duplicated,
+      });
     } else if (operation.type === "createObject") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
       const created = createBasicObject(
@@ -3272,6 +3319,13 @@ function validateAndSummarizeOperations(
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
     (createdLayers.length > 0 ? 2 : 0) +
+    duplicatedLayers.reduce(
+      (count, duplicated) =>
+        count +
+        2 +
+        (duplicated.copiedObjectCount > 0 ? 1 : 0),
+      0,
+    ) +
     (deletedLayers.length > 0 ? 1 : 0) +
     movedLayers.reduce(
       (count, move) =>
@@ -3320,6 +3374,9 @@ function validateAndSummarizeOperations(
     ...(createdLayers.length === 0 ? {} : { createdLayers }),
     ...(deletedLayers.length === 0 ? {} : { deletedLayers }),
     ...(movedLayers.length === 0 ? {} : { movedLayers }),
+    ...(duplicatedLayers.length === 0
+      ? {}
+      : { duplicatedLayers }),
   };
 }
 
@@ -4919,6 +4976,922 @@ function moveExistingLayer(
   };
 }
 
+// Duplication deliberately has its own exclusive planner because it allocates
+// IDs, rewires typed references, and inserts one synthesized subtree.
+function duplicateExistingLayer(
+  map: JsonObject,
+  operation: Extract<
+    MapEditOperation,
+    { type: "duplicateLayer" }
+  >,
+  bindings: readonly TilesetBinding[],
+  mapPath: string,
+  context: string,
+  sourceBytes: number | undefined,
+): Omit<
+  NonNullable<
+    MapEditPlan["summary"]["duplicatedLayers"]
+  >[number],
+  "operationIndex"
+> {
+  const allowedKeys = new Set([
+    "type",
+    "layerId",
+    "destination",
+    "name",
+  ]);
+  const unknownKey = Object.keys(operation).find(
+    (key) => !allowedKeys.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} contains unsupported field ${unknownKey}.`,
+    );
+  }
+  assertPositiveInteger(
+    operation.layerId,
+    `${context}.layerId`,
+  );
+  if (operation.name !== undefined) {
+    assertBoundedString(
+      operation.name,
+      `${context}.name`,
+    );
+  }
+  if (
+    sourceBytes === undefined ||
+    !Number.isSafeInteger(sourceBytes) ||
+    sourceBytes < 0
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "duplicateLayer requires the original source byte length.",
+      { path: mapPath },
+    );
+  }
+
+  const source = findDeletableLayer(
+    map,
+    operation.layerId,
+    mapPath,
+  );
+  const sourcePlacement = layerContainerForParent(
+    map,
+    source.parentGroupId,
+    mapPath,
+  );
+  if (
+    sourcePlacement.layers !== source.container ||
+    sourcePlacement.layers[source.index] !== source.object
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Layer ${operation.layerId} moved during change-set planning.`,
+      { path: mapPath, layerId: operation.layerId },
+    );
+  }
+  const sourceName = expectString(
+    source.object.name,
+    `layer ${operation.layerId}.name`,
+  );
+  const inspection = inspectLayerSubtree(
+    source.object,
+    mapPath,
+  );
+
+  const destination = operation.destination;
+  let targetParentGroupId: number | null;
+  let requestedIndex: number | undefined;
+  let defaultAdjacent = false;
+  if (destination === undefined) {
+    targetParentGroupId = source.parentGroupId;
+    defaultAdjacent = true;
+  } else {
+    if (!isRecordValue(destination)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.destination must be an object.`,
+      );
+    }
+    if (destination.kind === "sameParent") {
+      assertExactObjectKeys(
+        destination,
+        new Set(["kind", "index"]),
+        `${context}.destination`,
+      );
+      targetParentGroupId = source.parentGroupId;
+      requestedIndex = destination.index;
+      defaultAdjacent = destination.index === undefined;
+    } else if (destination.kind === "root") {
+      assertExactObjectKeys(
+        destination,
+        new Set(["kind", "index"]),
+        `${context}.destination`,
+      );
+      targetParentGroupId = null;
+      requestedIndex = destination.index;
+    } else if (destination.kind === "group") {
+      assertExactObjectKeys(
+        destination,
+        new Set(["kind", "parentGroupId", "index"]),
+        `${context}.destination`,
+      );
+      assertPositiveInteger(
+        destination.parentGroupId,
+        `${context}.destination.parentGroupId`,
+      );
+      targetParentGroupId = destination.parentGroupId;
+      requestedIndex = destination.index;
+      if (
+        inspection.layerIds.includes(
+          destination.parentGroupId,
+        )
+      ) {
+        throw new TiledMcpError(
+          "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+          `Layer ${operation.layerId} cannot be duplicated into itself or one of its descendants.`,
+          {
+            path: mapPath,
+            layerId: operation.layerId,
+            parentGroupId: destination.parentGroupId,
+          },
+        );
+      }
+    } else {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.destination.kind must be sameParent, root, or group.`,
+      );
+    }
+  }
+  if (
+    requestedIndex !== undefined &&
+    (!Number.isSafeInteger(requestedIndex) ||
+      requestedIndex < 0)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}.destination.index must be a non-negative safe integer.`,
+    );
+  }
+
+  const targetPlacement = layerContainerForParent(
+    map,
+    targetParentGroupId,
+    mapPath,
+  );
+  const targetIndex = defaultAdjacent
+    ? source.index + 1
+    : (requestedIndex ?? targetPlacement.layers.length);
+  if (targetIndex > targetPlacement.layers.length) {
+    throw new TiledMcpError(
+      "LAYER_INDEX_OUT_OF_RANGE",
+      `Duplicate insertion index ${targetIndex} is outside target range 0..${targetPlacement.layers.length}.`,
+      {
+        path: mapPath,
+        layerId: operation.layerId,
+        parentGroupId: targetParentGroupId,
+        index: targetIndex,
+        maximumIndex: targetPlacement.layers.length,
+        indexSemantics: "final-insertion-index",
+      },
+    );
+  }
+  const resultingDepth =
+    targetPlacement.childDepth +
+    inspection.maxRelativeDepth;
+  if (resultingDepth > MAX_LAYER_DEPTH) {
+    throw new TiledMcpError(
+      "LAYER_DEPTH_EXCEEDED",
+      `Duplicating layer ${operation.layerId} at the selected destination would exceed the maximum layer depth ${MAX_LAYER_DEPTH}.`,
+      {
+        path: mapPath,
+        layerId: operation.layerId,
+        parentGroupId: targetParentGroupId,
+        resultingDepth,
+        maxDepth: MAX_LAYER_DEPTH,
+      },
+    );
+  }
+
+  const rootLayers = expectArray(
+    map.layers,
+    `${mapPath}.layers`,
+  );
+  const layerInventory = inspectLayerTree(
+    rootLayers,
+    mapPath,
+  );
+  if (
+    layerInventory.count + inspection.layerIds.length >
+    MAX_LAYER_COUNT
+  ) {
+    throw new TiledMcpError(
+      "LAYER_LIMIT_EXCEEDED",
+      `Duplicating this subtree would exceed the map layer limit ${MAX_LAYER_COUNT}.`,
+      {
+        path: mapPath,
+        existing: layerInventory.count,
+        copied: inspection.layerIds.length,
+        limit: MAX_LAYER_COUNT,
+      },
+    );
+  }
+  const objectIndex = buildObjectEditIndex(
+    map,
+    mapPath,
+  );
+  if (
+    objectIndex.byId.size + inspection.objectIds.length >
+    MAX_OBJECT_COUNT
+  ) {
+    throw new TiledMcpError(
+      "OBJECT_LIMIT_EXCEEDED",
+      `Duplicating this subtree would exceed the map object limit ${MAX_OBJECT_COUNT}.`,
+      {
+        path: mapPath,
+        existing: objectIndex.byId.size,
+        copied: inspection.objectIds.length,
+        limit: MAX_OBJECT_COUNT,
+      },
+    );
+  }
+  if (
+    inspection.objectIds.length >
+    MAX_OBJECT_MUTATIONS
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A duplicateLayer operation may copy at most ${MAX_OBJECT_MUTATIONS} objects.`,
+      {
+        path: mapPath,
+        actual: inspection.objectIds.length,
+        limit: MAX_OBJECT_MUTATIONS,
+      },
+    );
+  }
+
+  const nextLayerId = expectInteger(
+    map.nextlayerid,
+    `${mapPath}.nextlayerid`,
+  );
+  if (
+    nextLayerId <= 0 ||
+    nextLayerId <= layerInventory.maximumId
+  ) {
+    throw new TiledMcpError(
+      "NEXT_LAYER_ID_INVALID",
+      `${mapPath}.nextlayerid must be greater than every existing layer id.`,
+      {
+        path: mapPath,
+        nextLayerId,
+        maximumExistingId: layerInventory.maximumId,
+      },
+    );
+  }
+  const nextLayerHighWater =
+    nextLayerId + inspection.layerIds.length;
+  if (
+    !Number.isSafeInteger(nextLayerHighWater) ||
+    nextLayerHighWater > MAX_TILED_SIGNED_ID
+  ) {
+    throw new TiledMcpError(
+      "LAYER_ID_EXHAUSTED",
+      "The duplicated subtree does not fit in Tiled's signed 32-bit layer id space.",
+      {
+        path: mapPath,
+        nextLayerId,
+        copiedLayerCount: inspection.layerIds.length,
+        maximumHighWaterMark: MAX_TILED_SIGNED_ID,
+      },
+    );
+  }
+
+  const nextObjectId = expectInteger(
+    map.nextobjectid,
+    `${mapPath}.nextobjectid`,
+  );
+  if (
+    nextObjectId <= 0 ||
+    nextObjectId <= objectIndex.maximumId
+  ) {
+    throw new TiledMcpError(
+      "NEXT_OBJECT_ID_INVALID",
+      `${mapPath}.nextobjectid must be greater than every existing object id.`,
+      {
+        path: mapPath,
+        nextObjectId,
+        maximumExistingId: objectIndex.maximumId,
+      },
+    );
+  }
+  const nextObjectHighWater =
+    nextObjectId + inspection.objectIds.length;
+  if (
+    !Number.isSafeInteger(nextObjectHighWater) ||
+    nextObjectHighWater > MAX_TILED_SIGNED_ID
+  ) {
+    throw new TiledMcpError(
+      "OBJECT_ID_EXHAUSTED",
+      "The duplicated subtree does not fit in Tiled's signed 32-bit object id space.",
+      {
+        path: mapPath,
+        nextObjectId,
+        copiedObjectCount: inspection.objectIds.length,
+        maximumHighWaterMark: MAX_TILED_SIGNED_ID,
+      },
+    );
+  }
+
+  const duplicate = expectObject(
+    cloneJson(source.object),
+    `duplicate of layer ${operation.layerId}`,
+  );
+  const layerIdMappings: Array<{
+    from: number;
+    to: number;
+  }> = [];
+  const objectIdMappings: Array<{
+    from: number;
+    to: number;
+  }> = [];
+  const objectIdMap = new Map<number, number>();
+  let allocatedCellCount = 0;
+  let tileObjectCount = 0;
+  let imageReferenceCount = 0;
+  let layerAllocationOffset = 0;
+  let objectAllocationOffset = 0;
+
+  const allocateIds = (
+    layer: JsonObject,
+    layerContext: string,
+    depth: number,
+  ): void => {
+    if (depth > MAX_LAYER_DEPTH) {
+      throw new TiledMcpError(
+        "LAYER_DEPTH_EXCEEDED",
+        `Duplicated layer subtree exceeds depth ${MAX_LAYER_DEPTH}.`,
+        { path: mapPath, maxDepth: MAX_LAYER_DEPTH },
+      );
+    }
+    const oldLayerId = expectInteger(
+      layer.id,
+      `${layerContext}.id`,
+    );
+    const newLayerId =
+      nextLayerId + layerAllocationOffset;
+    layerAllocationOffset += 1;
+    layer.id = newLayerId;
+    layerIdMappings.push({
+      from: oldLayerId,
+      to: newLayerId,
+    });
+
+    const type = expectString(
+      layer.type,
+      `${layerContext}.type`,
+    );
+    if (type === "tilelayer") {
+      const width = expectInteger(
+        layer.width,
+        `${layerContext}.width`,
+      );
+      const height = expectInteger(
+        layer.height,
+        `${layerContext}.height`,
+      );
+      const data = expectArray(
+        layer.data,
+        `${layerContext}.data`,
+      );
+      const cellCount = width * height;
+      if (
+        width <= 0 ||
+        height <= 0 ||
+        !Number.isSafeInteger(cellCount) ||
+        data.length !== cellCount ||
+        allocatedCellCount + cellCount >
+          MAX_CELL_WRITES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A duplicateLayer operation may copy at most ${MAX_CELL_WRITES} finite uncompressed tile cells.`,
+          {
+            path: mapPath,
+            layerId: oldLayerId,
+            actual:
+              Number.isSafeInteger(cellCount)
+                ? allocatedCellCount + cellCount
+                : null,
+            limit: MAX_CELL_WRITES,
+          },
+        );
+      }
+      for (const [index, gid] of data.entries()) {
+        assertResolvableGid(
+          gid,
+          bindings,
+          `${layerContext}.data[${index}]`,
+        );
+      }
+      allocatedCellCount += cellCount;
+      return;
+    }
+    if (type === "imagelayer") {
+      if (layer.image !== undefined) {
+        expectString(
+          layer.image,
+          `${layerContext}.image`,
+        );
+        imageReferenceCount += 1;
+      }
+      return;
+    }
+    if (type === "objectgroup") {
+      const objects = expectArray(
+        layer.objects,
+        `${layerContext}.objects`,
+      );
+      for (const [index, value] of objects.entries()) {
+        const object = expectObject(
+          value,
+          `${layerContext}.objects[${index}]`,
+        );
+        const oldObjectId = expectInteger(
+          object.id,
+          `${layerContext}.objects[${index}].id`,
+        );
+        if (
+          Object.prototype.hasOwnProperty.call(
+            object,
+            "template",
+          )
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_DUPLICATE_TEMPLATE",
+            `Object ${oldObjectId} uses a template that is not revision-pinned for duplication.`,
+            {
+              path: mapPath,
+              objectId: oldObjectId,
+            },
+          );
+        }
+        if (object.gid !== undefined) {
+          assertResolvableGid(
+            object.gid,
+            bindings,
+            `${layerContext}.objects[${index}].gid`,
+          );
+          tileObjectCount += 1;
+        }
+        const newObjectId =
+          nextObjectId + objectAllocationOffset;
+        objectAllocationOffset += 1;
+        object.id = newObjectId;
+        objectIdMap.set(oldObjectId, newObjectId);
+        objectIdMappings.push({
+          from: oldObjectId,
+          to: newObjectId,
+        });
+      }
+      return;
+    }
+    if (type !== "group") {
+      throw new TiledMcpError(
+        "LAYER_TYPE_MISMATCH",
+        `Layer ${oldLayerId} does not use a supported Tiled layer type.`,
+        {
+          path: mapPath,
+          layerId: oldLayerId,
+          layerType: type,
+        },
+      );
+    }
+    const children = expectArray(
+      layer.layers,
+      `${layerContext}.layers`,
+    );
+    for (const [index, value] of children.entries()) {
+      allocateIds(
+        expectObject(
+          value,
+          `${layerContext}.layers[${index}]`,
+        ),
+        `${layerContext}.layers[${index}]`,
+        depth + 1,
+      );
+    }
+  };
+
+  allocateIds(
+    duplicate,
+    `layer ${operation.layerId} duplicate`,
+    0,
+  );
+  if (
+    layerAllocationOffset !== inspection.layerIds.length ||
+    objectAllocationOffset !== inspection.objectIds.length
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      "The duplicated subtree changed while IDs were allocated.",
+      {
+        path: mapPath,
+        expectedLayers: inspection.layerIds.length,
+        actualLayers: layerAllocationOffset,
+        expectedObjects: inspection.objectIds.length,
+        actualObjects: objectAllocationOffset,
+      },
+    );
+  }
+  if (operation.name !== undefined) {
+    duplicate.name = operation.name;
+  }
+
+  const referenceSummary =
+    rewriteDuplicatePropertyReferences(
+      duplicate,
+      objectIdMap,
+      new Set(objectIndex.byId.keys()),
+      mapPath,
+    );
+  const duplicateText = JSON.stringify(duplicate);
+  const serializedDuplicateBytes = Buffer.byteLength(
+    duplicateText,
+    "utf8",
+  );
+  if (
+    serializedDuplicateBytes >
+    MAX_DUPLICATE_LAYER_BYTES
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A duplicated layer subtree may serialize to at most ${MAX_DUPLICATE_LAYER_BYTES} bytes.`,
+      {
+        path: mapPath,
+        actual: serializedDuplicateBytes,
+        limit: MAX_DUPLICATE_LAYER_BYTES,
+      },
+    );
+  }
+  const projectedSourceBytes =
+    sourceBytes + serializedDuplicateBytes + 129;
+  if (
+    !Number.isSafeInteger(projectedSourceBytes) ||
+    projectedSourceBytes > MAX_EDITABLE_DOCUMENT_BYTES
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `Duplicating this layer would exceed the ${MAX_EDITABLE_DOCUMENT_BYTES}-byte document limit.`,
+      {
+        path: mapPath,
+        sourceBytes,
+        serializedDuplicateBytes,
+        projectedUpperBound: Number.isSafeInteger(
+          projectedSourceBytes,
+        )
+          ? projectedSourceBytes
+          : null,
+        limit: MAX_EDITABLE_DOCUMENT_BYTES,
+      },
+    );
+  }
+
+  targetPlacement.layers.splice(
+    targetIndex,
+    0,
+    duplicate,
+  );
+  map.nextlayerid = nextLayerHighWater;
+  if (inspection.objectIds.length > 0) {
+    map.nextobjectid = nextObjectHighWater;
+  }
+
+  const duplicateName = boundedDisplayString(
+    operation.name ?? sourceName,
+  );
+  const layerIdMappingSample = layerIdMappings.slice(
+    0,
+    MAX_LAYER_OPERATION_ID_SAMPLE,
+  );
+  const objectIdMappingSample = objectIdMappings.slice(
+    0,
+    MAX_LAYER_OPERATION_ID_SAMPLE,
+  );
+  return {
+    sourceLayerId: source.id,
+    createdRootLayerId:
+      layerIdMappings[0]?.to ??
+      (() => {
+        throw new Error(
+          "Duplicate layer allocation lost its root ID.",
+        );
+      })(),
+    layerType: source.type,
+    name: duplicateName.value,
+    nameTruncated: duplicateName.truncated,
+    sourceParentGroupId: source.parentGroupId,
+    targetParentGroupId,
+    sourceIndex: source.index,
+    targetIndex,
+    copiedLayerCount: inspection.layerIds.length,
+    descendantLayerCount:
+      inspection.layerIds.length - 1,
+    copiedObjectCount: inspection.objectIds.length,
+    allocatedCellCount,
+    serializedDuplicateBytes,
+    layerIdMappingSample,
+    omittedLayerMappingCount:
+      layerIdMappings.length -
+      layerIdMappingSample.length,
+    objectIdMappingSample,
+    omittedObjectMappingCount:
+      objectIdMappings.length -
+      objectIdMappingSample.length,
+    remappedInternalObjectReferenceCount:
+      referenceSummary.remappedInternalObjectReferenceCount,
+    retainedExternalObjectReferenceCount:
+      referenceSummary.retainedExternalObjectReferenceCount,
+    fileReferenceCount:
+      referenceSummary.fileReferenceCount +
+      imageReferenceCount,
+    tileObjectCount,
+    lockedLayerCount: inspection.lockedLayerCount,
+    effectivelyLockedLayerCount:
+      targetPlacement.effectiveParentLocked
+        ? inspection.layerIds.length
+        : inspection.effectivelyLockedLayerCount,
+    renderOrderMayChange: true,
+    renderContextMayChange:
+      source.parentGroupId !== targetParentGroupId,
+    affectsDescendants:
+      source.type === "group" &&
+      inspection.layerIds.length > 1,
+  };
+}
+
+function assertExactObjectKeys(
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  context: string,
+): void {
+  const unknownKey = Object.keys(value).find(
+    (key) => !allowed.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} contains unsupported field ${unknownKey}.`,
+    );
+  }
+}
+
+function rewriteDuplicatePropertyReferences(
+  root: JsonObject,
+  copiedObjectIds: ReadonlyMap<number, number>,
+  existingObjectIds: ReadonlySet<number>,
+  mapPath: string,
+): {
+  remappedInternalObjectReferenceCount: number;
+  retainedExternalObjectReferenceCount: number;
+  fileReferenceCount: number;
+} {
+  let visited = 0;
+  let remappedInternalObjectReferenceCount = 0;
+  let retainedExternalObjectReferenceCount = 0;
+  let fileReferenceCount = 0;
+
+  const scanPropertyEntry = (
+    value: JsonValue,
+    pointer: string,
+    depth: number,
+  ): void => {
+    visited += 1;
+    if (visited > 1_000_000 || depth > 512) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        "The duplicated subtree is too complex to analyze property references safely.",
+        { path: mapPath },
+      );
+    }
+    if (!isJsonObject(value)) {
+      return;
+    }
+
+    if (value.type === "object") {
+      const referencedId = value.value;
+      if (
+        typeof referencedId !== "number" ||
+        !Number.isSafeInteger(referencedId) ||
+        referencedId < 0
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+          "An object property in the duplicated subtree has a malformed reference.",
+          {
+            path: mapPath,
+            jsonPointer: pointer,
+          },
+        );
+      }
+      if (referencedId !== 0) {
+        const remapped = copiedObjectIds.get(
+          referencedId,
+        );
+        if (remapped !== undefined) {
+          value.value = remapped;
+          remappedInternalObjectReferenceCount += 1;
+        } else if (existingObjectIds.has(referencedId)) {
+          retainedExternalObjectReferenceCount += 1;
+        } else {
+          throw new TiledMcpError(
+            "OBJECT_REFERENCE_NOT_FOUND",
+            `Object property reference ${referencedId} does not identify an existing object.`,
+            {
+              path: mapPath,
+              objectId: referencedId,
+              jsonPointer: pointer,
+            },
+          );
+        }
+      }
+      return;
+    }
+    if (value.type === "class") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+        "Class properties require a pinned project type schema before a layer can be duplicated safely.",
+        {
+          path: mapPath,
+          jsonPointer: pointer,
+        },
+      );
+    }
+    if (value.type === "layer") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+        "Non-standard typed layer references are not guessed or rewritten during duplication.",
+        {
+          path: mapPath,
+          jsonPointer: pointer,
+        },
+      );
+    }
+    if (value.type === "file") {
+      if (typeof value.value !== "string") {
+        throw new TiledMcpError(
+          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+          "A file property in the duplicated subtree has a malformed value.",
+          {
+            path: mapPath,
+            jsonPointer: pointer,
+          },
+        );
+      }
+      fileReferenceCount += 1;
+      return;
+    }
+    if (value.type === "list") {
+      if (!Array.isArray(value.value)) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+          "A list property in the duplicated subtree has a malformed value.",
+          {
+            path: mapPath,
+            jsonPointer: pointer,
+          },
+        );
+      }
+      const listPointer = appendJsonPointer(
+        pointer,
+        "value",
+      );
+      for (const [index, item] of value.value.entries()) {
+        scanPropertyEntry(
+          item,
+          appendJsonPointer(listPointer, index),
+          depth + 1,
+        );
+      }
+    }
+  };
+
+  const scanOwnerProperties = (
+    owner: JsonObject,
+    pointer: string,
+  ): void => {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        owner,
+        "properties",
+      )
+    ) {
+      return;
+    }
+    const propertiesPointer = appendJsonPointer(
+      pointer,
+      "properties",
+    );
+    if (!Array.isArray(owner.properties)) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+        "A layer or object properties member in the duplicated subtree must be an array.",
+        {
+          path: mapPath,
+          jsonPointer: propertiesPointer,
+        },
+      );
+    }
+    for (const [index, property] of owner.properties.entries()) {
+      if (!isJsonObject(property)) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+          "A layer or object property entry in the duplicated subtree must be an object.",
+          {
+            path: mapPath,
+            jsonPointer: appendJsonPointer(
+              propertiesPointer,
+              index,
+            ),
+          },
+        );
+      }
+      scanPropertyEntry(
+        property,
+        appendJsonPointer(propertiesPointer, index),
+        0,
+      );
+    }
+  };
+
+  const visitLayer = (
+    layer: JsonObject,
+    pointer: string,
+    depth: number,
+  ): void => {
+    if (depth > MAX_LAYER_DEPTH) {
+      throw new TiledMcpError(
+        "LAYER_DEPTH_EXCEEDED",
+        `Duplicated layer subtree exceeds depth ${MAX_LAYER_DEPTH}.`,
+        { path: mapPath, maxDepth: MAX_LAYER_DEPTH },
+      );
+    }
+    scanOwnerProperties(layer, pointer);
+    const type = expectString(
+      layer.type,
+      `${pointer}/type`,
+    );
+    if (type === "objectgroup") {
+      const objects = expectArray(
+        layer.objects,
+        `${pointer}/objects`,
+      );
+      for (const [index, value] of objects.entries()) {
+        scanOwnerProperties(
+          expectObject(
+            value,
+            `${pointer}/objects/${index}`,
+          ),
+          appendJsonPointer(
+            appendJsonPointer(pointer, "objects"),
+            index,
+          ),
+        );
+      }
+      return;
+    }
+    if (type !== "group") {
+      return;
+    }
+    const layers = expectArray(
+      layer.layers,
+      `${pointer}/layers`,
+    );
+    const layersPointer = appendJsonPointer(
+      pointer,
+      "layers",
+    );
+    for (const [index, value] of layers.entries()) {
+      visitLayer(
+        expectObject(
+          value,
+          `${pointer}/layers/${index}`,
+        ),
+        appendJsonPointer(layersPointer, index),
+        depth + 1,
+      );
+    }
+  };
+
+  visitLayer(root, "", 0);
+  return {
+    remappedInternalObjectReferenceCount,
+    retainedExternalObjectReferenceCount,
+    fileReferenceCount,
+  };
+}
+
 function deleteExistingLayer(
   map: JsonObject,
   operation: Extract<
@@ -6088,6 +7061,18 @@ function sourcePatchPathsForSummary(
   if ((summary.createdLayers?.length ?? 0) > 0) {
     paths.push(["nextlayerid"]);
   }
+  const duplicatedLayers = summary.duplicatedLayers ?? [];
+  if (duplicatedLayers.length > 0) {
+    paths.push(["nextlayerid"]);
+    if (
+      duplicatedLayers.some(
+        (duplicated) =>
+          duplicated.copiedObjectCount > 0,
+      )
+    ) {
+      paths.push(["nextobjectid"]);
+    }
+  }
   return paths;
 }
 
@@ -6097,20 +7082,35 @@ function sourceArrayInsertionsForSummary(
   mapPath: string,
 ): JsonArrayInsertion[] {
   const createdLayers = summary.createdLayers ?? [];
-  if (createdLayers.length > 1) {
+  const duplicatedLayers =
+    summary.duplicatedLayers ?? [];
+  if (
+    createdLayers.length + duplicatedLayers.length >
+    1
+  ) {
     throw new TiledMcpError(
       "INVALID_CHANGE_SET",
-      "A create-layer change set may insert only one layer.",
+      "A layer insertion change set may insert only one root element.",
     );
   }
-  return createdLayers.map((created) => ({
-    path: layerContainerForParent(
-      map,
-      created.parentGroupId,
-      mapPath,
-    ).path,
-    index: created.index,
-  }));
+  return [
+    ...createdLayers.map((created) => ({
+      path: layerContainerForParent(
+        map,
+        created.parentGroupId,
+        mapPath,
+      ).path,
+      index: created.index,
+    })),
+    ...duplicatedLayers.map((duplicated) => ({
+      path: layerContainerForParent(
+        map,
+        duplicated.targetParentGroupId,
+        mapPath,
+      ).path,
+      index: duplicated.targetIndex,
+    })),
+  ];
 }
 
 function sourceArrayDeletionsForSummary(

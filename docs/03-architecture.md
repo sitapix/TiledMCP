@@ -17,8 +17,9 @@ tile edits 现包括 `setTiles`、`fillRegion` 与通用 preview union 中的
 同一通用 union 的第 7 种 `updateLayer` operation 已支持对 4 类 layer 的公共
 display/metadata member 做 strict patch；第 8 种、必须独占 change set 的
 `deleteLayer` 删除一个 leaf/空 Group 或经显式确认的完整 Group subtree；第 9 种、同样
-独占的 `moveLayer` 调整 sibling 顺序或把完整 subtree 移入/移出 Group。这些能力都不注册
-新工具，layer duplicate 仍未实现。
+独占的 `moveLayer` 调整 sibling 顺序或把完整 subtree 移入/移出 Group；第 10 种
+`duplicateLayer` 则以高水位 preorder 新 ID、安全 object-reference 重连和 compact
+source insertion 复制 4 类 layer 或完整 Group subtree。这些能力都不注册新工具。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -500,8 +501,7 @@ insert/replace/delete，并以 layer path + raw member key 去重；它不序列
 缩进、键序和数字/字符串词法。完整 target semantic tree 校验仍是最后防线。preview
 固定 map 与完整现有 dependency read set；apply 重新 canonicalize operation/summary，
 验证 change-set digest 和 revision pins，并在锁内做正常 CAS。move、delete、duplicate
-不属于 `updateLayer`；delete 与 move 已由下两节的独占 operation 实现，duplicate 仍是
-roadmap。
+不属于 `updateLayer`；三者都由下列独占 operation 实现。
 
 ### 6.7 Exclusive layer-subtree deletion
 
@@ -588,6 +588,75 @@ preview 固定 map revision 与完整 dependency revision set。apply 重新规�
 target、cycle/depth、summary 与 source-patch descriptor，验证 change-set digest 和
 revision pins，再进入同一进程/文件锁、raw-byte CAS、写前 content-addressed checkpoint
 和同目录原子替换边界；tampered 或 stale plan 在任何写盘前拒绝。
+
+### 6.9 Exclusive safe layer-subtree duplication
+
+`duplicateLayer` 是 `tiled_preview_edits` 封闭 union 的第 10 种 operation，wire shape
+为 `{type:"duplicateLayer", layerId, destination?, name?}`。它没有 standalone
+`tiled_duplicate_layer`，registry 仍为 18 core / 19 with rasterizer。planner 在 clone
+前强制 operations 总长度恰为 1，拒绝 multiple duplicate 或与
+tile/object/update/delete/move 混批；这样 source location、target container、ID
+inventory、reference graph 和 source patch 都来自同一个原始 snapshot。
+
+`destination` 是 strict discriminated union：
+`{kind:"sameParent", index?}`、`{kind:"root", index?}` 或
+`{kind:"group", parentGroupId, index?}`。整个字段省略与无 index 的 `sameParent`
+相同，插在 source 当前 `sourceIndex + 1`；root/group 分支省略 index 时 append。
+显式 index 是插入完成后的最终 0-based JSON sibling index。duplicate 不移除 source，
+因此统一接受 `0..target.length`。显式 Group ID 必须存在且类型正确；source Group 及其
+descendant Group 不能作为目标，结果 child depth 加 subtree 最大相对深度不得超过 64。
+可选 `name` 最多 1024 characters（空字符串合法），只替换 copied subtree root 的
+`name`，不影响 source 或 copied descendants。
+
+planner 递归复制完整 layer element，而不是把 Group children 提升或拆成多次插入。它先
+验证全图 layer/object inventory 和根 counter，再以原 `nextlayerid`、`nextobjectid`
+分别为起点，按 subtree preorder 给所有 layer/object 连续分配新 ID。计数器推进到新
+high-water mark，不回填 gap；若 subtree 没有 object，`nextobjectid` 不产生 semantic
+或 source patch。allocation 必须留在 Tiled signed 32-bit ID 空间内。复制后全图最多
+10,000 layers、100,000 objects；单次最多复制 10,000 objects 和 100,000 个 finite
+uncompressed tile cells；最终深度最多 64。compact duplicate 序列化结果最多 16 MiB，
+原 source bytes 加保守 insertion/counter overhead 后最多 64 MiB。
+
+ID 分配后才扫描 semantic copy 中的 properties。direct `type:"object"` property 与
+Tiled 1.12 `type:"list"` 内任意层级的 typed object item 都使用同一 traversal：
+reference 命中 copied-object mapping 时改为新 ID；指向副本外仍存在的 object 或 ID 0
+时保留；dangling ID 拒绝。普通 `int` property 不是 typed object/layer reference，不
+猜测或重写；非标准 `type:"layer"` reference 同样 fail closed。`type:"class"`
+可能隐藏 schema-defined object references，而 object `template` 需要独立 revision pin，
+当前均拒绝。`type:"file"` property 与 image-layer `image` 仅复制字符串引用，外部文件
+继续共享，不读取、复制或修改。
+
+tile-layer data 中每个 GID 与 tile-object `gid` 都经当前 finite-orthogonal external
+atlas binding 校验；tile object 的完整 encoded GID（包括 H/V/D/raw flags）保持不变。
+这保证 copy 不会把 malformed/unbound tile reference 固化进新 subtree。`locked` 仍是
+Tiled advisory metadata：显式锁随 semantic copy 保留，目标祖先 Group 的继承锁通过
+`effectivelyLockedLayerCount` 另行反映；锁只触发 warning，不作为授权边界。
+
+plan summary 的 `duplicatedLayers` item 精确包含 `operationIndex`、`sourceLayerId`、
+`createdRootLayerId`、`layerType`、`name`、`nameTruncated`、
+`sourceParentGroupId`、`targetParentGroupId`、`sourceIndex`、`targetIndex`、
+`copiedLayerCount`、`descendantLayerCount`、`copiedObjectCount`、
+`allocatedCellCount`、`serializedDuplicateBytes`、`layerIdMappingSample`、
+`omittedLayerMappingCount`、`objectIdMappingSample`、`omittedObjectMappingCount`、
+`remappedInternalObjectReferenceCount`、`retainedExternalObjectReferenceCount`、
+`fileReferenceCount`、`tileObjectCount`、`lockedLayerCount`、
+`effectivelyLockedLayerCount`、`renderOrderMayChange`、
+`renderContextMayChange` 和 `affectsDescendants`。两类 preorder mapping sample 各限
+32 项，omitted count 显式标记截断；summary 的名称也按 display budget 有界。
+
+source writer 将变换后的 semantic copy 用 `JSON.stringify` 生成单个 compact JSON
+element，再用 local array insertion 插入目标 container；它不会复用 source subtree 的
+raw span，因为新 ID、内部 reference 与可选 root name 已改变。source subtree 本身、所有
+既有 sibling/ancestor、未知字段、BOM、CRLF、缩进、键序和未触及数字/字符串 lexeme
+仍保持 exact bytes。`nextlayerid` 与必要时的 `nextobjectid` 分别走 numeric-value-local
+counter replacement，所以写回边界是一次 element insertion 加一到两个小 counter patch，
+不是整图重序列化。
+
+preview 固定 map revision、完整 dependency revision set、operation 与 digest。apply
+从 guarded source 重新定位 destination、分配 preorder ID、验证 GID/reference/限制、
+重算 bounded summary，并让 source patcher 对完整 target semantic tree 做终检。全部一致
+后才进入同一进程/文件锁、raw-byte CAS、写前 content-addressed checkpoint 和同目录原子
+替换；stale revision、tampered plan 或被外部改动的 raw bytes 都在写盘前拒绝。
 
 ## 7. Tile data、chunk 与压缩
 
@@ -829,7 +898,8 @@ M0 不追求完整地图 CRUD。验收标准：
 - 已实现基础 tile set/fill，以及按 encoded GID 精确、simultaneous single-pass 的
   `replaceTiles`；已实现基础对象 create/update/delete，以及 4 类 layer 的公共字段
   `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
-  `moveLayer`。layer duplicate 仍未实现。
+  `moveLayer` 与安全 `duplicateLayer`；duplicate 以 preorder high-water IDs 复制完整
+  subtree、重连副本内部 typed object/list references，并保留共享 file/image references。
 - 专用 `tiled_create_layer` 为 4 种空图层生成单操作 change set，支持根/Group 0-based
   插入、`nextlayerid` 分配、tile cell 预算与 prospective image pin。
 - 已存在外部 tileset 引用的解析；专用 `tiled_add_tileset_to_map` 只生成单操作 change set，
@@ -851,7 +921,7 @@ M1 明确拒绝：
 这些文件仍可被 raw layer 安全列出、摘要或保留；只有语义写入被拒绝。M1 验收标准是：
 
 > 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/公共 layer 字段，并经
-> preview 移动或 destructive 删除 layer subtree；文件由 Tiled
+> preview 移动、复制或 destructive 删除 layer subtree；文件由 Tiled
 > 目标版本打开无警告，并能从 checkpoint 恢复。合作写者的 revision 冲突不得覆盖用户内容；
 > 未经中介的外部 GUI 保存竞态必须在 capabilities 中如实标为不受严格 CAS 保护。
 

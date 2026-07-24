@@ -144,6 +144,38 @@ export interface MoveLayerOperation {
   index: number;
 }
 
+export type DuplicateLayerDestination =
+  | {
+      kind: "sameParent";
+      /**
+       * Zero-based final insertion index. Omit to insert immediately above
+       * the source layer in its current parent.
+       */
+      index?: number;
+    }
+  | {
+      kind: "root";
+      /**
+       * Zero-based final insertion index. Omit to append at the root.
+       */
+      index?: number;
+    }
+  | {
+      kind: "group";
+      parentGroupId: number;
+      /**
+       * Zero-based final insertion index. Omit to append to the Group.
+       */
+      index?: number;
+    };
+
+export interface DuplicateLayerOperation {
+  type: "duplicateLayer";
+  layerId: number;
+  destination?: DuplicateLayerDestination;
+  name?: string;
+}
+
 export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
@@ -153,7 +185,8 @@ export type MapEditOperation =
   | DeleteObjectsOperation
   | UpdateLayerOperation
   | DeleteLayerOperation
-  | MoveLayerOperation;
+  | MoveLayerOperation
+  | DuplicateLayerOperation;
 
 /**
  * A fully resolved operation emitted only by the dedicated
@@ -272,6 +305,42 @@ export interface MapEditPlan {
       effectivelyLockedLayerCountBefore: number;
       effectivelyLockedLayerCountAfter: number;
       wouldChange: boolean;
+      renderOrderMayChange: boolean;
+      renderContextMayChange: boolean;
+      affectsDescendants: boolean;
+    }>;
+    duplicatedLayers?: Array<{
+      operationIndex: number;
+      sourceLayerId: number;
+      createdRootLayerId: number;
+      layerType: CreatableLayerType;
+      name: string;
+      nameTruncated: boolean;
+      sourceParentGroupId: number | null;
+      targetParentGroupId: number | null;
+      sourceIndex: number;
+      targetIndex: number;
+      copiedLayerCount: number;
+      descendantLayerCount: number;
+      copiedObjectCount: number;
+      allocatedCellCount: number;
+      serializedDuplicateBytes: number;
+      layerIdMappingSample: Array<{
+        from: number;
+        to: number;
+      }>;
+      omittedLayerMappingCount: number;
+      objectIdMappingSample: Array<{
+        from: number;
+        to: number;
+      }>;
+      omittedObjectMappingCount: number;
+      remappedInternalObjectReferenceCount: number;
+      retainedExternalObjectReferenceCount: number;
+      fileReferenceCount: number;
+      tileObjectCount: number;
+      lockedLayerCount: number;
+      effectivelyLockedLayerCount: number;
       renderOrderMayChange: boolean;
       renderContextMayChange: boolean;
       affectsDescendants: boolean;

@@ -43,6 +43,7 @@ import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CREATE_TILE_LAYER_CELLS,
+  MAX_DUPLICATE_LAYER_BYTES,
   MAX_LAYER_NAME_LENGTH,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
@@ -542,6 +543,56 @@ const moveLayerSchema = z
   })
   .strict();
 
+const duplicateLayerDestinationSchema = z.discriminatedUnion(
+  "kind",
+  [
+    z
+      .object({
+        kind: z.literal("sameParent"),
+        index: z
+          .number()
+          .int()
+          .min(0)
+          .max(10_000)
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("root"),
+        index: z
+          .number()
+          .int()
+          .min(0)
+          .max(10_000)
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("group"),
+        parentGroupId: positiveIdSchema,
+        index: z
+          .number()
+          .int()
+          .min(0)
+          .max(10_000)
+          .optional(),
+      })
+      .strict(),
+  ],
+);
+
+const duplicateLayerSchema = z
+  .object({
+    type: z.literal("duplicateLayer"),
+    layerId: positiveIdSchema,
+    destination:
+      duplicateLayerDestinationSchema.optional(),
+    name: z.string().max(MAX_LAYER_NAME_LENGTH).optional(),
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
@@ -552,6 +603,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   updateLayerSchema,
   deleteLayerSchema,
   moveLayerSchema,
+  duplicateLayerSchema,
 ]);
 const resultOutputSchema = z.object({ result: z.unknown() }).strict();
 
@@ -636,6 +688,7 @@ export async function createTiledMcpServer(
           "updateLayer",
           "deleteLayer",
           "moveLayer",
+          "duplicateLayer",
         ],
         layerUpdateCapabilities: {
           layerTypes: [
@@ -693,6 +746,31 @@ export async function createTiledMcpServer(
           lockedSemantics: "advisory-metadata",
           idHighWaterMarks: "preserved",
           sourcePatch: "exact-byte-array-element-move",
+        },
+        layerDuplicationCapabilities: {
+          planner: "generic-exclusive-operation-change-set",
+          layerTypes: [
+            "tilelayer",
+            "objectgroup",
+            "imagelayer",
+            "group",
+          ],
+          defaultDestination:
+            "same-parent-adjacent-above-source",
+          indexSemantics:
+            "zero-based-final-insertion-index",
+          idAllocation:
+            "preorder-layer-and-object-ids-from-high-water-marks",
+          objectReferencePolicy:
+            "rewire-within-copy-retain-external",
+          typedReferenceSafety:
+            "class-and-template-fail-closed",
+          externalFilePolicy: "shared-references",
+          lockedSemantics: "advisory-metadata",
+          sourcePatch:
+            "compact-new-element-existing-bytes-preserved",
+          maxSerializedDuplicateBytes:
+            MAX_DUPLICATE_LAYER_BYTES,
         },
         checkpointCapabilities: {
           automaticBeforeWrite: true,
@@ -832,6 +910,8 @@ export async function createTiledMcpServer(
           maxTileFindEvaluations: MAX_TILE_FIND_EVALUATIONS,
           maxTileFindResultBytes: MAX_TILE_FIND_RESULT_BYTES,
           maxAddTilesetGidScans: MAX_ADD_TILESET_GID_SCANS,
+          maxSerializedDuplicateBytes:
+            MAX_DUPLICATE_LAYER_BYTES,
           maxReplaceTileMappings: MAX_REPLACE_TILE_MAPPINGS,
           maxReplaceTileScans: MAX_REPLACE_TILE_SCANS,
           maxUsageScanValues: MAX_USAGE_SCAN_VALUES,
@@ -1434,7 +1514,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion or movement, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

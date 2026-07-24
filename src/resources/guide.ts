@@ -153,7 +153,8 @@ or silently repairs a stale counter.
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, and \`replaceTiles\`; supported object operations are
 \`createObject\`, \`updateObject\`, and \`deleteObjects\`; supported layer
-operations are \`updateLayer\`, \`deleteLayer\`, and \`moveLayer\`.
+operations are \`updateLayer\`, \`deleteLayer\`, \`moveLayer\`, and
+\`duplicateLayer\`.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
@@ -250,8 +251,73 @@ cannot misaddress a later target Group. The exact source element bytes are
 moved, preserving subtree formatting, unknown fields, number/string lexemes,
 BOM, and CRLF outside the necessary array seams. Apply still replans, verifies
 the digest and revisions, and commits only through the normal lock, raw-byte
-CAS, checkpoint, and atomic-replacement flow. Layer duplication is not
-implemented.
+CAS, checkpoint, and atomic-replacement flow.
+
+Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
+supported layer or a complete Group subtree. This is the tenth generic
+operation, not a standalone tool, so the registry remains 18 core tools or 19
+with the rasterizer. A duplicate change set must contain exactly one operation.
+
+\`destination\` has exactly three branches:
+
+- \`{kind:"sameParent", index?}\`;
+- \`{kind:"root", index?}\`;
+- \`{kind:"group", parentGroupId, index?}\`.
+
+Omitting \`destination\`, or omitting \`index\` in \`sameParent\`, inserts at
+the source's current \`sourceIndex + 1\`. Omitting the index for \`root\` or
+\`group\` appends to that target array. An explicit index is the zero-based
+final insertion index and must be in \`0..targetLength\`; duplication does not
+remove the source. A Group cannot be copied into itself or a descendant. The
+optional \`name\` is at most 1,024 characters, may be empty, and overrides only
+the copied subtree root.
+
+Every layer and object in the complete copy receives a new ID in preorder,
+starting at the map's existing \`nextlayerid\` and \`nextobjectid\` high-water
+marks. Gaps are not reused. If there are no copied objects,
+\`nextobjectid\` is unchanged. Direct typed object properties and object items
+inside nested Tiled 1.12 lists are rewired when they point within the copy.
+References to existing objects outside the copy and ID zero are retained;
+dangling references are rejected. Ordinary integer properties are not guessed
+to be layer or object references. Typed layer references, class properties,
+and object templates fail closed because their reference semantics cannot yet
+be proven safe.
+
+Image-layer image paths and file properties remain shared external references;
+no referenced file is copied or modified. Tile-layer cells and tile-object
+GIDs are validated against current tileset bindings, while a valid tile
+object's complete encoded GID, including transform flags, is preserved.
+\`locked\` remains advisory. The preview reports the copied subtree's explicit
+locked count and its \`effectivelyLockedLayerCount\` under the target's
+inherited Group locks.
+
+A resulting map may contain at most 10,000 layers and 100,000 objects. One
+duplicate may copy at most 10,000 objects and 100,000 finite uncompressed tile
+cells, and the resulting layer depth is capped at 64. The compact serialized
+copy is capped at 16 MiB and the projected edited TMJ at 64 MiB.
+
+Each \`duplicatedLayers\` summary item contains exactly:
+\`operationIndex\`, \`sourceLayerId\`, \`createdRootLayerId\`, \`layerType\`,
+\`name\`, \`nameTruncated\`, \`sourceParentGroupId\`,
+\`targetParentGroupId\`, \`sourceIndex\`, \`targetIndex\`,
+\`copiedLayerCount\`, \`descendantLayerCount\`, \`copiedObjectCount\`,
+\`allocatedCellCount\`, \`serializedDuplicateBytes\`,
+\`layerIdMappingSample\`, \`omittedLayerMappingCount\`,
+\`objectIdMappingSample\`, \`omittedObjectMappingCount\`,
+\`remappedInternalObjectReferenceCount\`,
+\`retainedExternalObjectReferenceCount\`, \`fileReferenceCount\`,
+\`tileObjectCount\`, \`lockedLayerCount\`,
+\`effectivelyLockedLayerCount\`, \`renderOrderMayChange\`,
+\`renderContextMayChange\`, and \`affectsDescendants\`. Each preorder ID
+mapping sample is capped at 32 entries; use its omitted count.
+
+The new element is compact JSON, but the original subtree, existing siblings,
+unknown fields, BOM, CRLF, key order, and untouched numeric/string lexemes keep
+their exact source bytes. Only the insertion and value-local high-water
+counter patches are synthesized. Preview pins the map and complete dependency
+revision set. Apply replans destination, allocation, references, limits,
+summary, and source patches, verifies the digest and raw-byte CAS, then uses
+the normal lock, write-ahead checkpoint, and atomic replacement.
 
 A \`replaceTiles\` operation has a numeric \`layerId\`, one to 128
 \`mappings\` shaped as \`{from: TileRef, to: TileRef|null}\`, and an optional

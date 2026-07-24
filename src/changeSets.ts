@@ -198,6 +198,48 @@ type OperationPreview =
       affectsDescendants: boolean;
     }
   | {
+      type: "duplicateLayer";
+      destructive: false;
+      warning: string;
+      sourceLayerId: number;
+      createdRootLayerId: number;
+      layerType:
+        | "tilelayer"
+        | "objectgroup"
+        | "imagelayer"
+        | "group";
+      name: string;
+      nameTruncated: boolean;
+      sourceParentGroupId: number | null;
+      targetParentGroupId: number | null;
+      sourceIndex: number;
+      targetIndex: number;
+      copiedLayerCount: number;
+      descendantLayerCount: number;
+      copiedObjectCount: number;
+      allocatedCellCount: number;
+      serializedDuplicateBytes: number;
+      layerIdMappingSample: Array<{
+        from: number;
+        to: number;
+      }>;
+      omittedLayerMappingCount: number;
+      objectIdMappingSample: Array<{
+        from: number;
+        to: number;
+      }>;
+      omittedObjectMappingCount: number;
+      remappedInternalObjectReferenceCount: number;
+      retainedExternalObjectReferenceCount: number;
+      fileReferenceCount: number;
+      tileObjectCount: number;
+      lockedLayerCount: number;
+      effectivelyLockedLayerCount: number;
+      renderOrderMayChange: boolean;
+      renderContextMayChange: boolean;
+      affectsDescendants: boolean;
+    }
+  | {
       type: "deleteObjects";
       destructive: true;
       warning: string;
@@ -719,6 +761,85 @@ function summarizeOperation(
         moveSummary.renderContextMayChange,
       affectsDescendants:
         moveSummary.affectsDescendants,
+    };
+  }
+
+  if (operation.type === "duplicateLayer") {
+    const duplicateSummary =
+      summary.duplicatedLayers?.find(
+        (entry) =>
+          entry.operationIndex === operationIndex,
+      );
+    if (
+      duplicateSummary === undefined ||
+      duplicateSummary.sourceLayerId !==
+        operation.layerId
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "duplicateLayer preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    const lockedWarning =
+      duplicateSummary.effectivelyLockedLayerCount === 0
+        ? ""
+        : " The copied subtree contains effectively locked layers; locked is advisory metadata and does not block MCP edits.";
+    return {
+      type: operation.type,
+      destructive: false,
+      warning:
+        "This inserts one compact duplicate while preserving existing source bytes and advances layer/object ID high-water marks in preorder. Object references within the copy are rewired, references outside it are retained, and referenced external files remain shared." +
+        lockedWarning,
+      sourceLayerId: duplicateSummary.sourceLayerId,
+      createdRootLayerId:
+        duplicateSummary.createdRootLayerId,
+      layerType: duplicateSummary.layerType,
+      name: duplicateSummary.name,
+      nameTruncated: duplicateSummary.nameTruncated,
+      sourceParentGroupId:
+        duplicateSummary.sourceParentGroupId,
+      targetParentGroupId:
+        duplicateSummary.targetParentGroupId,
+      sourceIndex: duplicateSummary.sourceIndex,
+      targetIndex: duplicateSummary.targetIndex,
+      copiedLayerCount:
+        duplicateSummary.copiedLayerCount,
+      descendantLayerCount:
+        duplicateSummary.descendantLayerCount,
+      copiedObjectCount:
+        duplicateSummary.copiedObjectCount,
+      allocatedCellCount:
+        duplicateSummary.allocatedCellCount,
+      serializedDuplicateBytes:
+        duplicateSummary.serializedDuplicateBytes,
+      layerIdMappingSample: structuredClone(
+        duplicateSummary.layerIdMappingSample,
+      ),
+      omittedLayerMappingCount:
+        duplicateSummary.omittedLayerMappingCount,
+      objectIdMappingSample: structuredClone(
+        duplicateSummary.objectIdMappingSample,
+      ),
+      omittedObjectMappingCount:
+        duplicateSummary.omittedObjectMappingCount,
+      remappedInternalObjectReferenceCount:
+        duplicateSummary.remappedInternalObjectReferenceCount,
+      retainedExternalObjectReferenceCount:
+        duplicateSummary.retainedExternalObjectReferenceCount,
+      fileReferenceCount:
+        duplicateSummary.fileReferenceCount,
+      tileObjectCount: duplicateSummary.tileObjectCount,
+      lockedLayerCount:
+        duplicateSummary.lockedLayerCount,
+      effectivelyLockedLayerCount:
+        duplicateSummary.effectivelyLockedLayerCount,
+      renderOrderMayChange:
+        duplicateSummary.renderOrderMayChange,
+      renderContextMayChange:
+        duplicateSummary.renderContextMayChange,
+      affectsDescendants:
+        duplicateSummary.affectsDescendants,
     };
   }
 

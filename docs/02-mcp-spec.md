@@ -253,7 +253,7 @@ apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revi
 | `tiled_update_layer` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 7 种 `updateLayer` operation 实现，修改 4 类 layer 的公共显示/元数据字段 | `mapPath`, `layerId`, `patch` |
 | `tiled_move_layer` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 9 种、必须独占 change set 的 `moveLayer` operation 实现 | `mapPath`, `layerId`, `parentGroupId?`, `index` |
 | `tiled_delete_layer` | 候选独立入口；当前等价 destructive 能力已通过 `tiled_preview_edits` 的第 8 种、必须独占 change set 的 `deleteLayer` operation 实现 | `mapPath`, `layerId`, `deleteDescendants?` |
-| `tiled_duplicate_layer` | 复制图层（后续候选） | `mapPath`, `layerId`, `newName?` |
+| `tiled_duplicate_layer` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 10 种、必须独占 change set 的 `duplicateLayer` operation 实现 | `mapPath`, `layerId`, `destination?`, `name?` |
 
 当前实现只接受有限正交 TMJ。省略 `parentGroupId` 表示根 `layers`；否则它必须是一个已存在
 Group 的全图唯一数字 ID。`index` 是目标同级 JSON 数组的 0-based 插入点，合法范围为
@@ -391,8 +391,71 @@ exact bytes 并搬入目标，只改源/目标数组接缝所需的逗号与 whi
 内部以及未触及 sibling/祖先的未知字段、BOM、CRLF、键序、数字和字符串转义词法均保留，
 最后仍以完整 target semantic tree 复核。
 
-其他图层工具统一用 `layerId`（数字 id）定位；`moveLayer` 已由 generic operation
-实现，只有 duplicate 仍是 roadmap。
+当前已实现的 layer duplication wire contract 是
+`{type:"duplicateLayer", layerId, destination?, name?}`，它是 generic
+`tiled_preview_edits.operations` union 的第 10 种 operation。它必须独占 change set，
+不能与 tile/object/update/delete/move 或第二次 duplicate 混批，也不注册
+`tiled_duplicate_layer` standalone tool；registry 因此仍是 18 core / 19 with
+rasterizer。
+
+`destination` 省略时复制到 source 的直接父数组并插在 `sourceIndex + 1`。显式值必须严格
+匹配以下三个 discriminated 分支之一：
+
+- `{kind:"sameParent", index?}`：目标仍是直接父；省略 index 时同样使用
+  `sourceIndex + 1`；
+- `{kind:"root", index?}`：目标是 map 根 `layers`；省略 index 时 append；
+- `{kind:"group", parentGroupId, index?}`：正整数 ID 必须指向已有 Group；省略 index
+  时 append。
+
+显式 `index` 是插入完成后的最终 0-based JSON sibling index。复制不移除 source，因此
+所有目标数组的合法范围统一为 `0..length`；越界拒绝而不 clamp。Group 被复制为完整
+subtree，不能把副本放入 source Group 自身或任一 descendant；目标 child depth 加
+subtree 最大相对深度不得超过 64。可选 `name` 最多 1024 个 JS characters，允许空字符串，
+且只覆盖 copied subtree root 的 `name`；source 和后代名称保持不变。
+
+planner 先验证全图 ID inventory 和根计数器：layer ID 从原 `nextlayerid` 起、object ID
+从原 `nextobjectid` 起，均按完整 subtree preorder 连续分配，然后分别推进到新高水位，
+不搜索或填补历史 gap。没有 copied object 时 `nextobjectid` 不修改。复制后全图不得超过
+10,000 layers / 100,000 objects；一次 operation 最多复制 10,000 objects、累计
+100,000 个有限未压缩 tile cells，最终嵌套深度最多 64。单个 compact duplicate 的 UTF-8
+JSON 最多 16 MiB，按保守 insertion/counter overhead 估算后的整个 TMJ 最多 64 MiB；
+signed 32-bit ID 空间或 checked arithmetic 溢出同样 fail closed。
+
+副本中 direct `type:"object"` property 和 Tiled 1.12 `type:"list"` 内任意嵌套的 typed
+object item 会被分析：目标在 copied subtree 内时改写为对应新 object ID；目标是 source
+subtree 外仍存在的对象或 `0` 时保留原值；目标不存在则返回
+`OBJECT_REFERENCE_NOT_FOUND`。普通 integer property 不会被猜成 object/layer reference；
+非标准 `type:"layer"` reference 不猜测也不重写。任何 `type:"class"` property 都可能
+隐藏 typed reference，object 上的 `template` 也没有独立 revision pin，因此两者均 fail
+closed。image-layer `image` 与 `type:"file"` property 只是共享原 external reference，
+不会复制、重命名或修改目标文件。
+
+所有 copied tile-layer GID 和 tile-object `gid` 都按当前 external-atlas binding 验证；
+tile object 的 H/V/D/raw transform flags 随完整原值保留。`locked` 仍是 advisory
+metadata，不阻止复制。`lockedLayerCount` 统计 subtree 内显式锁，
+`effectivelyLockedLayerCount` 再叠加目标 Group 及其祖先的继承锁，preview warning 不会把
+它误写成 ACL 或宣称 child `locked` member 被改写。
+
+`duplicatedLayers` summary 每项字段固定为 `operationIndex`、`sourceLayerId`、
+`createdRootLayerId`、`layerType`、`name`、`nameTruncated`、
+`sourceParentGroupId`、`targetParentGroupId`、`sourceIndex`、`targetIndex`、
+`copiedLayerCount`、`descendantLayerCount`、`copiedObjectCount`、
+`allocatedCellCount`、`serializedDuplicateBytes`、`layerIdMappingSample`、
+`omittedLayerMappingCount`、`objectIdMappingSample`、`omittedObjectMappingCount`、
+`remappedInternalObjectReferenceCount`、`retainedExternalObjectReferenceCount`、
+`fileReferenceCount`、`tileObjectCount`、`lockedLayerCount`、
+`effectivelyLockedLayerCount`、`renderOrderMayChange`、
+`renderContextMayChange` 与 `affectsDescendants`。layer/object preorder mapping sample
+各最多 32 项；完整数量来自 copied count 和 omitted count，不能把样本当成全集。
+
+source writer 不复制 source element 的词法文本：它把已经分配 ID、重连引用和可选改名的
+semantic copy 序列化为一个 compact JSON element，再在目标 `layers` array 做一次局部
+insertion；原 source subtree、既有 siblings、未知字段、BOM、CRLF、键序、缩进和其他
+数字/字符串词法保持原 bytes。`nextlayerid` 以及仅在 copied object 非空时的
+`nextobjectid` 使用 numeric-value-local counter patch。preview 固定 map revision 与完整
+dependency revision set；apply 重新规划 destination、ID、引用、限制、摘要和 source
+patch，验证 digest/revision pins/raw-byte CAS，并在锁内完成写前 checkpoint 与同目录
+原子替换。其他图层工具仍统一用数字 `layerId` 定位。
 
 ### 3.4 图块编辑 — Tile Layer（核心价值）
 
@@ -744,7 +807,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑、4 类 layer 公共属性 update，以及独占递归 delete / subtree move、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持 layer duplicate、无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/移动/删除图层并修改一张有限正交 TMJ；move/delete 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/精确 simultaneous replace、基础 object 编辑、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全创建/更新/移动/复制/删除图层并修改一张有限正交 TMJ；move/delete/duplicate 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

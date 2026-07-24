@@ -30,6 +30,8 @@
   删除非空 Group，保留 ID 高水位并阻止存活对象引用悬空；
 - 通过该 generic union 的第 9 种独占 operation 在根级与 Group 间移动已有图层；
   Group 会连同完整 subtree 精确搬移，保持 ID 高水位与未触及 JSON source bytes；
+- 通过该 generic union 的第 10 种独占 operation 复制 4 类已有图层或完整 Group
+  subtree，以高水位 preorder 分配新 layer/object ID，并安全重连副本内部对象引用；
 - 无损 4-bit GID 变换编解码；
 - `setTiles` / `fillRegion` / `replaceTiles` 封闭编辑集合，以及 preview →
   approved change set → apply 的两阶段提交；replacement 按完整变换后的 encoded GID
@@ -239,7 +241,53 @@ BOM、CRLF、缩进、键序、数字/字符串词法与未知字段均保持原
 move 仍走 revision-pinned preview → 客户端批准 → apply：change set 固定 operation、
 map revision 与完整 dependency revisions，apply 重验摘要并用 CAS 提交；实际写入前照常
 创建内容寻址 checkpoint。它没有 `tiled_move_layer` standalone tool，所以注册数量仍是
-18 个 core / 19 个含 rasterizer 的工具。`moveLayer` 已实现，`duplicateLayer` 尚未实现。
+18 个 core / 19 个含 rasterizer 的工具。
+
+复制已有图层使用 generic union 的第 10 种 operation：
+`{type:"duplicateLayer", layerId, destination?, name?}`。它也必须独占 change set，且
+没有 `tiled_duplicate_layer` standalone tool，所以工具数仍为 18 core / 19 with
+rasterizer。`destination` 是以下三个 strict 分支之一：
+
+- `{kind:"sameParent", index?}`：目标为原直接父；省略 `index` 时插在原
+  `sourceIndex + 1`；
+- `{kind:"root", index?}`：目标为 map 根 `layers`；省略 `index` 时 append；
+- `{kind:"group", parentGroupId, index?}`：目标为指定 Group；省略 `index` 时 append。
+
+整个 `destination` 省略时等价于无 index 的 `sameParent`。显式 `index` 是插入完成后的
+最终 0-based JSON sibling index，范围为 `0..目标数组原长度`，不做 clamp。Group 会复制
+完整 subtree；不能复制到自身或任一 descendant 内，结果深度不能超过 64。可选 `name`
+最多 1024 characters（允许空字符串），只覆盖**副本 subtree root** 的名称，不改后代或
+source。
+
+新 layer ID 从原 `nextlayerid` 起、新 object ID 从原 `nextobjectid` 起，均按 subtree
+preorder 连续分配；计数器推进到新的高水位，不填历史 gap。副本没有 object 时
+`nextobjectid` 保持原 bytes 不变。typed `object` property 以及 Tiled 1.12 可嵌套
+`list` 中的 object item：指向副本内部对象时重连到新 ID，指向 source subtree 外仍存在的
+对象或 `0` 时原值保留，dangling ID 则拒绝。普通 integer property 不会被猜成 layer/object
+reference；非标准 typed layer reference、class property 与 object template 均 fail
+closed。image-layer `image` 和 `file` property 继续共享原外部文件，不复制文件；tile
+object 的 GID 会按现有 tileset binding 校验，包含 transform flags 的原值保留。
+
+`locked` 仍只是 advisory metadata，不阻止复制。preview 会按目标祖先 Group 计算
+`effectivelyLockedLayerCount`，并给出 warning。`duplicatedLayers` 的每项精确回显
+`operationIndex`、`sourceLayerId`、`createdRootLayerId`、`layerType`、`name`、
+`nameTruncated`、`sourceParentGroupId`、`targetParentGroupId`、`sourceIndex`、
+`targetIndex`、`copiedLayerCount`、`descendantLayerCount`、`copiedObjectCount`、
+`allocatedCellCount`、`serializedDuplicateBytes`、`layerIdMappingSample`、
+`omittedLayerMappingCount`、`objectIdMappingSample`、`omittedObjectMappingCount`、
+`remappedInternalObjectReferenceCount`、`retainedExternalObjectReferenceCount`、
+`fileReferenceCount`、`tileObjectCount`、`lockedLayerCount`、
+`effectivelyLockedLayerCount`、`renderOrderMayChange`、`renderContextMayChange` 与
+`affectsDescendants`。两种 ID mapping sample 各最多 32 项，必须结合 omitted count
+理解。
+
+复制后全图最多 10,000 layers、100,000 objects；单次最多复制 10,000 objects 和
+100,000 个有限未压缩 tile cells，最终深度最多 64。新副本的紧凑 JSON 最多 16 MiB，
+预估写回后的 TMJ 仍须不超过 64 MiB。source writer 只插入一个紧凑的新 JSON element，
+并对实际变化的 `nextlayerid` / `nextobjectid` 做 value-local counter patch；原 source
+subtree、既有 siblings、未知字段、BOM、CRLF、键序与数字/字符串词法保持原 bytes。
+apply 会重算目标、分配、引用和摘要，校验 change-set digest、map/dependency revision 与
+raw-byte CAS，然后才在锁内创建 checkpoint 并原子替换。
 
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
@@ -299,6 +347,11 @@ layer move 覆盖同父 forward/backward/first/last 的最终 index 语义、根
 locked/effective-locked warning、32-ID 有界摘要与 render flags、ID 高水位、
 source-snapshot `JsonArrayMove`（含 BOM/CRLF/未知词法及目标 path 偏移）、
 tamper/stale revision 和 Tiled 1.12 round trip；
+layer duplicate 的 37+1 项专项/集成 cases 覆盖 destination 三分支、默认/最终 insertion
+index、root-only name override、完整 subtree 的 preorder layer/object ID、direct 与
+nested-list object reference 重连、外部/零/dangling reference、class/template fail
+closed、GID/lock、layer/object/cell/depth/size 限制、compact source insertion、
+value-local counters、BOM/CRLF/未知词法、tamper/stale revision 与 Tiled 1.12 round trip；
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
@@ -350,7 +403,14 @@ checkpoint restore。架构与 roadmap
   preview 会区分移动前后的 effective lock 与 render-order/render-context 影响。
   apply 通过基于原 source container paths 的 `JsonArrayMove` 搬移 element 精确 bytes，
   保持未触及 lexeme 与 `nextlayerid`/`nextobjectid`，并沿用 revision/CAS/checkpoint
-  安全边界。`duplicateLayer` 仍未实现。
+  安全边界。
+- `duplicateLayer` 是同一 union 已实现的第 10 种 operation，也没有 standalone tool。
+  它必须独占 change set，以三分支 `destination` 选择同父/root/Group 和最终 insertion
+  index，复制完整 subtree，并从 layer/object 高水位按 preorder 分配 ID。typed
+  object/list 引用只在副本内部重连，外部/零引用与外部 image/file 仍共享，class/template
+  等无法证明安全的语义 fail closed。新副本用紧凑 JSON 插入，原 subtree 与 siblings 的
+  source bytes 不重排；计数器使用 value-local patch，并沿用 revision/CAS/checkpoint
+  安全边界。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

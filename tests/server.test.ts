@@ -309,6 +309,19 @@ describe("createTiledMcpServer", () => {
         idHighWaterMarks: string;
         sourcePatch: string;
       };
+      layerDuplicationCapabilities: {
+        planner: string;
+        layerTypes: string[];
+        defaultDestination: string;
+        indexSemantics: string;
+        idAllocation: string;
+        objectReferencePolicy: string;
+        typedReferenceSafety: string;
+        externalFilePolicy: string;
+        lockedSemantics: string;
+        sourcePatch: string;
+        maxSerializedDuplicateBytes: number;
+      };
       tilesetSheetCapabilities: {
         supportedFormats: string[];
         pageIndexBase: number;
@@ -412,6 +425,7 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: number;
         maxTileFindResultBytes: number;
         maxAddTilesetGidScans: number;
+        maxSerializedDuplicateBytes: number;
         maxUsageScanValues: number;
         maxUsageDistinctTiles: number;
         maxUsageTopTileLimit: number;
@@ -485,6 +499,7 @@ describe("createTiledMcpServer", () => {
         "updateLayer",
         "deleteLayer",
         "moveLayer",
+        "duplicateLayer",
       ],
       layerUpdateCapabilities: {
         layerTypes: [
@@ -542,6 +557,30 @@ describe("createTiledMcpServer", () => {
         lockedSemantics: "advisory-metadata",
         idHighWaterMarks: "preserved",
         sourcePatch: "exact-byte-array-element-move",
+      },
+      layerDuplicationCapabilities: {
+        planner: "generic-exclusive-operation-change-set",
+        layerTypes: [
+          "tilelayer",
+          "objectgroup",
+          "imagelayer",
+          "group",
+        ],
+        defaultDestination:
+          "same-parent-adjacent-above-source",
+        indexSemantics:
+          "zero-based-final-insertion-index",
+        idAllocation:
+          "preorder-layer-and-object-ids-from-high-water-marks",
+        objectReferencePolicy:
+          "rewire-within-copy-retain-external",
+        typedReferenceSafety:
+          "class-and-template-fail-closed",
+        externalFilePolicy: "shared-references",
+        lockedSemantics: "advisory-metadata",
+        sourcePatch:
+          "compact-new-element-existing-bytes-preserved",
+        maxSerializedDuplicateBytes: 16 * 1024 * 1024,
       },
       tilesetSheetCapabilities: {
         supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
@@ -662,6 +701,7 @@ describe("createTiledMcpServer", () => {
         maxTileFindEvaluations: 800_000,
         maxTileFindResultBytes: 256 * 1024,
         maxAddTilesetGidScans: 1_000_000,
+        maxSerializedDuplicateBytes: 16 * 1024 * 1024,
         maxUsageScanValues: 1_000_000,
         maxUsageDistinctTiles: 100_000,
         maxUsageTopTileLimit: 128,
@@ -2198,6 +2238,109 @@ describe("createTiledMcpServer", () => {
     ).toEqual([OBJECT_LAYER_ID, LAYER_ID]);
     expect(saved.nextlayerid).toBe(9);
     expect(saved.nextobjectid).toBe(3);
+  });
+
+  it("rejects invalid duplicate-layer wire shapes before planning", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const invalidOperations: unknown[] = [
+      {
+        type: "duplicateLayer",
+        layerId: 0,
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: null,
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "sameParent",
+          parentGroupId: 3,
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "root",
+          index: -1,
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "root",
+          index: 10_001,
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "group",
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "group",
+          parentGroupId: 0,
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        destination: {
+          kind: "elsewhere",
+        },
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        name: "x".repeat(1_025),
+      },
+      {
+        type: "duplicateLayer",
+        layerId: LAYER_ID,
+        unexpected: true,
+      },
+    ];
+    for (const operation of invalidOperations) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
   });
 
   it("previews and applies exact tile replacements through the generic edit batch", async () => {

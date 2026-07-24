@@ -89,6 +89,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         "updateLayer",
         "deleteLayer",
         "moveLayer",
+        "duplicateLayer",
       ],
       layerUpdateCapabilities: {
         layerTypes: [
@@ -122,6 +123,24 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         idHighWaterMarks: "preserved",
         sourcePatch: "exact-byte-array-element-move",
       },
+      layerDuplicationCapabilities: {
+        planner: "generic-exclusive-operation-change-set",
+        defaultDestination:
+          "same-parent-adjacent-above-source",
+        indexSemantics:
+          "zero-based-final-insertion-index",
+        idAllocation:
+          "preorder-layer-and-object-ids-from-high-water-marks",
+        objectReferencePolicy:
+          "rewire-within-copy-retain-external",
+        typedReferenceSafety:
+          "class-and-template-fail-closed",
+        externalFilePolicy: "shared-references",
+        lockedSemantics: "advisory-metadata",
+        sourcePatch:
+          "compact-new-element-existing-bytes-preserved",
+        maxSerializedDuplicateBytes: 16 * 1024 * 1024,
+      },
       tileReplacementCapabilities: {
         match: "exact-encoded-gid",
         transformMatch: "exact",
@@ -131,6 +150,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         defaultRegion: "target-layer-bounds",
       },
       limits: {
+        maxSerializedDuplicateBytes: 16 * 1024 * 1024,
         maxReplaceTileMappings: 128,
         maxReplaceTileScans: 1_000_000,
       },
