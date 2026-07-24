@@ -16,8 +16,9 @@ tile edits 现包括 `setTiles`、`fillRegion` 与通用 preview union 中的
 一个 operation 内 simultaneous single-pass 求值，并分别限制 mapping、扫描和实际写入。
 同一通用 union 的第 7 种 `updateLayer` operation 已支持对 4 类 layer 的公共
 display/metadata member 做 strict patch；第 8 种、必须独占 change set 的
-`deleteLayer` 则删除一个 leaf/空 Group 或经显式确认的完整 Group subtree。两者都不注册
-新工具，layer move/duplicate 仍未实现。
+`deleteLayer` 删除一个 leaf/空 Group 或经显式确认的完整 Group subtree；第 9 种、同样
+独占的 `moveLayer` 调整 sibling 顺序或把完整 subtree 移入/移出 Group。这些能力都不注册
+新工具，layer duplicate 仍未实现。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -64,7 +65,9 @@ tile-layer 子集做确定性 RGBA 合成，并返回 region、tile→pixel 变�
 当前写回已经使用 JSON syntax tree 生成局部替换：tile 操作只替换目标 `data`，对象操作
 只替换目标 `objects`，创建对象时另替换 `nextobjectid`。`updateLayer` 对每个实际改变的
 object member 分别做插入、替换或删除，不重写完整 layer object。`deleteLayer` 只从目标
-直接父层的 `layers` array 删除一个 element。创建图层也不替换整个 sibling array，而是
+直接父层的 `layers` array 删除一个 element；`moveLayer` 则由 `JsonArrayMove` 按原始
+source snapshot 中的 source/target container paths 捕获并原样搬运 element bytes。
+创建图层也不替换整个 sibling array，而是
 在 JSON syntax tree 确认“只多一个元素”后执行单元素插入，并单独替换 `nextlayerid`；
 所有既有同级元素仍保持原 bytes，新元素使用紧凑 JSON。补丁后会严格重新解析，并将完整
 语义树与目标文档比较；漏列任何变更、插入/删除之外又改变既有数组元素或路径重叠都会拒绝
@@ -497,7 +500,7 @@ insert/replace/delete，并以 layer path + raw member key 去重；它不序列
 缩进、键序和数字/字符串词法。完整 target semantic tree 校验仍是最后防线。preview
 固定 map 与完整现有 dependency read set；apply 重新 canonicalize operation/summary，
 验证 change-set digest 和 revision pins，并在锁内做正常 CAS。move、delete、duplicate
-不属于 `updateLayer`；其中 delete 已由下节的独占 operation 实现，move/duplicate 仍是
+不属于 `updateLayer`；delete 与 move 已由下两节的独占 operation 实现，duplicate 仍是
 roadmap。
 
 ### 6.7 Exclusive layer-subtree deletion
@@ -535,6 +538,56 @@ map/dependency revisions 与 plan digest。删除不修改 `nextlayerid` 或 `ne
 writer 验证 target array 恰少一个指定元素且其他元素语义逐项一致，只调整删除所必需的
 element/comma/whitespace；未触及 sibling、祖先、未知字段、BOM、CRLF、键序与其他词法
 保持原 bytes。锁内 revision CAS、checkpoint 与同目录原子替换仍是唯一提交边界。
+
+### 6.8 Exclusive layer-subtree move
+
+`moveLayer` 是 `tiled_preview_edits` 封闭 union 的第 9 种 operation，wire shape 为
+`{type:"moveLayer", layerId, parentGroupId?, index}`。它没有 standalone
+`tiled_move_layer`，所以 registry 保持 18 core / 19 with rasterizer。与 deletion
+一样，planner 在 mutation 前强制 exclusivity：一个含 move 的 change set 必须且只能有
+这一项，多个 move 或与 tile/object/update/delete 混批都拒绝，从而让 source/target
+container path 与 subtree summary 始终基于同一个原始 map snapshot。
+
+`layerId` 与显式 `parentGroupId` 是正整数；省略 `parentGroupId` 表示 root
+`layers`，输入不接受 `null`，而 preview 输出用 `null` 表示 root parent。显式 parent
+必须存在且为 Group。`index` 定义为移动完成后的最终 0-based JSON sibling index，而非
+删除前的 insertion boundary：同父原长度 `n` 接受 `0..n-1`，跨父目标原长度 `m` 接受
+`0..m`。同父且 source/target index 相同是合法 no-op；apply 返回 `changed:false`，
+文件 bytes、revision 与 checkpoint 状态均不发生无意义变化。
+
+Group 作为完整 subtree 移动，children 不提升，旧父 Group 变空时也不会自动删除。
+planner 在 splice 前收集 subtree ID 并拒绝把 Group 移入自身或任一 descendant；再以目标
+parent 的 child depth 加 subtree 最大相对深度计算最终嵌套，超过统一深度预算 64 时
+fail closed。move 保留全部 layer/object ID，不降低或重用 `nextlayerid` /
+`nextobjectid`。
+
+summary 的 `movedLayers` 项固定 `sourceParentGroupId`、`sourceIndex`、
+`targetParentGroupId` 与最终 `targetIndex`，并返回完整 `subtreeLayerCount`、
+`descendantLayerCount`、`objectCount`、`lockedLayerCount`。preorder
+`layerIdSample` 最多 32 项并搭配 `omittedLayerCount`。`wouldChange`、
+`renderOrderMayChange`、`renderContextMayChange` 与 `affectsDescendants` 分开表达
+sibling 绘制顺序、换父后的 Group 继承上下文与后代影响。`affectedLayerIds` 只包含选中
+subtree root，不能把它误读为完整影响集合。
+
+`locked` 仍是 Tiled advisory metadata，不是 ACL，显式或继承 locked 都不会阻止移动。
+planner 分别报告 source/target 直接 parent 的 lock，以及
+`effectivelyLockedLayerCountBefore` / `effectivelyLockedLayerCountAfter`；有效 lock
+统计把祖先 Group 的继承与 subtree 内显式锁都计入，preview warning 因而能指出换父导致的
+lock context 变化，而不谎称递归改写了 child 的 `locked` member。
+
+source writer 使用专用 `JsonArrayMove`，不能把 ordinary insertion 的
+`JSON.stringify` 与 deletion 简单拼接。source/target container path 均按原始 source
+document 解析并先保存容器引用，所以移除较早的 root sibling 导致后方目标 Group 在最终
+tree 中换位时仍定位正确。同父 move 在一个数组的最小连续跨度内重排；跨父 move 从 source
+element syntax node 捕获 exact bytes，再插入目标 array，只重写源/目标 seam 必需的
+comma 与 whitespace。被移动 subtree 内的未知字段、排版、数字和转义词法保持逐 byte
+不变，未触及 sibling/ancestor 及 BOM、CRLF、键序也保留；补丁后仍严格解析并与完整
+target semantic tree 比较。
+
+preview 固定 map revision 与完整 dependency revision set。apply 重新规划 source、
+target、cycle/depth、summary 与 source-patch descriptor，验证 change-set digest 和
+revision pins，再进入同一进程/文件锁、raw-byte CAS、写前 content-addressed checkpoint
+和同目录原子替换边界；tampered 或 stale plan 在任何写盘前拒绝。
 
 ## 7. Tile data、chunk 与压缩
 
@@ -775,7 +828,8 @@ M0 不追求完整地图 CRUD。验收标准：
   精确检索和区域读取。
 - 已实现基础 tile set/fill，以及按 encoded GID 精确、simultaneous single-pass 的
   `replaceTiles`；已实现基础对象 create/update/delete，以及 4 类 layer 的公共字段
-  `updateLayer` 和独占、可确认递归的 `deleteLayer`。layer move/duplicate 仍未实现。
+  `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
+  `moveLayer`。layer duplicate 仍未实现。
 - 专用 `tiled_create_layer` 为 4 种空图层生成单操作 change set，支持根/Group 0-based
   插入、`nextlayerid` 分配、tile cell 预算与 prospective image pin。
 - 已存在外部 tileset 引用的解析；专用 `tiled_add_tileset_to_map` 只生成单操作 change set，
@@ -797,7 +851,7 @@ M1 明确拒绝：
 这些文件仍可被 raw layer 安全列出、摘要或保留；只有语义写入被拒绝。M1 验收标准是：
 
 > 模型能先看 atlas sheet，在有限正交 TMJ 中安全编辑 tile/对象/公共 layer 字段，并经
-> destructive preview 删除 layer subtree；文件由 Tiled
+> preview 移动或 destructive 删除 layer subtree；文件由 Tiled
 > 目标版本打开无警告，并能从 checkpoint 恢复。合作写者的 revision 冲突不得覆盖用户内容；
 > 未经中介的外部 GUI 保存竞态必须在 capabilities 中如实标为不受严格 CAS 保护。
 
@@ -817,6 +871,7 @@ M1 明确拒绝：
 | replacement 忽略 transform 或发生 mapping 级联 | 错换朝向、swap/cycle 结果错误 | encoded-GID exact match、single-pass lookup、独立 scan/write 预算 | identity/flags 精确匹配、A→B/B→C、swap、null target、零命中、预算边界 |
 | layer patch 吞掉默认值 intent 或重写完整 layer | 字段未落盘或无关 source diff 爆炸 | member existence-aware change detection、object-member local patch、完整 target tree 复核 | 4 类 layer、缺失默认字段插入、tint 删除/no-op、13 modes、BOM/CRLF、mixed batch、stale revision |
 | layer subtree 删除提升 children、留下 object 悬挂引用或降低 ID 高水位 | 层级/逻辑损坏、未来 ID 复用 | exclusive plan、显式 descendant confirmation、surviving-document typed-reference scan、array-element local patch | leaf/empty/non-empty Group、direct/list/class refs、locked warning、32-ID samples、high-water marks、BOM/CRLF、tamper/stale revision |
+| layer subtree move 发生同父 off-by-one、cycle、深度溢出或 source lexeme 丢失 | 绘制顺序错误、层级损坏或不可逆 diff | final-index contract、exclusive plan、cycle/depth-64 guard、source-snapshot `JsonArrayMove`、完整 target tree 复核 | 同父前后/首尾/no-op、跨父空目标/root omission、self/descendant、effective lock、32-ID sample、BOM/CRLF/unknown lexeme、target path shift、tamper/stale revision |
 | 稀疏 local id 被 `tilecount` 截断 | GID 指向错误 tileset | highest-id/nexttileid 区间模型 | atlas、稀疏 image collection、firstgid gap fixtures |
 | tile 语义检索误把默认/继承值当显式值 | 选错 `TileRef` | 只扫描显式 `tiles[]`/property，类型和值精确匹配，revision-pinned 分页 | type/class 优先级、all/any、false/0/空串、稀疏乱序分页、revision race |
 | chunk 被强制重切 | diff 爆炸或坐标损坏 | 原 chunk 保留、局部 rewrite | 负坐标、非 16×16、混合尺寸、重叠 chunk |

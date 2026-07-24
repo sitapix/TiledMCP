@@ -130,6 +130,20 @@ export interface DeleteLayerOperation {
   deleteDescendants?: boolean;
 }
 
+export interface MoveLayerOperation {
+  type: "moveLayer";
+  layerId: number;
+  /**
+   * Omit to move to the root layers array. The target must not be the moved
+   * Group itself or one of its descendants.
+   */
+  parentGroupId?: number;
+  /**
+   * Zero-based final index after the move has completed.
+   */
+  index: number;
+}
+
 export type MapEditOperation =
   | SetTilesOperation
   | FillRegionOperation
@@ -138,7 +152,8 @@ export type MapEditOperation =
   | UpdateObjectOperation
   | DeleteObjectsOperation
   | UpdateLayerOperation
-  | DeleteLayerOperation;
+  | DeleteLayerOperation
+  | MoveLayerOperation;
 
 /**
  * A fully resolved operation emitted only by the dedicated
@@ -235,6 +250,31 @@ export interface MapEditPlan {
       objectIdSample: number[];
       omittedObjectCount: number;
       lockedLayerCount: number;
+    }>;
+    movedLayers?: Array<{
+      operationIndex: number;
+      layerId: number;
+      layerType: CreatableLayerType;
+      name: string;
+      nameTruncated: boolean;
+      sourceParentGroupId: number | null;
+      sourceIndex: number;
+      targetParentGroupId: number | null;
+      targetIndex: number;
+      subtreeLayerCount: number;
+      descendantLayerCount: number;
+      layerIdSample: number[];
+      omittedLayerCount: number;
+      objectCount: number;
+      lockedLayerCount: number;
+      sourceParentLocked: boolean;
+      targetParentLocked: boolean;
+      effectivelyLockedLayerCountBefore: number;
+      effectivelyLockedLayerCountAfter: number;
+      wouldChange: boolean;
+      renderOrderMayChange: boolean;
+      renderContextMayChange: boolean;
+      affectsDescendants: boolean;
     }>;
     tileReplacements?: Array<{
       operationIndex: number;

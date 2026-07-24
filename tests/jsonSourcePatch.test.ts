@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   patchJsonDocumentSource,
   type JsonArrayDeletion,
+  type JsonArrayMove,
   type JsonObjectMemberPatch,
   type JsonSourcePath,
 } from "../src/formats/jsonSourcePatch.js";
@@ -514,6 +515,552 @@ describe("patchJsonDocumentSource", () => {
     ).toThrow(
       expect.objectContaining({
         code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
+  });
+
+  it.each([
+    {
+      label: "first to last",
+      sourceIndex: 0,
+      targetIndex: 3,
+      expected:
+        '{"items":[1e0, 2.00, 3.000, 0.0],"keep":"\\u0078"}',
+    },
+    {
+      label: "last to first",
+      sourceIndex: 3,
+      targetIndex: 0,
+      expected:
+        '{"items":[3.000, 0.0, 1e0, 2.00],"keep":"\\u0078"}',
+    },
+    {
+      label: "adjacent forward",
+      sourceIndex: 1,
+      targetIndex: 2,
+      expected:
+        '{"items":[0.0, 2.00, 1e0, 3.000],"keep":"\\u0078"}',
+    },
+    {
+      label: "adjacent backward",
+      sourceIndex: 2,
+      targetIndex: 1,
+      expected:
+        '{"items":[0.0, 2.00, 1e0, 3.000],"keep":"\\u0078"}',
+    },
+  ])("moves an element $label within one compact array", ({
+    sourceIndex,
+    targetIndex,
+    expected,
+  }) => {
+    const source =
+      '{"items":[0.0, 1e0, 2.00, 3.000],"keep":"\\u0078"}';
+    const target = cloneJson(
+      parseJsonDocument(source, "same-array-move.tmj"),
+    );
+    const items = target.items as number[];
+    const [moved] = items.splice(sourceIndex, 1);
+    if (moved === undefined) {
+      throw new Error("Expected a moved fixture value.");
+    }
+    items.splice(targetIndex, 0, moved);
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "same-array-move.tmj",
+      [],
+      [],
+      [],
+      [
+        {
+          sourcePath: ["items"],
+          sourceIndex,
+          targetPath: ["items"],
+          targetIndex,
+        },
+      ],
+    );
+
+    expect(result.toString("utf8")).toBe(expected);
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "same-array-move.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("treats a same-position array move as an exact no-op", () => {
+    const source = Buffer.from(
+      '\uFEFF{\r\n  "items" : [ 1.00, 2e0 ]\r\n}\r\n',
+      "utf8",
+    );
+    const target = parseJsonDocument(
+      source.toString("utf8"),
+      "no-op-array-move.tmj",
+    );
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "no-op-array-move.tmj",
+      [],
+      [],
+      [],
+      [
+        {
+          sourcePath: ["items"],
+          sourceIndex: 1,
+          targetPath: ["items"],
+          targetIndex: 1,
+        },
+      ],
+    );
+
+    expect(result.equals(source)).toBe(true);
+  });
+
+  it("moves an exact element from a single-element array into an empty array", () => {
+    const source =
+      '{"from":[{"raw":1.00}],"to":[],"keep":"\\u0078"}';
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "cross-array-move.tmj",
+      ),
+    );
+    const [moved] = (
+      target.from as JsonObject[]
+    ).splice(0, 1);
+    if (moved === undefined) {
+      throw new Error("Expected a moved fixture object.");
+    }
+    (target.to as JsonObject[]).splice(0, 0, moved);
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "cross-array-move.tmj",
+      [],
+      [],
+      [],
+      [
+        {
+          sourcePath: ["from"],
+          sourceIndex: 0,
+          targetPath: ["to"],
+          targetIndex: 0,
+        },
+      ],
+    );
+
+    expect(result.toString("utf8")).toBe(
+      '{"from":[],"to":[{"raw":1.00}],"keep":"\\u0078"}',
+    );
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "cross-array-move.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("moves a root sibling into a later Group using source-snapshot paths", () => {
+    const source = [
+      "\uFEFF{\r\n",
+      "  \"layers\": [\r\n",
+      "    { \"id\" : 1.00, \"name\" : \"\\u004dove\" },\r\n",
+      "    { \"id\" : 2e0 },\r\n",
+      "    {\r\n",
+      "      \"id\": 3,\r\n",
+      "      \"type\": \"group\",\r\n",
+      "      \"layers\": [\r\n",
+      "        { \"id\" : 4.000 }\r\n",
+      "      ]\r\n",
+      "    }\r\n",
+      "  ],\r\n",
+      "  \"keep\": \"\\u0078\"\r\n",
+      "}\r\n",
+    ].join("");
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "root-into-group.tmj",
+      ),
+    );
+    const layers = target.layers as JsonObject[];
+    const group = layers[2] as JsonObject;
+    const [moved] = layers.splice(0, 1);
+    if (moved === undefined) {
+      throw new Error("Expected the root layer fixture.");
+    }
+    (group.layers as JsonObject[]).splice(
+      1,
+      0,
+      moved,
+    );
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "root-into-group.tmj",
+      [],
+      [],
+      [],
+      [
+        {
+          sourcePath: ["layers"],
+          sourceIndex: 0,
+          targetPath: ["layers", 2, "layers"],
+          targetIndex: 1,
+        },
+      ],
+    );
+    const text = result.toString("utf8");
+
+    expect(text).toContain(
+      '{ "id" : 1.00, "name" : "\\u004dove" }',
+    );
+    expect(text).toContain('"keep": "\\u0078"');
+    expect(
+      parseJsonDocument(
+        text,
+        "root-into-group.tmj",
+      ),
+    ).toEqual(target);
+    expect(text).toBe(
+      [
+        "\uFEFF{\r\n",
+        "  \"layers\": [\r\n",
+        "    { \"id\" : 2e0 },\r\n",
+        "    {\r\n",
+        "      \"id\": 3,\r\n",
+        "      \"type\": \"group\",\r\n",
+        "      \"layers\": [\r\n",
+        "        { \"id\" : 4.000 },\r\n",
+        "        { \"id\" : 1.00, \"name\" : \"\\u004dove\" }\r\n",
+        "      ]\r\n",
+        "    }\r\n",
+        "  ],\r\n",
+        "  \"keep\": \"\\u0078\"\r\n",
+        "}\r\n",
+      ].join(""),
+    );
+  });
+
+  it("moves a Group child to an earlier root index using source-snapshot paths", () => {
+    const source =
+      '{"layers":[{"id":1.00},{"id":2e0},{"id":3,"layers":[{"id":4.0},{"id":5.00}]}],"keep":"\\u0078"}';
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "group-into-root.tmj",
+      ),
+    );
+    const layers = target.layers as JsonObject[];
+    const group = layers[2] as JsonObject;
+    const [moved] = (
+      group.layers as JsonObject[]
+    ).splice(1, 1);
+    if (moved === undefined) {
+      throw new Error("Expected the child layer fixture.");
+    }
+    layers.splice(1, 0, moved);
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [],
+      "group-into-root.tmj",
+      [],
+      [],
+      [],
+      [
+        {
+          sourcePath: ["layers", 2, "layers"],
+          sourceIndex: 1,
+          targetPath: ["layers"],
+          targetIndex: 1,
+        },
+      ],
+    );
+
+    expect(result.toString("utf8")).toBe(
+      '{"layers":[{"id":1.00},{"id":5.00},{"id":2e0},{"id":3,"layers":[{"id":4.0}]}],"keep":"\\u0078"}',
+    );
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "group-into-root.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("combines a move with non-overlapping sibling patch primitives", () => {
+    const source =
+      '{"from":[1.0,2.0],"to":[3.0],"remove":[4,5],"insert":[6],"meta":{"name":"old"},"counter":1.00}';
+    const target = cloneJson(
+      parseJsonDocument(
+        source,
+        "combined-array-move.tmj",
+      ),
+    );
+    const [moved] = (
+      target.from as number[]
+    ).splice(1, 1);
+    if (moved === undefined) {
+      throw new Error("Expected the moved number fixture.");
+    }
+    (target.to as number[]).splice(0, 0, moved);
+    (target.remove as number[]).splice(0, 1);
+    (target.insert as number[]).push(7);
+    (target.meta as JsonObject).name = "new";
+    target.counter = 2;
+
+    const result = patchJsonDocumentSource(
+      source,
+      target,
+      [["counter"]],
+      "combined-array-move.tmj",
+      [{ path: ["insert"], index: 1 }],
+      [{ path: ["meta"], key: "name" }],
+      [{ path: ["remove"], index: 0 }],
+      [
+        {
+          sourcePath: ["from"],
+          sourceIndex: 1,
+          targetPath: ["to"],
+          targetIndex: 0,
+        },
+      ],
+    );
+
+    expect(result.toString("utf8")).toBe(
+      '{"from":[1.0],"to":[2.0,3.0],"remove":[5],"insert":[6,7],"meta":{"name":"new"},"counter":2}',
+    );
+    expect(
+      parseJsonDocument(
+        result.toString("utf8"),
+        "combined-array-move.tmj",
+      ),
+    ).toEqual(target);
+  });
+
+  it("strictly rejects invalid, ambiguous, overlapping, or mismatched array moves", () => {
+    const source =
+      '{"from":[1,2],"to":[3],"nested":[{"children":[4]}],"meta":{"name":"old"},"other":[5,6]}';
+    const unchanged = parseJsonDocument(
+      source,
+      "invalid-array-move.tmj",
+    );
+    const movedTarget = cloneJson(unchanged);
+    const [moved] = (
+      movedTarget.from as number[]
+    ).splice(0, 1);
+    if (moved === undefined) {
+      throw new Error("Expected an invalid-test fixture.");
+    }
+    (movedTarget.to as number[]).splice(1, 0, moved);
+    const move: JsonArrayMove = {
+      sourcePath: ["from"],
+      sourceIndex: 0,
+      targetPath: ["to"],
+      targetIndex: 1,
+    };
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        movedTarget,
+        [],
+        "invalid-array-move.tmj",
+        [],
+        [],
+        [],
+        [move, move],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_DUPLICATE_PATH",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        movedTarget,
+        [],
+        "invalid-array-move.tmj",
+        [],
+        [],
+        [],
+        [
+          move,
+          {
+            sourcePath: ["other"],
+            sourceIndex: 0,
+            targetPath: ["to"],
+            targetIndex: 0,
+          },
+        ],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      }),
+    );
+
+    for (const invalidMove of [
+      { ...move, sourceIndex: 9 },
+      { ...move, targetIndex: 9 },
+    ]) {
+      expect(() =>
+        patchJsonDocumentSource(
+          source,
+          movedTarget,
+          [],
+          "invalid-array-move.tmj",
+          [],
+          [],
+          [],
+          [invalidMove],
+        ),
+      ).toThrow(
+        expect.objectContaining({
+          code: "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+        }),
+      );
+    }
+
+    const wrongTarget = cloneJson(unchanged);
+    (wrongTarget.from as number[]).splice(0, 1);
+    (wrongTarget.to as number[]).splice(0, 0, 99);
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        wrongTarget,
+        [],
+        "invalid-array-move.tmj",
+        [],
+        [],
+        [],
+        [move],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      }),
+    );
+
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        unchanged,
+        [],
+        "invalid-array-move.tmj",
+        [],
+        [],
+        [],
+        [
+          {
+            sourcePath: ["nested"],
+            sourceIndex: 0,
+            targetPath: [
+              "nested",
+              0,
+              "children",
+            ],
+            targetIndex: 0,
+          },
+        ],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      }),
+    );
+
+    for (const invocation of [
+      () =>
+        patchJsonDocumentSource(
+          source,
+          movedTarget,
+          [["from", 1]],
+          "invalid-array-move.tmj",
+          [],
+          [],
+          [],
+          [move],
+        ),
+      () =>
+        patchJsonDocumentSource(
+          source,
+          movedTarget,
+          [],
+          "invalid-array-move.tmj",
+          [{ path: ["to"], index: 0 }],
+          [],
+          [],
+          [move],
+        ),
+      () =>
+        patchJsonDocumentSource(
+          source,
+          movedTarget,
+          [],
+          "invalid-array-move.tmj",
+          [],
+          [{ path: [], key: "from" }],
+          [],
+          [move],
+        ),
+      () =>
+        patchJsonDocumentSource(
+          source,
+          movedTarget,
+          [],
+          "invalid-array-move.tmj",
+          [],
+          [],
+          [{ path: ["to"], index: 0 }],
+          [move],
+        ),
+    ]) {
+      expect(invocation).toThrow(
+        expect.objectContaining({
+          code: "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+        }),
+      );
+    }
+
+    const changedNoOp = cloneJson(unchanged);
+    (changedNoOp.from as number[])[0] = 99;
+    expect(() =>
+      patchJsonDocumentSource(
+        source,
+        changedNoOp,
+        [],
+        "invalid-array-move.tmj",
+        [],
+        [],
+        [],
+        [
+          {
+            sourcePath: ["from"],
+            sourceIndex: 0,
+            targetPath: ["from"],
+            targetIndex: 0,
+          },
+        ],
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "JSON_SOURCE_PATCH_MOVE_MISMATCH",
       }),
     );
   });

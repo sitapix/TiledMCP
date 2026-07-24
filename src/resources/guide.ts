@@ -153,7 +153,7 @@ or silently repairs a stale counter.
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
 \`fillRegion\`, and \`replaceTiles\`; supported object operations are
 \`createObject\`, \`updateObject\`, and \`deleteObjects\`; supported layer
-operations are \`updateLayer\` and \`deleteLayer\`.
+operations are \`updateLayer\`, \`deleteLayer\`, and \`moveLayer\`.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
@@ -186,8 +186,7 @@ are flagged only when a changed rendering field can affect descendants. Apply
 changes only through the normal revision-pinned approval flow. Changed layer
 fields use member-local source patches and may safely share a batch with
 tile-data and object edits. \`updateLayer\` itself does not move or delete
-layers; deletion uses the exclusive operation below, while moving is not
-implemented.
+layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
 an existing layer. It is the eighth generic operation, not a standalone tool,
@@ -215,7 +214,44 @@ complete. Apply preserves the \`nextlayerid\` and \`nextobjectid\` high-water
 marks. Its array-element-local source patch removes one element from the direct
 parent's \`layers\` array while preserving untouched source bytes. The normal
 revision-pinned approval, checkpoint, and apply flow remains mandatory.
-Layer moving and duplication are not implemented.
+
+Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
+or move it into or out of a Group. This is the ninth generic operation, not a
+standalone tool, so the registry remains 18 core tools or 19 with the
+rasterizer. A move change set must contain exactly one operation and cannot be
+mixed with tile, object, update, delete, or another move.
+
+Omit \`parentGroupId\` for the root \`layers\` array; input \`null\` is not
+accepted. An explicit parent must be an existing Group. \`index\` is the
+zero-based final JSON sibling index after removal and insertion: for a
+same-parent array of original length n the range is 0 through n-1, while a
+cross-parent destination of original length m accepts 0 through m. A
+same-parent request whose source and target indexes match is a no-op and leaves
+the file bytes unchanged.
+
+A Group always moves with its complete subtree. It cannot move into itself or
+one of its descendants, and the resulting tree must stay within the depth-64
+limit. Moving never reallocates IDs or changes the \`nextlayerid\` and
+\`nextobjectid\` high-water marks. \`locked\` is advisory and does not block
+the move. Inspect \`effectivelyLockedLayerCountBefore\` and
+\`effectivelyLockedLayerCountAfter\` because changing parent can change an
+inherited lock without rewriting any child member.
+
+The preview reports source and target parent/index, complete subtree,
+descendant, object, and locked-layer counts, plus at most 32 preorder layer IDs
+and an omitted count. It separately flags \`wouldChange\`,
+\`renderOrderMayChange\`, \`renderContextMayChange\`, and
+\`affectsDescendants\`; changing parent can alter inherited Group rendering
+context as well as draw order.
+
+Apply uses a dedicated \`JsonArrayMove\`. Both container paths are resolved
+against the original source snapshot, so removing an earlier root sibling
+cannot misaddress a later target Group. The exact source element bytes are
+moved, preserving subtree formatting, unknown fields, number/string lexemes,
+BOM, and CRLF outside the necessary array seams. Apply still replans, verifies
+the digest and revisions, and commits only through the normal lock, raw-byte
+CAS, checkpoint, and atomic-replacement flow. Layer duplication is not
+implemented.
 
 A \`replaceTiles\` operation has a numeric \`layerId\`, one to 128
 \`mappings\` shaped as \`{from: TileRef, to: TileRef|null}\`, and an optional

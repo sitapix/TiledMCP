@@ -298,6 +298,17 @@ describe("createTiledMcpServer", () => {
         idHighWaterMarks: string;
         sourcePatch: string;
       };
+      layerMoveCapabilities: {
+        planner: string;
+        layerTypes: string[];
+        target: string;
+        indexSemantics: string;
+        cycleProtection: boolean;
+        depthLimit: number;
+        lockedSemantics: string;
+        idHighWaterMarks: string;
+        sourcePatch: string;
+      };
       tilesetSheetCapabilities: {
         supportedFormats: string[];
         pageIndexBase: number;
@@ -470,7 +481,11 @@ describe("createTiledMcpServer", () => {
         defaultRegion: "target-layer-bounds",
       },
       objectOperations: ["createObject", "updateObject", "deleteObjects"],
-      layerOperations: ["updateLayer", "deleteLayer"],
+      layerOperations: [
+        "updateLayer",
+        "deleteLayer",
+        "moveLayer",
+      ],
       layerUpdateCapabilities: {
         layerTypes: [
           "tilelayer",
@@ -510,6 +525,23 @@ describe("createTiledMcpServer", () => {
         lockedSemantics: "advisory-metadata",
         idHighWaterMarks: "preserved",
         sourcePatch: "array-element-local",
+      },
+      layerMoveCapabilities: {
+        planner: "generic-exclusive-operation-change-set",
+        layerTypes: [
+          "tilelayer",
+          "objectgroup",
+          "imagelayer",
+          "group",
+        ],
+        target: "root-or-group",
+        indexSemantics:
+          "zero-based-final-index-after-move",
+        cycleProtection: true,
+        depthLimit: 64,
+        lockedSemantics: "advisory-metadata",
+        idHighWaterMarks: "preserved",
+        sourcePatch: "exact-byte-array-element-move",
       },
       tilesetSheetCapabilities: {
         supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
@@ -2008,6 +2040,162 @@ describe("createTiledMcpServer", () => {
         (layer) => layer.id === LAYER_ID,
       ),
     ).toBe(false);
+    expect(saved.nextlayerid).toBe(9);
+    expect(saved.nextobjectid).toBe(3);
+  });
+
+  it("previews and applies strict exclusive layer movement", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    for (const operation of [
+      {
+        type: "moveLayer",
+        layerId: LAYER_ID,
+      },
+      {
+        type: "moveLayer",
+        layerId: LAYER_ID,
+        index: 1,
+        parentGroupId: null,
+      },
+      {
+        type: "moveLayer",
+        layerId: LAYER_ID,
+        index: 1,
+        unexpected: true,
+      },
+    ]) {
+      const rejected = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: [operation],
+          },
+        }),
+      );
+      expect(rejected.isError).toBe(true);
+      expect(rejected.structuredContent).toBeUndefined();
+      expect(rejected.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    }
+
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(absoluteMapPath);
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        affectedLayerIds: number[];
+        movedLayers: Array<Record<string, unknown>>;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "moveLayer",
+              layerId: LAYER_ID,
+              index: 1,
+            },
+          ],
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      expectedRevision: summary.revision,
+      operations: [
+        {
+          type: "moveLayer",
+          layerId: LAYER_ID,
+          destructive: false,
+          layer: {
+            id: LAYER_ID,
+            type: "tilelayer",
+            name: "Ground",
+          },
+          sourceParentGroupId: null,
+          sourceIndex: 0,
+          targetParentGroupId: null,
+          targetIndex: 1,
+          subtreeLayerCount: 1,
+          descendantLayerCount: 0,
+          layerIdSample: [LAYER_ID],
+          omittedLayerCount: 0,
+          wouldChange: true,
+          renderOrderMayChange: true,
+          renderContextMayChange: false,
+          affectsDescendants: false,
+          warning: expect.stringContaining(
+            "rendering order",
+          ),
+        },
+      ],
+      summary: {
+        affectedLayerIds: [LAYER_ID],
+        movedLayers: [
+          {
+            operationIndex: 0,
+            layerId: LAYER_ID,
+            sourceParentGroupId: null,
+            sourceIndex: 0,
+            targetParentGroupId: null,
+            targetIndex: 1,
+            wouldChange: true,
+          },
+        ],
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(before);
+
+    const applied = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision: preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied).toMatchObject({
+      changed: true,
+      revision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+    });
+    const saved = JSON.parse(
+      await readFile(absoluteMapPath, "utf8"),
+    ) as JsonObject;
+    expect(
+      (saved.layers as JsonObject[]).map(
+        (layer) => layer.id,
+      ),
+    ).toEqual([OBJECT_LAYER_ID, LAYER_ID]);
     expect(saved.nextlayerid).toBe(9);
     expect(saved.nextobjectid).toBe(3);
   });

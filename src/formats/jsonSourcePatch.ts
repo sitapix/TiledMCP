@@ -8,6 +8,7 @@ import {
 
 import { TiledMcpError } from "../errors.js";
 import {
+  cloneJson,
   parseJsonDocument,
   stableJson,
   type JsonObject,
@@ -45,6 +46,19 @@ export interface JsonArrayDeletion {
   index: number;
 }
 
+/**
+ * Moves one source array element to its final target index.
+ *
+ * sourceIndex is interpreted against the source document. targetIndex is the
+ * element's index after the move has completed.
+ */
+export interface JsonArrayMove {
+  sourcePath: JsonSourcePath;
+  sourceIndex: number;
+  targetPath: JsonSourcePath;
+  targetIndex: number;
+}
+
 interface SourceReplacement {
   offset: number;
   length: number;
@@ -67,6 +81,7 @@ export function patchJsonDocumentSource(
   arrayInsertions: readonly JsonArrayInsertion[] = [],
   objectMemberPatches: readonly JsonObjectMemberPatch[] = [],
   arrayDeletions: readonly JsonArrayDeletion[] = [],
+  arrayMoves: readonly JsonArrayMove[] = [],
 ): Buffer {
   const sourceText = decodeSource(source, projectPath);
   const hasBom = sourceText.charCodeAt(0) === 0xfeff;
@@ -110,6 +125,16 @@ export function patchJsonDocumentSource(
     targetTree,
     paths,
     objectMemberPatches,
+    projectPath,
+  );
+  validateArrayMoves(
+    sourceTree,
+    targetTree,
+    paths,
+    arrayInsertions,
+    objectMemberPatches,
+    arrayDeletions,
+    arrayMoves,
     projectPath,
   );
   validateArrayDeletions(
@@ -315,6 +340,7 @@ export function patchJsonDocumentSource(
     targetTree,
     objectMemberPatches,
     arrayDeletions,
+    arrayMoves,
     projectPath,
   );
   const patchedDocument = parseJsonDocument(patchedBody, projectPath);
@@ -338,6 +364,12 @@ export function patchJsonDocumentSource(
             sourceIndex: deletion.index,
           }),
         ),
+        movedPaths: arrayMoves.map((move) => ({
+          sourcePath: [...move.sourcePath],
+          sourceIndex: move.sourceIndex,
+          targetPath: [...move.targetPath],
+          targetIndex: move.targetIndex,
+        })),
       },
     );
   }
@@ -691,16 +723,529 @@ function groupArrayDeletions(
   return groups;
 }
 
+function validateArrayMoves(
+  sourceTree: Node,
+  targetTree: Node,
+  valuePaths: readonly JsonSourcePath[],
+  insertions: readonly JsonArrayInsertion[],
+  memberPatches: readonly JsonObjectMemberPatch[],
+  deletions: readonly JsonArrayDeletion[],
+  moves: readonly JsonArrayMove[],
+  projectPath: string,
+): void {
+  if (moves.length === 0) {
+    return;
+  }
+  for (const move of moves) {
+    if (
+      typeof move !== "object" ||
+      move === null ||
+      Array.isArray(move) ||
+      !Array.isArray(move.sourcePath) ||
+      !Array.isArray(move.targetPath)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `A JSON array move for ${projectPath} must contain source and target array paths.`,
+        { path: projectPath },
+      );
+    }
+    validatePath(move.sourcePath, projectPath);
+    validatePath(move.targetPath, projectPath);
+    for (const [name, index] of [
+      ["sourceIndex", move.sourceIndex],
+      ["targetIndex", move.targetIndex],
+    ] as const) {
+      if (!Number.isSafeInteger(index) || index < 0) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_INVALID_PATH",
+          `Invalid JSON array move ${name} ${String(index)} for ${projectPath}.`,
+          {
+            path: projectPath,
+            [name]: index,
+          },
+        );
+      }
+    }
+  }
+  if (moves.length > 1) {
+    const identities = new Set(
+      moves.map((move) =>
+        JSON.stringify([
+          move.sourcePath,
+          move.sourceIndex,
+          move.targetPath,
+          move.targetIndex,
+        ]),
+      ),
+    );
+    throw new TiledMcpError(
+      identities.size < moves.length
+        ? "JSON_SOURCE_PATCH_DUPLICATE_PATH"
+        : "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      "A JSON source patch may contain at most one array move.",
+      {
+        path: projectPath,
+        limit: 1,
+        actual: moves.length,
+      },
+    );
+  }
+  const move = moves[0];
+  if (move === undefined) {
+    throw new Error("Array move validation lost its move.");
+  }
+
+  for (const valuePath of valuePaths) {
+    assertMoveDoesNotOverlapPath(
+      move,
+      valuePath,
+      projectPath,
+    );
+  }
+  for (const insertion of insertions) {
+    if (
+      typeof insertion !== "object" ||
+      insertion === null ||
+      Array.isArray(insertion) ||
+      !Array.isArray(insertion.path)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `A JSON array insertion for ${projectPath} must contain an array path.`,
+        { path: projectPath },
+      );
+    }
+    assertMoveDoesNotOverlapPath(
+      move,
+      insertion.path,
+      projectPath,
+    );
+  }
+  for (const memberPatch of memberPatches) {
+    assertMoveDoesNotOverlapPath(
+      move,
+      [...memberPatch.path, memberPatch.key],
+      projectPath,
+    );
+  }
+  for (const deletion of deletions) {
+    if (
+      typeof deletion !== "object" ||
+      deletion === null ||
+      Array.isArray(deletion) ||
+      !Array.isArray(deletion.path)
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_INVALID_PATH",
+        `A JSON array deletion for ${projectPath} must contain an array path.`,
+        { path: projectPath },
+      );
+    }
+    assertMoveDoesNotOverlapPath(
+      move,
+      deletion.path,
+      projectPath,
+    );
+  }
+
+  const sourceArrayNode = requireArrayNode(
+    sourceTree,
+    move.sourcePath,
+    projectPath,
+    "source",
+    "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+  );
+  const targetArrayNode = requireArrayNode(
+    sourceTree,
+    move.targetPath,
+    projectPath,
+    "source",
+    "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+  );
+  const sourceLength =
+    sourceArrayNode.children?.length ?? 0;
+  const targetSourceLength =
+    targetArrayNode.children?.length ?? 0;
+  if (move.sourceIndex >= sourceLength) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      `Array move source index ${move.sourceIndex} is outside ${formatPath(move.sourcePath)}.`,
+      {
+        path: projectPath,
+        jsonPath: [...move.sourcePath],
+        sourceIndex: move.sourceIndex,
+        sourceLength,
+      },
+    );
+  }
+  const sameArray = sameJsonPath(
+    move.sourcePath,
+    move.targetPath,
+  );
+  const maximumTargetIndex = sameArray
+    ? sourceLength - 1
+    : targetSourceLength;
+  if (move.targetIndex > maximumTargetIndex) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      `Array move target index ${move.targetIndex} is outside ${formatPath(move.targetPath)}.`,
+      {
+        path: projectPath,
+        jsonPath: [...move.targetPath],
+        targetIndex: move.targetIndex,
+        maximumTargetIndex,
+      },
+    );
+  }
+  if (
+    pathDescendsThroughArrayIndex(
+      move.targetPath,
+      move.sourcePath,
+      move.sourceIndex,
+    )
+  ) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+      "A JSON array element cannot be moved into an array contained by that same element.",
+      {
+        path: projectPath,
+        sourcePath: [...move.sourcePath],
+        sourceIndex: move.sourceIndex,
+        targetPath: [...move.targetPath],
+      },
+    );
+  }
+
+  const sourceDocument = getNodeValue(
+    sourceTree,
+  ) as JsonObject;
+  const targetDocument = getNodeValue(
+    targetTree,
+  ) as JsonObject;
+  const expected = cloneJson(sourceDocument);
+  const expectedSourceArray = requireSemanticArray(
+    expected,
+    move.sourcePath,
+    projectPath,
+  );
+  const expectedTargetArray = requireSemanticArray(
+    expected,
+    move.targetPath,
+    projectPath,
+  );
+  const [movedValue] = expectedSourceArray.splice(
+    move.sourceIndex,
+    1,
+  );
+  if (movedValue === undefined) {
+    throw new Error(
+      "Array move simulation lost its source element.",
+    );
+  }
+  expectedTargetArray.splice(
+    move.targetIndex,
+    0,
+    movedValue,
+  );
+  applyDeclaredSemanticPatches(
+    expected,
+    targetDocument,
+    valuePaths,
+    insertions,
+    memberPatches,
+    deletions,
+    projectPath,
+  );
+  if (
+    stableJson(expected) !== stableJson(targetDocument)
+  ) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      "The target document contains changes beyond the declared JSON array move and sibling patches.",
+      {
+        path: projectPath,
+        sourcePath: [...move.sourcePath],
+        sourceIndex: move.sourceIndex,
+        targetPath: [...move.targetPath],
+        targetIndex: move.targetIndex,
+      },
+    );
+  }
+}
+
+function assertMoveDoesNotOverlapPath(
+  move: JsonArrayMove,
+  otherPath: JsonSourcePath,
+  projectPath: string,
+): void {
+  if (
+    !pathsOverlap(move.sourcePath, otherPath) &&
+    !pathsOverlap(move.targetPath, otherPath)
+  ) {
+    return;
+  }
+  throw new TiledMcpError(
+    "JSON_SOURCE_PATCH_OVERLAPPING_PATHS",
+    `JSON array move overlaps patch path ${formatPath(otherPath)} in ${projectPath}.`,
+    {
+      path: projectPath,
+      sourcePath: [...move.sourcePath],
+      targetPath: [...move.targetPath],
+      otherPath: [...otherPath],
+    },
+  );
+}
+
+function pathDescendsThroughArrayIndex(
+  candidate: JsonSourcePath,
+  arrayPath: JsonSourcePath,
+  index: number,
+): boolean {
+  return (
+    candidate.length > arrayPath.length &&
+    arrayPath.every(
+      (segment, pathIndex) =>
+        segment === candidate[pathIndex],
+    ) &&
+    candidate[arrayPath.length] === index
+  );
+}
+
+function applyDeclaredSemanticPatches(
+  expected: JsonObject,
+  target: JsonObject,
+  valuePaths: readonly JsonSourcePath[],
+  insertions: readonly JsonArrayInsertion[],
+  memberPatches: readonly JsonObjectMemberPatch[],
+  deletions: readonly JsonArrayDeletion[],
+  projectPath: string,
+): void {
+  for (const path of valuePaths) {
+    replaceSemanticValueAtPath(
+      expected,
+      path,
+      cloneJson(
+        requireSemanticValue(target, path, projectPath),
+      ),
+      projectPath,
+    );
+  }
+  const structuralArrayPaths = new Map<
+    string,
+    JsonSourcePath
+  >();
+  for (const insertion of insertions) {
+    structuralArrayPaths.set(
+      JSON.stringify(insertion.path),
+      insertion.path,
+    );
+  }
+  for (const deletion of deletions) {
+    structuralArrayPaths.set(
+      JSON.stringify(deletion.path),
+      deletion.path,
+    );
+  }
+  for (const path of structuralArrayPaths.values()) {
+    replaceSemanticValueAtPath(
+      expected,
+      path,
+      cloneJson(
+        requireSemanticValue(target, path, projectPath),
+      ),
+      projectPath,
+    );
+  }
+  for (const patch of memberPatches) {
+    const expectedObject = requireSemanticObject(
+      expected,
+      patch.path,
+      projectPath,
+    );
+    const targetObject = requireSemanticObject(
+      target,
+      patch.path,
+      projectPath,
+    );
+    if (
+      Object.prototype.hasOwnProperty.call(
+        targetObject,
+        patch.key,
+      )
+    ) {
+      expectedObject[patch.key] = cloneJson(
+        targetObject[patch.key] as JsonValue,
+      );
+    } else {
+      delete expectedObject[patch.key];
+    }
+  }
+}
+
+function requireSemanticValue(
+  root: JsonObject,
+  path: JsonSourcePath,
+  projectPath: string,
+): JsonValue {
+  let value: JsonValue = root;
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (
+        !Array.isArray(value) ||
+        segment >= value.length
+      ) {
+        throw new TiledMcpError(
+          "JSON_SOURCE_PATCH_PATH_NOT_FOUND",
+          `Semantic JSON path ${formatPath(path)} does not exist in ${projectPath}.`,
+          {
+            path: projectPath,
+            jsonPath: [...path],
+          },
+        );
+      }
+      value = value[segment] as JsonValue;
+      continue;
+    }
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      !Object.prototype.hasOwnProperty.call(
+        value,
+        segment,
+      )
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_PATH_NOT_FOUND",
+        `Semantic JSON path ${formatPath(path)} does not exist in ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...path],
+        },
+      );
+    }
+    value = value[segment] as JsonValue;
+  }
+  return value;
+}
+
+function requireSemanticArray(
+  root: JsonObject,
+  path: JsonSourcePath,
+  projectPath: string,
+): JsonValue[] {
+  const value = requireSemanticValue(
+    root,
+    path,
+    projectPath,
+  );
+  if (!Array.isArray(value)) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      `Semantic JSON path ${formatPath(path)} is not an array in ${projectPath}.`,
+      {
+        path: projectPath,
+        jsonPath: [...path],
+      },
+    );
+  }
+  return value;
+}
+
+function requireSemanticObject(
+  root: JsonObject,
+  path: JsonSourcePath,
+  projectPath: string,
+): JsonObject {
+  const value = requireSemanticValue(
+    root,
+    path,
+    projectPath,
+  );
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_OBJECT_MISMATCH",
+      `Semantic JSON path ${formatPath(path)} is not an object in ${projectPath}.`,
+      {
+        path: projectPath,
+        jsonPath: [...path],
+      },
+    );
+  }
+  return value;
+}
+
+function replaceSemanticValueAtPath(
+  root: JsonObject,
+  path: JsonSourcePath,
+  value: JsonValue,
+  projectPath: string,
+): void {
+  const key = path[path.length - 1];
+  if (key === undefined) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_INVALID_PATH",
+      "A semantic replacement path must not be empty.",
+      { path: projectPath, jsonPath: [] },
+    );
+  }
+  const parent = requireSemanticValue(
+    root,
+    path.slice(0, -1),
+    projectPath,
+  );
+  if (typeof key === "number") {
+    if (
+      !Array.isArray(parent) ||
+      key >= parent.length
+    ) {
+      throw new TiledMcpError(
+        "JSON_SOURCE_PATCH_PATH_NOT_FOUND",
+        `Semantic JSON path ${formatPath(path)} does not exist in ${projectPath}.`,
+        {
+          path: projectPath,
+          jsonPath: [...path],
+        },
+      );
+    }
+    parent[key] = value;
+    return;
+  }
+  if (
+    typeof parent !== "object" ||
+    parent === null ||
+    Array.isArray(parent) ||
+    !Object.prototype.hasOwnProperty.call(parent, key)
+  ) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_PATH_NOT_FOUND",
+      `Semantic JSON path ${formatPath(path)} does not exist in ${projectPath}.`,
+      {
+        path: projectPath,
+        jsonPath: [...path],
+      },
+    );
+  }
+  parent[key] = value;
+}
+
 function patchStructuredSource(
   source: string,
   targetTree: Node,
   memberPatches: readonly JsonObjectMemberPatch[],
   arrayDeletions: readonly JsonArrayDeletion[],
+  arrayMoves: readonly JsonArrayMove[],
   projectPath: string,
 ): string {
   if (
     memberPatches.length === 0 &&
-    arrayDeletions.length === 0
+    arrayDeletions.length === 0 &&
+    arrayMoves.length === 0
   ) {
     return source;
   }
@@ -787,6 +1332,17 @@ function patchStructuredSource(
       ...arrayDeletionGroupEdits(
         sourceArray.children ?? [],
         group.indices,
+      ),
+    );
+  }
+  const move = arrayMoves[0];
+  if (move !== undefined) {
+    replacements.push(
+      ...arrayMoveEdits(
+        source,
+        sourceTree,
+        move,
+        projectPath,
       ),
     );
   }
@@ -1334,6 +1890,254 @@ function arrayDeletionGroupEdits(
   return edits;
 }
 
+function arrayMoveEdits(
+  source: string,
+  sourceTree: Node,
+  move: JsonArrayMove,
+  projectPath: string,
+): SourceReplacement[] {
+  const sourceArray = requireArrayNode(
+    sourceTree,
+    move.sourcePath,
+    projectPath,
+    "source",
+    "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+  );
+  const sourceElements = sourceArray.children ?? [];
+  if (
+    sameJsonPath(move.sourcePath, move.targetPath)
+  ) {
+    const edit = sameArrayMoveEdit(
+      source,
+      sourceElements,
+      move.sourceIndex,
+      move.targetIndex,
+    );
+    return edit === undefined ? [] : [edit];
+  }
+
+  const targetArray = requireArrayNode(
+    sourceTree,
+    move.targetPath,
+    projectPath,
+    "source",
+    "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+  );
+  const movedElement = sourceElements[move.sourceIndex];
+  if (movedElement === undefined) {
+    throw new Error(
+      "Array move source edit lost its element.",
+    );
+  }
+  const movedSource = source.slice(
+    movedElement.offset,
+    movedElement.offset + movedElement.length,
+  );
+  return [
+    ...arrayDeletionGroupEdits(
+      sourceElements,
+      [move.sourceIndex],
+    ),
+    arrayMoveInsertionEdit(
+      source,
+      targetArray,
+      targetArray.children ?? [],
+      move.targetIndex,
+      movedSource,
+    ),
+  ];
+}
+
+function sameArrayMoveEdit(
+  source: string,
+  elements: Node[],
+  sourceIndex: number,
+  targetIndex: number,
+): SourceReplacement | undefined {
+  if (sourceIndex === targetIndex) {
+    return undefined;
+  }
+  const firstIndex = Math.min(
+    sourceIndex,
+    targetIndex,
+  );
+  const lastIndex = Math.max(
+    sourceIndex,
+    targetIndex,
+  );
+  const span = elements.slice(
+    firstIndex,
+    lastIndex + 1,
+  );
+  const firstElement = span[0];
+  const lastElement = span[span.length - 1];
+  if (
+    firstElement === undefined ||
+    lastElement === undefined
+  ) {
+    throw new Error(
+      "Same-array move lost its element span.",
+    );
+  }
+  const elementSources = span.map((element) =>
+    source.slice(
+      element.offset,
+      element.offset + element.length,
+    ),
+  );
+  const delimiters = span
+    .slice(0, -1)
+    .map((element, index) => {
+      const next = span[index + 1];
+      if (next === undefined) {
+        throw new Error(
+          "Same-array move lost an adjacent element.",
+        );
+      }
+      const delimiter = source.slice(
+        element.offset + element.length,
+        next.offset,
+      );
+      assertArrayDelimiter(delimiter);
+      return delimiter;
+    });
+  const localSourceIndex = sourceIndex - firstIndex;
+  const localTargetIndex = targetIndex - firstIndex;
+  const [movedSource] = elementSources.splice(
+    localSourceIndex,
+    1,
+  );
+  if (movedSource === undefined) {
+    throw new Error(
+      "Same-array move lost its source bytes.",
+    );
+  }
+  elementSources.splice(
+    localTargetIndex,
+    0,
+    movedSource,
+  );
+  let content = elementSources[0] ?? "";
+  for (const [index, delimiter] of delimiters.entries()) {
+    const elementSource = elementSources[index + 1];
+    if (elementSource === undefined) {
+      throw new Error(
+        "Same-array move lost its reordered bytes.",
+      );
+    }
+    content += `${delimiter}${elementSource}`;
+  }
+  return {
+    offset: firstElement.offset,
+    length:
+      lastElement.offset +
+      lastElement.length -
+      firstElement.offset,
+    content,
+  };
+}
+
+function arrayMoveInsertionEdit(
+  source: string,
+  arrayNode: Node,
+  elements: Node[],
+  targetIndex: number,
+  movedSource: string,
+): SourceReplacement {
+  if (elements.length === 0) {
+    const innerStart = arrayNode.offset + 1;
+    const innerEnd =
+      arrayNode.offset + arrayNode.length - 1;
+    const prefix = emptyObjectMemberPrefix(
+      source,
+      source.slice(innerStart, innerEnd),
+    );
+    return {
+      offset: innerStart,
+      length: 0,
+      content: `${prefix}${movedSource}`,
+    };
+  }
+  const delimiter = arrayElementDelimiter(
+    source,
+    arrayNode,
+    elements,
+    targetIndex,
+  );
+  if (targetIndex === elements.length) {
+    const lastElement = elements[elements.length - 1];
+    if (lastElement === undefined) {
+      throw new Error(
+        "Array move insertion lost its final target element.",
+      );
+    }
+    return {
+      offset: lastElement.offset + lastElement.length,
+      length: 0,
+      content: `${delimiter}${movedSource}`,
+    };
+  }
+  const nextElement = elements[targetIndex];
+  if (nextElement === undefined) {
+    throw new Error(
+      "Array move insertion lost its next target element.",
+    );
+  }
+  return {
+    offset: nextElement.offset,
+    length: 0,
+    content: `${movedSource}${delimiter}`,
+  };
+}
+
+function arrayElementDelimiter(
+  source: string,
+  arrayNode: Node,
+  elements: Node[],
+  targetIndex: number,
+): string {
+  if (elements.length === 1) {
+    const onlyElement = elements[0];
+    if (onlyElement === undefined) {
+      throw new Error(
+        "Array move delimiter lost its only element.",
+      );
+    }
+    return `,${source.slice(
+      arrayNode.offset + 1,
+      onlyElement.offset,
+    )}`;
+  }
+  const leftIndex =
+    targetIndex === 0
+      ? 0
+      : targetIndex === elements.length
+        ? elements.length - 2
+        : targetIndex - 1;
+  const left = elements[leftIndex];
+  const right = elements[leftIndex + 1];
+  if (left === undefined || right === undefined) {
+    throw new Error(
+      "Array move delimiter lost adjacent target elements.",
+    );
+  }
+  const delimiter = source.slice(
+    left.offset + left.length,
+    right.offset,
+  );
+  assertArrayDelimiter(delimiter);
+  return delimiter;
+}
+
+function assertArrayDelimiter(delimiter: string): void {
+  if (!/^\s*,\s*$/u.test(delimiter)) {
+    throw new TiledMcpError(
+      "JSON_SOURCE_PATCH_MOVE_MISMATCH",
+      "Could not infer an array element delimiter from the source document.",
+    );
+  }
+}
+
 function requireArrayNode(
   tree: Node,
   readonlyPath: JsonSourcePath,
@@ -1341,7 +2145,8 @@ function requireArrayNode(
   document: "source" | "target",
   mismatchCode:
     | "JSON_SOURCE_PATCH_INSERTION_MISMATCH"
-    | "JSON_SOURCE_PATCH_DELETION_MISMATCH" =
+    | "JSON_SOURCE_PATCH_DELETION_MISMATCH"
+    | "JSON_SOURCE_PATCH_MOVE_MISMATCH" =
     "JSON_SOURCE_PATCH_INSERTION_MISMATCH",
 ): Node {
   const path: JSONPath = [...readonlyPath];

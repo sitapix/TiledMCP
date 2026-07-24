@@ -27,7 +27,9 @@
 - 通过通用 preview union 修改 4 类已有图层的 11 个公共显示/元数据字段，使用
   member-local source patch；
 - 通过同一 union 的独占 destructive operation 删除 leaf/空 Group 或经显式确认递归
-  删除非空 Group，保留 ID 高水位并阻止存活对象引用悬空；layer move 仍未实现；
+  删除非空 Group，保留 ID 高水位并阻止存活对象引用悬空；
+- 通过该 generic union 的第 9 种独占 operation 在根级与 Group 间移动已有图层；
+  Group 会连同完整 subtree 精确搬移，保持 ID 高水位与未触及 JSON source bytes；
 - 无损 4-bit GID 变换编解码；
 - `setTiles` / `fillRegion` / `replaceTiles` 封闭编辑集合，以及 preview →
   approved change set → apply 的两阶段提交；replacement 按完整变换后的 encoded GID
@@ -209,6 +211,36 @@ destructive preview 回显选中 layer 的类型/名称/父 Group/index，以及
 revision-pinned preview/批准/apply 流程，不新增 standalone tool，工具数保持
 18 core / 19 optional。
 
+移动已有图层使用 generic union 的第 9 种 operation：
+`{type:"moveLayer", layerId, parentGroupId?, index}`。它必须独占 change set，不能与
+tile、object、`updateLayer`、`deleteLayer` 或其他 move 混批。省略 `parentGroupId`
+明确表示 map 根级；`null` 不是 root 的别名，会被严格 schema 拒绝。`index` 是移动完成后
+目标 `layers` JSON 数组中的最终 0-based index：同父数组原有 `n` 个 sibling 时范围为
+`0..n-1`，跨父移动到原有 `m` 个 child 的目标数组时范围为 `0..m`。调用方无需为向后移动
+自行补偿删除造成的偏移；目标就是当前位置时是合法 no-op，apply 保持文件 bytes 完全不变。
+
+选择 Group 会把它的完整 subtree 作为一个 element 搬移，不提升或拆散 children。Group
+不能移入自身或任一后代，移动后的最大图层深度不能超过 64。`locked` 仍只是 advisory
+metadata，不会阻止移动；preview 会报告直接 source/target parent 的锁状态，以及 subtree
+移动前后的 effective-locked layer 数量，并在任一侧存在 effective lock 时给出 warning。
+
+move summary 回显 `sourceParentGroupId` / `targetParentGroupId`（根级为 `null`）、
+`sourceIndex` / `targetIndex`、`subtreeLayerCount`、`descendantLayerCount`、最多 32 个
+`layerIdSample` 及 `omittedLayerCount`、`objectCount`、`lockedLayerCount`，以及
+`sourceParentLocked`、`targetParentLocked`、
+`effectivelyLockedLayerCountBefore` / `effectivelyLockedLayerCountAfter`、
+`wouldChange`、`renderOrderMayChange`、`renderContextMayChange` 和
+`affectsDescendants`。apply 不改变 `nextlayerid` 或 `nextobjectid`。source-preserving
+写回使用 `JsonArrayMove`，以修改前 source snapshot 中的 source/target container path
+定位数组并搬移原 element 的精确 bytes；即使移除较早的 root layer 让后方目标 Group 的
+运行时 path 前移，也不会错取目标。除数组接缝所需文本外，未触及 sibling/ancestor、
+BOM、CRLF、缩进、键序、数字/字符串词法与未知字段均保持原 bytes。
+
+move 仍走 revision-pinned preview → 客户端批准 → apply：change set 固定 operation、
+map revision 与完整 dependency revisions，apply 重验摘要并用 CAS 提交；实际写入前照常
+创建内容寻址 checkpoint。它没有 `tiled_move_layer` standalone tool，所以注册数量仍是
+18 个 core / 19 个含 rasterizer 的工具。`moveLayer` 已实现，`duplicateLayer` 尚未实现。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -262,6 +294,11 @@ common layer update 覆盖 4 种 layer、字段映射与边界、默认字段显
 layer deletion 覆盖 leaf/nested/recursive Group、独占 plan、存活 object/list/class
 reference policy、locked warning、bounded subtree summary、ID 高水位、element-local
 source patch、tamper/stale revision 与 Tiled round trip；
+layer move 覆盖同父 forward/backward/first/last 的最终 index 语义、根/Group 间跨父与
+空目标、同位置 exact-byte no-op、Group subtree/cycle/depth 64、parent/type/index 边界、
+locked/effective-locked warning、32-ID 有界摘要与 render flags、ID 高水位、
+source-snapshot `JsonArrayMove`（含 BOM/CRLF/未知词法及目标 path 偏移）、
+tamper/stale revision 和 Tiled 1.12 round trip；
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
@@ -280,8 +317,8 @@ checkpoint restore。架构与 roadmap
   bytes 保留。被明确替换的数组仍会重新排版；`tiled_create_layer` 是例外，它使用
   单元素 array insertion，只合成一个紧凑 JSON 新元素并替换 `nextlayerid`，原有同级
   元素及其他文本保持原 bytes。当前一次 create-layer change set 只能创建一个空图层，
-  尚不支持在同一 preview 中继续给新 Group 添加子层或移动图层；删除则使用独占的
-  `deleteLayer` operation。
+  尚不支持在同一 preview 中继续给新 Group 添加子层；已有图层的移动与删除分别使用
+  独占的 `moveLayer` / `deleteLayer` operation，不能和 create-layer proposal 混批。
 - `replaceTiles` 是通用 `tiled_preview_edits` 的 operation，不新增注册工具，因此仍为
   18 个 core / 19 个含 rasterizer 的工具。它只接受非空 `from`，按包含
   transform/raw flags 的完整 encoded GID 精确匹配；
@@ -304,7 +341,16 @@ checkpoint restore。架构与 roadmap
   内容。preview 的 ID 数组是最多 32 项的样本，调用方必须使用对应 count/omitted count
   判断完整影响范围。apply 以 array-element-local source deletion 保留所有未触及 bytes，
   同时保持 `nextlayerid`/`nextobjectid` 高水位；这是已实现的删除能力，但
-  `tiled_delete_layer` 仍没有作为 standalone tool 注册，layer move/duplicate 也仍未实现。
+  `tiled_delete_layer` 仍没有作为 standalone tool 注册。
+- `moveLayer` 是同一 union 已实现的第 9 种 operation，也没有
+  `tiled_move_layer` standalone tool。它必须独占 change set；省略 `parentGroupId`
+  才表示 root，显式 `null` 非法。`index` 是完成后的最终 JSON sibling index，同父有效
+  范围 `0..n-1`、跨父有效范围 `0..m`，同位置 no-op 不写文件。Group 按完整 subtree
+  移动，禁止 self/descendant cycle，结果深度上限为 64；锁只产生 advisory warning，
+  preview 会区分移动前后的 effective lock 与 render-order/render-context 影响。
+  apply 通过基于原 source container paths 的 `JsonArrayMove` 搬移 element 精确 bytes，
+  保持未触及 lexeme 与 `nextlayerid`/`nextobjectid`，并沿用 revision/CAS/checkpoint
+  安全边界。`duplicateLayer` 仍未实现。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终

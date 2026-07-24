@@ -164,6 +164,40 @@ type OperationPreview =
       lockedLayerCount: number;
     }
   | {
+      type: "moveLayer";
+      layerId: number;
+      destructive: false;
+      warning: string;
+      layer: {
+        id: number;
+        type:
+          | "tilelayer"
+          | "objectgroup"
+          | "imagelayer"
+          | "group";
+        name: string;
+        nameTruncated: boolean;
+      };
+      sourceParentGroupId: number | null;
+      sourceIndex: number;
+      targetParentGroupId: number | null;
+      targetIndex: number;
+      subtreeLayerCount: number;
+      descendantLayerCount: number;
+      layerIdSample: number[];
+      omittedLayerCount: number;
+      objectCount: number;
+      lockedLayerCount: number;
+      sourceParentLocked: boolean;
+      targetParentLocked: boolean;
+      effectivelyLockedLayerCountBefore: number;
+      effectivelyLockedLayerCountAfter: number;
+      wouldChange: boolean;
+      renderOrderMayChange: boolean;
+      renderContextMayChange: boolean;
+      affectsDescendants: boolean;
+    }
+  | {
       type: "deleteObjects";
       destructive: true;
       warning: string;
@@ -600,6 +634,91 @@ function summarizeOperation(
         deletionSummary.omittedObjectCount,
       lockedLayerCount:
         deletionSummary.lockedLayerCount,
+    };
+  }
+
+  if (operation.type === "moveLayer") {
+    const moveSummary = summary.movedLayers?.find(
+      (entry) => entry.operationIndex === operationIndex,
+    );
+    if (
+      moveSummary === undefined ||
+      moveSummary.layerId !== operation.layerId ||
+      moveSummary.targetParentGroupId !==
+        (operation.parentGroupId ?? null) ||
+      moveSummary.targetIndex !== operation.index
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "moveLayer preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    const warnings: string[] = [];
+    if (!moveSummary.wouldChange) {
+      warnings.push(
+        "The layer is already at the requested final location.",
+      );
+    } else if (moveSummary.renderContextMayChange) {
+      warnings.push(
+        "Changing the parent Group may change inherited rendering context for the moved subtree.",
+      );
+    } else {
+      warnings.push(
+        "Changing sibling order may change map rendering order.",
+      );
+    }
+    if (
+      moveSummary.effectivelyLockedLayerCountBefore >
+        0 ||
+      moveSummary.effectivelyLockedLayerCountAfter > 0
+    ) {
+      warnings.push(
+        "The moved subtree is effectively locked before or after the move; locked is advisory metadata and does not block MCP edits.",
+      );
+    }
+    return {
+      type: operation.type,
+      layerId: operation.layerId,
+      destructive: false,
+      warning: warnings.join(" "),
+      layer: {
+        id: moveSummary.layerId,
+        type: moveSummary.layerType,
+        name: moveSummary.name,
+        nameTruncated: moveSummary.nameTruncated,
+      },
+      sourceParentGroupId:
+        moveSummary.sourceParentGroupId,
+      sourceIndex: moveSummary.sourceIndex,
+      targetParentGroupId:
+        moveSummary.targetParentGroupId,
+      targetIndex: moveSummary.targetIndex,
+      subtreeLayerCount: moveSummary.subtreeLayerCount,
+      descendantLayerCount:
+        moveSummary.descendantLayerCount,
+      layerIdSample: structuredClone(
+        moveSummary.layerIdSample,
+      ),
+      omittedLayerCount:
+        moveSummary.omittedLayerCount,
+      objectCount: moveSummary.objectCount,
+      lockedLayerCount: moveSummary.lockedLayerCount,
+      sourceParentLocked:
+        moveSummary.sourceParentLocked,
+      targetParentLocked:
+        moveSummary.targetParentLocked,
+      effectivelyLockedLayerCountBefore:
+        moveSummary.effectivelyLockedLayerCountBefore,
+      effectivelyLockedLayerCountAfter:
+        moveSummary.effectivelyLockedLayerCountAfter,
+      wouldChange: moveSummary.wouldChange,
+      renderOrderMayChange:
+        moveSummary.renderOrderMayChange,
+      renderContextMayChange:
+        moveSummary.renderContextMayChange,
+      affectsDescendants:
+        moveSummary.affectsDescendants,
     };
   }
 

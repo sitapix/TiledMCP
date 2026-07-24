@@ -533,6 +533,15 @@ const deleteLayerSchema = z
   })
   .strict();
 
+const moveLayerSchema = z
+  .object({
+    type: z.literal("moveLayer"),
+    layerId: positiveIdSchema,
+    parentGroupId: positiveIdSchema.optional(),
+    index: z.number().int().min(0).max(10_000),
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   setTilesSchema,
   fillRegionSchema,
@@ -542,6 +551,7 @@ const mapEditSchema = z.discriminatedUnion("type", [
   deleteObjectsSchema,
   updateLayerSchema,
   deleteLayerSchema,
+  moveLayerSchema,
 ]);
 const resultOutputSchema = z.object({ result: z.unknown() }).strict();
 
@@ -622,7 +632,11 @@ export async function createTiledMcpServer(
           defaultRegion: "target-layer-bounds",
         },
         objectOperations: ["createObject", "updateObject", "deleteObjects"],
-        layerOperations: ["updateLayer", "deleteLayer"],
+        layerOperations: [
+          "updateLayer",
+          "deleteLayer",
+          "moveLayer",
+        ],
         layerUpdateCapabilities: {
           layerTypes: [
             "tilelayer",
@@ -662,6 +676,23 @@ export async function createTiledMcpServer(
           lockedSemantics: "advisory-metadata",
           idHighWaterMarks: "preserved",
           sourcePatch: "array-element-local",
+        },
+        layerMoveCapabilities: {
+          planner: "generic-exclusive-operation-change-set",
+          layerTypes: [
+            "tilelayer",
+            "objectgroup",
+            "imagelayer",
+            "group",
+          ],
+          target: "root-or-group",
+          indexSemantics:
+            "zero-based-final-index-after-move",
+          cycleProtection: true,
+          depthLimit: 64,
+          lockedSemantics: "advisory-metadata",
+          idHighWaterMarks: "preserved",
+          sourcePatch: "exact-byte-array-element-move",
         },
         checkpointCapabilities: {
           automaticBeforeWrite: true,
@@ -1403,7 +1434,7 @@ export async function createTiledMcpServer(
     {
       title: "Preview map edits",
       description:
-        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates direct tile writes, exact tile replacements, common layer-property updates, exclusive safe layer deletion or movement, and object operations without writing, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
