@@ -35,6 +35,12 @@ import {
   MAX_PROPERTY_VALUE_CODE_POINTS,
 } from "../maps/propertyEdits.js";
 import {
+  MAX_CREATE_TILESET_MARGIN,
+  MAX_CREATE_TILESET_NAME_CODE_POINTS,
+  MAX_CREATE_TILESET_SPACING,
+  MAX_CREATE_TILESET_TILE_EDGE,
+} from "../maps/tilesetCreate.js";
+import {
   assetIdOutputSchema,
   changeSetIdOutputSchema,
   checkpointIdOutputSchema,
@@ -2824,6 +2830,100 @@ const tilesetEditPreviewOutputSchema = z
 
 export const updateTilePreviewToolOutputSchema =
   toolOutputSchema(tilesetEditPreviewOutputSchema);
+
+const tilesetCreateNameOutputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_CREATE_TILESET_NAME_CODE_POINTS * 2);
+
+const tilesetCreateImageOutputSchema = z
+  .object({
+    path: projectPathOutputSchema,
+    source: z.string().min(1),
+    revision: revisionOutputSchema,
+    width: positiveIntegerOutputSchema,
+    height: positiveIntegerOutputSchema,
+  })
+  .strict();
+
+const tilesetCreateGridShape = {
+  name: tilesetCreateNameOutputSchema,
+  className:
+    tilesetCreateNameOutputSchema.nullable(),
+  tileWidth: positiveIntegerOutputSchema.max(
+    MAX_CREATE_TILESET_TILE_EDGE,
+  ),
+  tileHeight: positiveIntegerOutputSchema.max(
+    MAX_CREATE_TILESET_TILE_EDGE,
+  ),
+  margin: nonnegativeIntegerOutputSchema.max(
+    MAX_CREATE_TILESET_MARGIN,
+  ),
+  spacing: nonnegativeIntegerOutputSchema.max(
+    MAX_CREATE_TILESET_SPACING,
+  ),
+} as const;
+
+const tilesetCreateSummaryOutputSchema = z
+  .object({
+    tilesetPath: projectPathOutputSchema,
+    ...tilesetCreateGridShape,
+    columns: positiveIntegerOutputSchema,
+    rows: positiveIntegerOutputSchema,
+    tileCount: positiveIntegerOutputSchema,
+    imageWidth: positiveIntegerOutputSchema,
+    imageHeight: positiveIntegerOutputSchema,
+    unusedRightPixels:
+      nonnegativeIntegerOutputSchema,
+    unusedBottomPixels:
+      nonnegativeIntegerOutputSchema,
+    contentBytes: positiveIntegerOutputSchema,
+    wouldChange: z.literal(true),
+  })
+  .strict();
+
+const createTilesetOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("createTileset"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      tilesetPath: projectPathOutputSchema,
+      ...tilesetCreateGridShape,
+      columns: positiveIntegerOutputSchema,
+      rows: positiveIntegerOutputSchema,
+      tileCount: positiveIntegerOutputSchema,
+      contentRevision: revisionOutputSchema,
+      image: tilesetCreateImageOutputSchema,
+    })
+    .strict();
+
+const tilesetCreatePreviewOutputSchema = z
+  .object({
+    kind: z.literal("tilesetCreate"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    tilesetPath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    image: tilesetCreateImageOutputSchema,
+    operations: z
+      .array(
+        createTilesetOperationPreviewOutputSchema,
+      )
+      .length(1),
+    summary: tilesetCreateSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const createTilesetPreviewToolOutputSchema =
+  toolOutputSchema(
+    tilesetCreatePreviewOutputSchema,
+  );
 
 export const createLayerPreviewToolOutputSchema =
   toolOutputSchema(

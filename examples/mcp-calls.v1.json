@@ -253,6 +253,20 @@
       "purpose": "以 no-replace 语义直接创建一张新的有限正交 TMJ。"
     },
     {
+      "name": "tiled_create_tileset",
+      "profile": "core",
+      "arguments": {
+        "tilesetPath": "tiles/props.tsj",
+        "imagePath": "images/props-atlas.png",
+        "tileWidth": 16,
+        "tileHeight": 16,
+        "margin": 1,
+        "spacing": 2,
+        "name": "props"
+      },
+      "purpose": "预览从项目内图集图片创建一个新的 external TSJ；expectedRevision 即批准内容的 SHA-256，apply 绝不覆盖已有文件。"
+    },
+    {
       "name": "tiled_add_tileset_to_map",
       "profile": "core",
       "arguments": {
@@ -281,8 +295,14 @@
               "probability": 0.25,
               "className": "Grass",
               "animation": [
-                { "tileId": 2, "durationMs": 200 },
-                { "tileId": 3, "durationMs": 200 }
+                {
+                  "tileId": 2,
+                  "durationMs": 200
+                },
+                {
+                  "tileId": 3,
+                  "durationMs": 200
+                }
               ]
             }
           }

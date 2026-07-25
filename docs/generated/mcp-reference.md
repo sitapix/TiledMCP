@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 26 tools
-- `with-tmxrasterizer`: 27 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 27 tools
+- `with-tmxrasterizer`: 28 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -188,9 +188,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:6d945bd8dee463c7e20c67acbefd2b5cd85bc2d147d1db3d8ce7adad775a54c5",
+    "revision": "sha256:d378db68d0ef2a1dc8c36eeb0c2d25c5af30da873b436d4dbe9d997c73c5595f",
     "serverVersion": "0.0.1",
-    "size": 68259
+    "size": 69543
   },
   "annotations": {
     "audience": [
@@ -202,7 +202,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 68259,
+  "size": 69543,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -210,7 +210,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3875 UTF-8 bytes, revision `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`.
 
-Content contract: `text`, 68259 UTF-8 bytes, revision `sha256:6d945bd8dee463c7e20c67acbefd2b5cd85bc2d147d1db3d8ce7adad775a54c5`.
+Content contract: `text`, 69543 UTF-8 bytes, revision `sha256:d378db68d0ef2a1dc8c36eeb0c2d25c5af30da873b436d4dbe9d997c73c5595f`.
 
 Resource templates: none.
 
@@ -1675,7 +1675,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, tileset edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
+Applies one previously previewed map edit, tileset edit, tileset creation, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
 
 Annotations:
 
@@ -5521,6 +5521,628 @@ Output schema:
             "revision",
             "checkpointId",
             "changed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_create_tileset`
+
+Availability: `core`
+
+Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: 预览从项目内图集图片创建一个新的 external TSJ；expectedRevision 即批准内容的 SHA-256，apply 绝不覆盖已有文件。
+
+```json
+{
+  "arguments": {
+    "imagePath": "images/props-atlas.png",
+    "margin": 1,
+    "name": "props",
+    "spacing": 2,
+    "tileHeight": 16,
+    "tileWidth": 16,
+    "tilesetPath": "tiles/props.tsj"
+  },
+  "name": "tiled_create_tileset"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "className": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "type": "string"
+    },
+    "imagePath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "margin": {
+      "maximum": 4096,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 2048,
+      "minLength": 1,
+      "type": "string"
+    },
+    "spacing": {
+      "maximum": 4096,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tileHeight": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "type": "integer"
+    },
+    "tileWidth": {
+      "exclusiveMinimum": 0,
+      "maximum": 16384,
+      "type": "integer"
+    },
+    "tilesetPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "tilesetPath",
+    "imagePath",
+    "tileWidth",
+    "tileHeight"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "image": {
+              "additionalProperties": false,
+              "properties": {
+                "height": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "source": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "width": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "path",
+                "source",
+                "revision",
+                "width",
+                "height"
+              ],
+              "type": "object"
+            },
+            "kind": {
+              "const": "tilesetCreate",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "className": {
+                    "anyOf": [
+                      {
+                        "maxLength": 2048,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "columns": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "contentRevision": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "destructive": {
+                    "const": false,
+                    "type": "boolean"
+                  },
+                  "image": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "revision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "source": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "width": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "source",
+                      "revision",
+                      "width",
+                      "height"
+                    ],
+                    "type": "object"
+                  },
+                  "margin": {
+                    "maximum": 4096,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rows": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "spacing": {
+                    "maximum": 4096,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "tileCount": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "tileHeight": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384,
+                    "type": "integer"
+                  },
+                  "tileWidth": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384,
+                    "type": "integer"
+                  },
+                  "tilesetPath": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "createTileset",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "tilesetPath",
+                  "name",
+                  "className",
+                  "tileWidth",
+                  "tileHeight",
+                  "margin",
+                  "spacing",
+                  "columns",
+                  "rows",
+                  "tileCount",
+                  "contentRevision",
+                  "image"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "className": {
+                  "anyOf": [
+                    {
+                      "maxLength": 2048,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "columns": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "contentBytes": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "imageHeight": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "imageWidth": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "margin": {
+                  "maximum": 4096,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "name": {
+                  "maxLength": 2048,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "rows": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "spacing": {
+                  "maximum": 4096,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tileCount": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "tileHeight": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 16384,
+                  "type": "integer"
+                },
+                "tileWidth": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 16384,
+                  "type": "integer"
+                },
+                "tilesetPath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "unusedBottomPixels": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unusedRightPixels": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "wouldChange": {
+                  "const": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "tilesetPath",
+                "name",
+                "className",
+                "tileWidth",
+                "tileHeight",
+                "margin",
+                "spacing",
+                "columns",
+                "rows",
+                "tileCount",
+                "imageWidth",
+                "imageHeight",
+                "unusedRightPixels",
+                "unusedBottomPixels",
+                "contentBytes",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "tilesetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "tilesetPath",
+            "expectedRevision",
+            "image",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
           ],
           "type": "object"
         },
@@ -10647,6 +11269,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_create_tileset",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_add_tileset_to_map",
                       "type": "string"
                     },
@@ -10753,6 +11379,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_create_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_create_tileset",
                       "type": "string"
                     },
                     {
@@ -11491,6 +12121,99 @@ Output schema:
               ],
               "type": "object"
             },
+            "tilesetCreationCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "beforeRevision": {
+                  "const": "null-on-apply",
+                  "type": "string"
+                },
+                "commitMode": {
+                  "const": "preview-approve-apply-no-replace",
+                  "type": "string"
+                },
+                "contentEquality": {
+                  "const": "existing-identical-bytes-still-file-already-exists",
+                  "type": "string"
+                },
+                "destinationPrecondition": {
+                  "const": "must-not-exist-at-preview-and-apply",
+                  "type": "string"
+                },
+                "directCreationException": {
+                  "const": "tiled_create_map-only-clause-unchanged",
+                  "type": "string"
+                },
+                "expectedRevisionSemantics": {
+                  "const": "sha256-of-approved-prospective-bytes",
+                  "type": "string"
+                },
+                "gridFormula": {
+                  "const": "tiled-1-12-2-single-margin-integer-division",
+                  "type": "string"
+                },
+                "imagePin": {
+                  "const": "path-and-raw-revision",
+                  "type": "string"
+                },
+                "maxMargin": {
+                  "const": 4096,
+                  "type": "number"
+                },
+                "maxSpacing": {
+                  "const": 4096,
+                  "type": "number"
+                },
+                "maxTileEdge": {
+                  "const": 16384,
+                  "type": "number"
+                },
+                "memberOrder": {
+                  "const": "tiled-qjson-alphabetical",
+                  "type": "string"
+                },
+                "nameDefault": {
+                  "const": "tileset-file-stem",
+                  "type": "string"
+                },
+                "parentDirectory": {
+                  "const": "must-already-exist",
+                  "type": "string"
+                },
+                "profile": {
+                  "const": "external-atlas-tsj-from-project-image",
+                  "type": "string"
+                },
+                "tiledCompatibilityBaseline": {
+                  "const": "1.12.2",
+                  "type": "string"
+                },
+                "tilesetFormatVersion": {
+                  "const": "1.10",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "profile",
+                "tilesetFormatVersion",
+                "tiledCompatibilityBaseline",
+                "commitMode",
+                "expectedRevisionSemantics",
+                "beforeRevision",
+                "destinationPrecondition",
+                "contentEquality",
+                "parentDirectory",
+                "gridFormula",
+                "imagePin",
+                "memberOrder",
+                "nameDefault",
+                "maxTileEdge",
+                "maxMargin",
+                "maxSpacing",
+                "directCreationException"
+              ],
+              "type": "object"
+            },
             "tilesetDetailCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -11740,6 +12463,7 @@ Output schema:
             "layerDuplicationCapabilities",
             "checkpointCapabilities",
             "mapCreationCapabilities",
+            "tilesetCreationCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
             "tilesetDetailCapabilities",

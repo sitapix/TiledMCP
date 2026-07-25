@@ -41,6 +41,11 @@ import {
   type UpdateTileOperationPreview,
 } from "./maps/tilesetEdits.js";
 import {
+  assertTilesetCreatePlan,
+  CREATE_TILESET_WARNING,
+  type TilesetCreatePlan,
+} from "./maps/tilesetCreate.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -120,6 +125,7 @@ const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 export type ChangeSetPlan =
   | MapEditPlan
   | TilesetEditPlan
+  | TilesetCreatePlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
@@ -196,6 +202,14 @@ export interface TilesetEditChangeSetPreview
   assetId: string;
   mapRevision: string;
   summary: TilesetEditPlan["summary"];
+}
+
+export interface TilesetCreateChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "tilesetCreate";
+  tilesetPath: string;
+  image: TilesetCreatePlan["image"];
+  summary: TilesetCreatePlan["summary"];
 }
 
 export interface CheckpointRestoreChangeSetPreview
@@ -387,6 +401,7 @@ export interface PreparedCheckpointAbandonChangeSetPreview
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
   | TilesetEditChangeSetPreview
+  | TilesetCreateChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
@@ -735,6 +750,23 @@ type OperationPreview =
       };
     }
   | UpdateTileOperationPreview
+  | {
+      type: "createTileset";
+      destructive: false;
+      warning: string;
+      tilesetPath: string;
+      name: string;
+      className: string | null;
+      tileWidth: number;
+      tileHeight: number;
+      margin: number;
+      spacing: number;
+      columns: number;
+      rows: number;
+      tileCount: number;
+      contentRevision: string;
+      image: TilesetCreatePlan["image"];
+    }
   | CheckpointRestoreOperationPreview
   | CheckpointPruneOperationPreview
   | CheckpointPruneBatchOperationPreview
@@ -1515,6 +1547,43 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         (tileUpdate) =>
           updateTileOperationPreview(tileUpdate),
       ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+  if (entry.plan.kind === "tilesetCreate") {
+    const plan = entry.plan;
+    assertTilesetCreatePlan(plan);
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      tilesetPath: plan.tilesetPath,
+      expectedRevision: plan.baseRevision,
+      image: structuredClone(plan.image),
+      operations: [
+        {
+          type: "createTileset",
+          destructive: false,
+          warning: CREATE_TILESET_WARNING,
+          tilesetPath: plan.tilesetPath,
+          name: plan.name,
+          className: plan.className,
+          tileWidth: plan.tileWidth,
+          tileHeight: plan.tileHeight,
+          margin: plan.margin,
+          spacing: plan.spacing,
+          columns: plan.summary.columns,
+          rows: plan.summary.rows,
+          tileCount: plan.summary.tileCount,
+          contentRevision: plan.baseRevision,
+          image: structuredClone(plan.image),
+        },
+      ],
       summary: structuredClone(plan.summary),
       snapshotConsistency: "non-atomic-read-set",
       createdAt: entry.createdAt,

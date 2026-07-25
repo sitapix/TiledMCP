@@ -179,6 +179,7 @@ const CORE_TOOLS = [
   "tiled_validate",
   "tiled_analyze_usage",
   "tiled_create_map",
+  "tiled_create_tileset",
   "tiled_add_tileset_to_map",
   "tiled_update_tile",
   "tiled_create_layer",
@@ -281,7 +282,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the twenty-six core tools with safety annotations", async () => {
+  it("advertises exactly the twenty-seven core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -326,6 +327,7 @@ describe("createTiledMcpServer", () => {
       });
     }
     for (const name of [
+      "tiled_create_tileset",
       "tiled_add_tileset_to_map",
       "tiled_update_tile",
       "tiled_create_layer",

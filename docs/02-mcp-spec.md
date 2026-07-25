@@ -437,7 +437,7 @@ type ApplyResult = CommitResult & {
 当前已实现的 map-root update wire contract 是
 `{type:"updateMap", patch}`，并属于通用 `tiled_preview_edits.operations` union 的
 第 13 种 operation。它不额外注册 `tiled_update_map` standalone tool，因此 registry
-保持 26 core / 27 with rasterizer。operation 与 patch 都是 strict object；patch 至少
+保持 27 core / 28 with rasterizer。operation 与 patch 都是 strict object；patch 至少
 包含一个字段且只允许：
 
 | operation patch | TMJ root member | 输入约束 |
@@ -469,7 +469,7 @@ root member 做 insertion/replacement/deletion。未触及的根成员、layers/
 当前已实现的 map-resize wire contract 是
 `{type:"resizeMap", width, height, offsetX?, offsetY?}`，属于同一 union 的第 16 种、
 必须独占 change set 的 operation，同样不注册 `tiled_resize_map` standalone tool，
-registry 保持 26 core / 27 with rasterizer。语义按 Tiled 1.12.2 官方源码逐条核实：
+registry 保持 27 core / 28 with rasterizer。语义按 Tiled 1.12.2 官方源码逐条核实：
 
 - `offsetX`/`offsetY` 单位为 tile，含义是**旧内容在新地图中的位置**；目标格
   `(x,y)` 取自源格 `(x−offsetX, y−offsetY)`，缩小/向左上裁剪用负值。省略视为 0，
@@ -761,7 +761,7 @@ Group 后再向它添加子层，也不支持 infinite/chunk；移动和删除�
 当前已实现的 common-layer update wire contract 是
 `{type:"updateLayer", layerId, patch}`，并属于通用
 `tiled_preview_edits.operations` union；它不额外注册 `tiled_update_layer` 工具，因此
-registry 仍为 26 个 core / 27 个含 rasterizer。`layerId` 必须是正整数，并递归定位一个
+registry 仍为 27 个 core / 28 个含 rasterizer。`layerId` 必须是正整数，并递归定位一个
 现有 `tilelayer`、`objectgroup`、`imagelayer` 或 `group`；不按名称 fallback。patch
 必须至少包含一个字段，禁止额外 key。允许字段与 TMJ key 的映射为：
 
@@ -806,7 +806,7 @@ CAS。
 `tiled_preview_edits.operations` union 的第 8 种 operation。由于删除检查必须针对同一个
 原始完整 map 计算，含 `deleteLayer` 的 change set 必须且只能有这一项 operation；不能
 同批 set tile、改 object 或 update layer。它不额外注册 `tiled_delete_layer`，registry
-仍是 26 个 core / 27 个含 rasterizer。
+仍是 27 个 core / 28 个含 rasterizer。
 
 正整数 `layerId` 可递归定位 4 类已有 layer。tile/object/image leaf 与空 Group 不需要
 额外确认；非空 Group 若没有 `deleteDescendants:true` 会以 `LAYER_HAS_DESCENDANTS`
@@ -839,7 +839,7 @@ bytes。preview 固定 map revision 与完整 dependency set，apply 重算 oper
 `{type:"moveLayer", layerId, parentGroupId?, index}`，它是 generic
 `tiled_preview_edits.operations` union 的第 9 种 operation。它必须独占 change set：
 多次 move，或与 tile/object/update/delete 混批，都会在任何语义 mutation 前拒绝。
-它不额外注册 `tiled_move_layer`，所以 registry 仍是 26 个 core / 27 个含
+它不额外注册 `tiled_move_layer`，所以 registry 仍是 27 个 core / 28 个含
 rasterizer。
 
 `layerId` 与显式 `parentGroupId` 必须是正整数；省略 `parentGroupId` 表示根
@@ -876,7 +876,7 @@ exact bytes 并搬入目标，只改源/目标数组接缝所需的逗号与 whi
 `{type:"duplicateLayer", layerId, destination?, name?}`，它是 generic
 `tiled_preview_edits.operations` union 的第 10 种 operation。它必须独占 change set，
 不能与 tile/object/update/delete/move 或第二次 duplicate 混批，也不注册
-`tiled_duplicate_layer` standalone tool；registry 因此仍是 26 core / 27 with
+`tiled_duplicate_layer` standalone tool；registry 因此仍是 27 core / 28 with
 rasterizer。
 
 `destination` 省略时复制到 source 的直接父数组并插在 `sourceIndex + 1`。显式值必须严格
@@ -975,7 +975,7 @@ layer bounds 内；省略时精确采用该 layer 的 `x/y/width/height` bounds�
 当前已实现的 stamp wire contract 是
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它是通用
 `tiled_preview_edits.operations` union 的第 11 种 operation，不额外注册
-`tiled_stamp_pattern` 工具，因此 registry 保持 26 core / 27 with rasterizer。
+`tiled_stamp_pattern` 工具，因此 registry 保持 27 core / 28 with rasterizer。
 `pattern` 必须是非空、稠密、矩形、row-major 的二维数组：外层和每行均非空、所有行等宽，
 不接受 sparse hole/`undefined`。宽和高各最多 256，总格数最多 16,384。
 
@@ -1002,7 +1002,7 @@ preview 回显规范化 `region`、`cellCount`、非空/清空/变换/实际变�
 当前已实现的 flood-fill wire contract 是
 `{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它是通用
 `tiled_preview_edits.operations` union 的第 12 种 operation，不额外注册
-`tiled_flood_fill` 工具，因此 registry 仍为 26 core / 27 with rasterizer。它只接受
+`tiled_flood_fill` 工具，因此 registry 仍为 27 core / 28 with rasterizer。它只接受
 finite orthogonal、numeric-array tile layer；`layerId` 是正整数，`x/y` 是 layer 空间
 中的绝对 seed tile 坐标且必须位于 layer 自身的 `x/y/width/height` bounds 内。
 
@@ -1038,7 +1038,7 @@ layer 生成 `data`-member-local source patch。source=target 或 mixed operatio
 当前已实现的矩形复制 wire contract 是
 `{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}`。
 它是通用 `tiled_preview_edits.operations` union 的第 15 种 operation，不注册
-`tiled_copy_region` standalone tool，因此 registry 仍为 26 core / 27 with rasterizer。
+`tiled_copy_region` standalone tool，因此 registry 仍为 27 core / 28 with rasterizer。
 operation、`source` 与 `destination` 均为 exact-key strict object。source 和
 destination 必须位于同一 map，且两侧 layer 都必须是 finite orthogonal、
 numeric-array tile layer；不支持 infinite chunks、字符串/base64 data 或压缩编码。
@@ -1177,7 +1177,7 @@ value-local patch 推进 `nextobjectid`，未触及 source bytes 保持不变。
 `tiled_get_object` 返回 map revision、完整 dependency revisions 和 bounded object
 projection；不返回 raw/custom property/vendor/template 数据。存量 text 的未知 nested
 key、错误类型/enum、超限 Unicode 或冲突 shape marker 都 fail closed。registry 为
-26 core / 27 with rasterizer。
+27 core / 28 with rasterizer。
 
 `tiled_get_capabilities.objectShapeCapabilities` 精确为：
 
@@ -1294,10 +1294,10 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞/属性计数和 Wang-set 概览；不把 `tiles.length` 冒充 `tilecount`，不读取 property values/碰撞 geometry/完整 wang assignments | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
-| `tiled_create_tileset` | 从图集图片创建 `.tsj`（自动读取图片尺寸算 tilecount/columns） | `tilesetPath`, `image`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?` |
+| `tiled_create_tileset` | **已实现（preview→apply）。** 从项目内图集图片规划一个新 external `.tsj`：按 Tiled 1.12.2 网格公式算 columns/rows/tilecount，返回 `tilesetCreate` change set；`expectedRevision` 是**批准内容本身的 SHA-256**（无既有文件），apply 走 no-replace 创建、`beforeRevision:null`。direct 创建特例条款保持仅 `tiled_create_map` | `tilesetPath`, `imagePath`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?`, `className?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，完全不写盘（asset identity contract v2：读/预览路径无锁且零副作用） | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
-| `tiled_update_tile` | **已实现专用 preview 工具（第 26 个 core tool）**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性元数据，走独立 `tilesetEdit` change set；碰撞形状编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
+| `tiled_update_tile` | **已实现专用 preview 工具**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性元数据，走独立 `tilesetEdit` change set；碰撞形状编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 
 `tiled_add_tileset_to_map` 是专用 preview 入口，不把 `addTileset` 扩进通用
@@ -1326,7 +1326,7 @@ preview 需要依次读取 map、当前依赖和 prospective TSJ，这个 read s
 snapshot。
 
 当前已实现的 per-tile metadata wire contract 是专用 preview 工具
-`tiled_update_tile`（第 26 个 core tool，首个 TSJ 写入面）。它以
+`tiled_update_tile`（首个 TSJ 写入面）。它以
 `mapPath + tilesetAssetId` 定位一个当前已引用的 external atlas TSJ，必须同时 pin
 `expectedMapRevision` 与 `expectedTilesetRevision`，接受 1..64 个唯一 `tileId` 的
 strict `updates`，返回独立的 `tilesetEdit` change set——其 `expectedRevision` 是
@@ -1361,10 +1361,32 @@ revision 的待批 map change set 会在 apply 后冲突。字段语义按 Tiled
   都经有界 tileset write-profile gate（atlas-only、重复/越界 id、畸形元数据全部
   fail closed）。
 
+当前已实现的 `tiled_create_tileset` wire contract：输入
+`{tilesetPath, imagePath, tileWidth, tileHeight, margin?, spacing?, name?,
+className?}`（margin/spacing 默认 0，上限 4,096；tile 边长 1..16,384；name 默认
+tileset 文件名去掉 `.tsj`，可选 `className` 写 `class` 成员）。preview 读取图片
+（复用 tileset 图片的安全解码上限）、按 Tiled 1.12.2 的
+`columnCountForWidth`/`rowCountForHeight` 公式（**单边 margin 整除**：
+`(imageWidth - margin + spacing) / (tileWidth + spacing)`）计算网格，不足一个
+tile 时 fail closed，并在 summary 中报告右/下未用像素余量。生成的 TSJ 成员按
+Tiled QJson 的字母序写出，带冻结的 `version:"1.10"` / `tiledversion:"1.12.2"`
+戳；`image` 是相对 TSJ 目录的 canonical POSIX 引用。返回的 `tilesetCreate`
+change set 以域分隔 digest（`tiledmcp/tileset-create-plan/v1`）签名，pin 图片的
+path + raw revision；其 `expectedRevision` 是 **prospective TSJ bytes 的
+SHA-256**——不存在既有文件可 pin，批准的就是内容本身。apply 复核计划 digest、
+重读图片 revision（变化即 `DEPENDENCY_REVISION_CONFLICT`）、重放构建并要求内容
+revision 与 summary stableJson 相等，然后走与 `tiled_create_map` 相同的
+hard-link no-replace 创建路径：目标已存在（含字节相同）一律
+`FILE_ALREADY_EXISTS`，成功结果 `beforeRevision:null`、`changed:true` 并附
+checkpoint（`before.existed:false`，不可作为删除恢复）。新文件不被任何 map 引用；
+随后用 `tiled_add_tileset_to_map` 挂载。direct additive no-preview 特例条款保持
+不变：仍仅 `tiled_create_map`。`tiled_get_capabilities.tilesetCreationCapabilities`
+公布全部策略串与数值界。
+
 当前已实现的 tileset-reference removal wire contract 是
 `{type:"removeTilesetFromMap", tilesetAssetId}`。它属于
 `tiled_preview_edits.operations` 封闭 union 的第 14 种 operation，不额外注册
-`tiled_remove_tileset_from_map`，因此 registry 保持 26 core / 27 with rasterizer。
+`tiled_remove_tileset_from_map`，因此 registry 保持 27 core / 28 with rasterizer。
 operation 是 exact-key strict object，`tilesetAssetId` 必须是非空 opaque ID，并精确
 定位当前 map 已引用、已通过 M1 external root-atlas profile 校验的 binding。路径、名称、
 embedded tileset、未引用 asset ID 和额外 key 都不能作为 fallback。

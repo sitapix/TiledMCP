@@ -182,12 +182,19 @@ import {
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
+  createTilesetPreviewToolOutputSchema,
   preparedCheckpointAbandonPreviewToolOutputSchema,
   preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
+import {
+  MAX_CREATE_TILESET_MARGIN,
+  MAX_CREATE_TILESET_NAME_CODE_POINTS,
+  MAX_CREATE_TILESET_SPACING,
+  MAX_CREATE_TILESET_TILE_EDGE,
+} from "./maps/tilesetCreate.js";
 import {
   MAX_TILE_ANIMATION_FRAME_DURATION_MS,
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
@@ -1368,6 +1375,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_validate",
     "tiled_analyze_usage",
     "tiled_create_map",
+    "tiled_create_tileset",
     "tiled_add_tileset_to_map",
     "tiled_update_tile",
     "tiled_create_layer",
@@ -2198,6 +2206,35 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "existed-false",
           checkpointRestore:
             "revert-would-delete-not-supported",
+        },
+        tilesetCreationCapabilities: {
+          profile:
+            "external-atlas-tsj-from-project-image",
+          tilesetFormatVersion: "1.10",
+          tiledCompatibilityBaseline: "1.12.2",
+          commitMode:
+            "preview-approve-apply-no-replace",
+          expectedRevisionSemantics:
+            "sha256-of-approved-prospective-bytes",
+          beforeRevision: "null-on-apply",
+          destinationPrecondition:
+            "must-not-exist-at-preview-and-apply",
+          contentEquality:
+            "existing-identical-bytes-still-file-already-exists",
+          parentDirectory: "must-already-exist",
+          gridFormula:
+            "tiled-1-12-2-single-margin-integer-division",
+          imagePin: "path-and-raw-revision",
+          memberOrder:
+            "tiled-qjson-alphabetical",
+          nameDefault:
+            "tileset-file-stem",
+          maxTileEdge:
+            MAX_CREATE_TILESET_TILE_EDGE,
+          maxMargin: MAX_CREATE_TILESET_MARGIN,
+          maxSpacing: MAX_CREATE_TILESET_SPACING,
+          directCreationException:
+            "tiled_create_map-only-clause-unchanged",
         },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
@@ -3575,6 +3612,87 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_create_tileset",
+    {
+      title: "Preview creating an external TSJ tileset",
+      description:
+        "Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception.",
+      inputSchema: z
+        .object({
+          tilesetPath: projectPathSchema,
+          imagePath: projectPathSchema,
+          tileWidth: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_TILESET_TILE_EDGE),
+          tileHeight: z
+            .number()
+            .int()
+            .positive()
+            .max(MAX_CREATE_TILESET_TILE_EDGE),
+          margin: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_CREATE_TILESET_MARGIN)
+            .optional(),
+          spacing: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_CREATE_TILESET_SPACING)
+            .optional(),
+          name: z
+            .string()
+            .min(1)
+            .max(
+              MAX_CREATE_TILESET_NAME_CODE_POINTS *
+                2,
+            )
+            .optional(),
+          className: z
+            .string()
+            .min(1)
+            .max(
+              MAX_CREATE_TILESET_NAME_CODE_POINTS *
+                2,
+            )
+            .optional(),
+        })
+        .strict(),
+      outputSchema:
+        createTilesetPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async (input) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planCreateTileset({
+            tilesetPath: input.tilesetPath,
+            imagePath: input.imagePath,
+            tileWidth: input.tileWidth,
+            tileHeight: input.tileHeight,
+            ...(input.margin === undefined
+              ? {}
+              : { margin: input.margin }),
+            ...(input.spacing === undefined
+              ? {}
+              : { spacing: input.spacing }),
+            ...(input.name === undefined
+              ? {}
+              : { name: input.name }),
+            ...(input.className === undefined
+              ? {}
+              : { className: input.className }),
+          });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_add_tileset_to_map",
     {
       title: "Preview adding a tileset to a map",
@@ -3857,7 +3975,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, tileset edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
+        "Applies one previously previewed map edit, tileset edit, tileset creation, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -3918,7 +4036,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                           ? maps.applyTilesetEdit(
                               plan,
                             )
-                          : maps.applyEdits(plan),
+                          : plan.kind ===
+                              "tilesetCreate"
+                            ? maps.applyTilesetCreate(
+                                plan,
+                              )
+                            : maps.applyEdits(
+                                plan,
+                              ),
         ),
       ),
   );

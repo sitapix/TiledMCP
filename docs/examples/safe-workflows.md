@@ -485,6 +485,30 @@ discard 同样会因 create 目标已存在而拒绝。只有目标当前严格�
 `before.existed:false` 一致时才可走 prepared discard；目标精确等于 after 时，必须由
 操作者在独立 commit/abandon proposal 的完整证据上作出决定。
 
+## 用 preview→apply 创建新 tileset
+
+`tiled_create_tileset` 不属于 direct 创建例外（该条款仍仅 `tiled_create_map`）；
+它返回 `tilesetCreate` change set，批准后 apply 才落盘：
+
+```json
+{
+  "tilesetPath": "tiles/props.tsj",
+  "imagePath": "images/props-atlas.png",
+  "tileWidth": 16,
+  "tileHeight": 16,
+  "margin": 1,
+  "spacing": 2
+}
+```
+
+preview 按 Tiled 1.12.2 的网格公式（单边 margin 整除）计算 columns/rows/
+tilecount，不足一个 tile 直接拒绝，并在 summary 回显右/下未用像素余量，便于发现
+margin/spacing 配错。返回的 `expectedRevision` 是**批准的 prospective TSJ bytes
+的 SHA-256**——没有既有文件可 pin，把它原样传给 `tiled_apply_change_set` 即可。
+apply 前图片变化会以 `DEPENDENCY_REVISION_CONFLICT` 拒绝；目标文件已存在（含字
+节相同）一律 `FILE_ALREADY_EXISTS`，成功结果 `beforeRevision:null`。新文件尚未
+被任何 map 引用，随后用 `tiled_add_tileset_to_map` 挂载并重新读取 map summary。
+
 ## Raster 预览是可选能力
 
 `tiled_render_preview`、`tiled_render_tileset_sheet` 与 `tiled_render_tiles` 是核心

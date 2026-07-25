@@ -10,10 +10,20 @@ import {
   expectObject,
   expectString,
   isJsonObject,
+  serializeJsonDocument,
   stableJson,
   type JsonObject,
   type JsonValue,
 } from "../formats/json.js";
+import { revisionOf } from "../storage/revision.js";
+import {
+  assertTilesetCreatePlan,
+  buildTilesetDocument,
+  computeAtlasGrid,
+  tilesetCreatePlanId,
+  validateCreateTilesetScalars,
+  type TilesetCreatePlan,
+} from "./tilesetCreate.js";
 import {
   patchJsonDocumentSource,
   type JsonArrayDeletion,
@@ -436,6 +446,17 @@ export interface CreateMapInput {
   tileWidth: number;
   tileHeight: number;
   backgroundColor?: string;
+}
+
+export interface CreateTilesetInput {
+  tilesetPath: string;
+  imagePath: string;
+  tileWidth: number;
+  tileHeight: number;
+  margin?: number;
+  spacing?: number;
+  name?: string;
+  className?: string;
 }
 
 export interface GetRegionInput {
@@ -2114,6 +2135,223 @@ export class MapService {
       `apply change set ${plan.id}`,
     );
     return { ...result, changeSetId: plan.id };
+  }
+
+  async planCreateTileset(
+    input: CreateTilesetInput,
+  ): Promise<TilesetCreatePlan> {
+    const tilesetPath = this.resolver.normalize(
+      input.tilesetPath,
+    );
+    if (
+      posix.extname(tilesetPath).toLowerCase() !==
+      ".tsj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Tileset creation requires a .tsj path.",
+      );
+    }
+    const scalars = {
+      name:
+        input.name ??
+        posix.basename(tilesetPath, ".tsj"),
+      className: input.className ?? null,
+      tileWidth: input.tileWidth,
+      tileHeight: input.tileHeight,
+      margin: input.margin ?? 0,
+      spacing: input.spacing ?? 0,
+    };
+    validateCreateTilesetScalars(scalars);
+    await this.assertCreateTargetAbsent(
+      tilesetPath,
+    );
+
+    const imagePath = this.resolver.normalize(
+      input.imagePath,
+    );
+    const snapshot = await readImageFileSnapshot(
+      this.resolver,
+      imagePath,
+      MAX_TILESET_IMAGE_BYTES,
+    );
+    const metadata = await inspectSafeImage({
+      bytes: snapshot.bytes,
+      path: snapshot.path,
+      limits: {
+        maxInputBytes: MAX_TILESET_IMAGE_BYTES,
+        maxInputPixels: MAX_TILESET_INPUT_PIXELS,
+        maxInputEdge: MAX_TILESET_INPUT_EDGE,
+      },
+    });
+    const source = relativeProjectReference(
+      tilesetPath,
+      snapshot.path,
+      "atlas image",
+    );
+    const grid = computeAtlasGrid({
+      imageWidth: metadata.width,
+      imageHeight: metadata.height,
+      tileWidth: scalars.tileWidth,
+      tileHeight: scalars.tileHeight,
+      margin: scalars.margin,
+      spacing: scalars.spacing,
+    });
+    const document = buildTilesetDocument({
+      ...scalars,
+      imageSource: source,
+      imageWidth: metadata.width,
+      imageHeight: metadata.height,
+      columns: grid.columns,
+      tileCount: grid.tileCount,
+    });
+    const content =
+      serializeJsonDocument(document);
+    const unsigned: Omit<TilesetCreatePlan, "id"> =
+      {
+        kind: "tilesetCreate",
+        version: 1,
+        tilesetPath,
+        baseRevision: revisionOf(content),
+        ...scalars,
+        image: {
+          path: snapshot.path,
+          source,
+          revision: snapshot.revision,
+          width: metadata.width,
+          height: metadata.height,
+        },
+        summary: {
+          tilesetPath,
+          ...scalars,
+          columns: grid.columns,
+          rows: grid.rows,
+          tileCount: grid.tileCount,
+          imageWidth: metadata.width,
+          imageHeight: metadata.height,
+          unusedRightPixels:
+            grid.unusedRightPixels,
+          unusedBottomPixels:
+            grid.unusedBottomPixels,
+          contentBytes: content.byteLength,
+          wouldChange: true,
+        },
+      };
+    return {
+      ...unsigned,
+      id: tilesetCreatePlanId(unsigned),
+    };
+  }
+
+  async applyTilesetCreate(
+    plan: TilesetCreatePlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    assertTilesetCreatePlan(plan);
+    const image = await readImageFileSnapshot(
+      this.resolver,
+      plan.image.path,
+      MAX_TILESET_IMAGE_BYTES,
+    );
+    if (image.revision !== plan.image.revision) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${plan.image.path} changed while the tileset creation was being prepared.`,
+        {
+          path: plan.image.path,
+          expectedRevision: plan.image.revision,
+          actualRevision: image.revision,
+        },
+      );
+    }
+    const grid = computeAtlasGrid({
+      imageWidth: plan.image.width,
+      imageHeight: plan.image.height,
+      tileWidth: plan.tileWidth,
+      tileHeight: plan.tileHeight,
+      margin: plan.margin,
+      spacing: plan.spacing,
+    });
+    const document = buildTilesetDocument({
+      name: plan.name,
+      className: plan.className,
+      tileWidth: plan.tileWidth,
+      tileHeight: plan.tileHeight,
+      margin: plan.margin,
+      spacing: plan.spacing,
+      imageSource: plan.image.source,
+      imageWidth: plan.image.width,
+      imageHeight: plan.image.height,
+      columns: grid.columns,
+      tileCount: grid.tileCount,
+    });
+    const content =
+      serializeJsonDocument(document);
+    const replayedSummary = {
+      tilesetPath: plan.tilesetPath,
+      name: plan.name,
+      className: plan.className,
+      tileWidth: plan.tileWidth,
+      tileHeight: plan.tileHeight,
+      margin: plan.margin,
+      spacing: plan.spacing,
+      columns: grid.columns,
+      rows: grid.rows,
+      tileCount: grid.tileCount,
+      imageWidth: plan.image.width,
+      imageHeight: plan.image.height,
+      unusedRightPixels: grid.unusedRightPixels,
+      unusedBottomPixels:
+        grid.unusedBottomPixels,
+      contentBytes: content.byteLength,
+      wouldChange: true,
+    };
+    if (
+      revisionOf(content) !== plan.baseRevision ||
+      stableJson(
+        replayedSummary as unknown as JsonValue,
+      ) !==
+        stableJson(
+          plan.summary as unknown as JsonValue,
+        )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The tileset create summary does not match its replayed content.",
+      );
+    }
+    const result = await this.store.create(
+      plan.tilesetPath,
+      document,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private async assertCreateTargetAbsent(
+    projectPath: string,
+  ): Promise<void> {
+    const absolutePath =
+      await this.resolver.resolveForCreate(
+        projectPath,
+      );
+    try {
+      await stat(absolutePath);
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code ===
+        "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    throw new TiledMcpError(
+      "FILE_ALREADY_EXISTS",
+      `Refusing to overwrite existing file ${projectPath}.`,
+      { path: projectPath },
+    );
   }
 
   private async loadBoundTilesetForEdit(
