@@ -761,6 +761,33 @@ const pruneCheckpointOperationPreviewOutputSchema = z
   })
   .strict();
 
+const discardPreparedCheckpointOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal(
+        "discardPreparedCheckpoint",
+      ),
+      destructive: z.literal(true),
+      warning: z.string(),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      removesRecoveryPoint: z.literal(true),
+      removesProjectAsset: z.literal(false),
+      targetBeforeStateVerified:
+        z.literal(true),
+      garbageCollection: z.literal(
+        "fail-closed-after-prepared-manifest-discard",
+      ),
+    })
+    .strict();
+
 const genericOperationPreviewOutputSchema =
   z.discriminatedUnion("type", [
     updateMapOperationPreviewOutputSchema,
@@ -1395,6 +1422,102 @@ const checkpointPrunePreviewOutputSchema = z
   })
   .strict();
 
+const preparedCheckpointDiscardTargetOutputSchema =
+  z.union([
+    z
+      .object({
+        existed: z.literal(false),
+      })
+      .strict(),
+    z
+      .object({
+        existed: z.literal(true),
+        revision: revisionOutputSchema,
+        size: nonnegativeIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+  ]);
+
+const preparedCheckpointDiscardSummaryOutputSchema =
+  z
+    .object({
+      operationCount: z.literal(1),
+      destructive: z.literal(true),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      removesRecoveryPoint: z.literal(true),
+      removesProjectAsset: z.literal(false),
+      targetBeforeStateVerified:
+        z.literal(true),
+      garbageCollection: z.literal(
+        "fail-closed-after-prepared-manifest-discard",
+      ),
+      warning: z.string(),
+    })
+    .strict();
+
+const preparedCheckpointDiscardPreviewOutputSchema =
+  z
+    .object({
+      kind: z.literal(
+        "preparedCheckpointDiscard",
+      ),
+      changeSetId: changeSetIdOutputSchema,
+      planDigest: changeSetIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      expectedRevision: revisionOutputSchema,
+      checkpoint: z
+        .object({
+          id: checkpointIdOutputSchema,
+          status: z.literal("prepared"),
+          label: z
+            .string()
+            .max(1_024)
+            .optional(),
+          createdAt:
+            checkpointTimestampOutputSchema,
+          path: projectPathOutputSchema,
+          before:
+            checkpointPruneBeforeOutputSchema,
+          afterRevision:
+            revisionOutputSchema,
+        })
+        .strict(),
+      manifest: z
+        .object({
+          revision: revisionOutputSchema,
+          size: positiveIntegerOutputSchema.max(
+            Number.MAX_SAFE_INTEGER,
+          ),
+        })
+        .strict(),
+      target:
+        preparedCheckpointDiscardTargetOutputSchema,
+      eligibility: z.literal(
+        "current-target-matches-before-state",
+      ),
+      operations: z.tuple([
+        discardPreparedCheckpointOperationPreviewOutputSchema,
+      ]),
+      summary:
+        preparedCheckpointDiscardSummaryOutputSchema,
+      snapshotConsistency: z.literal(
+        "non-atomic-read-set",
+      ),
+      createdAt: isoTimestampOutputSchema,
+      expiresAt: isoTimestampOutputSchema,
+    })
+    .strict();
+
 export const checkpointRestorePreviewToolOutputSchema =
   toolOutputSchema(
     checkpointRestorePreviewOutputSchema,
@@ -1403,6 +1526,11 @@ export const checkpointRestorePreviewToolOutputSchema =
 export const checkpointPrunePreviewToolOutputSchema =
   toolOutputSchema(
     checkpointPrunePreviewOutputSchema,
+  );
+
+export const preparedCheckpointDiscardPreviewToolOutputSchema =
+  toolOutputSchema(
+    preparedCheckpointDiscardPreviewOutputSchema,
   );
 
 export const addTilesetPreviewToolOutputSchema =

@@ -27,6 +27,14 @@
       "purpose": "有界列出已提交的恢复 checkpoint，并单独报告损坏条目。"
     },
     {
+      "name": "tiled_preview_prepared_checkpoint_discard",
+      "profile": "core",
+      "arguments": {
+        "checkpointId": "00000000-0000-4000-8000-000000000000"
+      },
+      "purpose": "仅在当前目标仍精确等于写前状态时，预览丢弃一个 prepared checkpoint，不立即删除。"
+    },
+    {
       "name": "tiled_preview_checkpoint_prune",
       "profile": "core",
       "arguments": {

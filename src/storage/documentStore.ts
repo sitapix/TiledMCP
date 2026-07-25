@@ -26,6 +26,8 @@ import {
   type CheckpointPruneStorageResult,
   type CheckpointStoreOptions,
   type CorruptCheckpointEntry,
+  type PreparedCheckpointDiscardStorageExpectation,
+  type PreparedCheckpointDiscardStorageResult,
 } from "./checkpoints.js";
 import { withProjectFileLock } from "./fileLock.js";
 import {
@@ -45,6 +47,12 @@ const CHECKPOINT_PRUNE_GC_FAILED_WARNING =
   "The checkpoint manifest was unlinked, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
 const CHECKPOINT_PRUNE_TARGET_LOCK_WARNING =
   "Checkpoint pruning completed, but release of its target lock could not be confirmed; inspect the project lock before retrying mutations.";
+const PREPARED_CHECKPOINT_DISCARD_GC_BLOCKED_WARNING =
+  "The prepared checkpoint manifest was deleted, but garbage collection was blocked; unreferenced checkpoint storage was retained.";
+const PREPARED_CHECKPOINT_DISCARD_GC_FAILED_WARNING =
+  "The prepared checkpoint manifest was unlinked, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
+const PREPARED_CHECKPOINT_DISCARD_TARGET_LOCK_WARNING =
+  "Prepared checkpoint discard completed, but release of its target lock could not be confirmed; inspect the project lock before retrying mutations.";
 
 export interface DocumentSnapshot {
   path: string;
@@ -136,6 +144,49 @@ export interface CheckpointPruneResult {
     before: CheckpointManifest["before"];
     afterRevision: string;
   };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointPruneGarbageCollection;
+  warnings?: string[];
+}
+
+export type PreparedCheckpointDiscardTarget =
+  | { existed: false }
+  | {
+      existed: true;
+      revision: string;
+      size: number;
+    };
+
+export interface PreparedCheckpointDiscardExpectation {
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: "prepared";
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+  target: PreparedCheckpointDiscardTarget;
+}
+
+export interface PreparedCheckpointDiscardInspection {
+  checkpoint: PreparedCheckpointDiscardExpectation;
+}
+
+export interface PreparedCheckpointDiscardResult {
+  kind: "preparedCheckpointDiscard";
+  checkpoint: {
+    id: string;
+    createdAt: string;
+    label?: string;
+    path: string;
+    status: "prepared";
+    before: CheckpointManifest["before"];
+    afterRevision: string;
+  };
+  target: PreparedCheckpointDiscardTarget;
   manifestDeleted: true;
   garbageCollection:
     CheckpointPruneGarbageCollection;
@@ -305,132 +356,20 @@ export class DocumentStore {
 
     for (const manifest of listing.manifests) {
       try {
-        let currentRevision: string;
-        try {
-          currentRevision = await this.readRevision(manifest.path);
-        } catch (error) {
-          const code = errorCode(error);
-          if (isMissingCode(code)) {
-            outcomes.push(
-              manifest.before.existed
-                ? reconciliationOutcome(
-                    manifest,
-                    "conflict",
-                    null,
-                    "The target for an existing-file checkpoint is missing.",
-                    "CHECKPOINT_STATE_CONFLICT",
-                  )
-                : reconciliationOutcome(
-                    manifest,
-                    "writeDidNotLand",
-                    null,
-                    "The create operation did not land; the target is still absent.",
-                  ),
-            );
-          } else if (code === "SYMLINK_NOT_ALLOWED" || code === "ELOOP") {
-            outcomes.push(
-              reconciliationOutcome(
-                manifest,
-                "conflict",
-                null,
-                "The target is now a symbolic link and was not followed.",
-                "SYMLINK_NOT_ALLOWED",
-              ),
-            );
-          } else {
-            outcomes.push(
-              reconciliationOutcome(
-                manifest,
-                "error",
-                null,
-                `The target could not be inspected safely (${code}).`,
-                code,
-              ),
-            );
-          }
-          continue;
-        }
-
-        if (currentRevision === manifest.afterRevision) {
-          try {
-            const latest = await this.checkpoints.read(manifest.id);
-            if (!sameCheckpointIntent(manifest, latest)) {
-              outcomes.push(
-                reconciliationOutcome(
-                  manifest,
-                  "error",
-                  currentRevision,
-                  "The checkpoint manifest changed while it was being reconciled.",
-                  "CHECKPOINT_CHANGED",
-                ),
-              );
-              continue;
-            }
-            if (
-              latest.status === "prepared" &&
-              !latest.before.existed
-            ) {
-              outcomes.push(
-                reconciliationOutcome(
-                  manifest,
-                  "conflict",
-                  currentRevision,
-                  "The target matches a prepared create checkpoint, but hash equality cannot prove which writer created it.",
-                  "CHECKPOINT_STATE_CONFLICT",
-                ),
-              );
-              continue;
-            }
-            if (latest.status === "prepared") {
-              await this.checkpoints.markCommitted(latest);
-            }
-            outcomes.push(
-              reconciliationOutcome(
-                manifest,
-                "reconciled",
-                currentRevision,
-                latest.status === "committed"
-                  ? "The checkpoint was committed by another reconciler."
-                  : "The requested target bytes had landed; the manifest is now committed.",
-              ),
-            );
-          } catch (error) {
-            const code = errorCode(error);
-            outcomes.push(
-              reconciliationOutcome(
-                manifest,
-                "error",
-                currentRevision,
-                `The landed checkpoint could not be marked committed (${code}).`,
-                code,
-              ),
-            );
-          }
-          continue;
-        }
-
-        if (
-          manifest.before.existed &&
-          currentRevision === manifest.before.revision
-        ) {
-          outcomes.push(
-            reconciliationOutcome(
-              manifest,
-              "writeDidNotLand",
-              currentRevision,
-              "The target still has the exact pre-write revision.",
-            ),
-          );
-          continue;
-        }
-
+        const normalized =
+          this.resolver.normalize(manifest.path);
         outcomes.push(
-          reconciliationOutcome(
-            manifest,
-            "conflict",
-            currentRevision,
-            "The target has a revision unrelated to this prepared checkpoint.",
-            "CHECKPOINT_STATE_CONFLICT",
+          await this.mutex.runExclusive(
+            normalized,
+            () =>
+              withProjectFileLock(
+                this.resolver,
+                normalized,
+                () =>
+                  this.reconcilePreparedCheckpointLocked(
+                    manifest,
+                  ),
+              ),
           ),
         );
       } catch (error) {
@@ -453,6 +392,156 @@ export class DocumentStore {
       scannedEntries: listing.scannedEntries,
       truncated: listing.truncated,
     };
+  }
+
+  private async reconcilePreparedCheckpointLocked(
+    listedManifest: CheckpointManifest,
+  ): Promise<CheckpointReconciliationOutcome> {
+    let manifest: CheckpointManifest;
+    try {
+      manifest = (
+        await this.checkpoints.inspectManifest(
+          listedManifest.id,
+        )
+      ).manifest;
+    } catch (error) {
+      const code = errorCode(error);
+      return reconciliationOutcome(
+        listedManifest,
+        "error",
+        null,
+        `The checkpoint manifest could not be authoritatively re-read while it was being reconciled (${code}).`,
+        code,
+      );
+    }
+    if (
+      !sameCheckpointIntent(
+        listedManifest,
+        manifest,
+      ) ||
+      listedManifest.createdAt !==
+        manifest.createdAt ||
+      listedManifest.label !== manifest.label
+    ) {
+      return reconciliationOutcome(
+        listedManifest,
+        "error",
+        null,
+        "The checkpoint manifest changed while it was being reconciled.",
+        "CHECKPOINT_CHANGED",
+      );
+    }
+    if (manifest.status === "committed") {
+      return reconciliationOutcome(
+        manifest,
+        "reconciled",
+        null,
+        "The checkpoint was committed by another reconciler.",
+      );
+    }
+
+    let currentRevision: string;
+    try {
+      currentRevision = await this.readRevision(
+        manifest.path,
+      );
+    } catch (error) {
+      const code = errorCode(error);
+      if (isMissingCode(code)) {
+        return manifest.before.existed
+          ? reconciliationOutcome(
+              manifest,
+              "conflict",
+              null,
+              "The target for an existing-file checkpoint is missing.",
+              "CHECKPOINT_STATE_CONFLICT",
+            )
+          : reconciliationOutcome(
+              manifest,
+              "writeDidNotLand",
+              null,
+              "The create operation did not land; the target is still absent.",
+            );
+      }
+      if (
+        code === "SYMLINK_NOT_ALLOWED" ||
+        code === "ELOOP"
+      ) {
+        return reconciliationOutcome(
+          manifest,
+          "conflict",
+          null,
+          "The target is now a symbolic link and was not followed.",
+          "SYMLINK_NOT_ALLOWED",
+        );
+      }
+      return reconciliationOutcome(
+        manifest,
+        "error",
+        null,
+        `The target could not be inspected safely (${code}).`,
+        code,
+      );
+    }
+
+    if (
+      currentRevision ===
+      manifest.afterRevision
+    ) {
+      if (!manifest.before.existed) {
+        return reconciliationOutcome(
+          manifest,
+          "conflict",
+          currentRevision,
+          "The target matches a prepared create checkpoint, but hash equality cannot prove which writer created it.",
+          "CHECKPOINT_STATE_CONFLICT",
+        );
+      }
+      try {
+        // The target lock remains held while markCommitted takes the
+        // checkpoint-store lock and performs its own authoritative intent
+        // check.
+        await this.checkpoints.markCommitted(
+          manifest,
+        );
+        return reconciliationOutcome(
+          manifest,
+          "reconciled",
+          currentRevision,
+          "The requested target bytes had landed; the manifest is now committed.",
+        );
+      } catch (error) {
+        const code = errorCode(error);
+        return reconciliationOutcome(
+          manifest,
+          "error",
+          currentRevision,
+          `The landed checkpoint could not be marked committed (${code}).`,
+          code,
+        );
+      }
+    }
+
+    if (
+      manifest.before.existed &&
+      currentRevision ===
+        manifest.before.revision
+    ) {
+      return reconciliationOutcome(
+        manifest,
+        "writeDidNotLand",
+        currentRevision,
+        "The target still has the exact pre-write revision.",
+      );
+    }
+
+    return reconciliationOutcome(
+      manifest,
+      "conflict",
+      currentRevision,
+      "The target has a revision unrelated to this prepared checkpoint.",
+      "CHECKPOINT_STATE_CONFLICT",
+    );
   }
 
   async inspectCheckpointPrune(
@@ -495,29 +584,29 @@ export class DocumentStore {
     try {
       const result =
         await this.mutex.runExclusive(
-        normalized,
-        () =>
-          withProjectFileLock(
-            this.resolver,
-            normalized,
-            async () => {
-              const storageResult =
-                await this.checkpoints.pruneCommitted(
-                  expected,
-                );
-              committedResult =
-                checkpointPruneResult(
-                  storageResult,
-              );
-              return committedResult;
-            },
-            {
-              onReleaseFailure: () => {
-                targetLockReleaseFailed =
-                  true;
+          normalized,
+          () =>
+            withProjectFileLock(
+              this.resolver,
+              normalized,
+              async () => {
+                const storageResult =
+                  await this.checkpoints.pruneCommitted(
+                    expected,
+                  );
+                committedResult =
+                  checkpointPruneResult(
+                    storageResult,
+                  );
+                return committedResult;
               },
-            },
-          ),
+              {
+                onReleaseFailure: () => {
+                  targetLockReleaseFailed =
+                    true;
+                },
+              },
+            ),
         );
       if (
         targetLockReleaseFailed &&
@@ -541,6 +630,216 @@ export class DocumentStore {
       }
       throw error;
     }
+  }
+
+  async inspectPreparedCheckpointDiscard(
+    checkpointId: string,
+  ): Promise<PreparedCheckpointDiscardInspection> {
+    // The first manifest read is only a lock-routing hint and acquires no
+    // checkpoint-store lock. The authoritative snapshot is read again after
+    // the target lock is held, preserving target -> store lock order.
+    const routedManifest =
+      await this.checkpoints.read(
+        checkpointId,
+      );
+    const normalized = this.resolver.normalize(
+      routedManifest.path,
+    );
+    return this.mutex.runExclusive(
+      normalized,
+      () =>
+        withProjectFileLock(
+          this.resolver,
+          normalized,
+          async () => {
+            const snapshot =
+              await this.checkpoints.inspectManifest(
+                checkpointId,
+              );
+            if (
+              snapshot.manifest.path !==
+              routedManifest.path
+            ) {
+              throw new TiledMcpError(
+                "CHECKPOINT_CHANGED",
+                `Checkpoint ${checkpointId} changed its target while prepared discard was being inspected.`,
+                { checkpointId },
+              );
+            }
+            const target =
+              await this.preparedCheckpointDiscardTarget(
+                snapshot.manifest,
+              );
+            return {
+              checkpoint:
+                preparedCheckpointDiscardExpectation(
+                  snapshot,
+                  target,
+                ),
+            };
+          },
+        ),
+    );
+  }
+
+  async discardPreparedCheckpointPlanned(
+    expectedCheckpoint: PreparedCheckpointDiscardExpectation,
+  ): Promise<PreparedCheckpointDiscardResult> {
+    const expected =
+      copyPreparedCheckpointDiscardExpectation(
+        expectedCheckpoint,
+      );
+    assertPreparedCheckpointDiscardExpectation(
+      expected,
+    );
+    const normalized = this.resolver.normalize(
+      expected.path,
+    );
+    let committedResult:
+      | PreparedCheckpointDiscardResult
+      | undefined;
+    let targetLockReleaseFailed = false;
+    try {
+      const result =
+        await this.mutex.runExclusive(
+          normalized,
+          () =>
+            withProjectFileLock(
+              this.resolver,
+              normalized,
+              async () => {
+                const storageResult =
+                  await this.checkpoints.discardPrepared(
+                    expected,
+                    async (manifest) => {
+                      const currentTarget =
+                        await this.preparedCheckpointDiscardTarget(
+                          manifest,
+                        );
+                      if (
+                        !samePreparedCheckpointDiscardTarget(
+                          expected.target,
+                          currentTarget,
+                        )
+                      ) {
+                        throw preparedCheckpointDiscardConflict(
+                          manifest,
+                          "The target no longer matches the state verified by the discard preview.",
+                        );
+                      }
+                    },
+                  );
+                committedResult =
+                  preparedCheckpointDiscardResult(
+                    storageResult,
+                    expected.target,
+                  );
+                return committedResult;
+              },
+              {
+                onReleaseFailure: () => {
+                  targetLockReleaseFailed =
+                    true;
+                },
+              },
+            ),
+        );
+      if (
+        targetLockReleaseFailed &&
+        committedResult !== undefined
+      ) {
+        return addPreparedCheckpointDiscardWarning(
+          committedResult,
+          PREPARED_CHECKPOINT_DISCARD_TARGET_LOCK_WARNING,
+        );
+      }
+      return result;
+    } catch (error) {
+      // Manifest unlink is the destructive commit point. A target lock
+      // release failure after it must remain a successful discard outcome.
+      if (committedResult !== undefined) {
+        return addPreparedCheckpointDiscardWarning(
+          committedResult,
+          PREPARED_CHECKPOINT_DISCARD_TARGET_LOCK_WARNING,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async preparedCheckpointDiscardTarget(
+    manifest: CheckpointManifest,
+  ): Promise<PreparedCheckpointDiscardTarget> {
+    if (manifest.status !== "prepared") {
+      throw preparedCheckpointDiscardConflict(
+        manifest,
+        "Only prepared checkpoints can be safely discarded.",
+      );
+    }
+    if (!manifest.before.existed) {
+      try {
+        await this.resolver.resolveExisting(
+          manifest.path,
+        );
+      } catch (error) {
+        if (isMissingCode(errorCode(error))) {
+          return { existed: false };
+        }
+        throw preparedCheckpointDiscardConflict(
+          manifest,
+          "The target could not be proven strictly missing.",
+        );
+      }
+      throw preparedCheckpointDiscardConflict(
+        manifest,
+        "The target exists, so it no longer matches the pre-create state.",
+      );
+    }
+
+    if (
+      manifest.before.revision ===
+      manifest.afterRevision
+    ) {
+      throw preparedCheckpointDiscardConflict(
+        manifest,
+        "The prepared checkpoint does not distinguish its before and after revisions.",
+      );
+    }
+
+    let current: DocumentFileSnapshot;
+    try {
+      const absolutePath =
+        await this.resolver.resolveExisting(
+          manifest.path,
+        );
+      current =
+        await readDocumentFileSnapshotWithIdentity(
+          absolutePath,
+          manifest.path,
+          manifest.before.size,
+        );
+    } catch {
+      throw preparedCheckpointDiscardConflict(
+        manifest,
+        "The target could not be proven to be the safe regular pre-write file.",
+      );
+    }
+    const revision = revisionOf(current.bytes);
+    if (
+      revision !== manifest.before.revision ||
+      current.bytes.byteLength !==
+        manifest.before.size
+    ) {
+      throw preparedCheckpointDiscardConflict(
+        manifest,
+        "The target does not exactly match the checkpoint's pre-write bytes.",
+      );
+    }
+    return {
+      existed: true,
+      revision,
+      size: current.bytes.byteLength,
+    };
   }
 
   private async commitContent(
@@ -1211,6 +1510,213 @@ function addCheckpointPruneWarning(
       warning,
     ],
   };
+}
+
+function preparedCheckpointDiscardExpectation(
+  snapshot: CheckpointManifestSnapshot,
+  target: PreparedCheckpointDiscardTarget,
+): PreparedCheckpointDiscardExpectation {
+  const manifest = snapshot.manifest;
+  if (manifest.status !== "prepared") {
+    throw preparedCheckpointDiscardConflict(
+      manifest,
+      "Only prepared checkpoints can be safely discarded.",
+    );
+  }
+  return {
+    id: manifest.id,
+    createdAt: manifest.createdAt,
+    ...(manifest.label.length === 0
+      ? {}
+      : { label: manifest.label }),
+    path: manifest.path,
+    status: "prepared",
+    before: copyCheckpointBefore(
+      manifest.before,
+    ),
+    afterRevision: manifest.afterRevision,
+    manifestRevision:
+      snapshot.manifestRevision,
+    manifestSize: snapshot.manifestSize,
+    target: copyPreparedCheckpointDiscardTarget(
+      target,
+    ),
+  };
+}
+
+function copyPreparedCheckpointDiscardExpectation(
+  expected: PreparedCheckpointDiscardExpectation,
+): PreparedCheckpointDiscardExpectation {
+  return {
+    id: expected.id,
+    createdAt: expected.createdAt,
+    ...(expected.label === undefined
+      ? {}
+      : { label: expected.label }),
+    path: expected.path,
+    status: expected.status,
+    before: copyCheckpointBefore(
+      expected.before,
+    ),
+    afterRevision: expected.afterRevision,
+    manifestRevision:
+      expected.manifestRevision,
+    manifestSize: expected.manifestSize,
+    target:
+      copyPreparedCheckpointDiscardTarget(
+        expected.target,
+      ),
+  };
+}
+
+function copyPreparedCheckpointDiscardTarget(
+  target: PreparedCheckpointDiscardTarget,
+): PreparedCheckpointDiscardTarget {
+  if (!target.existed) {
+    return { existed: false };
+  }
+  return {
+    existed: true,
+    revision: target.revision,
+    size: target.size,
+  };
+}
+
+function assertPreparedCheckpointDiscardExpectation(
+  expected: PreparedCheckpointDiscardExpectation,
+): asserts expected is PreparedCheckpointDiscardExpectation &
+  PreparedCheckpointDiscardStorageExpectation {
+  const targetMatchesBefore =
+    expected.before.existed ===
+      expected.target.existed &&
+    (!expected.before.existed ||
+      (expected.target.existed &&
+        expected.before.revision ===
+          expected.target.revision &&
+        expected.before.size ===
+          expected.target.size &&
+        expected.before.revision !==
+          expected.afterRevision));
+  const validTarget =
+    !expected.target.existed ||
+    (CHECKPOINT_MANIFEST_REVISION_PATTERN.test(
+      expected.target.revision,
+    ) &&
+      Number.isSafeInteger(
+        expected.target.size,
+      ) &&
+      expected.target.size >= 0);
+  if (
+    expected.status !== "prepared" ||
+    !CHECKPOINT_MANIFEST_REVISION_PATTERN.test(
+      expected.manifestRevision,
+    ) ||
+    !Number.isSafeInteger(
+      expected.manifestSize,
+    ) ||
+    expected.manifestSize < 1 ||
+    !validTarget ||
+    !targetMatchesBefore
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Prepared checkpoint discard expectation is invalid.",
+      { checkpointId: expected.id },
+    );
+  }
+}
+
+function samePreparedCheckpointDiscardTarget(
+  expected: PreparedCheckpointDiscardTarget,
+  actual: PreparedCheckpointDiscardTarget,
+): boolean {
+  if (expected.existed !== actual.existed) {
+    return false;
+  }
+  if (!expected.existed || !actual.existed) {
+    return true;
+  }
+  return (
+    expected.revision === actual.revision &&
+    expected.size === actual.size
+  );
+}
+
+function preparedCheckpointDiscardResult(
+  storageResult: PreparedCheckpointDiscardStorageResult,
+  target: PreparedCheckpointDiscardTarget,
+): PreparedCheckpointDiscardResult {
+  const { manifest } = storageResult;
+  const warnings: string[] = [];
+  if (
+    storageResult.garbageCollection.status ===
+    "blocked"
+  ) {
+    warnings.push(
+      PREPARED_CHECKPOINT_DISCARD_GC_BLOCKED_WARNING,
+    );
+  } else if (
+    storageResult.garbageCollection.status ===
+    "failed"
+  ) {
+    warnings.push(
+      PREPARED_CHECKPOINT_DISCARD_GC_FAILED_WARNING,
+    );
+  }
+  return {
+    kind: "preparedCheckpointDiscard",
+    checkpoint: {
+      id: manifest.id,
+      createdAt: manifest.createdAt,
+      ...(manifest.label.length === 0
+        ? {}
+        : { label: manifest.label }),
+      path: manifest.path,
+      status: "prepared",
+      before: copyCheckpointBefore(
+        manifest.before,
+      ),
+      afterRevision:
+        manifest.afterRevision,
+    },
+    target:
+      copyPreparedCheckpointDiscardTarget(
+        target,
+      ),
+    manifestDeleted: true,
+    garbageCollection:
+      storageResult.garbageCollection,
+    ...(warnings.length === 0
+      ? {}
+      : { warnings }),
+  };
+}
+
+function addPreparedCheckpointDiscardWarning(
+  result: PreparedCheckpointDiscardResult,
+  warning: string,
+): PreparedCheckpointDiscardResult {
+  return {
+    ...result,
+    warnings: [
+      ...(result.warnings ?? []),
+      warning,
+    ],
+  };
+}
+
+function preparedCheckpointDiscardConflict(
+  manifest: CheckpointManifest,
+  reason: string,
+): TiledMcpError {
+  return new TiledMcpError(
+    "CHECKPOINT_STATE_CONFLICT",
+    `Checkpoint ${manifest.id} is not eligible for safe prepared discard. ${reason}`,
+    {
+      checkpointId: manifest.id,
+      path: manifest.path,
+    },
+  );
 }
 
 function reconciliationOutcome(

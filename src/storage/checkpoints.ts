@@ -49,7 +49,7 @@ const CHECKPOINT_STORAGE_MUTEX = new KeyedMutex();
 
 export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   name: "tiled-mcp-checkpoint-storage",
-  version: 2,
+  version: 3,
   quotaAccounting:
     "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
   quotaScope:
@@ -61,11 +61,17 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   garbageCollectionDeletion:
     "unreferenced-canonical-objects-and-private-crash-temporaries-only",
   validManifestDeletion:
-    "explicit-raw-cas-committed-only",
+    "explicit-approved-raw-cas-committed-prune-or-safe-prepared-current-before-discard",
   automaticValidManifestPruning: "never",
   explicitPruneCoordination:
     "target-lock-then-checkpoint-store-lock",
   explicitPruneDeletionOrder:
+    "manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+  explicitPreparedDiscardEligibility:
+    "prepared-manifest-and-target-exactly-matches-before-state",
+  explicitPreparedDiscardCoordination:
+    "target-lock-then-checkpoint-store-lock",
+  explicitPreparedDiscardDeletionOrder:
     "manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
   incompleteInventoryPolicy:
     "block-entire-sweep-before-first-unlink",
@@ -202,7 +208,19 @@ export interface CheckpointPruneStorageExpectation {
   manifestSize: number;
 }
 
-export type CheckpointPruneGarbageCollectionResult =
+export interface PreparedCheckpointDiscardStorageExpectation {
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: "prepared";
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+}
+
+export type CheckpointManifestDeletionGarbageCollectionResult =
   | {
       status: "completed";
       deletedBytes: number;
@@ -230,6 +248,9 @@ export type CheckpointPruneGarbageCollectionResult =
         "unknown-partial-or-none";
     };
 
+export type CheckpointPruneGarbageCollectionResult =
+  CheckpointManifestDeletionGarbageCollectionResult;
+
 export interface CheckpointPruneStorageResult {
   manifest: CheckpointManifest & {
     status: "committed";
@@ -237,6 +258,15 @@ export interface CheckpointPruneStorageResult {
   manifestDeleted: true;
   garbageCollection:
     CheckpointPruneGarbageCollectionResult;
+}
+
+export interface PreparedCheckpointDiscardStorageResult {
+  manifest: CheckpointManifest & {
+    status: "prepared";
+  };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointManifestDeletionGarbageCollectionResult;
 }
 
 export interface CheckpointListOptions {
@@ -426,7 +456,7 @@ export class CheckpointStore {
     });
   }
 
-  async inspectPrune(
+  async inspectManifest(
     id: string,
   ): Promise<CheckpointManifestSnapshot> {
     assertCheckpointId(id);
@@ -440,95 +470,145 @@ export class CheckpointStore {
     });
   }
 
+  async inspectPrune(
+    id: string,
+  ): Promise<CheckpointManifestSnapshot> {
+    return this.inspectManifest(id);
+  }
+
   async pruneCommitted(
     expected: CheckpointPruneStorageExpectation,
   ): Promise<CheckpointPruneStorageResult> {
+    return this.deleteManifestPlanned(
+      expected,
+      "committed",
+    );
+  }
+
+  async discardPrepared(
+    expected: PreparedCheckpointDiscardStorageExpectation,
+    validateTarget: (
+      manifest: CheckpointManifest & {
+        status: "prepared";
+      },
+    ) => Promise<void>,
+  ): Promise<PreparedCheckpointDiscardStorageResult> {
+    return this.deleteManifestPlanned(
+      expected,
+      "prepared",
+      validateTarget,
+    );
+  }
+
+  private async deleteManifestPlanned<
+    TStatus extends CheckpointManifest["status"],
+  >(
+    expected: CheckpointManifestDeletionStorageExpectation<TStatus>,
+    requiredStatus: TStatus,
+    validateBeforeDelete?: (
+      manifest: CheckpointManifest & {
+        status: TStatus;
+      },
+    ) => Promise<void>,
+  ): Promise<CheckpointManifestDeletionStorageResult<TStatus>> {
     assertCheckpointId(expected.id);
     let deletedManifest:
       | (CheckpointManifest & {
-          status: "committed";
+          status: TStatus;
         })
       | undefined;
     let storeLockReleaseFailed = false;
     try {
       const result =
-        await this.runStorageExclusive<CheckpointPruneStorageResult>(
-        async () => {
-          const directories =
-            await this.ensureStorageDirectories();
-          const snapshot =
-            await this.readManifestSnapshot(
-              directories.checkpoints,
-              expected.id,
-            );
-          if (
-            !sameCheckpointPruneExpectation(
-              expected,
-              snapshot,
-            )
-          ) {
-            throw new TiledMcpError(
-              "CHECKPOINT_CHANGED",
-              `Checkpoint ${expected.id} changed after prune inspection.`,
-              {
-                checkpointId: expected.id,
-              },
-            );
-          }
-          const manifest = snapshot.manifest;
-          if (manifest.status !== "committed") {
-            throw new TiledMcpError(
-              "CHECKPOINT_NOT_COMMITTED",
-              `Checkpoint ${expected.id} is still prepared and cannot be pruned.`,
-              {
-                checkpointId: expected.id,
-              },
-            );
-          }
-          const committedManifest =
-            manifest as CheckpointManifest & {
-              status: "committed";
-            };
-
-          await unlink(
-            join(
-              directories.checkpoints,
-              `${expected.id}.json`,
-            ),
-          );
-          deletedManifest = committedManifest;
-
-          try {
-            await syncDirectory(
-              directories.checkpoints,
-            );
-            await this.observer
-              ?.afterManifestDeletedBeforeGarbageCollection?.(
+        await this.runStorageExclusive<
+          CheckpointManifestDeletionStorageResult<TStatus>
+        >(
+          async () => {
+            const directories =
+              await this.ensureStorageDirectories();
+            const snapshot =
+              await this.readManifestSnapshot(
+                directories.checkpoints,
+                expected.id,
+              );
+            if (
+              !sameCheckpointManifestDeletionExpectation(
+                expected,
+                snapshot,
+              )
+            ) {
+              throw new TiledMcpError(
+                "CHECKPOINT_CHANGED",
+                `Checkpoint ${expected.id} changed after manifest deletion inspection.`,
                 {
-                  checkpointId: manifest.id,
+                  checkpointId: expected.id,
                 },
               );
-            const inventory =
-              await this.inventory(directories);
-            const report =
-              await this.sweepInventory(
-                directories,
-                inventory,
+            }
+            const manifest = snapshot.manifest;
+            if (
+              manifest.status !==
+              requiredStatus
+            ) {
+              throw new TiledMcpError(
+                "CHECKPOINT_CHANGED",
+                `Checkpoint ${expected.id} changed status after manifest deletion inspection.`,
+                {
+                  checkpointId: expected.id,
+                },
               );
-            return {
-              manifest: committedManifest,
-              manifestDeleted: true,
-              garbageCollection:
-                checkpointPruneGarbageCollectionResult(
-                  report,
-                ),
-            };
-          } catch {
-            return failedCheckpointPruneResult(
-              committedManifest,
+            }
+            const deletableManifest =
+              manifest as CheckpointManifest & {
+                status: TStatus;
+              };
+            await validateBeforeDelete?.(
+              deletableManifest,
             );
-          }
-        },
+
+            await unlink(
+              join(
+                directories.checkpoints,
+                `${expected.id}.json`,
+              ),
+            );
+            deletedManifest = deletableManifest;
+
+            try {
+              await syncDirectory(
+                directories.checkpoints,
+              );
+              await this.observer
+                ?.afterManifestDeletedBeforeGarbageCollection?.(
+                  {
+                    checkpointId:
+                      manifest.id,
+                  },
+                );
+              const inventory =
+                await this.inventory(
+                  directories,
+                );
+              const report =
+                await this.sweepInventory(
+                  directories,
+                  inventory,
+                );
+              return {
+                manifest:
+                  deletableManifest,
+                manifestDeleted: true,
+                garbageCollection:
+                  checkpointManifestDeletionGarbageCollectionResult(
+                    report,
+                  ),
+              };
+            } catch {
+              return failedCheckpointManifestDeletionResult(
+                deletableManifest,
+              );
+            }
+          },
           () => {
             storeLockReleaseFailed = true;
           },
@@ -537,7 +617,7 @@ export class CheckpointStore {
         storeLockReleaseFailed &&
         deletedManifest !== undefined
       ) {
-        return failedCheckpointPruneResult(
+        return failedCheckpointManifestDeletionResult(
           deletedManifest,
         );
       }
@@ -548,7 +628,7 @@ export class CheckpointStore {
       // occurred. The bounded failed outcome deliberately exposes no raw
       // filesystem diagnostics.
       if (deletedManifest !== undefined) {
-        return failedCheckpointPruneResult(
+        return failedCheckpointManifestDeletionResult(
           deletedManifest,
         );
       }
@@ -1155,6 +1235,31 @@ interface CheckpointStorageProjection {
   entries: number;
 }
 
+interface CheckpointManifestDeletionStorageExpectation<
+  TStatus extends CheckpointManifest["status"],
+> {
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: TStatus;
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+}
+
+interface CheckpointManifestDeletionStorageResult<
+  TStatus extends CheckpointManifest["status"],
+> {
+  manifest: CheckpointManifest & {
+    status: TStatus;
+  };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointManifestDeletionGarbageCollectionResult;
+}
+
 function projectedCheckpointStorage(
   inventory: CheckpointStorageInventory,
   manifest: CheckpointManifest,
@@ -1211,8 +1316,10 @@ function projectedManifestReplacementStorage(
   };
 }
 
-function sameCheckpointPruneExpectation(
-  expected: CheckpointPruneStorageExpectation,
+function sameCheckpointManifestDeletionExpectation<
+  TStatus extends CheckpointManifest["status"],
+>(
+  expected: CheckpointManifestDeletionStorageExpectation<TStatus>,
   actual: CheckpointManifestSnapshot,
 ): boolean {
   const manifest = actual.manifest;
@@ -1468,18 +1575,21 @@ function garbageCollectionReport(
   };
 }
 
-const CHECKPOINT_PRUNE_BLOCKER_SAMPLE_LIMIT = 32;
+const CHECKPOINT_MANIFEST_DELETION_BLOCKER_SAMPLE_LIMIT =
+  32;
 
-function checkpointPruneGarbageCollectionResult(
+function checkpointManifestDeletionGarbageCollectionResult(
   report: CheckpointGarbageCollectionReport,
-): CheckpointPruneGarbageCollectionResult {
+): CheckpointManifestDeletionGarbageCollectionResult {
   if (report.blocked) {
     const blockers = report.blockers
       .slice(
         0,
-        CHECKPOINT_PRUNE_BLOCKER_SAMPLE_LIMIT,
+        CHECKPOINT_MANIFEST_DELETION_BLOCKER_SAMPLE_LIMIT,
       )
-      .map(sanitizeCheckpointPruneBlocker);
+      .map(
+        sanitizeCheckpointManifestDeletionBlocker,
+      );
     return {
       status: "blocked",
       deletedBytes: 0,
@@ -1506,7 +1616,7 @@ function checkpointPruneGarbageCollectionResult(
   };
 }
 
-function sanitizeCheckpointPruneBlocker(
+function sanitizeCheckpointManifestDeletionBlocker(
   blocker: CheckpointGarbageCollectionBlocker,
 ): CheckpointGarbageCollectionBlocker {
   const messages: Record<
@@ -1540,11 +1650,13 @@ function sanitizeCheckpointPruneBlocker(
   };
 }
 
-function failedCheckpointPruneResult(
+function failedCheckpointManifestDeletionResult<
+  TStatus extends CheckpointManifest["status"],
+>(
   manifest: CheckpointManifest & {
-    status: "committed";
+    status: TStatus;
   },
-): CheckpointPruneStorageResult {
+): CheckpointManifestDeletionStorageResult<TStatus> {
   return {
     manifest,
     manifestDeleted: true,

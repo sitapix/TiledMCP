@@ -11,6 +11,7 @@ import {
 import type {
   CheckpointPruneResult,
   CommitResult,
+  PreparedCheckpointDiscardResult,
 } from "./storage/documentStore.js";
 import {
   checkpointPruneOperationPreview,
@@ -24,6 +25,13 @@ import {
   type CheckpointRestorePlan,
   type CheckpointRestoreSummary,
 } from "./storage/checkpointRestore.js";
+import {
+  PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
+  preparedCheckpointDiscardOperationPreview,
+  type PreparedCheckpointDiscardOperationPreview,
+  type PreparedCheckpointDiscardPlan,
+  type PreparedCheckpointDiscardSummary,
+} from "./storage/preparedCheckpointDiscard.js";
 import type {
   MapEditOperation,
   MapEditPlan,
@@ -69,19 +77,24 @@ const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 export type ChangeSetPlan =
   | MapEditPlan
   | CheckpointRestorePlan
-  | CheckpointPrunePlan;
+  | CheckpointPrunePlan
+  | PreparedCheckpointDiscardPlan;
 
 type ChangeSetOperationResult =
   | (CommitResult & {
       changeSetId: string;
     })
-  | CheckpointPruneResult;
+  | CheckpointPruneResult
+  | PreparedCheckpointDiscardResult;
 
 export type ChangeSetApplyResult =
   | (CommitResult & {
       changeSetId: string;
     })
   | (CheckpointPruneResult & {
+      changeSetId: string;
+    })
+  | (PreparedCheckpointDiscardResult & {
       changeSetId: string;
     });
 
@@ -160,10 +173,47 @@ export interface CheckpointPruneChangeSetPreview
   summary: CheckpointPruneSummary;
 }
 
+export interface PreparedCheckpointDiscardChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "preparedCheckpointDiscard";
+  targetPath: string;
+  checkpoint: {
+    id: string;
+    status: "prepared";
+    label?: string;
+    createdAt: string;
+    path: string;
+    before:
+      | { existed: false }
+      | {
+          existed: true;
+          revision: string;
+          objectHash: string;
+          size: number;
+        };
+    afterRevision: string;
+  };
+  manifest: {
+    revision: string;
+    size: number;
+  };
+  target:
+    | { existed: false }
+    | {
+        existed: true;
+        revision: string;
+        size: number;
+      };
+  eligibility:
+    typeof PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY;
+  summary: PreparedCheckpointDiscardSummary;
+}
+
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
   | CheckpointRestoreChangeSetPreview
-  | CheckpointPruneChangeSetPreview;
+  | CheckpointPruneChangeSetPreview
+  | PreparedCheckpointDiscardChangeSetPreview;
 
 type OperationPreview =
   | {
@@ -475,7 +525,8 @@ type OperationPreview =
       };
     }
   | CheckpointRestoreOperationPreview
-  | CheckpointPruneOperationPreview;
+  | CheckpointPruneOperationPreview
+  | PreparedCheckpointDiscardOperationPreview;
 
 export class ChangeSetRegistry {
   private readonly entries = new Map<string, ChangeSetEntry>();
@@ -597,6 +648,57 @@ export class ChangeSetRegistry {
 }
 
 function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
+  if (
+    entry.plan.kind ===
+    "preparedCheckpointDiscard"
+  ) {
+    const plan = entry.plan;
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      targetPath: plan.checkpoint.path,
+      expectedRevision: plan.baseRevision,
+      checkpoint: {
+        id: plan.checkpoint.id,
+        status: plan.checkpoint.status,
+        ...(plan.checkpoint.label === undefined
+          ? {}
+          : {
+              label: plan.checkpoint.label,
+            }),
+        createdAt: plan.checkpoint.createdAt,
+        path: plan.checkpoint.path,
+        before: structuredClone(
+          plan.checkpoint.before,
+        ),
+        afterRevision:
+          plan.checkpoint.afterRevision,
+      },
+      manifest: {
+        revision:
+          plan.checkpoint.manifestRevision,
+        size: plan.checkpoint.manifestSize,
+      },
+      target: structuredClone(
+        plan.checkpoint.target,
+      ),
+      eligibility:
+        PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
+      operations: [
+        preparedCheckpointDiscardOperationPreview(
+          plan,
+        ),
+      ],
+      summary: structuredClone(plan.summary),
+      snapshotConsistency:
+        "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "checkpointPrune") {
     const plan = entry.plan;
     return {

@@ -17,14 +17,14 @@
    `filesystemThreatModelContract`，以及
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 19 个工具。`tiled_render_map` 只有在
+3. 核心 profile 当前包含 20 个工具。`tiled_render_map` 只有在
    `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 19 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 20 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -58,8 +58,9 @@ content-addressed object 或 manifest；error details 是不透明诊断，不�
 动作。检查 capability、内部状态和部署容量后，只有操作者另行确认 entry 维度仍在上限内、
 byte 维度单独超限时，才可提高 `--checkpoint-bytes` /
 `TILEDMCP_CHECKPOINT_BYTES` 并重启；entry 超限或 inventory blocker 不会因提高 byte quota
-消失。可以经 preview/批准显式 prune 一个 committed checkpoint；prepared 状态删除与
-自动 retention 仍不受支持。
+消失。可以经 preview/批准显式 prune 一个 committed checkpoint；对于当前目标仍能机器
+验证为 before 状态的 prepared checkpoint，也可经独立 preview/批准显式 discard。含混
+状态的强制裁决与自动 retention 仍不受支持。
 
 ## 把 revision 与依赖当成同一个快照传递
 
@@ -130,18 +131,26 @@ revision。只有收到针对该 proposal 的明确批准后，才调用
 
 - `tiled_add_tileset_to_map`
 - `tiled_create_layer`
+- `tiled_preview_prepared_checkpoint_discard`
 - `tiled_preview_checkpoint_prune`
 - `tiled_preview_checkpoint_restore`
 
 checkpoint restore 只恢复 manifest 指向的单个 JSON 文档，不会连带恢复其 tileset、图片
-或其他依赖。checkpoint prune 只接受一个 committed checkpoint ID；它绑定 raw manifest
-revision，获批 apply 后永久删除该 manifest，再运行 fail-closed orphan GC，但不会修改
-目标项目资产。提交后重新读取 map summary，并按需要调用 `tiled_validate` 和
+或其他依赖。checkpoint prune 只接受一个 committed checkpoint ID；prepared discard
+只接受目标仍精确等于写前状态的 prepared checkpoint：existing-file 目标必须以 raw
+revision 和 size 同时匹配 `before`，create 目标必须严格缺失。目标等于 after、无关内容、
+existing-file 目标缺失、create 目标存在、symlink/非普通文件和
+`before.revision === afterRevision` 都是稳定 conflict，不允许强制跳过。discard preview
+不读取 stored-before blob，但会绑定 raw manifest revision/size、完整 metadata 和目标
+状态证据。两种删除在获批 apply 后都永久删除 manifest，再运行 fail-closed orphan GC，
+且不会修改目标项目资产。
+
+提交项目资产后重新读取 map summary，并按需要调用 `tiled_validate` 和
 `tiled_render_preview` 检查结构与视觉结果。change set 会过期；map edit proposal 会绑定
-目标 map revision，并在适用时绑定完整 dependency pins，而 checkpoint restore 只绑定
-其单个目标文档的 revision，checkpoint prune 则绑定 manifest revision。任一种 proposal
-过期或冲突后都必须重新预览和批准；prune 成功后不留 tombstone，不要把 not-found 当成
-可重试信号。
+目标 map revision，并在适用时绑定完整 dependency pins，checkpoint restore 绑定其单个
+目标文档的 revision，checkpoint prune/discard 则绑定 raw manifest revision；discard
+另外固定目标状态 CAS。任一种 proposal 过期或冲突后都必须重新预览和批准；prune/discard
+成功后均不留 tombstone，不要把 not-found 当成可重试信号。
 
 ## `tiled_create_map` 是 no-replace 例外
 
@@ -156,7 +165,9 @@ revision，获批 apply 后永久删除该 manifest，再运行 fail-closed orph
 这个例外只适用于创建一个此前不存在的 TMJ，不能据此绕过其他 mutation 的预览批准流程。
 调用前由用户确认目标路径；如果重试原因不明，先用 `tiled_list_files` 或读取工具确认状态。
 其自动 checkpoint 记录 `before.existed:false`，当前恢复工具不会把它解释成删除；进程若在
-落盘后、标记 committed 前崩溃，启动对账也不会仅凭相同 hash 猜测文件来源。
+落盘后、标记 committed 前崩溃，启动对账也不会仅凭相同 hash 猜测文件来源，prepared
+discard 同样会因 create 目标已存在而拒绝。只有目标当前严格缺失、与
+`before.existed:false` 一致时才可走 prepared discard。
 
 ## Raster 预览是可选能力
 

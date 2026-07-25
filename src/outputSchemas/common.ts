@@ -175,7 +175,7 @@ const checkpointGarbageCollectionCountOutputSchema =
     Number.MAX_SAFE_INTEGER,
   );
 
-const checkpointPruneGarbageCollectionCompletedOutputSchema =
+const checkpointGarbageCollectionCompletedOutputSchema =
   z
     .object({
       status: z.literal("completed"),
@@ -193,7 +193,7 @@ const checkpointPruneGarbageCollectionCompletedOutputSchema =
     })
     .strict();
 
-const checkpointPruneGarbageCollectionBlockedOutputSchema =
+const checkpointGarbageCollectionBlockedOutputSchema =
   z
     .object({
       status: z.literal("blocked"),
@@ -215,7 +215,7 @@ const checkpointPruneGarbageCollectionBlockedOutputSchema =
     })
     .strict();
 
-const checkpointPruneGarbageCollectionFailedOutputSchema =
+const checkpointGarbageCollectionFailedOutputSchema =
   z
     .object({
       status: z.literal("failed"),
@@ -248,6 +248,13 @@ const checkpointPruneBeforeOutputSchema = z.union([
     .strict(),
 ]);
 
+export const checkpointGarbageCollectionOutputSchema =
+  z.union([
+    checkpointGarbageCollectionCompletedOutputSchema,
+    checkpointGarbageCollectionBlockedOutputSchema,
+    checkpointGarbageCollectionFailedOutputSchema,
+  ]);
+
 export const checkpointPruneApplyResultOutputSchema =
   z
     .object({
@@ -271,11 +278,62 @@ export const checkpointPruneApplyResultOutputSchema =
         })
         .strict(),
       manifestDeleted: z.literal(true),
-      garbageCollection: z.union([
-        checkpointPruneGarbageCollectionCompletedOutputSchema,
-        checkpointPruneGarbageCollectionBlockedOutputSchema,
-        checkpointPruneGarbageCollectionFailedOutputSchema,
-      ]),
+      garbageCollection:
+        checkpointGarbageCollectionOutputSchema,
+      warnings: z
+        .array(z.string().max(4_096))
+        .max(32)
+        .optional(),
+    })
+    .strict();
+
+const preparedCheckpointTargetOutputSchema =
+  z.union([
+    z
+      .object({
+        existed: z.literal(false),
+      })
+      .strict(),
+    z
+      .object({
+        existed: z.literal(true),
+        revision: revisionOutputSchema,
+        size: nonnegativeIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+  ]);
+
+export const preparedCheckpointDiscardApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal(
+        "preparedCheckpointDiscard",
+      ),
+      changeSetId: changeSetIdOutputSchema,
+      checkpoint: z
+        .object({
+          id: checkpointIdOutputSchema,
+          createdAt:
+            checkpointTimestampOutputSchema,
+          label: z
+            .string()
+            .max(1_024)
+            .optional(),
+          path: projectPathOutputSchema,
+          status: z.literal("prepared"),
+          before:
+            checkpointPruneBeforeOutputSchema,
+          afterRevision:
+            revisionOutputSchema,
+        })
+        .strict(),
+      target:
+        preparedCheckpointTargetOutputSchema,
+      manifestDeleted: z.literal(true),
+      garbageCollection:
+        checkpointGarbageCollectionOutputSchema,
       warnings: z
         .array(z.string().max(4_096))
         .max(32)
@@ -285,12 +343,13 @@ export const checkpointPruneApplyResultOutputSchema =
 
 /*
  * Preserve the existing document-commit wire shape exactly. Checkpoint prune
- * mutates recovery metadata rather than a project document, so it has its own
- * explicitly discriminated success branch.
+ * and prepared-checkpoint discard mutate recovery metadata rather than a
+ * project document, so they have explicitly discriminated success branches.
  */
 export const applyResultOutputSchema = z.union([
   documentApplyResultOutputSchema,
   checkpointPruneApplyResultOutputSchema,
+  preparedCheckpointDiscardApplyResultOutputSchema,
 ]);
 
 export const applicationErrorResultOutputSchema = z

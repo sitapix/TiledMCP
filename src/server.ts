@@ -124,6 +124,7 @@ import {
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
+  preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -176,6 +177,10 @@ import {
   applyCheckpointRestore,
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
+import {
+  applyPreparedCheckpointDiscard,
+  planPreparedCheckpointDiscard,
+} from "./storage/preparedCheckpointDiscard.js";
 import {
   CHECKPOINT_ID_PATTERN,
   CHECKPOINT_STORAGE_POLICY,
@@ -913,6 +918,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_get_capabilities",
     "tiled_list_files",
     "tiled_list_checkpoints",
+    "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_checkpoint_prune",
     "tiled_preview_checkpoint_restore",
     "tiled_get_map_summary",
@@ -1050,6 +1056,16 @@ const CHECKPOINT_PRUNE_PREVIEW: ToolAnnotations = {
   idempotentHint: false,
   openWorldHint: false,
 };
+
+const PREPARED_CHECKPOINT_DISCARD_PREVIEW: ToolAnnotations =
+  {
+    title:
+      "Preview discarding a prepared recovery checkpoint",
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  };
 
 export interface TiledMcpServerDependencies {
   resolver: ProjectPathResolver;
@@ -1305,6 +1321,33 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           previewAndApplyRestore: true,
           restoreScope: "single-existing-json-document",
           restoresReferencedDependencies: false,
+          preparedDiscard: {
+            scope:
+              "single-explicit-prepared-checkpoint",
+            workflow: "preview-then-apply",
+            eligibility:
+              "current-target-equals-checkpoint-before-state",
+            existingFileEligibility:
+              "target-raw-revision-and-size-equal-before",
+            createEligibility: "target-missing",
+            expectedRevision:
+              "sha256-of-raw-manifest-bytes",
+            targetObservationCas:
+              "required-at-apply",
+            lockOrder:
+              "target-then-checkpoint-store",
+            commitPoint:
+              "manifest-unlink-then-checkpoint-directory-fsync",
+            garbageCollection:
+              "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+            storedBeforeValidation:
+              "not-read-for-discard",
+            operatorForcedCommit: "unsupported",
+            forceAbandon: "unsupported",
+            automaticDeletion: "never",
+            projectAssetMutation: false,
+            tombstones: false,
+          },
           prune: {
             scope: "single-explicit-committed-checkpoint",
             workflow: "preview-then-apply",
@@ -1328,7 +1371,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             maxEntries:
               store.checkpoints.maxEntries,
             garbageCollectionTrigger:
-              "quota-pressure-approved-checkpoint-prune-or-explicit-internal-call",
+              "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
             quotaFailureCode:
               "CHECKPOINT_QUOTA_EXCEEDED",
           },
@@ -1757,11 +1800,43 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_preview_prepared_checkpoint_discard",
+    {
+      title:
+        "Preview discarding a prepared recovery checkpoint",
+      description:
+        "Pins one prepared checkpoint manifest and proves that the current target still equals its pre-write state: an existing target must match the exact before revision and size, while a create target must still be missing. It returns a destructive discard proposal without deleting the manifest or changing the project asset. Conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected.",
+      inputSchema: z
+        .object({
+          checkpointId: z
+            .string()
+            .regex(CHECKPOINT_ID_PATTERN),
+        })
+        .strict(),
+      outputSchema:
+        preparedCheckpointDiscardPreviewToolOutputSchema,
+      annotations:
+        PREPARED_CHECKPOINT_DISCARD_PREVIEW,
+    },
+    async ({ checkpointId }) =>
+      executeTool(async () =>
+        changeSets.put(
+          await planPreparedCheckpointDiscard(
+            store,
+            checkpointId,
+          ),
+        ),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_preview_checkpoint_prune",
     {
       title: "Preview pruning a recovery checkpoint",
       description:
-        "Pins the raw manifest revision of one committed recovery checkpoint and returns a destructive prune proposal without deleting it. Prepared checkpoints must be reconciled first. Applying the proposal removes only the manifest, then runs fail-closed garbage collection for unreferenced checkpoint objects and private crash temporary files.",
+        "Pins the raw manifest revision of one committed recovery checkpoint and returns a destructive prune proposal without deleting it. Prepared checkpoints are rejected; reconcile them or use the dedicated safe-discard preview when its exact-before eligibility is proven. Applying the proposal removes only the manifest, then runs fail-closed garbage collection for unreferenced checkpoint objects and private crash temporary files.",
       inputSchema: z
         .object({
           checkpointId: z
@@ -2357,7 +2432,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, checkpoint restore, or committed-checkpoint prune after checking its approved SHA-256 revision and all plan-specific dependency pins.",
+        "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, or committed-checkpoint prune after checking its approved SHA-256 revision and all plan-specific dependency pins.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -2383,12 +2458,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           (plan) =>
             plan.kind === "checkpointRestore"
               ? applyCheckpointRestore(store, plan)
-              : plan.kind === "checkpointPrune"
-                ? applyCheckpointPrune(
+              : plan.kind ===
+                  "preparedCheckpointDiscard"
+                ? applyPreparedCheckpointDiscard(
                     store,
                     plan,
                   )
-                : maps.applyEdits(plan),
+                : plan.kind === "checkpointPrune"
+                  ? applyCheckpointPrune(
+                      store,
+                      plan,
+                    )
+                  : maps.applyEdits(plan),
         ),
       ),
   );

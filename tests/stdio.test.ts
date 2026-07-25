@@ -62,6 +62,9 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       "tiled_create_layer",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_preview_prepared_checkpoint_discard",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_prune",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
@@ -70,7 +73,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_analyze_usage",
     );
-    expect(tools.tools.length === 19 || tools.tools.length === 20).toBe(
+    expect(tools.tools.length === 20 || tools.tools.length === 21).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -1364,6 +1367,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:19|20) tools\)/u,
+    /ready for .+ \((?:20|21) tools\)/u,
   );
 });

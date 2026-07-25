@@ -71,6 +71,7 @@ const CORE_TOOLS = [
   "tiled_get_capabilities",
   "tiled_list_files",
   "tiled_list_checkpoints",
+  "tiled_preview_prepared_checkpoint_discard",
   "tiled_preview_checkpoint_prune",
   "tiled_preview_checkpoint_restore",
   "tiled_get_map_summary",
@@ -184,7 +185,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the nineteen core tools with safety annotations", async () => {
+  it("advertises exactly the twenty core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -211,6 +212,7 @@ describe("createTiledMcpServer", () => {
       });
     }
     for (const name of [
+      "tiled_preview_prepared_checkpoint_discard",
       "tiled_preview_checkpoint_prune",
       "tiled_preview_checkpoint_restore",
       "tiled_preview_edits",
@@ -244,6 +246,17 @@ describe("createTiledMcpServer", () => {
       destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
+    });
+    expect(
+      byName.get("tiled_preview_prepared_checkpoint_discard")
+        ?.inputSchema,
+    ).toMatchObject({
+      type: "object",
+      properties: {
+        checkpointId: { type: "string" },
+      },
+      required: ["checkpointId"],
+      additionalProperties: false,
     });
     expect(
       byName.get("tiled_preview_checkpoint_prune")?.inputSchema,
@@ -2753,6 +2766,33 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+        preparedDiscard: {
+          scope:
+            "single-explicit-prepared-checkpoint",
+          workflow: "preview-then-apply",
+          eligibility:
+            "current-target-equals-checkpoint-before-state",
+          existingFileEligibility:
+            "target-raw-revision-and-size-equal-before",
+          createEligibility: "target-missing",
+          expectedRevision:
+            "sha256-of-raw-manifest-bytes",
+          targetObservationCas:
+            "required-at-apply",
+          lockOrder:
+            "target-then-checkpoint-store",
+          commitPoint:
+            "manifest-unlink-then-checkpoint-directory-fsync",
+          garbageCollection:
+            "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+          storedBeforeValidation:
+            "not-read-for-discard",
+          operatorForcedCommit: "unsupported",
+          forceAbandon: "unsupported",
+          automaticDeletion: "never",
+          projectAssetMutation: false,
+          tombstones: false,
+        },
         prune: {
           scope:
             "single-explicit-committed-checkpoint",
@@ -2777,7 +2817,7 @@ describe("createTiledMcpServer", () => {
           maxEntries:
             MAX_CHECKPOINT_OBSERVED_ENTRIES,
           garbageCollectionTrigger:
-            "quota-pressure-approved-checkpoint-prune-or-explicit-internal-call",
+            "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
           quotaFailureCode:
             "CHECKPOINT_QUOTA_EXCEEDED",
         },
@@ -3994,6 +4034,30 @@ describe("createTiledMcpServer", () => {
     const response = asToolResponse(
       await harness.client.callTool({
         name: "tiled_preview_checkpoint_prune",
+        arguments: {
+          checkpointId: "00000000-0000-4000-8000-000000000000",
+          unexpected: true,
+        },
+      }),
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.structuredContent).toBeUndefined();
+    expect(response.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("Input validation error"),
+      }),
+    ]);
+    expect((response.content[0] as { text: string }).text).toContain(
+      "Unrecognized key",
+    );
+  });
+
+  it("rejects unknown prepared checkpoint discard preview keys through its strict schema", async () => {
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_preview_prepared_checkpoint_discard",
         arguments: {
           checkpointId: "00000000-0000-4000-8000-000000000000",
           unexpected: true,
@@ -6667,6 +6731,219 @@ describe("createTiledMcpServer", () => {
     });
     expect(await readFile(absoluteMapPath)).toEqual(
       proposed,
+    );
+    expect(
+      (
+        await harness.store.checkpoints.list()
+      ).manifests,
+    ).toEqual([]);
+
+    const secondApply =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    expect(secondApply).toEqual(firstApply);
+  });
+
+  it("previews, applies and idempotently replays a current-before-verified prepared checkpoint discard", async () => {
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(absoluteMapPath);
+    const proposed = Buffer.concat([
+      before,
+      Buffer.from(" "),
+    ]);
+    const prepared =
+      await harness.store.checkpoints.prepare(
+        MAP_PATH,
+        before,
+        revisionOf(proposed),
+        "server prepared discard integration",
+      );
+
+    const preview = resultOf<{
+      kind: string;
+      changeSetId: string;
+      planDigest: string;
+      targetPath: string;
+      expectedRevision: string;
+      checkpoint: {
+        id: string;
+        status: string;
+        path: string;
+        before: {
+          existed: boolean;
+          revision: string;
+          objectHash: string;
+          size: number;
+        };
+        afterRevision: string;
+      };
+      manifest: {
+        revision: string;
+        size: number;
+      };
+      target: {
+        existed: boolean;
+        revision: string;
+        size: number;
+      };
+      eligibility: string;
+      operations: Array<Record<string, unknown>>;
+      summary: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_prepared_checkpoint_discard",
+        arguments: {
+          checkpointId: prepared.id,
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      kind: "preparedCheckpointDiscard",
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      planDigest: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      targetPath: MAP_PATH,
+      expectedRevision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+      checkpoint: {
+        id: prepared.id,
+        status: "prepared",
+        path: MAP_PATH,
+        before: {
+          existed: true,
+          revision: revisionOf(before),
+          objectHash: revisionOf(before).slice(
+            "sha256:".length,
+          ),
+          size: before.byteLength,
+        },
+        afterRevision: revisionOf(proposed),
+      },
+      manifest: {
+        revision: expect.stringMatching(
+          /^sha256:[0-9a-f]{64}$/u,
+        ),
+        size: expect.any(Number),
+      },
+      target: {
+        existed: true,
+        revision: revisionOf(before),
+        size: before.byteLength,
+      },
+      eligibility:
+        "current-target-matches-before-state",
+      operations: [
+        {
+          type: "discardPreparedCheckpoint",
+          destructive: true,
+          checkpointId: prepared.id,
+          targetPath: MAP_PATH,
+          status: "prepared",
+          manifestRevision:
+            preview.expectedRevision,
+          manifestBytes:
+            preview.manifest.size,
+          removesRecoveryPoint: true,
+          removesProjectAsset: false,
+          targetBeforeStateVerified: true,
+          garbageCollection:
+            "fail-closed-after-prepared-manifest-discard",
+          warning: expect.stringContaining(
+            "pre-write state",
+          ),
+        },
+      ],
+      summary: {
+        operationCount: 1,
+        destructive: true,
+        checkpointId: prepared.id,
+        targetPath: MAP_PATH,
+        status: "prepared",
+        manifestRevision:
+          preview.expectedRevision,
+        manifestBytes: preview.manifest.size,
+        removesRecoveryPoint: true,
+        removesProjectAsset: false,
+        targetBeforeStateVerified: true,
+        garbageCollection:
+          "fail-closed-after-prepared-manifest-discard",
+        warning: expect.stringContaining(
+          "pre-write state",
+        ),
+      },
+    });
+    expect(preview.manifest.revision).toBe(
+      preview.expectedRevision,
+    );
+    expect(await readFile(absoluteMapPath)).toEqual(
+      before,
+    );
+
+    const firstApply =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    const applied = resultOf<{
+      kind: string;
+      changeSetId: string;
+      checkpoint: {
+        id: string;
+        path: string;
+        status: string;
+      };
+      target: {
+        existed: boolean;
+        revision: string;
+        size: number;
+      };
+      manifestDeleted: boolean;
+      garbageCollection: {
+        status: string;
+        deletedObjects: number;
+        blockerCount: number;
+        blockers: unknown[];
+        blockersTruncated: boolean;
+      };
+    }>(firstApply);
+    expect(applied).toMatchObject({
+      kind: "preparedCheckpointDiscard",
+      changeSetId: preview.changeSetId,
+      checkpoint: {
+        id: prepared.id,
+        path: MAP_PATH,
+        status: "prepared",
+      },
+      target: {
+        existed: true,
+        revision: revisionOf(before),
+        size: before.byteLength,
+      },
+      manifestDeleted: true,
+      garbageCollection: {
+        status: "completed",
+        deletedObjects: 1,
+        blockerCount: 0,
+        blockers: [],
+        blockersTruncated: false,
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(
+      before,
     );
     expect(
       (
