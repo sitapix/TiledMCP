@@ -112,7 +112,9 @@ stale lock 永远 fail closed。手动删除前必须确认原 PID/写者已不�
 3. 确保同一逻辑文件没有通过另一个 hardlink alias 被编辑；
 4. 不在不可信的共享写目录中运行 direct backend；
 5. 提交成功后，如后续决策依赖当前状态，重新读取 revision；
-6. 对 stale locks、prepared checkpoints 和 `.tiledmcp/objects` 容量做运维监控。
+6. 监控 stale locks、prepared checkpoints 和
+   `checkpointCapabilities.storagePolicy` 报告的 quota；quota/GC 属于
+   `.tiledmcp` internal-state contract，不属于本文 document-target scope。
 
 如果无法满足第 2～4 项，应把当前后端视为只读，或部署强制写入中介。
 

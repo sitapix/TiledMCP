@@ -76,7 +76,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UT
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
 PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
-双 profile discovery contract、97-code v1 application-error contract 和人类参考文档，
+双 profile discovery contract、98-code v1 application-error contract 和人类参考文档，
 并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
 asset identity v1 已经落地并通过 `tiled_get_capabilities.assetIdentityContract`
 公布精确边界；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
@@ -88,7 +88,9 @@ hardlink 在旧路径删除后与 rename 的最终状态不可区分，可能继
 `filesystemThreatModelContract` v1 冻结：非合作既有目标 conditional replace 与 hostile
 parent swap 明确属于 unsupported，并附带可机读运维条件；其 scope 只覆盖项目资产 JSON
 文档目标，明确排除 `.tiledmcp` server-internal state，不再是含糊的 M0 决策项。
-整体接口仍以 0.0.x Draft 发布；当前主要运维缺口是 checkpoint 总容量配额与 GC。
+checkpoint store 现有 1 GiB 默认总量配额、10,000 observed-entry quota、项目级协调锁和
+fail-closed orphan GC；它不自动删除任何有效 manifest。整体接口仍以 0.0.x Draft 发布，
+下一项运维缺口是显式 prune/retention 管理能力。
 当前运行能力仍应以
 `tiled_get_capabilities`、`tools/list` 和 resource discovery 为准。
 
@@ -101,7 +103,7 @@ parent swap 明确属于 unsupported，并附带可机读运维条件；其 scop
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
-| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 97 个 v1 application code 及其兼容性、fallback 和排除边界 |
+| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 98 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 19 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
@@ -135,7 +137,12 @@ rasterization，并确认 `tiled_create_map` 产物可由目标版本重新导�
 `pnpm test` 仍不把可选 Tiled CLI 变成核心 direct-JSON 能力的运行依赖。
 
 服务使用 stdio transport；stdout 只承载 MCP 协议，诊断写入 stderr。项目根目录是必填
-的 fail-closed 安全边界，也可以通过 `TILED_PROJECT_DIR` 设置。一个通用的客户端配置为：
+的 fail-closed 安全边界，也可以通过 `TILED_PROJECT_DIR` 设置。checkpoint retained
+storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
+`TILEDMCP_CHECKPOINT_BYTES` 设置规范十进制 `[1-9][0-9]*` bytes，范围
+`1..9007199254740991`；运行时精确值以
+`checkpointCapabilities.storagePolicy` 为准；同时提供时 CLI 优先于环境变量。一个通用的
+客户端配置为：
 
 ```json
 {
@@ -198,7 +205,7 @@ TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径
 返回
 `{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
 应用错误码的精确 wire 位置是 `structuredContent.result.error.code`。当前 v1 注册表包含
-97 个 application code；机器 artifact 是
+98 个 application code；机器 artifact 是
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json)，运行时
 同一内容可从 direct Resource `tiled://application-errors` 读取，并由
 `tiled_get_capabilities.applicationErrorContract` 公布 URI、revision、size、fallback 和
@@ -231,7 +238,7 @@ inline image bytes。error summary 给稳定 `code`、有界单行 `message`、�
 | URI | 类型 | 作用 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | 串联能力发现、sheet/preview 检查、change set 客户端批准、提交与提交后复核；内容带 SHA-256 revision 和 UTF-8 byte size |
-| `tiled://application-errors` | `application/json` | 当前 97 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
+| `tiled://application-errors` | `application/json` | 当前 98 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
 
 资产、schema 和 render Resource Templates 尚未注册；应以
 `resources/list` / `resources/templates/list` 的实际响应为准。
@@ -675,8 +682,10 @@ value-local counters、BOM/CRLF/未知词法、tamper/stale revision 与 Tiled 1
 tileset 挂载覆盖 map/现有依赖/prospective TSJ revision pin、自动 `firstgid`、重复引用、
 GID 上限和局部 source patch；图层创建覆盖 4 种类型、根/Group 插入、`nextlayerid`、
 tile cell 预算、prospective image pin 与单元素 source insertion；
-checkpoint 恢复覆盖 exact-byte round trip、manifest/blob 篡改、prepared 状态机、目标
-revision 冲突、preview/apply/replay 和恢复前二次 checkpoint；
+checkpoint 覆盖 exact-byte round trip、manifest/blob 篡改、prepared 状态机、目标
+revision 冲突、preview/apply/replay、恢复前二次 checkpoint、精确 byte/entry
+配额边界、共享 blob 去重、writer/GC 串行化、并发 writer 防超卖，以及 inventory
+不完整时零删除的 fail-closed GC；
 文档 fd 读取覆盖并发覆写/增长/截断检测。`tiled://guide` 和
 `tiled://application-errors` 另有 list/read、空 templates、内容 revision/size 和未知
 URI 契约测试；生产入口另通过真实
@@ -792,8 +801,18 @@ checkpoint restore。架构与 roadmap
   自动抢锁。启动扫描只会把目标精确等于 `afterRevision` 的 existing-file `prepared`
   checkpoint 补记为 `committed`；prepared create 即使 hash 相同也因来源不明报告
   conflict。其他状态只报告，不会自动回滚或删除。
-- checkpoint 目前按内容去重，但还没有总容量配额和 GC；长期高频编辑时需要监控项目内
-  `.tiledmcp/objects` 的磁盘占用。恢复当前严格限于一个已存在的安全 JSON 文档；
+- checkpoint store 对 manifests、content objects、崩溃 temp 与未知 entry 的 observed
+  logical bytes/entry 总量做写前配额检查；prepared manifest 预留 committed 状态增量。
+  manifest 首次发布使用 create-if-absent，不会覆盖同名恢复点；任何条目的 byte/entry
+  清点无法证明完整时，新写入也会 fail closed。该内部存储边界假设本地状态可信且所有
+  写者遵守全局锁；同权限进程恶意篡改 `.tiledmcp` 不在当前保证内。
+  超限时只在完整、无损坏、无截断地建立全部 prepared/committed 引用集后回收 orphan
+  objects 和私有 temp，否则首次 unlink 前整体阻断；任何有效 manifest 都不会被自动删除。
+  `CHECKPOINT_QUOTA_EXCEEDED` 会在项目目标 promotion 前拒绝写入。客户端应把 error details
+  当成不透明诊断；只有操作者另行确认 byte 维度单独超限时，提高
+  `--checkpoint-bytes` / `TILEDMCP_CHECKPOINT_BYTES` 才可能恢复写入，entry 维度超限或
+  inventory blocker 不会因提高 byte quota 消失。长期高频编辑最终仍需要未来显式
+  prune/retention 能力。恢复当前严格限于一个已存在的安全 JSON 文档；
   checkpoint 的 manifest 意图与 blob hash/revision/size 在 apply 时都会复核，唯一允许
   的 manifest 状态变化是 preview 后由 `prepared` 前进到 `committed`。恢复不包含依赖
   闭包，也不支持通过恢复删除由某次 create 新增的文件。

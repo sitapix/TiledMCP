@@ -24,7 +24,9 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
    declares the one direct no-preview exception, exact format/version limits,
    approval boundary, retry semantics, and no-replace behavior. Before any
    write, inspect \`filesystemThreatModelContract\`: its guarantees apply only
-   when the declared operational requirements hold.
+   when the declared operational requirements hold. Also inspect
+   \`checkpointCapabilities.storagePolicy\` for the active retained-byte quota,
+   entry limit, GC roots, and fail-closed deletion policy.
 2. Use MCP \`resources/list\` and read \`tiled://application-errors\` when the
    complete current application-code allowlist is needed.
 3. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
@@ -80,7 +82,7 @@ application-level summary envelope.
 
 ## Handle application errors
 
-The current v1 application-error registry contains 97 codes. Its committed
+The current v1 application-error registry contains 98 codes. Its committed
 machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
 is available at the direct resource \`tiled://application-errors\`.
 \`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
@@ -724,6 +726,20 @@ or create a checkpoint. \`tiled_create_map\` instead prepares an
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
 entries without reading the stored document bytes.
 
+Checkpoint storage is bounded before any project-target promotion. The default
+retained quota is 1 GiB with at most 10,000 observed entries, but the byte quota
+is configurable, so use the advertised values. Prepared manifests reserve
+their committed-state size. Under pressure, GC treats every valid prepared or
+committed manifest as a root and removes only unreferenced canonical objects
+and private crash temporaries. Any malformed, unexpected, symlink, non-regular,
+missing-reference, unsafe-byte-accounting, or incomplete scan blocks the entire
+sweep before its first deletion. An incomplete byte or entry inventory also
+fails the write-capacity proof. Initial manifest publication is
+create-if-absent and never replaces an existing recovery point. Valid manifests
+are never pruned automatically. This internal-state contract assumes trusted
+local state and writers that follow the project-wide checkpoint lock; malicious
+same-privilege mutation of \`.tiledmcp\` is outside its guarantee.
+
 To restore one checkpoint safely:
 
 1. Select a checkpoint from \`tiled_list_checkpoints\`, then read the target
@@ -756,6 +772,15 @@ made before creating a new file cannot be used to delete that file.
   advertised adapter. Do not assume omitted content was validated visually.
 - On a size, region, cell, layer, atlas, or image budget error, split the work
   into smaller bounded requests.
+- On \`CHECKPOINT_QUOTA_EXCEEDED\`, stop mutation attempts. Do not blindly
+  retry or manually delete content-addressed objects or manifests. Error
+  details are opaque diagnostics and must not drive automated remediation.
+  Review the advertised capability, internal-state health, and deployment
+  capacity. Only after an operator independently confirms that entries remain
+  within their limit and bytes alone are exhausted may you raise
+  \`--checkpoint-bytes\` / \`TILEDMCP_CHECKPOINT_BYTES\` and restart. Raising
+  the byte quota cannot repair an entry-limit or inventory-blocker condition;
+  explicit checkpoint prune/retention is not implemented.
 - On validation failure, inspect diagnostics before proposing another change.
 - Do not mutate files outside TiledMCP while relying on a previously observed
   revision. Revisions are SHA-256 identities of the exact bytes that were read.

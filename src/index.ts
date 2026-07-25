@@ -20,7 +20,12 @@ async function main(): Promise<void> {
 
   const config = loadConfig(argv, process.env);
   const resolver = await ProjectPathResolver.create(config.projectDir);
-  const store = new DocumentStore(resolver);
+  const store = new DocumentStore(
+    resolver,
+    undefined,
+    undefined,
+    { maxBytes: config.checkpointBytes },
+  );
   const checkpointReport = await store.reconcilePreparedCheckpoints();
   const reconciliationCounts = {
     reconciled: checkpointReport.outcomes.filter(

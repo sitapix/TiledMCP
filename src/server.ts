@@ -171,7 +171,10 @@ import {
   applyCheckpointRestore,
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
-import { CHECKPOINT_ID_PATTERN } from "./storage/checkpoints.js";
+import {
+  CHECKPOINT_ID_PATTERN,
+  CHECKPOINT_STORAGE_POLICY,
+} from "./storage/checkpoints.js";
 import type { DocumentStore } from "./storage/documentStore.js";
 import { KeyedMutex } from "./storage/keyedMutex.js";
 import { revisionOf } from "./storage/revision.js";
@@ -1288,6 +1291,17 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           previewAndApplyRestore: true,
           restoreScope: "single-existing-json-document",
           restoresReferencedDependencies: false,
+          storagePolicy: {
+            ...CHECKPOINT_STORAGE_POLICY,
+            maxBytes:
+              store.checkpoints.maxBytes,
+            maxEntries:
+              store.checkpoints.maxEntries,
+            garbageCollectionTrigger:
+              "quota-pressure-or-explicit-internal-call",
+            quotaFailureCode:
+              "CHECKPOINT_QUOTA_EXCEEDED",
+          },
         },
         mapCreationCapabilities: {
           profile:
@@ -1623,6 +1637,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       exactJsonValueOutputSchema(
         capabilitiesResult as unknown as JsonValue,
         (jsonPointer) => {
+          if (
+            jsonPointer ===
+              "/checkpointCapabilities/storagePolicy/maxBytes" ||
+            jsonPointer ===
+              "/checkpointCapabilities/storagePolicy/maxEntries"
+          ) {
+            return z
+              .number()
+              .int()
+              .min(1)
+              .max(Number.MAX_SAFE_INTEGER);
+          }
           if (jsonPointer === "/cli") {
             return cliCapabilitiesOutputSchema;
           }

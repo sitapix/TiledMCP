@@ -50,7 +50,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。双 profile 的完整 discovery artifact、包含当前 97 个 v1 application code 的
+aliases。双 profile 的完整 discovery artifact、包含当前 98 个 v1 application code 的
 稳定错误 registry、生成式参考和每工具调用示例现已落地并纳入 drift gate；schema 无法
 表达的 revision/批准语义由手写安全工作流维护。当前 wire 实际使用的 external TSJ 与
 image-layer dependency `assetId` 已接入版本化持久 registry：首次分配兼容旧路径哈希，
@@ -60,8 +60,10 @@ file identity 的场景分配新 ID，不按内容猜身份。`tiled_create_map`
 direct additive no-preview 例外，固定 Tiled 1.12.2 的不可跳过集成门也已落地。
 direct filesystem 的 non-cooperative external-writer CAS、hostile parent swap、锁作用域
 和部署前提已经由 `filesystemThreatModelContract` v1 冻结为明确 guarantee/unsupported/
-operational requirements。本文仍是 Draft，因为 checkpoint 总容量配额/GC 等其余运维
-冻结门槛尚未完成；运行时应以
+operational requirements。checkpoint store 已接入版本化 storage policy、可配置总量配额、
+生产 CLI 默认 10,000 的 entry 上限、项目级锁和 fail-closed orphan GC；它不自动 prune
+有效 manifest。嵌入式实例的 entry 上限可能不同，运行值以 capability 为准。
+本文仍是 Draft，因为显式 retention/prune 等其余运维冻结门槛尚未完成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
@@ -291,7 +293,7 @@ type ApplyResult = CommitResult & {
 3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
    并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
    `structuredContent`；code 的精确 wire 位置是
-   `structuredContent.result.error.code`。当前 v1 application registry 有 97 个 code，
+   `structuredContent.result.error.code`。当前 v1 application registry 有 98 个 code，
    机器 artifact 为
    [`contracts/application-errors.v1.json`](../contracts/application-errors.v1.json)，
    相同 JSON 由 `tiled://application-errors` 提供；
@@ -310,7 +312,7 @@ type ApplyResult = CommitResult & {
 5. application registry 只覆盖上述 tool application envelope，不包括 MCP SDK input
    error、`cli.*.issues[].code` capability-probe 诊断、startup fatal error、
    `tiled_validate` 的 `Diagnostic[]`、checkpoint reconciliation diagnostics 或原始 OS
-   error code。这些表面各自遵循独立契约，不能与 97-code allowlist 混用。
+   error code。这些表面各自遵循独立契约，不能与 98-code allowlist 混用。
 6. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
@@ -486,6 +488,22 @@ no-op restore 不替换目标，也不创建新 checkpoint。
 创建的文件，也不会隐式恢复任何依赖闭包。对于仍为 `prepared` 的 create checkpoint，
 目标即使精确等于 `afterRevision` 也不能证明创建者；启动对账固定报告
 `CHECKPOINT_STATE_CONFLICT` 并保留 manifest，不会仅凭 hash 自动标记 committed。
+
+`checkpointCapabilities.storagePolicy` v1 固定 checkpoint-store 边界：默认
+`maxBytes:1073741824`，`maxEntries:10000`，其中 bytes 是 `.tiledmcp/objects` 与
+`.tiledmcp/checkpoints` 下 observed logical file bytes 加 prepared→committed reservation，
+entries 包含 canonical objects/manifests、崩溃 temp 和未知项。每次 prepare 在项目级
+进程内 mutex 与跨进程 checkpoint-store lock 下完成 inventory、必要 GC、object/manifest
+发布；manifest 首次发布是 no-replace。任何 `lstat`/扫描失败或超出 safe-integer 精确计费
+范围都会使容量证明失败；配额仍不足或无法证明时，在项目目标 promotion 前返回
+`CHECKPOINT_QUOTA_EXCEEDED`。v1 假设 `.tiledmcp` 是可信本地状态且所有内部写者遵守同一
+checkpoint-store lock；不承诺抵御同权限非合作进程对内部目录的主动替换。
+
+GC 的 root set 同时包含全部有效 `prepared` 与 `committed` manifest。只有完整扫描且没有
+malformed/unexpected/symlink/非普通 entry、缺失引用、无法精确计费或 entry-limit
+truncation 时，才删除无引用 canonical object 和严格识别的私有 crash temp；任一 blocker
+都在首次 unlink 前阻断整个 sweep。v1 永不自动删除有效 manifest，因此配额保证有界存储，
+不保证无限期持续写入；显式 prune/retention 仍是后续管理能力。
 
 `operations` 只允许当前版本列出的 tile/layer/object/map/tileset-reference 纯文档编辑，不允许嵌套 operations、
 删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。不得退回接受
@@ -1257,7 +1275,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 | URI | `mimeType` | 内容 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | **已实现。** 使用 playbook：能力发现 → 摘要 → tileset sheet/map preview → 预览 edits → 客户端批准 → 提交 → 校验与渲染自查 |
-| `tiled://application-errors` | `application/json` | **已实现。** 当前 97 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
+| `tiled://application-errors` | `application/json` | **已实现。** 当前 98 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
 | `tiled://project/index` | `application/json` | **Roadmap，未实现。** 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
 | `tiled://schema/tool-contracts` | `application/schema+json` | **Roadmap，未实现。** 从代码生成的已注册工具 input/output schemas |
 | `tiled://schema/tmj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
@@ -1281,7 +1299,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 - JSON/text direct read 的目标默认上限是 `2 MiB`，当前嵌入式 guide 使用更严格的
   `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。`RESOURCE_TOO_LARGE` 是配合未来
   asset/template Resource reads 规划的 resource-layer code，**尚未实现，也不属于当前
-  97-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
+  98-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
   截断后伪装成完整内容。
 - 当前 v1 registry 覆盖的 `assetId` 在同一项目内部状态中跨服务器重启可复用；同路径
   替换与可唯一验证的普通同文件系统 file-identity move 保持映射；原路径仍存活的 copy/

@@ -19,7 +19,7 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -33,6 +33,7 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "CHECKPOINT_CORRUPT",
     "CHECKPOINT_NOT_COMMITTED",
     "CHECKPOINT_NOT_FOUND",
+    "CHECKPOINT_QUOTA_EXCEEDED",
     "CHECKPOINT_STATE_CONFLICT",
     "DEPENDENCY_REVISION_CONFLICT",
     "DOCUMENT_CHANGED_DURING_READ",
@@ -157,9 +158,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8",
+    "revision": "sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3",
     "serverVersion": "0.0.1",
-    "size": 3734
+    "size": 3767
   },
   "annotations": {
     "audience": [
@@ -171,7 +172,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3734,
+  "size": 3767,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -184,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:cdfcd809f350c8b36a93b4a3b711d639b1dcecc842fd4f61cbb84c9b2e381677",
+    "revision": "sha256:37cb570ebc9e67e7ece88735c54b42aab105bcbace5d8f25bed076bfea810d10",
     "serverVersion": "0.0.1",
-    "size": 42802
+    "size": 44592
   },
   "annotations": {
     "audience": [
@@ -198,15 +199,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 42802,
+  "size": 44592,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3734 UTF-8 bytes, revision `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`.
+Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 42802 UTF-8 bytes, revision `sha256:cdfcd809f350c8b36a93b4a3b711d639b1dcecc842fd4f61cbb84c9b2e381677`.
+Content contract: `text`, 44592 UTF-8 bytes, revision `sha256:37cb570ebc9e67e7ece88735c54b42aab105bcbace5d8f25bed076bfea810d10`.
 
 Resource templates: none.
 
@@ -636,6 +637,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -1525,6 +1527,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -1829,6 +1832,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -2690,6 +2694,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -3017,6 +3022,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -4032,6 +4038,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -4285,7 +4292,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8",
+                  "const": "sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -4293,7 +4300,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3734,
+                  "const": 3767,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -4493,6 +4500,121 @@ Output schema:
                 "startupPreparedReconciliation": {
                   "const": true,
                   "type": "boolean"
+                },
+                "storagePolicy": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "capacityEnforcement": {
+                      "const": "before-publishing-checkpoint-state",
+                      "type": "string"
+                    },
+                    "coordination": {
+                      "const": "project-wide-in-process-mutex-and-cross-process-file-lock",
+                      "type": "string"
+                    },
+                    "garbageCollectionDeletion": {
+                      "const": "unreferenced-canonical-objects-and-private-crash-temporaries-only",
+                      "type": "string"
+                    },
+                    "garbageCollectionRoots": {
+                      "const": "all-valid-prepared-and-committed-manifests",
+                      "type": "string"
+                    },
+                    "garbageCollectionTrigger": {
+                      "const": "quota-pressure-or-explicit-internal-call",
+                      "type": "string"
+                    },
+                    "incompleteCapacityInventoryPolicy": {
+                      "const": "fail-new-prepare-when-byte-or-entry-accounting-cannot-be-proven",
+                      "type": "string"
+                    },
+                    "incompleteInventoryPolicy": {
+                      "const": "block-entire-sweep-before-first-unlink",
+                      "type": "string"
+                    },
+                    "initialManifestPublication": {
+                      "const": "create-if-absent-no-replace",
+                      "type": "string"
+                    },
+                    "internalStateThreatBoundary": {
+                      "const": "trusted-local-state-and-cooperative-lock-following-writers-only",
+                      "type": "string"
+                    },
+                    "maxBytes": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxEntries": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "name": {
+                      "const": "tiled-mcp-checkpoint-storage",
+                      "type": "string"
+                    },
+                    "preparedManifestAccounting": {
+                      "const": "charged-as-max-of-observed-prepared-and-canonical-committed-bytes",
+                      "type": "string"
+                    },
+                    "quotaAccounting": {
+                      "const": "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
+                      "type": "string"
+                    },
+                    "quotaExhaustion": {
+                      "const": "fail-write-before-target-promotion-no-valid-manifest-pruning",
+                      "type": "string"
+                    },
+                    "quotaFailureCode": {
+                      "const": "CHECKPOINT_QUOTA_EXCEEDED",
+                      "type": "string"
+                    },
+                    "quotaScope": {
+                      "const": ".tiledmcp/objects-and-.tiledmcp/checkpoints",
+                      "type": "string"
+                    },
+                    "targetPromotionBeforeFailure": {
+                      "const": "quota-is-checked-before-checkpoint-publication-and-target-promotion",
+                      "type": "string"
+                    },
+                    "temporaryStagingAccounting": {
+                      "const": "active-staging-excluded-crash-leftovers-counted",
+                      "type": "string"
+                    },
+                    "validManifestDeletion": {
+                      "const": "never",
+                      "type": "string"
+                    },
+                    "version": {
+                      "const": 1,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version",
+                    "quotaAccounting",
+                    "quotaScope",
+                    "capacityEnforcement",
+                    "garbageCollectionRoots",
+                    "garbageCollectionDeletion",
+                    "validManifestDeletion",
+                    "incompleteInventoryPolicy",
+                    "incompleteCapacityInventoryPolicy",
+                    "coordination",
+                    "internalStateThreatBoundary",
+                    "preparedManifestAccounting",
+                    "temporaryStagingAccounting",
+                    "initialManifestPublication",
+                    "quotaExhaustion",
+                    "targetPromotionBeforeFailure",
+                    "maxBytes",
+                    "maxEntries",
+                    "garbageCollectionTrigger",
+                    "quotaFailureCode"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
@@ -4503,7 +4625,8 @@ Output schema:
                 "exactByteRestoreKernel",
                 "previewAndApplyRestore",
                 "restoreScope",
-                "restoresReferencedDependencies"
+                "restoresReferencedDependencies",
+                "storagePolicy"
               ],
               "type": "object"
             },
@@ -6909,6 +7032,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -7458,6 +7582,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -7898,6 +8023,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -8848,6 +8974,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -9248,6 +9375,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -9515,6 +9643,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -9902,6 +10031,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -10381,6 +10511,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -15788,6 +15919,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -16170,6 +16302,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -16889,6 +17022,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -17463,6 +17597,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",
@@ -17764,6 +17899,7 @@ Output schema:
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
                     "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
                     "CHECKPOINT_STATE_CONFLICT",
                     "DEPENDENCY_REVISION_CONFLICT",
                     "DOCUMENT_CHANGED_DURING_READ",

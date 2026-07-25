@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants, type BigIntStats } from "node:fs";
 import {
+  constants,
+  type BigIntStats,
+  type Dirent,
+} from "node:fs";
+import {
+  lstat,
   link,
   open,
   opendir,
@@ -13,11 +18,18 @@ import { dirname, join } from "node:path";
 import { TiledMcpError } from "../errors.js";
 import { parseJsonDocument } from "../formats/json.js";
 import type { ProjectPathResolver } from "../project/pathResolver.js";
+import { withProjectFileLock } from "./fileLock.js";
+import { KeyedMutex } from "./keyedMutex.js";
 import { revisionOf } from "./revision.js";
 
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_CHECKPOINT_OBJECT_BYTES = 64 * 1024 * 1024;
 const MAX_CHECKPOINT_LABEL_LENGTH = 1_024;
+export const DEFAULT_CHECKPOINT_STORAGE_BYTES =
+  1024 * 1024 * 1024;
+export const MAX_CHECKPOINT_OBSERVED_ENTRIES = 10_000;
+export const CHECKPOINT_STORAGE_LOCK_TARGET =
+  ".tiledmcp/checkpoint-store";
 export const MAX_CHECKPOINT_TIMESTAMP_LENGTH = 64;
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 1_000;
@@ -31,6 +43,119 @@ const CHECKPOINT_MANIFEST_PATTERN =
   /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/iu;
 const CHECKPOINT_TEMP_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/iu;
+const CHECKPOINT_OBJECT_TEMP_PATTERN =
+  /^[0-9a-f]{64}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/iu;
+const CHECKPOINT_STORAGE_MUTEX = new KeyedMutex();
+
+export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
+  name: "tiled-mcp-checkpoint-storage",
+  version: 1,
+  quotaAccounting:
+    "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
+  quotaScope:
+    ".tiledmcp/objects-and-.tiledmcp/checkpoints",
+  capacityEnforcement:
+    "before-publishing-checkpoint-state",
+  garbageCollectionRoots:
+    "all-valid-prepared-and-committed-manifests",
+  garbageCollectionDeletion:
+    "unreferenced-canonical-objects-and-private-crash-temporaries-only",
+  validManifestDeletion: "never",
+  incompleteInventoryPolicy:
+    "block-entire-sweep-before-first-unlink",
+  incompleteCapacityInventoryPolicy:
+    "fail-new-prepare-when-byte-or-entry-accounting-cannot-be-proven",
+  coordination:
+    "project-wide-in-process-mutex-and-cross-process-file-lock",
+  internalStateThreatBoundary:
+    "trusted-local-state-and-cooperative-lock-following-writers-only",
+  preparedManifestAccounting:
+    "charged-as-max-of-observed-prepared-and-canonical-committed-bytes",
+  temporaryStagingAccounting:
+    "active-staging-excluded-crash-leftovers-counted",
+  initialManifestPublication:
+    "create-if-absent-no-replace",
+  quotaExhaustion:
+    "fail-write-before-target-promotion-no-valid-manifest-pruning",
+  targetPromotionBeforeFailure:
+    "quota-is-checked-before-checkpoint-publication-and-target-promotion",
+} as const);
+
+export interface CheckpointStoreObserver {
+  afterObjectPublishedBeforeManifest?(context: {
+    manifest: CheckpointManifest;
+    objectHash: string;
+  }): void | Promise<void>;
+}
+
+export interface CheckpointStoreOptions {
+  maxBytes?: number;
+  /** Test and constrained-deployment override; production defaults to 10,000. */
+  maxEntries?: number;
+  /** Deterministic concurrency/fault-injection seam for storage tests. */
+  observer?: CheckpointStoreObserver;
+}
+
+export interface CheckpointGarbageCollectionBlocker {
+  directory: "checkpoints" | "objects";
+  fileName?: string;
+  reason:
+    | "entry-inspection-failed"
+    | "byte-accounting-limit-exceeded"
+    | "malformed-manifest"
+    | "missing-referenced-object"
+    | "non-regular-entry"
+    | "scan-limit-exceeded"
+    | "symbolic-link"
+    | "unexpected-entry";
+  message: string;
+}
+
+export interface CheckpointGarbageCollectionReport {
+  observedBytes: number;
+  chargedBytes: number;
+  observedEntries: number;
+  retainedBytes: number;
+  retainedChargedBytes: number;
+  retainedEntries: number;
+  deletedBytes: number;
+  deletedEntries: number;
+  deletedObjects: number;
+  deletedTemporaryFiles: number;
+  blocked: boolean;
+  blockers: CheckpointGarbageCollectionBlocker[];
+}
+
+interface CheckpointStorageDirectories {
+  checkpoints: string;
+  objects: string;
+}
+
+interface CheckpointStorageEntry {
+  directory: "checkpoints" | "objects";
+  fileName: string;
+  path: string;
+  size: number;
+  kind:
+    | "manifest"
+    | "manifest-temporary"
+    | "object"
+    | "object-temporary";
+}
+
+interface CheckpointStorageInventory {
+  observedBytes: number;
+  chargedBytes: number;
+  observedEntries: number;
+  capacityAccountingComplete: boolean;
+  blockers: CheckpointGarbageCollectionBlocker[];
+  referencedObjectHashes: Set<string>;
+  objectFileNames: Set<string>;
+  manifestSizes: Map<string, number>;
+  manifestChargedSizes: Map<string, number>;
+  objects: CheckpointStorageEntry[];
+  temporaryFiles: CheckpointStorageEntry[];
+}
 
 export interface CheckpointManifest {
   version: 1;
@@ -73,7 +198,46 @@ export interface CheckpointListResult {
 }
 
 export class CheckpointStore {
-  constructor(private readonly resolver: ProjectPathResolver) {}
+  readonly maxBytes: number;
+  readonly maxEntries: number;
+  private readonly observer:
+    | CheckpointStoreObserver
+    | undefined;
+
+  constructor(
+    private readonly resolver: ProjectPathResolver,
+    options: CheckpointStoreOptions = {},
+  ) {
+    const maxBytes =
+      options.maxBytes ??
+      DEFAULT_CHECKPOINT_STORAGE_BYTES;
+    if (
+      !Number.isSafeInteger(maxBytes) ||
+      maxBytes < 1
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Checkpoint retained storage quota must be a positive safe integer.",
+        { maxBytes },
+      );
+    }
+    const maxEntries =
+      options.maxEntries ??
+      MAX_CHECKPOINT_OBSERVED_ENTRIES;
+    if (
+      !Number.isSafeInteger(maxEntries) ||
+      maxEntries < 1
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Checkpoint observed entry limit must be a positive safe integer.",
+        { maxEntries },
+      );
+    }
+    this.maxBytes = maxBytes;
+    this.maxEntries = maxEntries;
+    this.observer = options.observer;
+  }
 
   async prepare(
     projectPath: string,
@@ -93,14 +257,24 @@ export class CheckpointStore {
         "Checkpoint afterRevision must be a SHA-256 revision.",
       );
     }
-    const objectsDirectory = await this.resolver.ensureInternalDirectory(".tiledmcp/objects");
-    const checkpointsDirectory =
-      await this.resolver.ensureInternalDirectory(".tiledmcp/checkpoints");
-
+    if (
+      before &&
+      before.byteLength >
+        MAX_CHECKPOINT_OBJECT_BYTES
+    ) {
+      throw new TiledMcpError(
+        "DOCUMENT_TOO_LARGE",
+        `Checkpoint content exceeds the ${MAX_CHECKPOINT_OBJECT_BYTES} byte limit.`,
+        {
+          size: before.byteLength,
+          limit: MAX_CHECKPOINT_OBJECT_BYTES,
+        },
+      );
+    }
     let beforeState: CheckpointManifest["before"] = { existed: false };
+    let objectHash: string | undefined;
     if (before) {
-      const objectHash = createHash("sha256").update(before).digest("hex");
-      await writeOnce(join(objectsDirectory, objectHash), before);
+      objectHash = createHash("sha256").update(before).digest("hex");
       beforeState = {
         existed: true,
         revision: revisionOf(before),
@@ -119,33 +293,461 @@ export class CheckpointStore {
       before: beforeState,
       afterRevision,
     };
-    await atomicWriteJson(join(checkpointsDirectory, `${manifest.id}.json`), manifest);
-    return manifest;
+    return this.runStorageExclusive(async () => {
+      const directories =
+        await this.ensureStorageDirectories();
+      await this.ensureCapacity(
+        directories,
+        manifest,
+        before,
+        objectHash,
+      );
+      if (before && objectHash) {
+        await writeOnce(
+          join(directories.objects, objectHash),
+          before,
+        );
+        await this.observer
+          ?.afterObjectPublishedBeforeManifest?.({
+            manifest,
+            objectHash,
+          });
+      }
+      await atomicCreateJson(
+        join(
+          directories.checkpoints,
+          `${manifest.id}.json`,
+        ),
+        manifest,
+      );
+      return manifest;
+    });
   }
 
   async markCommitted(manifest: CheckpointManifest): Promise<CheckpointManifest> {
-    const checkpointsDirectory =
-      await this.resolver.ensureInternalDirectory(".tiledmcp/checkpoints");
-    const current = await this.readManifest(
-      checkpointsDirectory,
-      manifest.id,
+    return this.runStorageExclusive(async () => {
+      const directories =
+        await this.ensureStorageDirectories();
+      const current = await this.readManifest(
+        directories.checkpoints,
+        manifest.id,
+      );
+      if (!sameManifestIntent(manifest, current)) {
+        throw new TiledMcpError(
+          "CHECKPOINT_CHANGED",
+          `Checkpoint ${manifest.id} changed before it could be committed.`,
+          { checkpointId: manifest.id },
+        );
+      }
+      if (current.status === "committed") {
+        return current;
+      }
+      const committed: CheckpointManifest = {
+        ...current,
+        status: "committed",
+      };
+      await this.assertManifestReplacementReserved(
+        directories,
+        current,
+        committed,
+      );
+      await atomicWriteJson(
+        join(
+          directories.checkpoints,
+          `${manifest.id}.json`,
+        ),
+        committed,
+      );
+      return committed;
+    });
+  }
+
+  async collectGarbage(): Promise<CheckpointGarbageCollectionReport> {
+    return this.runStorageExclusive(async () => {
+      const directories =
+        await this.ensureStorageDirectories();
+      const inventory =
+        await this.inventory(directories);
+      return this.sweepInventory(
+        directories,
+        inventory,
+      );
+    });
+  }
+
+  private async runStorageExclusive<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const mutexKey =
+      `${this.resolver.root}\0${CHECKPOINT_STORAGE_LOCK_TARGET}`;
+    return CHECKPOINT_STORAGE_MUTEX.runExclusive(
+      mutexKey,
+      () =>
+        withProjectFileLock(
+          this.resolver,
+          CHECKPOINT_STORAGE_LOCK_TARGET,
+          operation,
+        ),
     );
-    if (!sameManifestIntent(manifest, current)) {
-      throw new TiledMcpError(
-        "CHECKPOINT_CHANGED",
-        `Checkpoint ${manifest.id} changed before it could be committed.`,
-        { checkpointId: manifest.id },
+  }
+
+  private async ensureStorageDirectories(): Promise<CheckpointStorageDirectories> {
+    const [objects, checkpoints] =
+      await Promise.all([
+        this.resolver.ensureInternalDirectory(
+          ".tiledmcp/objects",
+        ),
+        this.resolver.ensureInternalDirectory(
+          ".tiledmcp/checkpoints",
+        ),
+      ]);
+    return { checkpoints, objects };
+  }
+
+  private async ensureCapacity(
+    directories: CheckpointStorageDirectories,
+    manifest: CheckpointManifest,
+    before: Buffer | undefined,
+    objectHash: string | undefined,
+  ): Promise<void> {
+    let inventory =
+      await this.inventory(directories);
+    let projection = projectedCheckpointStorage(
+      inventory,
+      manifest,
+      before,
+      objectHash,
+    );
+    if (
+      this.hasCapacity(
+        inventory,
+        projection,
+      )
+    ) {
+      return;
+    }
+
+    await this.sweepInventory(
+      directories,
+      inventory,
+    );
+    inventory = await this.inventory(directories);
+    projection = projectedCheckpointStorage(
+      inventory,
+      manifest,
+      before,
+      objectHash,
+    );
+    if (
+      !this.hasCapacity(
+        inventory,
+        projection,
+      )
+    ) {
+      this.throwQuotaExceeded(
+        inventory,
+        projection,
       );
     }
-    if (current.status === "committed") {
-      return current;
+  }
+
+  private async assertManifestReplacementReserved(
+    directories: CheckpointStorageDirectories,
+    current: CheckpointManifest,
+    replacement: CheckpointManifest,
+  ): Promise<void> {
+    const inventory =
+      await this.inventory(directories);
+    const projection =
+      projectedManifestReplacementStorage(
+        inventory,
+        current,
+        replacement,
+      );
+    if (
+      projection.bytes >
+      inventory.chargedBytes
+    ) {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        `Checkpoint ${current.id} did not reserve enough storage for its committed state.`,
+        {
+          checkpointId: current.id,
+          chargedBytes: inventory.chargedBytes,
+          projectedBytes: projection.bytes,
+        },
+      );
     }
-    const committed: CheckpointManifest = {
-      ...current,
-      status: "committed",
+  }
+
+  private hasCapacity(
+    inventory: CheckpointStorageInventory,
+    projection: CheckpointStorageProjection,
+  ): boolean {
+    return (
+      inventory.capacityAccountingComplete &&
+      projection.bytes <=
+        this.maxBytes &&
+      projection.entries <=
+        this.maxEntries
+    );
+  }
+
+  private throwQuotaExceeded(
+    inventory: CheckpointStorageInventory,
+    projection: CheckpointStorageProjection,
+  ): never {
+    throw new TiledMcpError(
+      "CHECKPOINT_QUOTA_EXCEEDED",
+      "Checkpoint storage cannot retain the new state within its configured byte and entry limits.",
+      {
+        maxBytes: this.maxBytes,
+        maxEntries: this.maxEntries,
+        observedBytes: inventory.observedBytes,
+        chargedBytes: inventory.chargedBytes,
+        observedEntries:
+          inventory.observedEntries,
+        capacityAccountingComplete:
+          inventory.capacityAccountingComplete,
+        projectedBytes: projection.bytes,
+        projectedEntries: projection.entries,
+      },
+    );
+  }
+
+  private async inventory(
+    directories: CheckpointStorageDirectories,
+  ): Promise<CheckpointStorageInventory> {
+    const inventory: CheckpointStorageInventory = {
+      observedBytes: 0,
+      chargedBytes: 0,
+      observedEntries: 0,
+      capacityAccountingComplete: true,
+      blockers: [],
+      referencedObjectHashes: new Set(),
+      objectFileNames: new Set(),
+      manifestSizes: new Map(),
+      manifestChargedSizes: new Map(),
+      objects: [],
+      temporaryFiles: [],
     };
-    await atomicWriteJson(join(checkpointsDirectory, `${manifest.id}.json`), committed);
-    return committed;
+
+    await this.inventoryCheckpointDirectory(
+      directories.checkpoints,
+      inventory,
+    );
+    if (
+      inventory.observedEntries <=
+      this.maxEntries
+    ) {
+      await this.inventoryObjectDirectory(
+        directories.objects,
+        inventory,
+      );
+      const scanIncomplete =
+        inventory.blockers.some(
+          ({ reason }) =>
+            reason === "scan-limit-exceeded",
+        );
+      if (!scanIncomplete) {
+        for (
+          const objectHash of
+          inventory.referencedObjectHashes
+        ) {
+          if (
+            !inventory.objectFileNames.has(
+              objectHash,
+            )
+          ) {
+            inventory.blockers.push({
+              directory: "objects",
+              fileName: objectHash,
+              reason:
+                "missing-referenced-object",
+              message:
+                "A checkpoint manifest references a missing content object.",
+            });
+          }
+        }
+      }
+    }
+    return inventory;
+  }
+
+  private async inventoryCheckpointDirectory(
+    checkpointsDirectory: string,
+    inventory: CheckpointStorageInventory,
+  ): Promise<void> {
+    await scanStorageDirectory(
+      checkpointsDirectory,
+      "checkpoints",
+      inventory,
+      this.maxEntries,
+      async (entry, entryPath, size) => {
+        if (CHECKPOINT_TEMP_PATTERN.test(entry.name)) {
+          inventory.temporaryFiles.push({
+            directory: "checkpoints",
+            fileName: entry.name,
+            path: entryPath,
+            size,
+            kind: "manifest-temporary",
+          });
+          return;
+        }
+
+        const match =
+          CHECKPOINT_MANIFEST_PATTERN.exec(entry.name);
+        if (!match) {
+          inventory.blockers.push({
+            directory: "checkpoints",
+            fileName: entry.name,
+            reason: "unexpected-entry",
+            message:
+              "Unexpected entry in the checkpoint manifest directory.",
+          });
+          return;
+        }
+
+        const id = match[1] as string;
+        let manifest: CheckpointManifest;
+        try {
+          manifest = await this.readManifest(
+            checkpointsDirectory,
+            id,
+          );
+        } catch (error) {
+          inventory.blockers.push({
+            directory: "checkpoints",
+            fileName: entry.name,
+            reason: "malformed-manifest",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Checkpoint manifest could not be safely read.",
+          });
+          return;
+        }
+        inventory.manifestSizes.set(id, size);
+        const chargedSize =
+          manifest.status === "prepared"
+            ? Math.max(
+                size,
+                serializedManifestByteLength({
+                  ...manifest,
+                  status: "committed",
+                }),
+              )
+            : size;
+        inventory.manifestChargedSizes.set(
+          id,
+          chargedSize,
+        );
+        const reservation =
+          chargedSize - size;
+        const reservedTotal =
+          addSafeStorageBytes(
+            inventory.chargedBytes,
+            reservation,
+          );
+        if (reservedTotal === undefined) {
+          blockUnsafeByteAccounting(
+            inventory,
+            "checkpoints",
+            entry.name,
+          );
+        } else {
+          inventory.chargedBytes =
+            reservedTotal;
+        }
+        if (manifest.before.existed) {
+          inventory.referencedObjectHashes.add(
+            manifest.before.objectHash,
+          );
+        }
+      },
+    );
+  }
+
+  private async inventoryObjectDirectory(
+    objectsDirectory: string,
+    inventory: CheckpointStorageInventory,
+  ): Promise<void> {
+    await scanStorageDirectory(
+      objectsDirectory,
+      "objects",
+      inventory,
+      this.maxEntries,
+      (entry, entryPath, size) => {
+        if (
+          CHECKPOINT_OBJECT_TEMP_PATTERN.test(
+            entry.name,
+          )
+        ) {
+          inventory.temporaryFiles.push({
+            directory: "objects",
+            fileName: entry.name,
+            path: entryPath,
+            size,
+            kind: "object-temporary",
+          });
+          return;
+        }
+        if (!OBJECT_HASH_PATTERN.test(entry.name)) {
+          inventory.blockers.push({
+            directory: "objects",
+            fileName: entry.name,
+            reason: "unexpected-entry",
+            message:
+              "Unexpected entry in the checkpoint object directory.",
+          });
+          return;
+        }
+        inventory.objectFileNames.add(entry.name);
+        inventory.objects.push({
+          directory: "objects",
+          fileName: entry.name,
+          path: entryPath,
+          size,
+          kind: "object",
+        });
+      },
+    );
+  }
+
+  private async sweepInventory(
+    directories: CheckpointStorageDirectories,
+    inventory: CheckpointStorageInventory,
+  ): Promise<CheckpointGarbageCollectionReport> {
+    if (inventory.blockers.length > 0) {
+      return garbageCollectionReport(
+        inventory,
+        [],
+      );
+    }
+
+    const garbage = [
+      ...inventory.temporaryFiles,
+      ...inventory.objects.filter(
+        (entry) =>
+          !inventory.referencedObjectHashes.has(
+            entry.fileName,
+          ),
+      ),
+    ];
+    const touchedDirectories = new Set<
+      "checkpoints" | "objects"
+    >();
+    for (const entry of garbage) {
+      await unlink(entry.path);
+      touchedDirectories.add(entry.directory);
+    }
+    for (const directory of touchedDirectories) {
+      await syncDirectory(directories[directory]);
+    }
+    return garbageCollectionReport(
+      inventory,
+      garbage,
+    );
   }
 
   async read(id: string): Promise<CheckpointManifest> {
@@ -330,6 +932,292 @@ export class CheckpointStore {
   }
 }
 
+interface CheckpointStorageProjection {
+  bytes: number;
+  entries: number;
+}
+
+function projectedCheckpointStorage(
+  inventory: CheckpointStorageInventory,
+  manifest: CheckpointManifest,
+  before: Buffer | undefined,
+  objectHash: string | undefined,
+): CheckpointStorageProjection {
+  const objectAlreadyExists =
+    objectHash !== undefined &&
+    inventory.objectFileNames.has(objectHash);
+  const committedManifest: CheckpointManifest = {
+    ...manifest,
+    status: "committed",
+  };
+  const manifestCharge = Math.max(
+    serializedManifestByteLength(manifest),
+    serializedManifestByteLength(
+      committedManifest,
+    ),
+  );
+  return {
+    bytes:
+      inventory.chargedBytes +
+      manifestCharge +
+      (before && !objectAlreadyExists
+        ? before.byteLength
+        : 0),
+    entries:
+      inventory.observedEntries +
+      1 +
+      (before && !objectAlreadyExists ? 1 : 0),
+  };
+}
+
+function projectedManifestReplacementStorage(
+  inventory: CheckpointStorageInventory,
+  current: CheckpointManifest,
+  replacement: CheckpointManifest,
+): CheckpointStorageProjection {
+  const currentSize =
+    inventory.manifestChargedSizes.get(current.id);
+  if (currentSize === undefined) {
+    throw new TiledMcpError(
+      "CHECKPOINT_CHANGED",
+      `Checkpoint ${current.id} changed while its storage capacity was being checked.`,
+      { checkpointId: current.id },
+    );
+  }
+  return {
+    bytes:
+      inventory.chargedBytes -
+      currentSize +
+      serializedManifestByteLength(replacement),
+    entries: inventory.observedEntries,
+  };
+}
+
+function serializedManifestByteLength(
+  manifest: CheckpointManifest,
+): number {
+  return Buffer.byteLength(
+    serializeManifest(manifest),
+    "utf8",
+  );
+}
+
+function addSafeStorageBytes(
+  current: number,
+  increment: number,
+): number | undefined {
+  if (
+    !Number.isSafeInteger(current) ||
+    !Number.isSafeInteger(increment) ||
+    current < 0 ||
+    increment < 0 ||
+    current >
+      Number.MAX_SAFE_INTEGER - increment
+  ) {
+    return undefined;
+  }
+  return current + increment;
+}
+
+function blockUnsafeByteAccounting(
+  inventory: CheckpointStorageInventory,
+  directory: "checkpoints" | "objects",
+  fileName: string,
+): void {
+  inventory.capacityAccountingComplete = false;
+  inventory.observedBytes =
+    Number.MAX_SAFE_INTEGER;
+  inventory.chargedBytes =
+    Number.MAX_SAFE_INTEGER;
+  if (
+    inventory.blockers.some(
+      ({ reason }) =>
+        reason ===
+        "byte-accounting-limit-exceeded",
+    )
+  ) {
+    return;
+  }
+  inventory.blockers.push({
+    directory,
+    fileName,
+    reason:
+      "byte-accounting-limit-exceeded",
+    message:
+      "Checkpoint storage bytes exceed the exact safe-integer accounting range.",
+  });
+}
+
+async function scanStorageDirectory(
+  directoryPath: string,
+  directory: "checkpoints" | "objects",
+  inventory: CheckpointStorageInventory,
+  maxEntries: number,
+  inspectRegularFile: (
+    entry: Dirent,
+    entryPath: string,
+    size: number,
+  ) => void | Promise<void>,
+): Promise<void> {
+  const handle = await opendir(directoryPath);
+  try {
+    while (true) {
+      const entry = await handle.read();
+      if (!entry) {
+        break;
+      }
+      inventory.observedEntries += 1;
+      if (
+        inventory.observedEntries > maxEntries
+      ) {
+        inventory.capacityAccountingComplete =
+          false;
+        inventory.blockers.push({
+          directory,
+          fileName: entry.name,
+          reason: "scan-limit-exceeded",
+          message:
+            `Checkpoint storage contains more than ${maxEntries} observed entries.`,
+        });
+        break;
+      }
+
+      const entryPath = join(
+        directoryPath,
+        entry.name,
+      );
+      let entryStat;
+      try {
+        entryStat = await lstat(entryPath, {
+          bigint: true,
+        });
+      } catch (error) {
+        inventory.capacityAccountingComplete =
+          false;
+        inventory.blockers.push({
+          directory,
+          fileName: entry.name,
+          reason: "entry-inspection-failed",
+          message:
+            `Checkpoint storage entry could not be inspected safely (${filesystemErrorCode(error)}).`,
+        });
+        continue;
+      }
+      if (
+        entryStat.size >
+        BigInt(Number.MAX_SAFE_INTEGER)
+      ) {
+        blockUnsafeByteAccounting(
+          inventory,
+          directory,
+          entry.name,
+        );
+        continue;
+      }
+      const entrySize = Number(entryStat.size);
+      const observedBytes = addSafeStorageBytes(
+        inventory.observedBytes,
+        entrySize,
+      );
+      const chargedBytes = addSafeStorageBytes(
+        inventory.chargedBytes,
+        entrySize,
+      );
+      if (
+        observedBytes === undefined ||
+        chargedBytes === undefined
+      ) {
+        blockUnsafeByteAccounting(
+          inventory,
+          directory,
+          entry.name,
+        );
+        continue;
+      }
+      inventory.observedBytes = observedBytes;
+      inventory.chargedBytes = chargedBytes;
+      if (entryStat.isSymbolicLink()) {
+        inventory.blockers.push({
+          directory,
+          fileName: entry.name,
+          reason: "symbolic-link",
+          message:
+            "Symbolic links are not valid checkpoint storage entries.",
+        });
+        continue;
+      }
+      if (!entryStat.isFile()) {
+        inventory.blockers.push({
+          directory,
+          fileName: entry.name,
+          reason: "non-regular-entry",
+          message:
+            "Only regular files are valid checkpoint storage entries.",
+        });
+        continue;
+      }
+      await inspectRegularFile(
+        entry,
+        entryPath,
+        entrySize,
+      );
+    }
+  } finally {
+    await handle.close().catch((error: unknown) => {
+      if (!hasCode(error, "ERR_DIR_CLOSED")) {
+        throw error;
+      }
+    });
+  }
+}
+
+function garbageCollectionReport(
+  inventory: CheckpointStorageInventory,
+  deleted: readonly CheckpointStorageEntry[],
+): CheckpointGarbageCollectionReport {
+  const deletedBytes = deleted.reduce(
+    (sum, entry) => sum + entry.size,
+    0,
+  );
+  const deletedObjects = deleted.filter(
+    ({ kind }) => kind === "object",
+  ).length;
+  const deletedTemporaryFiles =
+    deleted.length - deletedObjects;
+  return {
+    observedBytes: inventory.observedBytes,
+    chargedBytes: inventory.chargedBytes,
+    observedEntries: inventory.observedEntries,
+    retainedBytes:
+      inventory.observedBytes - deletedBytes,
+    retainedChargedBytes:
+      inventory.chargedBytes - deletedBytes,
+    retainedEntries:
+      inventory.observedEntries - deleted.length,
+    deletedBytes,
+    deletedEntries: deleted.length,
+    deletedObjects,
+    deletedTemporaryFiles,
+    blocked: inventory.blockers.length > 0,
+    blockers: [...inventory.blockers],
+  };
+}
+
+function filesystemErrorCode(error: unknown): string {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error)
+  ) {
+    return "UNKNOWN_ERROR";
+  }
+  const code =
+    (error as NodeJS.ErrnoException).code;
+  return typeof code === "string"
+    ? code
+    : "UNKNOWN_ERROR";
+}
+
 async function writeOnce(path: string, content: Buffer): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   let temporaryHandle: FileHandle | undefined;
@@ -377,6 +1265,54 @@ async function writeOnce(path: string, content: Buffer): Promise<void> {
   }
 }
 
+async function atomicCreateJson(
+  path: string,
+  value: CheckpointManifest,
+): Promise<void> {
+  const temporaryPath =
+    `${path}.${randomUUID()}.tmp`;
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryCreated = false;
+  try {
+    temporaryHandle = await open(
+      temporaryPath,
+      "wx",
+      0o600,
+    );
+    temporaryCreated = true;
+    await temporaryHandle.writeFile(
+      serializeManifest(value),
+      "utf8",
+    );
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
+
+    try {
+      await link(temporaryPath, path);
+    } catch (error) {
+      if (hasCode(error, "EEXIST")) {
+        throw new TiledMcpError(
+          "CHECKPOINT_CHANGED",
+          `Checkpoint ${value.id} already exists and was not replaced.`,
+          { checkpointId: value.id },
+        );
+      }
+      throw error;
+    }
+    await syncDirectory(dirname(path));
+  } finally {
+    await temporaryHandle
+      ?.close()
+      .catch(() => undefined);
+    if (temporaryCreated) {
+      await unlink(temporaryPath).catch(
+        () => undefined,
+      );
+    }
+  }
+}
+
 async function atomicWriteJson(path: string, value: CheckpointManifest): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   let temporaryHandle: FileHandle | undefined;
@@ -389,7 +1325,7 @@ async function atomicWriteJson(path: string, value: CheckpointManifest): Promise
     );
     temporaryCreated = true;
     await temporaryHandle.writeFile(
-      `${JSON.stringify(value, null, 2)}\n`,
+      serializeManifest(value),
       "utf8",
     );
     await temporaryHandle.sync();
@@ -408,6 +1344,12 @@ async function atomicWriteJson(path: string, value: CheckpointManifest): Promise
       );
     }
   }
+}
+
+function serializeManifest(
+  value: CheckpointManifest,
+): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 async function syncDirectory(path: string): Promise<void> {

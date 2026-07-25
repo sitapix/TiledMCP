@@ -7,9 +7,10 @@
 > hostile parent swap、锁作用域与运维条件已经由
 > [filesystem threat model v1](04-security.md) 冻结为明确 guarantee/unsupported 边界；
 > create-map direct no-replace 例外和固定 Tiled 1.12.2 的不可跳过集成门也已落地。
-> 当前主要未完成运维项是 checkpoint 总容量配额与 GC。
+> checkpoint store 的总量/entry 配额与 fail-closed orphan GC 已落地；当前主要未完成
+> 运维项是显式 prune/retention 管理。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
-> rename 边界由 capability contract 明示。当前 discovery contract 与 97-code v1 application-error
+> rename 边界由 capability contract 明示。当前 discovery contract 与 98-code v1 application-error
 > registry 已分别由
 > [discovery machine artifact](../contracts/mcp-contract.v1.json)、
 > [application-error machine artifact](../contracts/application-errors.v1.json) 和
@@ -89,7 +90,7 @@ change-set apply 不是同一个 mutation 类型。handler 内的应用错误以
 图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
 
 application code 的唯一稳定 wire 位置是
-`structuredContent.result.error.code`。当前 v1 allowlist 有 97 个 code，单一代码来源
+`structuredContent.result.error.code`。当前 v1 allowlist 有 98 个 code，单一代码来源
 生成 `contracts/application-errors.v1.json`，并把完全相同的 JSON 暴露为
 `tiled://application-errors`；`tiled_get_capabilities.applicationErrorContract` 公布
 resource URI、revision、size、wire location、`INTERNAL_ERROR` fallback 和兼容策略。
@@ -200,7 +201,8 @@ server-internal state 由各自契约和实现规则约束。
 manifest 都隔离报告，不自动回滚或删除。prepared create checkpoint 即使精确命中
 `afterRevision` 也无法只凭 hash 证明创建者，固定保留 prepared 并报告
 `CHECKPOINT_STATE_CONFLICT`；真正由本进程完成写入却在 committed marker 前崩溃也采取
-同一 provenance-ambiguous fail-closed 结果。总容量配额与 GC 仍待实现。
+同一 provenance-ambiguous fail-closed 结果。checkpoint retained storage 已有总量与
+entry 配额；GC 只回收可证明无引用的 object/private temp，不删除有效 manifest。
 
 ## 0. 架构目标与硬边界
 
@@ -250,7 +252,7 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 能同时验证合法成功结果和 handler 内的合法应用错误。
 
 协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
-`structuredContent`。进入 handler 后的失败才经过统一错误归一化、97-code application
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、98-code application
 allowlist、长度/深度预算和 JSON 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，
 不承担 transport/application 错误 envelope 的职责。
 
@@ -399,7 +401,7 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
 安装的 Tiled 版本只影响 official adapter 的运行能力，也不等于资产兼容目标。每个已知特性
 在 `FeatureMatrix` 中声明最小目标版本、允许的文档类型、读/写状态与验证器；尚未支持写入的
 字段可以保留和展示。目标架构计划让相关 patch 返回
-`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 97-code
+`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 98-code
 v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后续 registry 前，
 客户端不得依赖它。
 
@@ -423,7 +425,7 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 - 当前只允许 primary root 内的引用，没有 additional read roots。
 - 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
   目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
-  **planned / not current** code，不属于当前 97-code v1 application registry。
+  **planned / not current** code，不属于当前 98-code v1 application registry。
 - 新引用必须落在允许 root 中，并以拥有者为基准写成规范化相对路径；不自动把相对路径改成
   绝对路径。
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
@@ -1265,7 +1267,7 @@ replace，也不等同于 crash durability。保证只在运维方确认底层�
 同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
 第二个写目标时，计划在 dry-run 阶段返回
 `MULTI_FILE_TRANSACTION_NOT_AVAILABLE`；该名称是 **planned / not current** code，
-不属于当前 97-code v1 application registry。
+不属于当前 98-code v1 application registry。
 
 ### 8.3 跨文件可恢复事务
 
@@ -1307,9 +1309,23 @@ manifest 至少记录：
 - manifest schema version 和完整性 hash。
 
 blob 写入采用 create-if-absent + fsync，读取和恢复时重新校验 hash。恢复同样获取锁、检查调用者
-提供的 expected current revision，并通过正常提交路径完成；它不是直接复制覆盖。当前自动
-checkpoint 还没有总字节配额或 GC。命名 checkpoint、保留数量、独立配额配置和“只删除
-不再被任一 checkpoint/WAL 引用 blob”的 GC 都是未来设计，不能当作现行配置。
+提供的 expected current revision，并通过正常提交路径完成；它不是直接复制覆盖。当前
+checkpoint store 默认最多 charge 1 GiB retained bytes，并限制最多观察 10,000 entries；
+`--checkpoint-bytes` / `TILEDMCP_CHECKPOINT_BYTES` 可调整 byte quota；生产 CLI 暂无
+entry override，嵌入式实例可能覆盖它，运行值以 capability 为准。
+计费范围是 objects/checkpoints 下所有 observed entry 的 logical bytes，并为 prepared
+manifest 预留 committed 序列化增量；崩溃 temp 和未知项也占用 quota。
+
+prepare、markCommitted 与 GC 共用按 project root 区分的进程内 mutex 和固定跨进程
+checkpoint-store lock。超额时先做完整 mark/sweep：所有有效 prepared/committed manifests
+都是 root；只删除无引用 canonical object 和严格命名的 private crash temp。malformed、
+unexpected、symlink、非普通 entry、缺失引用、无法安全计费或扫描超限会在首次 unlink 前
+阻断整个 sweep；`lstat`/扫描失败或 safe-integer accounting overflow 同时使新写入的容量
+证明失败。content object 和 manifest 首次发布都使用 create-if-absent；UUID 碰撞不会覆盖
+已有恢复点。该协调只覆盖遵守 checkpoint-store lock 的写者；同权限非合作进程主动篡改
+`.tiledmcp` 命名空间不在 v1 保证内。
+仍无法容纳时以 `CHECKPOINT_QUOTA_EXCEEDED` 在目标 promotion 前 fail closed。GC 不自动删除
+任何有效 manifest；命名 checkpoint、保留数量和显式 prune/retention 仍是未来设计。
 
 当前单文件实现的 manifest 状态为 `prepared | committed`。`tiled_list_checkpoints` 以
 manifest 数量和目录扫描条目双重预算流式枚举；异常文件名、symlink、超限/坏 JSON、非法路径
@@ -1513,7 +1529,7 @@ M1 明确拒绝：
 | 压缩炸弹/巨图 | OOM 或阻塞 | checked size、流式上限、像素配额 | gzip/zlib/zstd 超限、伪造尺寸、截断数据 |
 | Tiled 版本/导出插件变化 | adapter 行为漂移 | runtime probe、格式动态发现 | pinned Tiled 集成测试 + capability 缺失测试 |
 | native preview 与 Tiled 不同 | 模型视觉误判 | 明确支持子集、rasterizer 对照 | golden image + perceptual diff + unsupported cases |
-| checkpoint blob 损坏或 GC 误删 | 无法恢复 | hash verify、引用追踪 | corruption、并发 GC、untracked/new/deleted file restore |
+| checkpoint blob 损坏、并发 writer/GC 超卖或 GC 误删 | 无法恢复或绕过容量上限 | hash verify、全量 prepared/committed 根追踪、项目级进程内/跨进程锁、inventory 不完整时首次 unlink 前阻断 | corruption、缺失引用、未知 entry、symlink、扫描上限、并发 writer/GC、untracked/new/deleted file restore |
 
 测试分层：
 
@@ -1524,7 +1540,7 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract` 与 `applicationErrorContract`、97-code v1 registry machine
+   `textContentContract` 与 `applicationErrorContract`、98-code v1 registry machine
    artifact / `tiled://application-errors` resource 一致性、未知 code 兼容与
    `INTERNAL_ERROR` fallback、各 excluded surface 类型边界、三种图片工具的同-buffer
    artifact metadata、rasterizer
@@ -1547,11 +1563,11 @@ M1 明确拒绝：
 | `--project-dir` / `TILED_PROJECT_DIR` | 唯一 primary read/write root；缺失时 fail closed | **必填，无默认值** |
 | `--tiled-cli` / `TILED_CLI_PATH` | Tiled executable | `tiled` |
 | `--rasterizer` / `TILED_RASTERIZER_PATH` | TmxRasterizer executable | `tmxrasterizer` |
+| `--checkpoint-bytes` / `TILEDMCP_CHECKPOINT_BYTES` | checkpoint retained storage byte quota；规范十进制 `[1-9][0-9]*`，范围 `1..9007199254740991`；CLI 优先于 env | `1073741824`（1 GiB） |
 
-`TILED_READ_ROOTS`、`TILED_TARGET_VERSION`、`TILEDMCP_LIMITS_FILE` 与
-`TILEDMCP_CHECKPOINT_BYTES` 仍是未来配置提案，当前进程不会读取，不能在部署中假设它们
-生效。兼容基线当前由代码与固定 Tiled 1.12.2 集成门锁定；limits 只能使用内建值，
-checkpoint 总配额/GC 尚未实现。
+`TILED_READ_ROOTS`、`TILED_TARGET_VERSION` 与 `TILEDMCP_LIMITS_FILE` 仍是未来配置提案，
+当前进程不会读取，不能在部署中假设它们生效。兼容基线当前由代码与固定 Tiled 1.12.2
+集成门锁定；除 checkpoint byte quota 外，limits 只能使用内建值。
 
 启动 capability 会报告实际 CLI probe，但不因可选 Tiled adapter 缺失而阻止 direct JSON
 能力启动。

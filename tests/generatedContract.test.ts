@@ -27,6 +27,9 @@ import {
   APPLICATION_ERROR_RESOURCE_SIZE,
   APPLICATION_ERROR_RESOURCE_URI,
 } from "../src/resources/applicationErrors.js";
+import {
+  CHECKPOINT_STORAGE_POLICY,
+} from "../src/storage/checkpoints.js";
 
 const REPOSITORY_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -307,6 +310,81 @@ describe("generated MCP contract", () => {
       TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
       `${capabilitiesLabel} filesystemThreatModelContract`,
     );
+    const checkpointCapabilitiesSchema =
+      schemaProperty(
+        capabilitySuccessSchema,
+        "checkpointCapabilities",
+        `${capabilitiesLabel} capability result`,
+      );
+    const checkpointStoragePolicySchema =
+      schemaProperty(
+        checkpointCapabilitiesSchema,
+        "storagePolicy",
+        `${capabilitiesLabel} checkpointCapabilities`,
+      );
+    const checkpointStoragePolicyLiterals = {
+      ...CHECKPOINT_STORAGE_POLICY,
+      garbageCollectionTrigger:
+        "quota-pressure-or-explicit-internal-call",
+      quotaFailureCode:
+        "CHECKPOINT_QUOTA_EXCEEDED",
+    } as const;
+    const checkpointStoragePolicyProperties =
+      asRecord(
+        checkpointStoragePolicySchema.properties,
+        `${capabilitiesLabel} checkpoint storage policy properties`,
+      );
+    const checkpointStoragePolicyKeys = [
+      ...Object.keys(
+        checkpointStoragePolicyLiterals,
+      ),
+      "maxBytes",
+      "maxEntries",
+    ].sort();
+    expect(
+      checkpointStoragePolicySchema.type,
+    ).toBe("object");
+    expect(
+      checkpointStoragePolicySchema.additionalProperties,
+    ).toBe(false);
+    expect(
+      Object.keys(
+        checkpointStoragePolicyProperties,
+      ).sort(),
+    ).toEqual(checkpointStoragePolicyKeys);
+    expect(
+      asStringArray(
+        checkpointStoragePolicySchema.required,
+        `${capabilitiesLabel} checkpoint storage policy required`,
+      ).sort(),
+    ).toEqual(checkpointStoragePolicyKeys);
+    for (const [key, value] of Object.entries(
+      checkpointStoragePolicyLiterals,
+    )) {
+      expectExactLiteralSchema(
+        asRecord(
+          checkpointStoragePolicyProperties[key],
+          `${capabilitiesLabel} checkpoint storage policy ${key}`,
+        ),
+        value,
+        `${capabilitiesLabel} checkpoint storage policy ${key}`,
+      );
+    }
+    for (const key of [
+      "maxBytes",
+      "maxEntries",
+    ] as const) {
+      expect(
+        asRecord(
+          checkpointStoragePolicyProperties[key],
+          `${capabilitiesLabel} checkpoint storage policy ${key}`,
+        ),
+      ).toEqual({
+        maximum: Number.MAX_SAFE_INTEGER,
+        minimum: 1,
+        type: "integer",
+      });
+    }
     const safetyStatusSchema = schemaProperty(
       capabilitySuccessSchema,
       "safetyStatus",

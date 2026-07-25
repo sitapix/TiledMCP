@@ -16,6 +16,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ZodType } from "zod";
 
 import {
   TiledCliAdapter,
@@ -50,6 +51,12 @@ import {
   ASSET_REGISTRY_RELATIVE_PATH,
 } from "../src/project/assetRegistry.js";
 import { createTiledMcpServer } from "../src/server.js";
+import {
+  CHECKPOINT_STORAGE_POLICY,
+  DEFAULT_CHECKPOINT_STORAGE_BYTES,
+  MAX_CHECKPOINT_OBSERVED_ENTRIES,
+  type CheckpointStoreOptions,
+} from "../src/storage/checkpoints.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
 import { SERVER_NAME, SERVER_VERSION } from "../src/version.js";
@@ -323,6 +330,102 @@ describe("createTiledMcpServer", () => {
         sdkInputErrors: "sdk-owned-text-only",
       },
     });
+  });
+
+  it("advertises non-default checkpoint limits through a dynamic registered output schema", async () => {
+    const maxBytes = 12_345;
+    const maxEntries = 37;
+    const customHarness = await createHarness({
+      checkpointOptions: {
+        maxBytes,
+        maxEntries,
+      },
+    });
+
+    try {
+      const listed = await customHarness.client.listTools();
+      expect(
+        listed.tools.some(
+          ({ name }) =>
+            name === "tiled_get_capabilities",
+        ),
+      ).toBe(true);
+
+      const response = asToolResponse(
+        await customHarness.client.callTool({
+          name: "tiled_get_capabilities",
+          arguments: {},
+        }),
+      );
+      const capabilities = resultOf<{
+        checkpointCapabilities: {
+          storagePolicy: {
+            maxBytes: number;
+            maxEntries: number;
+          };
+        };
+      }>(response);
+      expect(
+        capabilities.checkpointCapabilities
+          .storagePolicy,
+      ).toMatchObject({
+        maxBytes,
+        maxEntries,
+      });
+
+      const outputSchema = (
+        customHarness.server as unknown as {
+          _registeredTools: Record<
+            string,
+            { outputSchema?: ZodType }
+          >;
+        }
+      )._registeredTools[
+        "tiled_get_capabilities"
+      ]?.outputSchema;
+      expect(outputSchema).toBeDefined();
+      if (outputSchema === undefined) {
+        throw new Error(
+          "Expected a registered capabilities output schema.",
+        );
+      }
+      expect(
+        outputSchema.safeParse(
+          response.structuredContent,
+        ).success,
+      ).toBe(true);
+
+      const alternate = structuredClone(
+        response.structuredContent,
+      ) as {
+        result: {
+          checkpointCapabilities: {
+            storagePolicy: {
+              maxBytes: number;
+              maxEntries: number;
+            };
+          };
+        };
+      };
+      alternate.result.checkpointCapabilities
+        .storagePolicy.maxBytes += 1;
+      alternate.result.checkpointCapabilities
+        .storagePolicy.maxEntries += 1;
+      expect(outputSchema.parse(alternate)).toEqual(
+        alternate,
+      );
+    } finally {
+      await customHarness.client
+        .close()
+        .catch(() => undefined);
+      await customHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(customHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
   });
 
   it("keeps application errors schema-valid after caching client validators while SDK input errors stay text-only", async () => {
@@ -2255,6 +2358,13 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: boolean;
         restoreScope: string;
         restoresReferencedDependencies: boolean;
+        storagePolicy:
+          typeof CHECKPOINT_STORAGE_POLICY & {
+            maxBytes: number;
+            maxEntries: number;
+            garbageCollectionTrigger: string;
+            quotaFailureCode: string;
+          };
       };
       mapCreationCapabilities: {
         profile: string;
@@ -2620,6 +2730,17 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+        storagePolicy: {
+          ...CHECKPOINT_STORAGE_POLICY,
+          maxBytes:
+            DEFAULT_CHECKPOINT_STORAGE_BYTES,
+          maxEntries:
+            MAX_CHECKPOINT_OBSERVED_ENTRIES,
+          garbageCollectionTrigger:
+            "quota-pressure-or-explicit-internal-call",
+          quotaFailureCode:
+            "CHECKPOINT_QUOTA_EXCEEDED",
+        },
       },
       mapCreationCapabilities: {
         profile:
@@ -7454,6 +7575,7 @@ async function createHarness(
       outputPngPath: string;
       options: RenderPngOptions;
     }) => Promise<void>;
+    checkpointOptions?: CheckpointStoreOptions;
   } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "tiledmcp-server-"));
@@ -7464,7 +7586,12 @@ async function createHarness(
   await writeFile(join(root, "tiles", "terrain.png"), await terrainPng());
 
   const resolver = await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const store = new DocumentStore(
+    resolver,
+    undefined,
+    undefined,
+    options.checkpointOptions,
+  );
   const maps = new MapService(resolver, store);
   const missingExecutable = join(root, "does-not-exist");
   const cli = new TiledCliAdapter({

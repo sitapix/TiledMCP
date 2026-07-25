@@ -14,7 +14,9 @@
 1. 以 `tools/list` 返回的工具和 input schema 作为本次连接的实际 wire contract。
 2. 读取 capability 中的 `editProfiles`、`serverVersion`、`cli` 探测结果、
    `registeredTools`、`applicationErrorContract` 和
-   `filesystemThreatModelContract`，不要从旧会话或文档推断当前能力。
+   `filesystemThreatModelContract`，以及
+   `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界；不要从旧会话或文档
+   推断当前能力。
 3. 核心 profile 当前包含 18 个工具。`tiled_render_map` 只有在
    `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
@@ -40,6 +42,23 @@
 revision。相同
 `changeSetId` 的成功 replay 返回首次缓存结果，也不是磁盘查询。需要严格抵御非合作写者或
 hostile local process 时，使用 OS sandbox/FUSE/write broker；当前 backend 未实现它们。
+
+## 先确认 checkpoint 容量
+
+每个 net-changing 既有目标写入都必须先成功建立 checkpoint；create-map 也先建立审计
+manifest。默认 retained quota 是 1 GiB / 10,000 observed entries，但 byte quota 可配置，
+所以客户端必须使用 capability 返回的 `maxBytes` / `maxEntries`。
+
+prepared 与 committed manifest 都是 GC root；prepared 会预留 committed 状态所需 bytes。
+只有完整扫描且没有损坏、symlink、未知/非普通 entry、缺失引用或 scan truncation 时，
+GC 才删除 orphan content object 和私有 crash temp。无法读取条目大小或无法保持
+safe-integer 精确计费时，容量检查本身也会拒绝新写入。它从不自动删除有效 manifest。
+收到 `CHECKPOINT_QUOTA_EXCEEDED` 后停止 mutation 和自动重试，不要手工删除
+content-addressed object 或 manifest；error details 是不透明诊断，不要据此自动选择恢复
+动作。检查 capability、内部状态和部署容量后，只有操作者另行确认 entry 维度仍在上限内、
+byte 维度单独超限时，才可提高 `--checkpoint-bytes` /
+`TILEDMCP_CHECKPOINT_BYTES` 并重启；entry 超限或 inventory blocker 不会因提高 byte quota
+消失，当前也没有受支持的显式 prune/retention。
 
 ## 把 revision 与依赖当成同一个快照传递
 
@@ -151,7 +170,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 ## 区分 SDK 输入错误、应用错误与诊断
 
-当前 v1 application-error registry 包含 97 个 code。code 的稳定 wire 位置是
+当前 v1 application-error registry 包含 98 个 code。code 的稳定 wire 位置是
 `structuredContent.result.error.code`；完整 allowlist 由
 [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
 和 direct Resource `tiled://application-errors` 提供，capability 中的
@@ -160,7 +179,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 不同失败/诊断表面不能共用一个枚举：
 
-| 表面 | 客户端处理 | 属于 97-code application registry |
+| 表面 | 客户端处理 | 属于 98-code application registry |
 |---|---|---|
 | MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
 | Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |

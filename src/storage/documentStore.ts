@@ -20,6 +20,7 @@ import type { ProjectPathResolver } from "../project/pathResolver.js";
 import {
   CheckpointStore,
   type CheckpointManifest,
+  type CheckpointStoreOptions,
   type CorruptCheckpointEntry,
 } from "./checkpoints.js";
 import { withProjectFileLock } from "./fileLock.js";
@@ -128,8 +129,12 @@ export class DocumentStore {
     private readonly resolver: ProjectPathResolver,
     private readonly maxDocumentBytes = DEFAULT_MAX_DOCUMENT_BYTES,
     private readonly writeObserver?: DocumentWriteObserver,
+    checkpointOptions: CheckpointStoreOptions = {},
   ) {
-    this.checkpoints = new CheckpointStore(resolver);
+    this.checkpoints = new CheckpointStore(
+      resolver,
+      checkpointOptions,
+    );
   }
 
   async read(projectPath: string): Promise<LoadedDocument> {
