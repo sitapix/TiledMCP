@@ -1341,6 +1341,66 @@ const nativePreviewResultOutputSchema = z
           nativePreviewObjectDebugOutputSchema,
       })
       .strict(),
+    objectLayers: z
+      .array(
+        z
+          .object({
+            id: positiveIntegerOutputSchema,
+            name: z.string(),
+            drawOrder: z.enum([
+              "topdown",
+              "index",
+            ]),
+            color: tiledColorOutputSchema.optional(),
+            objectCount:
+              nonnegativeIntegerOutputSchema,
+            renderedObjectCount:
+              nonnegativeIntegerOutputSchema,
+            omittedTileObjectCount:
+              nonnegativeIntegerOutputSchema,
+            omittedTemplateObjectCount:
+              nonnegativeIntegerOutputSchema,
+            hiddenObjectCount:
+              nonnegativeIntegerOutputSchema,
+            textBoxCount:
+              nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(128),
+    objectLayerRendering: z
+      .object({
+        profile: z.literal(
+          "base-object-layers-v1",
+        ),
+        colors: z.literal(
+          "group-color-else-gray-class-colors-unsupported",
+        ),
+        fillAlpha: z.literal(50),
+        shadow: z.literal(
+          "one-pixel-black-offset",
+        ),
+        stroke: z.literal(
+          "one-pixel-cosmetic",
+        ),
+        text: z.literal("layout-box-only"),
+        tileObjects: z.literal(
+          "omitted-counted",
+        ),
+        templates: z.literal(
+          "omitted-counted",
+        ),
+        pointMarker: z.literal(
+          "tiled-pin-cosmetic-radius-10",
+        ),
+        drawOrder: z.literal(
+          "tiled-topdown-stable-or-index",
+        ),
+        opacity: z.literal(
+          "layer-times-object-source-over",
+        ),
+      })
+      .strict(),
     renderProfile: z.enum([
       "finite-orthogonal-static-atlas-tilelayers-v1",
       "infinite-orthogonal-static-atlas-chunked-tilelayers-v1",

@@ -4950,10 +4950,19 @@ describe("createTiledMcpServer", () => {
       },
       contentPixelRect: { x: 7, y: 9, width: 64, height: 64 },
       layerIds: [LAYER_ID],
-      omittedLayers: [{ id: OBJECT_LAYER_ID, type: "objectgroup" }],
-      omittedLayerCount: 1,
+      omittedLayers: [],
+      omittedLayerCount: 0,
       omittedLayersTruncated: false,
-      partial: true,
+      partial: false,
+      objectLayers: [
+        expect.objectContaining({
+          id: OBJECT_LAYER_ID,
+        }),
+      ],
+      objectLayerRendering:
+        expect.objectContaining({
+          profile: "base-object-layers-v1",
+        }),
       snapshotConsistency: "non-atomic-read-set",
       overlays: {
         grid: true,
@@ -5011,7 +5020,7 @@ describe("createTiledMcpServer", () => {
         name: "tiled_render_preview",
         arguments: {
           mapPath: MAP_PATH,
-          layerIds: [OBJECT_LAYER_ID],
+          layerIds: [999],
         },
       }),
     );
@@ -5023,8 +5032,8 @@ describe("createTiledMcpServer", () => {
       result: {
         ok: false,
         error: {
-          code: "LAYER_TYPE_MISMATCH",
-          details: { layerId: OBJECT_LAYER_ID },
+          code: "LAYER_NOT_FOUND",
+          details: { layerId: 999 },
         },
       },
     });

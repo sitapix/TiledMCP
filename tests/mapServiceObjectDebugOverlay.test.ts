@@ -210,15 +210,14 @@ describe("MapService native object debug overlay", () => {
     expect(implicit.result).toMatchObject({
       layerIds: [30],
       layerSelection: "visible",
-      omittedLayers: [
-        {
+      omittedLayers: [],
+      omittedLayerCount: 0,
+      partial: false,
+      objectLayers: [
+        expect.objectContaining({
           id: OBJECT_LAYER_ID,
-          type: "objectgroup",
-          reason: "unsupported-layer-type",
-        },
+        }),
       ],
-      omittedLayerCount: 1,
-      partial: true,
     });
     expect(objectDebugOf(implicit.result)).toMatchObject({
       selectedObjectCount: 1,

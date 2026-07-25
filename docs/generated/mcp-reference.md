@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:06a52bdffe1889d5d449373af5fe43c3853c1f003e924c8f62378a11ad9423ea",
+    "revision": "sha256:7ea00fb75d066e3818d747c2a2d57e4b5d4d45a2eed3988ad6ff5f5730c9d5ed",
     "serverVersion": "0.0.1",
-    "size": 74318
+    "size": 74706
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 74318,
+  "size": 74706,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 74318 UTF-8 bytes, revision `sha256:06a52bdffe1889d5d449373af5fe43c3853c1f003e924c8f62378a11ad9423ea`.
+Content contract: `text`, 74706 UTF-8 bytes, revision `sha256:7ea00fb75d066e3818d747c2a2d57e4b5d4d45a2eed3988ad6ff5f5730c9d5ed`.
 
 Resource templates: none.
 
@@ -30490,6 +30490,139 @@ Output schema:
               "const": "image/png",
               "type": "string"
             },
+            "objectLayerRendering": {
+              "additionalProperties": false,
+              "properties": {
+                "colors": {
+                  "const": "group-color-else-gray-class-colors-unsupported",
+                  "type": "string"
+                },
+                "drawOrder": {
+                  "const": "tiled-topdown-stable-or-index",
+                  "type": "string"
+                },
+                "fillAlpha": {
+                  "const": 50,
+                  "type": "number"
+                },
+                "opacity": {
+                  "const": "layer-times-object-source-over",
+                  "type": "string"
+                },
+                "pointMarker": {
+                  "const": "tiled-pin-cosmetic-radius-10",
+                  "type": "string"
+                },
+                "profile": {
+                  "const": "base-object-layers-v1",
+                  "type": "string"
+                },
+                "shadow": {
+                  "const": "one-pixel-black-offset",
+                  "type": "string"
+                },
+                "stroke": {
+                  "const": "one-pixel-cosmetic",
+                  "type": "string"
+                },
+                "templates": {
+                  "const": "omitted-counted",
+                  "type": "string"
+                },
+                "text": {
+                  "const": "layout-box-only",
+                  "type": "string"
+                },
+                "tileObjects": {
+                  "const": "omitted-counted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "profile",
+                "colors",
+                "fillAlpha",
+                "shadow",
+                "stroke",
+                "text",
+                "tileObjects",
+                "templates",
+                "pointMarker",
+                "drawOrder",
+                "opacity"
+              ],
+              "type": "object"
+            },
+            "objectLayers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  },
+                  "drawOrder": {
+                    "enum": [
+                      "topdown",
+                      "index"
+                    ],
+                    "type": "string"
+                  },
+                  "hiddenObjectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "id": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "objectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "omittedTemplateObjectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "omittedTileObjectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "renderedObjectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "textBoxCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "drawOrder",
+                  "objectCount",
+                  "renderedObjectCount",
+                  "omittedTileObjectCount",
+                  "omittedTemplateObjectCount",
+                  "hiddenObjectCount",
+                  "textBoxCount"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
             "omittedLayerCount": {
               "maximum": 9007199254740991,
               "minimum": 0,
@@ -31229,6 +31362,8 @@ Output schema:
             "snapshotConsistency",
             "scale",
             "overlays",
+            "objectLayers",
+            "objectLayerRendering",
             "renderProfile",
             "truncated"
           ],

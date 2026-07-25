@@ -18,14 +18,14 @@
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
    `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 26 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 27，不能把它当成必备工具。
+3. 核心 profile 当前包含 28 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 29，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 26 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 28 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -339,9 +339,12 @@ pins；批准前仍检查 preview。text-specific 字段不能打到其他 shape
 12 类 text fields 按每 operation 的 canonical compact JSON UTF-8 合计最多 256 KiB，
 pending registry 合计 2 MiB；后序覆盖或删除不会抵扣预算。
 
-内建 `tiled_render_preview` 的基础画面仍只渲染 tile layers，并会把可见 object
-layers 报告为 omitted；但可用 `overlays.objectIds` 显式叠加受支持对象的几何轮廓。
-text 只显示旋转后的 layout box，不能用来确认 glyph、字体、换行或对齐。需要像 Tiled
+内建 `tiled_render_preview` 的基础画面现已渲染可见 object layers（profile
+`base-object-layers-v1`）：基础几何按 Tiled 语义绘制（组色否则灰、alpha-50 填充、
+1px 黑影、topdown/index 绘制序、层×对象透明度、旋转、point 图钉标记）；text 只画
+layout box，tile/template 对象按层计数披露 omitted；class 色依赖 map 外的项目文
+件，是 documented divergence。`overlays.objectIds` 调试轮廓仍可显式叠加。
+text 不能用来确认 glyph、字体、换行或对齐。需要像 Tiled
 一样核对完整排版时，使用 discovery 中实际存在的可选 `tiled_render_map`，或在 Tiled
 1.12.2 中打开项目；字体未安装导致的替换不属于 MCP 的可移植语义。
 

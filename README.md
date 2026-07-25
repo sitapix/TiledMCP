@@ -1175,8 +1175,12 @@ checkpoint restore。架构与 roadmap
   选集放不下时整个调用失败。v1 不展开 tile animation，不按 Wang set 分组，也不解析
   semantic name；per-tile image/subrect override 会 fail closed。结果固定报告
   `snapshotConsistency:"non-atomic-read-set"` 及 map/TSJ/image 三组精确 revision。
-- native preview v1 只渲染有限正交 TMJ 的静态外部 atlas tile layer，要求 atlas tile
-  尺寸与 map grid 相同。它支持整数 scale 1–4、矩形 region、显式 tile-layer 选择、
+- native preview 的基础画面渲染有限/无限正交 TMJ 的静态外部 atlas tile layer
+  （要求 atlas tile 尺寸与 map grid 相同）以及可见 object layer（profile
+  `base-object-layers-v1`：基础几何按组色否则灰 + alpha-50 填充 + 1px 黑影绘制，
+  topdown/index 绘制序、层×对象透明度、旋转、point 图钉标记；text 只画 layout
+  box，tile/template 对象按层计数披露 omitted，class 色属 documented
+  divergence）。它支持整数 scale 1–4、矩形 region、显式 tile/object layer 选择、
   H/V/D（非方形 tile 的 D 暂拒绝）、layer opacity、透明色、网格、绝对坐标 gutter，
   以及最多 64 个绝对 map tile 矩形高亮。每个高亮必须与最终 `tileRegion` 相交；部分
   越界会裁剪，完全不相交或坐标加法溢出会拒绝。固定

@@ -39,13 +39,18 @@ describe("buildPreviewScene", () => {
     expect(scene).toMatchObject({
       region: { x: 0, y: 0, width: 1, height: 1 },
       layerSelection: "visible",
-      omittedLayers: [
+      omittedLayers: [],
+      objectLayers: [
         {
           id: 3,
           name: "Objects 3",
-          type: "objectgroup",
-          reason: "unsupported-layer-type",
+          drawOrder: "topdown",
+          objects: [],
         },
+      ],
+      drawList: [
+        { kind: "tile", index: 0 },
+        { kind: "objects", index: 0 },
       ],
       usedAssetIds: ["asset_a"],
     });
@@ -99,8 +104,19 @@ describe("buildPreviewScene", () => {
     ).toEqual([12, 21]);
   });
 
-  it("rejects missing and non-tile explicit layer IDs", () => {
-    const document = map([tileLayer(1, [1]), objectLayer(2, true)]);
+  it("rejects missing and unrenderable explicit layer IDs but accepts object layers", () => {
+    const document = map([
+      tileLayer(1, [1]),
+      objectLayer(2, true),
+      {
+        id: 5,
+        name: "Backdrop",
+        type: "imagelayer",
+        visible: true,
+        opacity: 1,
+        image: "backdrop.png",
+      },
+    ]);
 
     expect(() =>
       build(document, 1, 1, [DEFAULT_RANGE], { layerIds: [99] }),
@@ -111,17 +127,22 @@ describe("buildPreviewScene", () => {
       }),
     );
     expect(() =>
-      build(document, 1, 1, [DEFAULT_RANGE], { layerIds: [2] }),
+      build(document, 1, 1, [DEFAULT_RANGE], { layerIds: [5] }),
     ).toThrowError(
       expect.objectContaining({
         code: "LAYER_TYPE_MISMATCH",
         details: {
           path: MAP_PATH,
-          layerId: 2,
-          actualType: "objectgroup",
+          layerId: 5,
+          actualType: "imagelayer",
         },
       }),
     );
+    const scene = build(document, 1, 1, [DEFAULT_RANGE], {
+      layerIds: [2],
+    });
+    expect(scene.objectLayers).toHaveLength(1);
+    expect(scene.layers).toHaveLength(0);
   });
 
   it("requires a region for an oversized full map and validates explicit bounds", () => {
@@ -356,14 +377,18 @@ describe("buildPreviewScene", () => {
   });
 
   it("bounds omission metadata and reports the full omitted count", () => {
-    const objectLayers = Array.from(
+    const imageLayers = Array.from(
       { length: MAX_PREVIEW_OMITTED_LAYERS + 1 },
       (_, index) => ({
-        ...objectLayer(index + 1, true),
+        id: index + 1,
         name: "x".repeat(1_000),
+        type: "imagelayer",
+        visible: true,
+        opacity: 1,
+        image: "backdrop.png",
       }),
     );
-    const scene = build(map(objectLayers), 1, 1, []);
+    const scene = build(map(imageLayers), 1, 1, []);
 
     expect(scene.omittedLayers).toHaveLength(
       MAX_PREVIEW_OMITTED_LAYERS,

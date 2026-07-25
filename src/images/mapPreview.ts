@@ -1,6 +1,8 @@
 import { TiledMcpError } from "../errors.js";
 import { decodeGid, type OrthogonalTransform } from "../maps/gid.js";
 import type {
+  PreviewObjectLayer,
+  PreviewObjectLayerObject,
   PreviewRegion,
   PreviewTileLayer,
 } from "../maps/previewScene.js";
@@ -312,10 +314,34 @@ export interface RenderNativePreviewInput {
   tileHeight: number;
   region: PreviewRegion;
   layers: readonly PreviewTileLayer[];
+  objectLayers?: readonly PreviewObjectLayer[];
+  drawList?: ReadonlyArray<{
+    kind: "tile" | "objects";
+    index: number;
+  }>;
   atlases: readonly NativePreviewAtlas[];
   scale: number;
   overlays: NativePreviewOverlayInput;
   backgroundColor?: string;
+}
+
+export const BASE_OBJECT_FILL_ALPHA = 50;
+export const BASE_OBJECT_POINT_RADIUS = 10;
+export const BASE_OBJECT_DEFAULT_COLOR =
+  "#808080";
+export const MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS = 8_000_000;
+
+export interface NativePreviewObjectLayerRenderSummary {
+  id: number;
+  name: string;
+  drawOrder: "topdown" | "index";
+  color?: string;
+  objectCount: number;
+  renderedObjectCount: number;
+  omittedTileObjectCount: number;
+  omittedTemplateObjectCount: number;
+  hiddenObjectCount: number;
+  textBoxCount: number;
 }
 
 export interface NativePreviewRender {
@@ -340,6 +366,7 @@ export interface NativePreviewRender {
   };
   highlightOverlay: NativePreviewHighlightRenderMetadata;
   objectDebugOverlay: NativePreviewObjectRenderMetadata;
+  objectLayers: NativePreviewObjectLayerRenderSummary[];
 }
 
 interface PreviewLayout {
@@ -421,8 +448,36 @@ export async function renderNativePreview(
     fillCoordinateGutters(canvas, layout);
   }
 
-  for (const layer of input.layers) {
-    renderLayer(canvas, layout, input, layer);
+  const objectLayerSummaries: NativePreviewObjectLayerRenderSummary[] =
+    [];
+  const objectFillBudget = { blends: 0 };
+  const drawList =
+    input.drawList ??
+    input.layers.map((_, index) => ({
+      kind: "tile" as const,
+      index,
+    }));
+  for (const item of drawList) {
+    if (item.kind === "tile") {
+      const layer = input.layers[item.index];
+      if (layer !== undefined) {
+        renderLayer(canvas, layout, input, layer);
+      }
+      continue;
+    }
+    const objectLayer =
+      input.objectLayers?.[item.index];
+    if (objectLayer !== undefined) {
+      objectLayerSummaries.push(
+        renderBaseObjectLayer(
+          canvas,
+          layout,
+          input,
+          objectLayer,
+          objectFillBudget,
+        ),
+      );
+    }
   }
   renderHighlights(
     canvas,
@@ -484,6 +539,7 @@ export async function renderNativePreview(
     },
     highlightOverlay: resolvedHighlights.metadata,
     objectDebugOverlay,
+    objectLayers: objectLayerSummaries,
   };
 }
 
@@ -2866,6 +2922,451 @@ function setPixel(
   canvas[index + 1] = color[1];
   canvas[index + 2] = color[2];
   canvas[index + 3] = color[3];
+}
+
+function parseTiledColor(
+  value: string | undefined,
+): Rgba {
+  if (value === undefined) {
+    return [128, 128, 128, 255];
+  }
+  const hex = value.slice(1);
+  if (hex.length === 8) {
+    return [
+      Number.parseInt(hex.slice(2, 4), 16),
+      Number.parseInt(hex.slice(4, 6), 16),
+      Number.parseInt(hex.slice(6, 8), 16),
+      Number.parseInt(hex.slice(0, 2), 16),
+    ];
+  }
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+    255,
+  ];
+}
+
+function scaledAlpha(
+  base: number,
+  opacity: number,
+): number {
+  return Math.max(
+    0,
+    Math.min(255, Math.round(base * opacity)),
+  );
+}
+
+function baseObjectShim(
+  layer: PreviewObjectLayer,
+  object: PreviewObjectLayerObject,
+): NativePreviewObjectInput {
+  return {
+    sourceIndex: 0,
+    objectId: object.id,
+    layerId: layer.id,
+    shape:
+      object.shape === "text"
+        ? "text"
+        : object.shape,
+    representation:
+      object.shape === "text"
+        ? "text-box-only"
+        : "geometry-outline",
+    x: object.x,
+    y: object.y,
+    rotation: object.rotation,
+    width: object.width,
+    height: object.height,
+    ...(object.points === undefined
+      ? {}
+      : { points: object.points }),
+  };
+}
+
+/**
+ * Fills one screen-space polygon with even-odd scanline coverage, sampling
+ * pixel centers and blending source-over, clipped to the content rect.
+ */
+function fillScreenPolygon(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  points: readonly OutputPoint[],
+  color: Rgba,
+  budget: { blends: number },
+): void {
+  if (points.length < 3 || color[3] === 0) {
+    return;
+  }
+  const left = layout.contentLeft;
+  const top = layout.contentTop;
+  const right =
+    layout.contentLeft + layout.contentWidth - 1;
+  const bottom =
+    layout.contentTop + layout.contentHeight - 1;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  const firstRow = Math.max(
+    top,
+    Math.floor(minY),
+  );
+  const lastRow = Math.min(
+    bottom,
+    Math.ceil(maxY),
+  );
+  for (let row = firstRow; row <= lastRow; row += 1) {
+    const sampleY = row + 0.5;
+    const crossings: number[] = [];
+    for (
+      let index = 0;
+      index < points.length;
+      index += 1
+    ) {
+      const start = points[index]!;
+      const end =
+        points[(index + 1) % points.length]!;
+      const startY = start.y;
+      const endY = end.y;
+      if (
+        (startY <= sampleY && endY > sampleY) ||
+        (endY <= sampleY && startY > sampleY)
+      ) {
+        const t =
+          (sampleY - startY) / (endY - startY);
+        crossings.push(
+          start.x + t * (end.x - start.x),
+        );
+      }
+    }
+    crossings.sort(
+      (leftX, rightX) => leftX - rightX,
+    );
+    for (
+      let pair = 0;
+      pair + 1 < crossings.length;
+      pair += 2
+    ) {
+      const spanStart = Math.max(
+        left,
+        Math.ceil(crossings[pair]! - 0.5),
+      );
+      const spanEnd = Math.min(
+        right,
+        Math.floor(crossings[pair + 1]! - 0.5),
+      );
+      for (
+        let x = spanStart;
+        x <= spanEnd;
+        x += 1
+      ) {
+        budget.blends += 1;
+        if (
+          budget.blends >
+          MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `Object layer fills may blend at most ${MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS} pixels; reduce region, scale, or selected layers.`,
+            {
+              limit:
+                MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS,
+            },
+          );
+        }
+        blendPixel(
+          canvas,
+          layout.width,
+          x,
+          row,
+          color,
+        );
+      }
+    }
+  }
+}
+
+function strokeScreenLoop(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  points: readonly OutputPoint[],
+  closed: boolean,
+  color: Rgba,
+  offsetX = 0,
+  offsetY = 0,
+): void {
+  if (points.length === 0 || color[3] === 0) {
+    return;
+  }
+  const state: ObjectRenderState = {
+    rendered: false,
+    clipped: false,
+  };
+  const seen = new Set<number>();
+  const writePixel = (
+    x: number,
+    y: number,
+    pixelState: ObjectRenderState,
+  ): void => {
+    pixelState.rendered = true;
+    const key = y * layout.width + x;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    blendPixel(canvas, layout.width, x, y, color);
+  };
+  const segmentCount = closed
+    ? points.length
+    : Math.max(0, points.length - 1);
+  for (
+    let index = 0;
+    index < segmentCount;
+    index += 1
+  ) {
+    const start = points[index]!;
+    const end =
+      points[(index + 1) % points.length]!;
+    drawClippedObjectLine(
+      {
+        x: start.x + offsetX,
+        y: start.y + offsetY,
+      },
+      { x: end.x + offsetX, y: end.y + offsetY },
+      layout,
+      state,
+      writePixel,
+    );
+  }
+}
+
+/**
+ * Builds Tiled's point pin (a 235-degree arc plus a tail reaching the
+ * anchor) in object-local screen-cosmetic pixels, matching
+ * MapRenderer::drawPointObject.
+ */
+function pointPinScreenPoints(
+  anchor: OutputPoint,
+  rotation: number,
+): OutputPoint[] {
+  const radius = BASE_OBJECT_POINT_RADIUS;
+  const sweep = 235;
+  const startAngle = 90 - sweep / 2;
+  const local: OutputPoint[] = [];
+  const segments = 24;
+  for (
+    let segment = 0;
+    segment <= segments;
+    segment += 1
+  ) {
+    const angle =
+      ((startAngle + (sweep * segment) / segments) *
+        Math.PI) /
+      180;
+    local.push({
+      x: radius * Math.cos(angle),
+      y: -radius * Math.sin(angle) - 2 * radius,
+    });
+  }
+  local.push({ x: 0, y: 0 });
+  const radians = (rotation * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return local.map((point) => ({
+    x:
+      anchor.x +
+      point.x * cosine -
+      point.y * sine,
+    y:
+      anchor.y +
+      point.x * sine +
+      point.y * cosine,
+  }));
+}
+
+function renderBaseObjectLayer(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  input: RenderNativePreviewInput,
+  layer: PreviewObjectLayer,
+  budget: { blends: number },
+): NativePreviewObjectLayerRenderSummary {
+  const ordered =
+    layer.drawOrder === "topdown"
+      ? layer.objects
+          .map((object, index) => ({
+            object,
+            index,
+          }))
+          .sort((leftEntry, rightEntry) =>
+            leftEntry.object.y ===
+            rightEntry.object.y
+              ? leftEntry.index -
+                rightEntry.index
+              : leftEntry.object.y -
+                rightEntry.object.y,
+          )
+          .map((entry) => entry.object)
+      : layer.objects;
+  const mainColor = parseTiledColor(layer.color);
+  let renderedObjectCount = 0;
+  for (const object of ordered) {
+    const alpha = layer.opacity * object.opacity;
+    if (alpha <= 0) {
+      continue;
+    }
+    renderedObjectCount += 1;
+    const stroke: Rgba = [
+      mainColor[0],
+      mainColor[1],
+      mainColor[2],
+      scaledAlpha(mainColor[3], alpha),
+    ];
+    const shadow: Rgba = [
+      0,
+      0,
+      0,
+      scaledAlpha(255, alpha),
+    ];
+    const fill: Rgba = [
+      mainColor[0],
+      mainColor[1],
+      mainColor[2],
+      scaledAlpha(BASE_OBJECT_FILL_ALPHA, alpha),
+    ];
+    const shim = baseObjectShim(layer, object);
+    if (object.shape === "point") {
+      const anchor = mapObjectPointToOutput(
+        shim,
+        { x: 0, y: 0 },
+        input,
+        layout,
+      );
+      const pin = pointPinScreenPoints(
+        anchor,
+        object.rotation,
+      );
+      strokeScreenLoop(
+        canvas,
+        layout,
+        pin,
+        true,
+        shadow,
+        1,
+        1,
+      );
+      fillScreenPolygon(
+        canvas,
+        layout,
+        pin,
+        fill,
+        budget,
+      );
+      strokeScreenLoop(
+        canvas,
+        layout,
+        pin,
+        true,
+        stroke,
+      );
+      continue;
+    }
+    let geometry = objectGeometry(
+      shim,
+      input.scale,
+    );
+    if (
+      object.shape === "rectangle" &&
+      object.width === 0 &&
+      object.height === 0
+    ) {
+      // Tiled draws a null rectangle as a 20x20 marker centered on the
+      // anchor (OrthogonalRenderer::drawMapObject).
+      geometry = {
+        points: [
+          { x: -10, y: -10 },
+          { x: 10, y: -10 },
+          { x: 10, y: 10 },
+          { x: -10, y: 10 },
+        ],
+        closed: true,
+        curveSegments: 0,
+      };
+    }
+    const screenPoints = geometry.points.map(
+      (point) =>
+        mapObjectPointToOutput(
+          shim,
+          point,
+          input,
+          layout,
+        ),
+    );
+    strokeScreenLoop(
+      canvas,
+      layout,
+      screenPoints,
+      geometry.closed,
+      shadow,
+      1,
+      1,
+    );
+    if (geometry.closed) {
+      fillScreenPolygon(
+        canvas,
+        layout,
+        screenPoints,
+        fill,
+        budget,
+      );
+    }
+    strokeScreenLoop(
+      canvas,
+      layout,
+      screenPoints,
+      geometry.closed,
+      stroke,
+    );
+    if (
+      object.shape === "polyline" &&
+      screenPoints.length > 0
+    ) {
+      // Tiled marks a polyline's first vertex with a thick point.
+      const first = screenPoints[0]!;
+      const marker: OutputPoint[] = [
+        { x: first.x - 1, y: first.y - 1 },
+        { x: first.x + 1, y: first.y - 1 },
+        { x: first.x + 1, y: first.y + 1 },
+        { x: first.x - 1, y: first.y + 1 },
+      ];
+      fillScreenPolygon(
+        canvas,
+        layout,
+        marker,
+        stroke,
+        budget,
+      );
+    }
+  }
+  return {
+    id: layer.id,
+    name: layer.name,
+    drawOrder: layer.drawOrder,
+    ...(layer.color === undefined
+      ? {}
+      : { color: layer.color }),
+    objectCount: layer.objects.length,
+    renderedObjectCount,
+    omittedTileObjectCount:
+      layer.omittedTileObjectCount,
+    omittedTemplateObjectCount:
+      layer.omittedTemplateObjectCount,
+    hiddenObjectCount: layer.hiddenObjectCount,
+    textBoxCount: layer.textBoxCount,
+  };
 }
 
 function blendPixel(

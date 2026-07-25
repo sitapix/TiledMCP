@@ -583,12 +583,18 @@ entries are listed by name and type with an explicit \`valueOmitted\`
 marker rather than an approximated value, and at most 128 entries are
 projected with a \`propertiesTruncated\` flag beyond that. It still does
 not return raw JSON, vendor fields, tile objects, or templates. The registry is
-28 core tools or 29 with the rasterizer. The native preview still uses tile
-layers as its base image and reports visible object layers as omitted, but an
-explicit \`overlays.objectIds\` selection can verify supported geometry and
-text layout boxes. Use the optional rasterizer or Tiled 1.12.2 to inspect font
-substitution, wrapping, glyph layout, tile objects, antialiased curve styling,
-and complete layer rendering.
+28 core tools or 29 with the rasterizer. The native preview base image now
+renders visible object layers too (profile \`base-object-layers-v1\`):
+basic shapes draw with Tiled's group color (else gray), a 50-alpha fill, a
+one-pixel black shadow, Tiled's topdown-or-index draw order, layer-times-
+object opacity, rotation, and the pin marker for points. Text objects draw
+their layout box only, and tile and template objects are omitted with
+per-layer counts — class-based colors live in project files outside the
+map and are a documented divergence. The explicit
+\`overlays.objectIds\` debug overlay remains available for outline
+verification. Use the optional rasterizer or Tiled 1.12.2 to inspect font
+substitution, wrapping, glyph layout, tile object images, antialiased
+curve styling, and class colors.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the

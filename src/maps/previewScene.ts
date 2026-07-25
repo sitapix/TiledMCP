@@ -13,6 +13,8 @@ import {
 } from "./tileData.js";
 
 export const MAX_PREVIEW_REGION_CELLS = 20_000;
+export const MAX_PREVIEW_BASE_OBJECTS = 512;
+export const MAX_PREVIEW_OBJECT_SHAPE_POINTS = 256;
 export const MAX_PREVIEW_LAYERS = 128;
 export const MAX_PREVIEW_TILE_DRAWS = 250_000;
 export const MAX_PREVIEW_ATLASES = 64;
@@ -49,6 +51,46 @@ export interface PreviewTileLayer {
   opacity: number;
 }
 
+export interface PreviewObjectLayerObject {
+  id: number;
+  shape:
+    | "rectangle"
+    | "point"
+    | "ellipse"
+    | "capsule"
+    | "polygon"
+    | "polyline"
+    | "text";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  points?: ReadonlyArray<{
+    x: number;
+    y: number;
+  }>;
+}
+
+export interface PreviewObjectLayer {
+  id: number;
+  name: string;
+  opacity: number;
+  /**
+   * Raw `#RRGGBB` / `#AARRGGBB` layer color; objects fall back to Tiled's
+   * gray when absent. Class-based colors live in project files outside the
+   * map and are a documented divergence.
+   */
+  color?: string;
+  drawOrder: "topdown" | "index";
+  objects: PreviewObjectLayerObject[];
+  omittedTileObjectCount: number;
+  omittedTemplateObjectCount: number;
+  hiddenObjectCount: number;
+  textBoxCount: number;
+}
+
 export interface OmittedPreviewLayer {
   id: number;
   name: string;
@@ -59,6 +101,15 @@ export interface OmittedPreviewLayer {
 export interface PreviewScene {
   region: PreviewRegion;
   layers: PreviewTileLayer[];
+  objectLayers: PreviewObjectLayer[];
+  /**
+   * Document traversal order across both renderable layer kinds, indexing
+   * into `layers` and `objectLayers`.
+   */
+  drawList: Array<{
+    kind: "tile" | "objects";
+    index: number;
+  }>;
   layerSelection: "visible" | "explicit";
   omittedLayers: OmittedPreviewLayer[];
   omittedLayerCount: number;
@@ -119,10 +170,13 @@ export function buildPreviewScene(
           { path: mapPath, layerId },
         );
       }
-      if (located.type !== "tilelayer") {
+      if (
+        located.type !== "tilelayer" &&
+        located.type !== "objectgroup"
+      ) {
         throw new TiledMcpError(
           "LAYER_TYPE_MISMATCH",
-          `Layer ${layerId} is not a tile layer.`,
+          `Layer ${layerId} is not a renderable tile or object layer.`,
           { path: mapPath, layerId, actualType: located.type },
         );
       }
@@ -131,7 +185,10 @@ export function buildPreviewScene(
 
   const explicitSet =
     explicitIds === undefined ? undefined : new Set<number>(explicitIds);
-  const selectedTileLocations: LocatedLayer[] = [];
+  const selectedLocations: Array<{
+    kind: "tile" | "objects";
+    located: LocatedLayer;
+  }> = [];
   const omittedLayers: OmittedPreviewLayer[] = [];
   let omittedLayerCount = 0;
   for (const located of locations) {
@@ -149,34 +206,49 @@ export function buildPreviewScene(
     if (!selected) {
       continue;
     }
-    if (located.type !== "tilelayer") {
-      if (explicitSet === undefined) {
-        omittedLayerCount += 1;
-        if (omittedLayers.length < MAX_PREVIEW_OMITTED_LAYERS) {
-          omittedLayers.push({
-            id: located.id,
-            name: boundedPreviewLabel(located.name),
-            type: boundedPreviewLabel(located.type),
-            reason: "unsupported-layer-type",
-          });
-        }
-      }
+    if (located.type === "tilelayer") {
+      selectedLocations.push({
+        kind: "tile",
+        located,
+      });
       continue;
     }
-    selectedTileLocations.push(located);
+    if (located.type === "objectgroup") {
+      selectedLocations.push({
+        kind: "objects",
+        located,
+      });
+      continue;
+    }
+    if (explicitSet === undefined) {
+      omittedLayerCount += 1;
+      if (omittedLayers.length < MAX_PREVIEW_OMITTED_LAYERS) {
+        omittedLayers.push({
+          id: located.id,
+          name: boundedPreviewLabel(located.name),
+          type: boundedPreviewLabel(located.type),
+          reason: "unsupported-layer-type",
+        });
+      }
+    }
   }
 
-  if (selectedTileLocations.length > MAX_PREVIEW_LAYERS) {
+  if (selectedLocations.length > MAX_PREVIEW_LAYERS) {
     throw new TiledMcpError(
       "RESULT_LIMIT_EXCEEDED",
-      `A preview may render at most ${MAX_PREVIEW_LAYERS} tile layers.`,
+      `A preview may render at most ${MAX_PREVIEW_LAYERS} layers.`,
       {
-        actual: selectedTileLocations.length,
+        actual: selectedLocations.length,
         limit: MAX_PREVIEW_LAYERS,
       },
     );
   }
-  const layers = selectedTileLocations.map((located) => {
+  const layers: PreviewTileLayer[] = [];
+  const objectLayers: PreviewObjectLayer[] = [];
+  const drawList: PreviewScene["drawList"] = [];
+  let baseObjectCount = 0;
+  for (const selectedEntry of selectedLocations) {
+    const located = selectedEntry.located;
     for (const [ancestorIndex, ancestor] of located.ancestors.entries()) {
       assertGroupRenderProperties(
         ancestor,
@@ -184,8 +256,42 @@ export function buildPreviewScene(
         located.id,
       );
     }
-    return readPreviewTileLayer(located, region, infinite);
-  });
+    if (selectedEntry.kind === "tile") {
+      layers.push(
+        readPreviewTileLayer(
+          located,
+          region,
+          infinite,
+        ),
+      );
+      drawList.push({
+        kind: "tile",
+        index: layers.length - 1,
+      });
+      continue;
+    }
+    const objectLayer =
+      readPreviewObjectLayer(located);
+    baseObjectCount +=
+      objectLayer.objects.length;
+    if (
+      baseObjectCount > MAX_PREVIEW_BASE_OBJECTS
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `A preview may render at most ${MAX_PREVIEW_BASE_OBJECTS} objects; select fewer layers with layerIds.`,
+        {
+          actual: baseObjectCount,
+          limit: MAX_PREVIEW_BASE_OBJECTS,
+        },
+      );
+    }
+    objectLayers.push(objectLayer);
+    drawList.push({
+      kind: "objects",
+      index: objectLayers.length - 1,
+    });
+  }
   const activeLayerCount = layers.filter((layer) => layer.opacity > 0).length;
   const maximumDraws = region.width * region.height * activeLayerCount;
   if (!Number.isSafeInteger(maximumDraws) || maximumDraws > MAX_PREVIEW_TILE_DRAWS) {
@@ -212,6 +318,8 @@ export function buildPreviewScene(
   return {
     region,
     layers,
+    objectLayers,
+    drawList,
     layerSelection: explicitSet === undefined ? "visible" : "explicit",
     omittedLayers,
     omittedLayerCount,
@@ -447,6 +555,297 @@ function collectLayerLocations(
   };
   visit(values, path, [], { visible: true, selectedAncestorVisible: true }, 0);
   return output;
+}
+
+const PREVIEW_OBJECT_COORDINATE_BOUND = 1_000_000_000;
+const TILED_COLOR_PATTERN =
+  /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+
+function readPreviewObjectLayer(
+  located: LocatedLayer,
+): PreviewObjectLayer {
+  const layer = located.object;
+  assertLeafRenderProperties(
+    layer,
+    located.path,
+    located.id,
+  );
+  const drawOrderValue =
+    layer.draworder === undefined
+      ? "topdown"
+      : layer.draworder;
+  if (
+    drawOrderValue !== "topdown" &&
+    drawOrderValue !== "index"
+  ) {
+    throw unsupportedFeature(
+      "draworder",
+      `Object layer ${located.id} uses an unrecognized draw order.`,
+      {
+        path: located.path,
+        layerId: located.id,
+        drawOrder: drawOrderValue,
+      },
+    );
+  }
+  let color: string | undefined;
+  if (layer.color !== undefined) {
+    if (
+      typeof layer.color !== "string" ||
+      !TILED_COLOR_PATTERN.test(layer.color)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `Object layer ${located.id} color must be #RRGGBB or #AARRGGBB.`,
+        { path: located.path, layerId: located.id },
+      );
+    }
+    color = layer.color;
+  }
+  const objectValues = expectArray(
+    layer.objects,
+    `${located.path}.objects`,
+  );
+  const readNumber = (
+    value: unknown,
+    context: string,
+    fallback: number,
+  ): number => {
+    if (value === undefined) {
+      return fallback;
+    }
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      Math.abs(value) >
+        PREVIEW_OBJECT_COORDINATE_BOUND
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context} must be a bounded finite number.`,
+        { path: located.path, layerId: located.id },
+      );
+    }
+    return value;
+  };
+  const objects: PreviewObjectLayerObject[] = [];
+  let omittedTileObjectCount = 0;
+  let omittedTemplateObjectCount = 0;
+  let hiddenObjectCount = 0;
+  let textBoxCount = 0;
+  for (const [
+    index,
+    objectValue,
+  ] of objectValues.entries()) {
+    const context = `${located.path}.objects[${index}]`;
+    const object = expectObject(
+      objectValue,
+      context,
+    );
+    if (object.visible === false) {
+      hiddenObjectCount += 1;
+      continue;
+    }
+    if (object.template !== undefined) {
+      omittedTemplateObjectCount += 1;
+      continue;
+    }
+    if (object.gid !== undefined) {
+      omittedTileObjectCount += 1;
+      continue;
+    }
+    const markers = [
+      "point",
+      "ellipse",
+      "capsule",
+      "polygon",
+      "polyline",
+      "text",
+    ].filter((marker) =>
+      Object.prototype.hasOwnProperty.call(
+        object,
+        marker,
+      ),
+    );
+    if (markers.length > 1) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context} contains conflicting shape markers.`,
+        {
+          path: located.path,
+          layerId: located.id,
+          index,
+        },
+      );
+    }
+    const marker = markers[0];
+    const shape: PreviewObjectLayerObject["shape"] =
+      marker === undefined
+        ? "rectangle"
+        : (marker as PreviewObjectLayerObject["shape"]);
+    if (
+      (shape === "point" ||
+        shape === "ellipse" ||
+        shape === "capsule") &&
+      object[shape] !== true
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${shape} must be true when present.`,
+        {
+          path: located.path,
+          layerId: located.id,
+          index,
+        },
+      );
+    }
+    if (shape === "text") {
+      expectObject(
+        object.text,
+        `${context}.text`,
+      );
+      textBoxCount += 1;
+    }
+    const opacity = readNumber(
+      object.opacity,
+      `${context}.opacity`,
+      1,
+    );
+    if (opacity < 0 || opacity > 1) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.opacity must be between 0 and 1.`,
+        {
+          path: located.path,
+          layerId: located.id,
+          index,
+        },
+      );
+    }
+    const width = readNumber(
+      object.width,
+      `${context}.width`,
+      0,
+    );
+    const height = readNumber(
+      object.height,
+      `${context}.height`,
+      0,
+    );
+    if (width < 0 || height < 0) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context} dimensions must be nonnegative.`,
+        {
+          path: located.path,
+          layerId: located.id,
+          index,
+        },
+      );
+    }
+    const entry: PreviewObjectLayerObject = {
+      id: expectInteger(
+        object.id,
+        `${context}.id`,
+      ),
+      shape,
+      x: readNumber(object.x, `${context}.x`, 0),
+      y: readNumber(object.y, `${context}.y`, 0),
+      width,
+      height,
+      rotation: readNumber(
+        object.rotation,
+        `${context}.rotation`,
+        0,
+      ),
+      opacity,
+    };
+    if (
+      shape === "polygon" ||
+      shape === "polyline"
+    ) {
+      const pointsValue = object[shape];
+      if (!Array.isArray(pointsValue)) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${context}.${shape} must be an array.`,
+          {
+            path: located.path,
+            layerId: located.id,
+            index,
+          },
+        );
+      }
+      const minimum = shape === "polygon" ? 3 : 2;
+      if (
+        pointsValue.length < minimum ||
+        pointsValue.length >
+          MAX_PREVIEW_OBJECT_SHAPE_POINTS
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${context}.${shape} must contain between ${minimum} and ${MAX_PREVIEW_OBJECT_SHAPE_POINTS} points.`,
+          {
+            path: located.path,
+            layerId: located.id,
+            index,
+          },
+        );
+      }
+      entry.points = pointsValue.map(
+        (pointValue, pointIndex) => {
+          const point = expectObject(
+            pointValue,
+            `${context}.${shape}[${pointIndex}]`,
+          );
+          const pointContext = `${context}.${shape}[${pointIndex}]`;
+          for (const axis of [
+            "x",
+            "y",
+          ] as const) {
+            const value = point[axis];
+            if (
+              typeof value !== "number" ||
+              !Number.isFinite(value) ||
+              Math.abs(value) >
+                PREVIEW_OBJECT_COORDINATE_BOUND
+            ) {
+              throw new TiledMcpError(
+                "INVALID_DOCUMENT",
+                `${pointContext}.${axis} must be a bounded finite number.`,
+                {
+                  path: located.path,
+                  layerId: located.id,
+                  index,
+                },
+              );
+            }
+          }
+          return {
+            x: point.x as number,
+            y: point.y as number,
+          };
+        },
+      );
+    }
+    objects.push(entry);
+  }
+  return {
+    id: located.id,
+    name: located.name,
+    opacity: readOpacity(
+      layer.opacity,
+      located.path,
+      located.id,
+    ),
+    ...(color === undefined ? {} : { color }),
+    drawOrder: drawOrderValue,
+    objects,
+    omittedTileObjectCount,
+    omittedTemplateObjectCount,
+    hiddenObjectCount,
+    textBoxCount,
+  };
 }
 
 function readPreviewTileLayer(

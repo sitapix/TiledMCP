@@ -1550,6 +1550,8 @@ export class MapService {
         tileHeight,
         region: scene.region,
         layers: scene.layers,
+        objectLayers: scene.objectLayers,
+        drawList: scene.drawList,
         atlases,
         scale,
         overlays,
@@ -1631,6 +1633,24 @@ export class MapService {
           highlights: rendered.highlightOverlay,
           objectDebug:
             rendered.objectDebugOverlay,
+        },
+        objectLayers: rendered.objectLayers,
+        objectLayerRendering: {
+          profile: "base-object-layers-v1",
+          colors:
+            "group-color-else-gray-class-colors-unsupported",
+          fillAlpha: 50,
+          shadow: "one-pixel-black-offset",
+          stroke: "one-pixel-cosmetic",
+          text: "layout-box-only",
+          tileObjects: "omitted-counted",
+          templates: "omitted-counted",
+          pointMarker:
+            "tiled-pin-cosmetic-radius-10",
+          drawOrder:
+            "tiled-topdown-stable-or-index",
+          opacity:
+            "layer-times-object-source-over",
         },
         renderProfile: context.infinite
           ? "infinite-orthogonal-static-atlas-chunked-tilelayers-v1"

@@ -177,6 +177,24 @@ function validResult(): Record<string, unknown> {
         ],
       },
     },
+    objectLayers: [],
+    objectLayerRendering: {
+      profile: "base-object-layers-v1",
+      colors:
+        "group-color-else-gray-class-colors-unsupported",
+      fillAlpha: 50,
+      shadow: "one-pixel-black-offset",
+      stroke: "one-pixel-cosmetic",
+      text: "layout-box-only",
+      tileObjects: "omitted-counted",
+      templates: "omitted-counted",
+      pointMarker:
+        "tiled-pin-cosmetic-radius-10",
+      drawOrder:
+        "tiled-topdown-stable-or-index",
+      opacity:
+        "layer-times-object-source-over",
+    },
     renderProfile:
       "finite-orthogonal-static-atlas-tilelayers-v1",
     truncated: false,
