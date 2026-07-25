@@ -11666,6 +11666,35 @@ function validateLayers(
           } else {
             seenObjectIds.add(objectValue.id);
           }
+          if (objectValue.gid !== undefined) {
+            const gidPointer = `${objectPointer}/gid`;
+            const gid = objectValue.gid;
+            if (
+              typeof gid !== "number" ||
+              !Number.isSafeInteger(gid) ||
+              gid < 0 ||
+              gid > 0xffffffff
+            ) {
+              diagnostics.push(
+                errorDiagnostic(
+                  "GID_INVALID",
+                  "Every GID must be an unsigned 32-bit integer.",
+                  gidPointer,
+                ),
+              );
+              continue;
+            }
+            try {
+              decodeGid(gid, "orthogonal");
+            } catch (error) {
+              diagnostics.push(
+                fromCaughtDiagnostic(
+                  error,
+                  gidPointer,
+                ),
+              );
+            }
+          }
         }
       }
       continue;
@@ -11754,6 +11783,9 @@ function validateReferencedGids(
   pointer: string,
   depth = 0,
   budget: LayerTraversalBudget = { count: 0 },
+  objectBudget: { count: number } = {
+    count: 0,
+  },
 ): void {
   if (
     diagnostics.length >= MAX_DIAGNOSTICS ||
@@ -11779,7 +11811,77 @@ function validateReferencedGids(
         `${layerPointer}/layers`,
         depth + 1,
         budget,
+        objectBudget,
       );
+      continue;
+    }
+    if (
+      value.type === "objectgroup" &&
+      Array.isArray(value.objects)
+    ) {
+      if (
+        objectBudget.count +
+          value.objects.length >
+        MAX_OBJECT_COUNT
+      ) {
+        return;
+      }
+      objectBudget.count += value.objects.length;
+      for (const [
+        objectIndex,
+        objectValue,
+      ] of value.objects.entries()) {
+        if (
+          diagnostics.length >=
+          MAX_DIAGNOSTICS
+        ) {
+          return;
+        }
+        if (
+          !isJsonObject(objectValue) ||
+          objectValue.gid === undefined
+        ) {
+          continue;
+        }
+        const gid = objectValue.gid;
+        if (
+          typeof gid !== "number" ||
+          !Number.isSafeInteger(gid) ||
+          gid < 0 ||
+          gid > 0xffffffff
+        ) {
+          continue;
+        }
+        const gidPointer =
+          `${layerPointer}/objects/${objectIndex}/gid`;
+        let baseGid: number;
+        try {
+          baseGid = decodeGid(
+            gid,
+            "orthogonal",
+          ).baseGid;
+        } catch {
+          // The structural pass already reports invalid GID flags.
+          continue;
+        }
+        if (baseGid === 0) {
+          continue;
+        }
+        try {
+          gidToTileRef(
+            gid,
+            "orthogonal",
+            bindings,
+          );
+        } catch (error) {
+          diagnostics.push(
+            fromCaughtDiagnostic(
+              error,
+              gidPointer,
+            ),
+          );
+        }
+      }
       continue;
     }
     if (value.type !== "tilelayer" || !Array.isArray(value.data)) {

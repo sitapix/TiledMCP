@@ -3679,6 +3679,106 @@ describe("MapService", () => {
     );
   });
 
+  it("accepts a resolvable transformed GID on a nested tile object", async () => {
+    const map = baseMap();
+    map.layers = [
+      {
+        id: 10,
+        type: "group",
+        layers: [
+          {
+            id: 11,
+            type: "objectgroup",
+            objects: [
+              {
+                id: 3,
+                gid:
+                  FLAGGED_LOCAL_ID_TWO,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    map.nextlayerid = 12;
+    map.nextobjectid = 4;
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+
+    await expect(
+      harness.service.validate(MAP_PATH),
+    ).resolves.toMatchObject({
+      path: MAP_PATH,
+      valid: true,
+      diagnostics: [],
+    });
+  });
+
+  it("validates tile-object GID syntax, flags and referenced tileset range", async () => {
+    const map = baseMap();
+    map.layers = [
+      {
+        id: 10,
+        type: "group",
+        layers: [
+          {
+            id: 11,
+            type: "objectgroup",
+            objects: [
+              {
+                id: 3,
+                gid: "1",
+              },
+              {
+                id: 4,
+                gid:
+                  GID_FLIP_HORIZONTAL,
+              },
+              {
+                id: 5,
+                gid: 5,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    map.nextlayerid = 12;
+    map.nextobjectid = 6;
+    await writeJson(
+      join(harness.root, MAP_PATH),
+      map,
+    );
+
+    const result =
+      await harness.service.validate(MAP_PATH);
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "GID_INVALID",
+          severity: "error",
+          jsonPointer:
+            "/layers/0/layers/0/objects/0/gid",
+        }),
+        expect.objectContaining({
+          code: "INVALID_GID",
+          severity: "error",
+          jsonPointer:
+            "/layers/0/layers/0/objects/1/gid",
+        }),
+        expect.objectContaining({
+          code: "GID_OUT_OF_RANGE",
+          severity: "error",
+          jsonPointer:
+            "/layers/0/layers/0/objects/2/gid",
+        }),
+      ]),
+    );
+  });
+
   it("rejects render dependencies that escape the project sandbox", async () => {
     const unsafe = baseMap();
     const layers = unsafe.layers as JsonObject[];
