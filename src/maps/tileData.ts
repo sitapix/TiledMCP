@@ -1,6 +1,9 @@
 import {
+  deflateSync,
   gunzipSync,
+  gzipSync,
   inflateSync,
+  zstdCompressSync,
   zstdDecompressSync,
 } from "node:zlib";
 
@@ -178,8 +181,9 @@ function decodeEncodedCells(
 
 /**
  * Resolves a finite tile layer's cells for a read or edit consumer. Chunked
- * (infinite) layers fail closed in both modes; encoded string data decodes
- * in read mode only.
+ * (infinite) layers fail closed in both modes. Encoded string data decodes
+ * in both modes: edits work on the decoded cells and the apply path
+ * re-encodes actually-written layers in kind before patching.
  */
 export function resolveTileLayerCells(
   layer: JsonObject,
@@ -199,13 +203,6 @@ export function resolveTileLayerCells(
     );
   }
   if (typeof layer.data === "string") {
-    if (mode === "edit") {
-      throw new TiledMcpError(
-        "UNSUPPORTED_TILE_ENCODING",
-        editMessage,
-        { path: mapPath, layerId },
-      );
-    }
     return decodeEncodedTileLayerData(
       layer,
       layerId,
@@ -221,6 +218,54 @@ export function resolveTileLayerCells(
     );
   }
   return layer.data;
+}
+
+/**
+ * Encodes cells back into the layer's stored representation: little-endian
+ * uint32 bytes, compressed with the layer's own declared method, base64.
+ * Write-back never transcodes — the encoding and compression members stay
+ * exactly as stored.
+ */
+export function encodeTileLayerCells(
+  cells: readonly JsonValue[],
+  compression: string,
+  layerId: number,
+  mapPath: string,
+): string {
+  const bytes = Buffer.alloc(cells.length * 4);
+  for (const [index, cell] of cells.entries()) {
+    if (
+      typeof cell !== "number" ||
+      !Number.isSafeInteger(cell) ||
+      cell < 0 ||
+      cell > 0xffffffff
+    ) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `Layer ${layerId} has a non-uint32 GID at index ${index}.`,
+        { path: mapPath, layerId, index },
+      );
+    }
+    bytes.writeUInt32LE(cell, index * 4);
+  }
+  const packed =
+    compression === ""
+      ? bytes
+      : compression === "gzip"
+        ? gzipSync(bytes)
+        : compression === "zlib"
+          ? deflateSync(bytes)
+          : compression === "zstd"
+            ? zstdCompressSync(bytes)
+            : undefined;
+  if (packed === undefined) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_TILE_ENCODING",
+      `Layer ${layerId} uses an unsupported compression method.`,
+      { path: mapPath, layerId, compression },
+    );
+  }
+  return packed.toString("base64");
 }
 
 export const MAX_TILE_LAYER_CHUNKS = 4_096;

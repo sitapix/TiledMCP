@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:7434c055437636322df1fc155c215cbc20728014972c70ed86c8caef817c9d98",
+    "revision": "sha256:06a52bdffe1889d5d449373af5fe43c3853c1f003e924c8f62378a11ad9423ea",
     "serverVersion": "0.0.1",
-    "size": 74079
+    "size": 74318
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 74079,
+  "size": 74318,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 74079 UTF-8 bytes, revision `sha256:7434c055437636322df1fc155c215cbc20728014972c70ed86c8caef817c9d98`.
+Content contract: `text`, 74318 UTF-8 bytes, revision `sha256:06a52bdffe1889d5d449373af5fe43c3853c1f003e924c8f62378a11ad9423ea`.
 
 Resource templates: none.
 
@@ -12268,6 +12268,10 @@ Output schema:
                   "const": "base64",
                   "type": "string"
                 },
+                "encodedResize": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
                 "infiniteMaps": {
                   "const": "readable-never-editable",
                   "type": "string"
@@ -12279,6 +12283,10 @@ Output schema:
                 "maxDecodedBytesPerLayer": {
                   "const": 67108864,
                   "type": "number"
+                },
+                "netNoOpEncodedWrites": {
+                  "const": "exact-original-bytes",
+                  "type": "string"
                 },
                 "outsideChunkCells": {
                   "const": "empty",
@@ -12305,12 +12313,20 @@ Output schema:
                   ],
                   "type": "array"
                 },
+                "unwrittenEncodedLayers": {
+                  "const": "exact-original-bytes",
+                  "type": "string"
+                },
                 "validateDiagnostics": {
                   "const": "encoded-data-still-reported-as-uneditable",
                   "type": "string"
                 },
+                "writeCompression": {
+                  "const": "same-encoding-and-compression-as-stored-no-transcoding",
+                  "type": "string"
+                },
                 "writeProfile": {
-                  "const": "plain-array-only-fail-closed",
+                  "const": "arrays-editable-encoded-rewritten-in-kind",
                   "type": "string"
                 }
               },
@@ -12330,6 +12346,10 @@ Output schema:
                 "maxChunksPerLayer",
                 "infiniteMaps",
                 "writeProfile",
+                "writeCompression",
+                "unwrittenEncodedLayers",
+                "netNoOpEncodedWrites",
+                "encodedResize",
                 "validateDiagnostics"
               ],
               "type": "object"

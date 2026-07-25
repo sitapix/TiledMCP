@@ -84,8 +84,10 @@
 `tiled_render_preview`、`tiled_analyze_usage` 与 `tiled_render_map` 按 Tiled
 1.12.2 读取器语义解码 `encoding:"base64"` + gzip/zlib/zstd 的有限 tile layer
 （严格 canonical base64、解压钉死在 width×height×4 精确字节、LE uint32、单层解
-码上限 64 MiB 防解压炸弹）；所有编辑路径对 encoded data 继续 fail closed，写入
-面零变化，`tileDataReadCapabilities` 公布策略。
+码上限 64 MiB 防解压炸弹）。encoded 有限 layer 也**可编辑**（M2 第三步）：cell
+类操作解码编辑，apply 时只把**实际被写**的 layer 按其自身 encoding/compression
+重新编码（绝不转码），未触碰 layer 与净 no-op 写入保持原始 bytes；resize 对
+encoded 地图仍 fail closed。`tileDataReadCapabilities` 公布策略。
 无限地图也获得**只读**支持（M2 第二步）：`tiled_get_map_summary`/
 `tiled_get_region`/`tiled_analyze_usage` 可读 chunked 存储——region 用绝对 tile
 坐标（允许负值），chunk 外的格子为空；chunk data 沿用 layer 级 encoding/

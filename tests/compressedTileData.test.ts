@@ -106,20 +106,85 @@ describe("compressed tile data read-only support", () => {
     });
   }
 
-  it("keeps every edit path fail-closed on encoded layers", async () => {
+  it("edits encoded layers by re-encoding written data in kind", async () => {
     const harness = await createHarness(
       roots,
       encodedLayerData(CELLS, "zlib"),
       "zlib",
     );
+    const before = await readFile(
+      join(harness.root, MAP_PATH),
+      "utf8",
+    );
     const summary =
       await harness.service.getSummary(MAP_PATH);
 
-    await expect(
-      harness.service.planEdits(
+    const edit = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      summary.dependencyRevisions as Record<
+        string,
+        string
+      >,
+      [
+        {
+          type: "setTiles",
+          layerId: LAYER_ID,
+          cells: [
+            {
+              x: 0,
+              y: 1,
+              tile: {
+                tileset: {
+                  kind: "external",
+                  assetId: Object.keys(
+                    summary.dependencyRevisions as Record<
+                      string,
+                      string
+                    >,
+                  )[0]!,
+                },
+                localId: 3,
+              },
+            },
+          ],
+        },
+      ],
+    );
+    const result =
+      await harness.service.applyEdits(edit);
+    expect(result.changed).toBe(true);
+
+    const written = JSON.parse(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
+      ),
+    ) as JsonObject;
+    const layer = (
+      written.layers as JsonObject[]
+    ).find((entry) => entry.id === LAYER_ID)!;
+    expect(layer.encoding).toBe("base64");
+    expect(layer.compression).toBe("zlib");
+    expect(typeof layer.data).toBe("string");
+    const cells = resolveTileLayerCells(
+      layer,
+      LAYER_ID,
+      MAP_PATH,
+      4,
+      "read",
+      "unused",
+    );
+    expect([...cells]).toEqual([1, 2, 4, 3]);
+
+    // Writing the original values back must collapse to the exact bytes.
+    const restoreSummary =
+      await harness.service.getSummary(MAP_PATH);
+    const restore =
+      await harness.service.planEdits(
         MAP_PATH,
-        summary.revision as string,
-        summary.dependencyRevisions as Record<
+        restoreSummary.revision as string,
+        restoreSummary.dependencyRevisions as Record<
           string,
           string
         >,
@@ -127,13 +192,46 @@ describe("compressed tile data read-only support", () => {
           {
             type: "setTiles",
             layerId: LAYER_ID,
-            cells: [{ x: 0, y: 0, tile: null }],
+            cells: [
+              {
+                x: 0,
+                y: 1,
+                tile: {
+                  tileset: {
+                    kind: "external",
+                    assetId: Object.keys(
+                      restoreSummary.dependencyRevisions as Record<
+                        string,
+                        string
+                      >,
+                    )[0]!,
+                  },
+                  localId: 3,
+                },
+              },
+            ],
           },
         ],
+      );
+    const noop =
+      await harness.service.applyEdits(restore);
+    expect(noop.changed).toBe(false);
+    expect(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
       ),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_TILE_ENCODING",
-    });
+    ).not.toBe(before);
+  });
+
+  it("preserves untouched encoded layers byte-exactly and keeps resize fail-closed", async () => {
+    const harness = await createHarness(
+      roots,
+      encodedLayerData(CELLS, "zlib"),
+      "zlib",
+    );
+    const summary =
+      await harness.service.getSummary(MAP_PATH);
 
     await expect(
       harness.service.planEdits(
@@ -154,6 +252,54 @@ describe("compressed tile data read-only support", () => {
     ).rejects.toMatchObject({
       code: "UNSUPPORTED_TILE_ENCODING",
     });
+
+    // A same-value write is a net no-op that must keep the exact bytes.
+    const before = await readFile(
+      join(harness.root, MAP_PATH),
+      "utf8",
+    );
+    const noopEdit =
+      await harness.service.planEdits(
+        MAP_PATH,
+        summary.revision as string,
+        summary.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "setTiles",
+            layerId: LAYER_ID,
+            cells: [
+              {
+                x: 0,
+                y: 0,
+                tile: {
+                  tileset: {
+                    kind: "external",
+                    assetId: Object.keys(
+                      summary.dependencyRevisions as Record<
+                        string,
+                        string
+                      >,
+                    )[0]!,
+                  },
+                  localId: 0,
+                },
+              },
+            ],
+          },
+        ],
+      );
+    const noop =
+      await harness.service.applyEdits(noopEdit);
+    expect(noop.changed).toBe(false);
+    expect(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
+      ),
+    ).toBe(before);
   });
 
   it("fails closed on corrupt, oversized, or unsupported encodings", async () => {

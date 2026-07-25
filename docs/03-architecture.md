@@ -1470,6 +1470,16 @@ chunked layer 的做法是"区域即层"：合成一个 bounds 恰为请求区�
 PreviewTileLayer（只解码相交 chunk），渲染器既有的层/区域求交采样天然支持负坐
 标；无限地图必须显式给出 region（`PREVIEW_REGION_REQUIRED`），坐标标注补充了负
 号字形。
+
+M2 第三步落地 encoded 写回，机制与 7.1 完全一致："修改某层时才解码该层；写回
+默认保持原编码，不做隐式转码"。实现依托一个既有细节：`writeLayerGid` 的
+view→document 同步让 `data` 成员恰好在**首次真实写入**时从字符串变数组——这就
+是天然的脏标记。apply 在生成 source patch 前对 affected tile layer 中
+"encoding 为 base64 且 data 已是数组"的层重编码（沿用该层自身的 compression；
+压缩字节由本进程 zlib 产生，与 Tiled 写出的字节不必相同，语义等价）；重编码前
+先与原始解码比对，逐格相等则**恢复原始字符串**，保住 exact-byte 净 no-op 折叠。
+removeTilesetFromMap 的引用扫描同样解码 encoded layer（只读不写）。resize 对
+encoded 地图保持 fail closed（其独立 layer 视图收集器未接入解码）。
 summary 的 `editableProfile` 对无限地图报
 `infinite-orthogonal-tmj-read-only-chunked` 并给出每层内容 bounds 与
 `startx`/`starty`（Tiled 写出侧的 localBounds 语义）。

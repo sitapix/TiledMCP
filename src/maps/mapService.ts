@@ -35,9 +35,11 @@ import {
   type FileDeleteScanSummary,
 } from "./fileDelete.js";
 import {
+  decodeChunkCells,
+  decodeEncodedTileLayerData,
+  encodeTileLayerCells,
   readChunkedRegionGids,
   readChunkedTileLayerStructure,
-  decodeChunkCells,
   resolveTileLayerCells,
 } from "./tileData.js";
 import {
@@ -3137,6 +3139,12 @@ export class MapService {
         prospectiveImage,
       );
     }
+    reencodeWrittenTileLayers(
+      edited,
+      context.loaded.document,
+      appliedSummary.affectedTileLayerIds,
+      plan.mapPath,
+    );
     const patchedSource = patchJsonDocumentSource(
       context.loaded.source,
       edited,
@@ -7336,16 +7344,6 @@ function inspectTilesetUsage(
           { path: mapPath, layerId, layerType },
         );
       }
-      if (
-        "chunks" in layer ||
-        typeof layer.data === "string"
-      ) {
-        throw new TiledMcpError(
-          "UNSUPPORTED_TILE_ENCODING",
-          "Removing a tileset reference supports only finite JSON tile layers with numeric data arrays.",
-          { path: mapPath, layerId },
-        );
-      }
       const width = expectInteger(
         layer.width,
         `${layerContext}.width`,
@@ -7363,9 +7361,15 @@ function inspectTilesetUsage(
         `${layerContext}.height`,
       );
       const cellCount = width * height;
-      const data = expectArray(
-        layer.data,
-        `${layerContext}.data`,
+      // The removal scan only reads cells; encoded layers decode without
+      // touching their stored bytes.
+      const data = resolveTileLayerCells(
+        layer,
+        layerId,
+        mapPath,
+        cellCount,
+        "read",
+        "Removing a tileset reference supports only finite JSON tile layers with numeric data arrays.",
       );
       if (
         !Number.isSafeInteger(cellCount) ||
@@ -8529,6 +8533,89 @@ function gidToTileRef(
     localId,
     transform: decoded.transform,
   };
+}
+
+/**
+ * Re-encodes actually-written encoded tile layers before source patching.
+ * A layer's `data` member flips from string to array exactly when the first
+ * real cell write lands (writeLayerGid syncs the decoded view back), so
+ * untouched encoded layers keep their exact original bytes. A written layer
+ * whose decoded cells ended up identical to the original gets its original
+ * string restored, preserving the exact-byte net no-op collapse.
+ */
+function reencodeWrittenTileLayers(
+  edited: JsonObject,
+  original: JsonObject,
+  affectedTileLayerIds: readonly number[],
+  mapPath: string,
+): void {
+  for (const layerId of affectedTileLayerIds) {
+    const located = findLayerRecursive(
+      expectArray(
+        edited.layers,
+        `${mapPath}.layers`,
+      ),
+      layerId,
+      `${mapPath}.layers`,
+      ["layers"],
+    );
+    if (located === undefined) {
+      continue;
+    }
+    const layer = located.object;
+    const editedCells = layer.data;
+    if (
+      layer.encoding !== "base64" ||
+      !Array.isArray(editedCells)
+    ) {
+      continue;
+    }
+    const compression =
+      layer.compression === undefined ||
+      layer.compression === ""
+        ? ""
+        : String(layer.compression);
+    const originalLocated = findLayerRecursive(
+      expectArray(
+        original.layers,
+        `${mapPath}.layers`,
+      ),
+      layerId,
+      `${mapPath}.layers`,
+      ["layers"],
+    );
+    const originalLayer = originalLocated?.object;
+    if (
+      originalLayer !== undefined &&
+      typeof originalLayer.data === "string" &&
+      originalLayer.encoding === "base64"
+    ) {
+      const originalCells =
+        decodeEncodedTileLayerData(
+          originalLayer,
+          layerId,
+          mapPath,
+          editedCells.length,
+        );
+      if (
+        originalCells.length ===
+          editedCells.length &&
+        originalCells.every(
+          (cell, index) =>
+            cell === editedCells[index],
+        )
+      ) {
+        layer.data = originalLayer.data;
+        continue;
+      }
+    }
+    layer.data = encodeTileLayerCells(
+      editedCells,
+      compression,
+      layerId,
+      mapPath,
+    );
+  }
 }
 
 function findChunkedTileLayer(

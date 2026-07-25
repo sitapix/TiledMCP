@@ -60,10 +60,13 @@ most 4,096 chunks resolve per layer, and the summary reports
 \`tiled_render_preview\` renders chunked layers too: infinite maps
 require an explicit absolute-coordinate region (negative coordinates and
 coordinate labels are supported) and the render profile reports
-\`infinite-orthogonal-static-atlas-chunked-tilelayers-v1\`. Every edit and
-preview-edit path still fails closed on infinite maps and encoded data —
-the write profile is unchanged — and \`tiled_validate\` keeps reporting
-both as outside the editable profile. Inspect
+\`infinite-orthogonal-static-atlas-chunked-tilelayers-v1\`. Encoded finite layers are also editable: cell operations decode the
+stored data, and apply re-encodes each actually-written layer with its
+own stored encoding and compression — never transcoding — while
+untouched layers and exact net no-op writes keep their original bytes.
+Resizing an encoded map and every edit on infinite maps still fail
+closed, and \`tiled_validate\` keeps reporting chunked storage as
+outside the editable profile. Inspect
 \`tileDataReadCapabilities\` for the frozen policy strings.
 
 ## Filesystem threat model

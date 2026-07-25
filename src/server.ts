@@ -2423,7 +2423,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           infiniteMaps:
             "readable-never-editable",
           writeProfile:
-            "plain-array-only-fail-closed",
+            "arrays-editable-encoded-rewritten-in-kind",
+          writeCompression:
+            "same-encoding-and-compression-as-stored-no-transcoding",
+          unwrittenEncodedLayers:
+            "exact-original-bytes",
+          netNoOpEncodedWrites:
+            "exact-original-bytes",
+          encodedResize: "fail-closed",
           validateDiagnostics:
             "encoded-data-still-reported-as-uneditable",
         },
