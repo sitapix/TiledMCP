@@ -212,7 +212,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_render_tiles` | 按输入顺序放大并标注 1–64 个显式、稀疏的 atlas local IDs |
 | `tiled_render_preview` | 内建渲染有限正交 tile layer，可选 region、图层、网格、坐标、有界矩形高亮和显式对象几何调试叠层 |
 | `tiled_list_objects` | 有界列出全部或指定 object layer 的对象 |
-| `tiled_get_object` | 按全图唯一 object ID 读取一个有界、严格判别的可编辑对象详情 |
+| `tiled_get_object` | 按全图唯一 object ID 读取一个有界、严格判别的可编辑对象详情，并按文档序回读标量自定义属性（复杂/超长条目以 `valueOmitted` 标记） |
 | `tiled_validate` | 只读结构与 MVP profile 校验 |
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
 | `tiled_create_tileset` | 预览从项目图片新建 external atlas TSJ；不直接写盘，apply 绝不覆盖已有文件 |

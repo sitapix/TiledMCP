@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:a0f3f9853d9bc33e87210d20b3559f768bdb0f69d27fff265766cf59de5f1bcd",
+    "revision": "sha256:38ceba06cc3b2b5505413c435bfad85c70d9bc33b7e455602d346e5be6167b8c",
     "serverVersion": "0.0.1",
-    "size": 71597
+    "size": 71949
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 71597,
+  "size": 71949,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 71597 UTF-8 bytes, revision `sha256:a0f3f9853d9bc33e87210d20b3559f768bdb0f69d27fff265766cf59de5f1bcd`.
+Content contract: `text`, 71949 UTF-8 bytes, revision `sha256:38ceba06cc3b2b5505413c435bfad85c70d9bc33b7e455602d346e5be6167b8c`.
 
 Resource templates: none.
 
@@ -13932,7 +13932,7 @@ Output schema:
 
 Availability: `core`
 
-Returns one supported object with complete shape-specific geometry and effective text styling.
+Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value.
 
 Annotations:
 
@@ -14094,6 +14094,107 @@ Output schema:
                       "minimum": 0,
                       "type": "number"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14133,6 +14234,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "width",
                     "height"
@@ -14181,6 +14284,107 @@ Output schema:
                       "minimum": 0,
                       "type": "number"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14215,6 +14419,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape"
                   ],
                   "type": "object"
@@ -14266,6 +14472,107 @@ Output schema:
                       "minimum": 0,
                       "type": "number"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14305,6 +14612,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "width",
                     "height"
@@ -14358,6 +14667,107 @@ Output schema:
                       "minimum": 0,
                       "type": "number"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14397,6 +14807,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "width",
                     "height"
@@ -14470,6 +14882,107 @@ Output schema:
                       "minItems": 3,
                       "type": "array"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14504,6 +15017,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "points"
                   ],
@@ -14576,6 +15091,107 @@ Output schema:
                       "minItems": 2,
                       "type": "array"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14610,6 +15226,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "points"
                   ],
@@ -14694,6 +15312,107 @@ Output schema:
                       "minimum": 1,
                       "type": "integer"
                     },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "complex-type",
+                                  "custom-propertytype",
+                                  "oversized-value"
+                                ],
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "rotation": {
                       "maximum": 1000000000,
                       "minimum": -1000000000,
@@ -14754,6 +15473,8 @@ Output schema:
                     "rotation",
                     "visible",
                     "opacity",
+                    "properties",
+                    "propertyCount",
                     "shape",
                     "width",
                     "height",

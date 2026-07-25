@@ -136,6 +136,7 @@ import {
 import {
   applyPropertiesPatch,
   measurePropertiesPatchBytes,
+  projectScalarProperties,
   validatePropertiesPatch,
 } from "./propertyEdits.js";
 import type {
@@ -12757,6 +12758,11 @@ function describeEditableObject(
   const name = boundedDisplayString(location.object.name);
   const className = boundedDisplayString(location.object.type);
   const layerName = boundedDisplayString(location.layer.name);
+  const properties = projectScalarProperties(
+    location.object,
+    `${mapPath} object ${objectId}.properties`,
+    { path: mapPath, objectId },
+  );
   const common = {
     id: objectId,
     layerId: location.layer.id,
@@ -12779,6 +12785,11 @@ function describeEditableObject(
       typeof location.object.opacity === "number"
         ? location.object.opacity
         : 1,
+    properties: properties.entries,
+    propertyCount: properties.total,
+    ...(properties.truncated
+      ? { propertiesTruncated: true }
+      : {}),
   };
 
   if (

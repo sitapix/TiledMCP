@@ -3949,6 +3949,8 @@ describe("createTiledMcpServer", () => {
         rotation: 0,
         visible: true,
         opacity: 1,
+        properties: [],
+        propertyCount: 0,
       },
     });
 
@@ -10033,6 +10035,8 @@ describe("createTiledMcpServer", () => {
         rotation: 0,
         visible: true,
         opacity: 1,
+        properties: [],
+        propertyCount: 0,
         text: "Hello\t世界\n",
         fontFamily: "sans-serif",
         pixelSize: 16,

@@ -1133,7 +1133,7 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_list_objects` | **已实现基础版**；有界列出全部或指定 object layer，返回精简视图 | `mapPath`, `layerId?`, `limit?` |
-| `tiled_get_object` | **已实现**；按全图唯一 ID 返回一个有界、严格 shape 判别的 editable semantic projection；path 返回完整 points，text 返回解析缺省后的完整样式；tile/template 拒绝 | `mapPath`, `objectId` |
+| `tiled_get_object` | **已实现**；按全图唯一 ID 返回一个有界、严格 shape 判别的 editable semantic projection；path 返回完整 points，text 返回解析缺省后的完整样式，自定义属性按文档序回读（标量逐字、复杂/超长条目 `valueOmitted` 标记、≤128 条）；tile/template 拒绝 | `mapPath`, `objectId` |
 | `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline/text | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?\|text?`, `name?`, `class?`, `rotation?` |
 | `tiled_update_object` | 候选独立入口；当前通过 `updateObject` operation 修改基础对象字段 | `mapPath`, `objectId`, `patch` |
 | `tiled_delete_object` | 候选独立入口；当前通过带醒目 destructive 摘要的 `deleteObjects` operation 提供；拒绝留下 object/list 引用，class 属性存在时 fail closed | `mapPath`, `objectIds` |
@@ -1199,9 +1199,15 @@ planner 继续验证最终 width/height 为有限非负数；存量对象缺失�
 object layer 的 `objects` member，create 另以
 value-local patch 推进 `nextobjectid`，未触及 source bytes 保持不变。只读
 `tiled_get_object` 返回 map revision、完整 dependency revisions 和 bounded object
-projection；不返回 raw/custom property/vendor/template 数据。存量 text 的未知 nested
-key、错误类型/enum、超限 Unicode 或冲突 shape marker 都 fail closed。registry 为
-28 core / 29 with rasterizer。
+projection，并按文档序回读对象自定义属性：内建标量（string/int/float/bool/color/
+file，字符串值 ≤1,024 code points）逐字返回 `{name,type,value}`；class、enum
+（`propertytype`）、list、object 与超长字符串条目以显式
+`{name,type,valueOmitted:true,reason}` 标记（绝不近似值，enum 附 `propertytype`，
+超长附 `valueCodePoints`）；最多投影 128 条并以 `propertiesTruncated` 披露截断，
+`propertyCount` 总是给出总数。畸形条目（非对象、重名、未知 type、值与声明类型不符）
+与写路径同样 fail closed。仍不返回 raw JSON/vendor/template 数据。存量 text 的未知
+nested key、错误类型/enum、超限 Unicode 或冲突 shape marker 都 fail closed。
+registry 为 28 core / 29 with rasterizer。
 
 `tiled_get_capabilities.objectShapeCapabilities` 精确为：
 

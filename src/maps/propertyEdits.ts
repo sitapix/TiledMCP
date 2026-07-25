@@ -282,6 +282,196 @@ export function measurePropertiesPatchBytes(
   return bytes;
 }
 
+export type ProjectedProperty =
+  | {
+      name: string;
+      type: PropertyWriteType;
+      value: string | number | boolean;
+    }
+  | {
+      name: string;
+      type: string;
+      propertytype?: string;
+      valueOmitted: true;
+      reason:
+        | "complex-type"
+        | "custom-propertytype"
+        | "oversized-value";
+      valueCodePoints?: number;
+    };
+
+export interface ProjectedProperties {
+  entries: ProjectedProperty[];
+  total: number;
+  truncated: boolean;
+}
+
+/**
+ * Read-only projection of a target's custom properties. Built-in scalar
+ * values within the write-profile bounds are returned verbatim in document
+ * order; class, enum (`propertytype`), list, and object entries — and
+ * scalar strings beyond the value bound — are reported by name and type
+ * with an explicit omission marker instead of an approximated value.
+ * Malformed entries fail closed exactly like the write path.
+ */
+export function projectScalarProperties(
+  target: JsonObject,
+  label: string,
+  details: PropertyTargetDetails,
+): ProjectedProperties {
+  const before = target.properties;
+  if (before === undefined) {
+    return {
+      entries: [],
+      total: 0,
+      truncated: false,
+    };
+  }
+  if (!Array.isArray(before)) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${label} must be an array.`,
+      { ...details },
+    );
+  }
+  const seenNames = new Set<string>();
+  const entries: ProjectedProperty[] = [];
+  for (const [index, value] of before.entries()) {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label}[${index}] must be an object.`,
+        { ...details, index },
+      );
+    }
+    const entry = value as JsonObject;
+    const name = entry.name;
+    if (typeof name !== "string") {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label}[${index}].name must be a string.`,
+        { ...details, index },
+      );
+    }
+    if (seenNames.has(name)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} contains duplicate property name ${JSON.stringify(name)}.`,
+        { ...details },
+      );
+    }
+    seenNames.add(name);
+    const typeName =
+      entry.type === undefined
+        ? "string"
+        : entry.type;
+    if (
+      typeof typeName !== "string" ||
+      !KNOWN_PROPERTY_TYPES.has(typeName)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(name)} has an unrecognized type.`,
+        { ...details, name },
+      );
+    }
+    if (
+      entries.length >= MAX_PROPERTIES_PER_TARGET
+    ) {
+      return {
+        entries,
+        total: before.length,
+        truncated: true,
+      };
+    }
+    if (entry.propertytype !== undefined) {
+      if (
+        typeof entry.propertytype !== "string"
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${label} property ${JSON.stringify(name)} has a malformed propertytype.`,
+          { ...details, name },
+        );
+      }
+      entries.push({
+        name,
+        type: typeName,
+        propertytype: entry.propertytype,
+        valueOmitted: true,
+        reason: "custom-propertytype",
+      });
+      continue;
+    }
+    if (
+      !(
+        PROPERTY_WRITE_TYPES as readonly string[]
+      ).includes(typeName)
+    ) {
+      entries.push({
+        name,
+        type: typeName,
+        valueOmitted: true,
+        reason: "complex-type",
+      });
+      continue;
+    }
+    const scalarType =
+      typeName as PropertyWriteType;
+    const entryValue = entry.value;
+    if (
+      (scalarType === "string" ||
+        scalarType === "file") &&
+      typeof entryValue === "string" &&
+      !hasAtMostCodePoints(
+        entryValue,
+        MAX_PROPERTY_VALUE_CODE_POINTS,
+      )
+    ) {
+      entries.push({
+        name,
+        type: scalarType,
+        valueOmitted: true,
+        reason: "oversized-value",
+        valueCodePoints: [...entryValue].length,
+      });
+      continue;
+    }
+    const validScalar =
+      scalarType === "bool"
+        ? typeof entryValue === "boolean"
+        : scalarType === "int" ||
+            scalarType === "float"
+          ? typeof entryValue === "number" &&
+            Number.isFinite(entryValue)
+          : typeof entryValue === "string";
+    if (!validScalar) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(name)} has a value inconsistent with its declared type.`,
+        { ...details, name, type: scalarType },
+      );
+    }
+    entries.push({
+      name,
+      type: scalarType,
+      value: entryValue as
+        | string
+        | number
+        | boolean,
+    });
+  }
+  return {
+    entries,
+    total: before.length,
+    truncated: false,
+  };
+}
+
 export function applyPropertiesPatch(
   target: JsonObject,
   patch: PropertiesPatch,

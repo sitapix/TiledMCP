@@ -18,6 +18,21 @@ const COMMON_OBJECT = {
   rotation: 15,
   visible: true,
   opacity: 0.75,
+  properties: [
+    {
+      name: "hostile",
+      type: "bool",
+      value: true,
+    },
+    {
+      name: "style",
+      type: "string",
+      propertytype: "MarkerStyle",
+      valueOmitted: true,
+      reason: "custom-propertytype",
+    },
+  ],
+  propertyCount: 2,
 } as const;
 
 function outputFor(

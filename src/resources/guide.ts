@@ -539,8 +539,13 @@ dimension/path rules, and source-patch scope; inspect
 \`limits.maxPendingTextObjectPayloadBytes\` for pending-registry caps. Text
 payload is canonical compact JSON UTF-8, capped at 256 KiB per change set and
 2 MiB pending. \`tiled_get_object\` is the bounded read-before-update tool; it
-returns complete path points or effective text defaults, but not raw JSON,
-custom properties, vendor fields, tile objects, or templates. The registry is
+returns complete path points, effective text defaults, and the object's
+custom properties in document order — built-in scalar values verbatim,
+while class, enum (\`propertytype\`), list, object, and oversized string
+entries are listed by name and type with an explicit \`valueOmitted\`
+marker rather than an approximated value, and at most 128 entries are
+projected with a \`propertiesTruncated\` flag beyond that. It still does
+not return raw JSON, vendor fields, tile objects, or templates. The registry is
 28 core tools or 29 with the rasterizer. The native preview still uses tile
 layers as its base image and reports visible object layers as omitted, but an
 explicit \`overlays.objectIds\` selection can verify supported geometry and

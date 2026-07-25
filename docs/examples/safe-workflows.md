@@ -279,8 +279,9 @@ path create wire 不能携带 `width` / `height`；落盘 TMJ 会规范化为
 class/enum/list/object 属性会以 `UNSUPPORTED_PROPERTY_WRITE` 拒绝，未触碰的复杂
 条目原样保留；remove 不存在的名字是 no-op。每次 update 最多 32 set + 32 remove，
 编辑后单对象最多 128 条属性，单 change set 全部属性写入合计 ≤256 KiB canonical
-JSON UTF-8。`tiled_get_object` 目前不回读自定义属性，盲写由上述 fail-closed 校验
-兜底。
+JSON UTF-8。写属性前先用 `tiled_get_object` 回读：它按文档序返回对象自定义属性，
+内建标量逐字返回，class/enum/list/object 与超长条目以 `valueOmitted` 标记按名列出
+——由此可提前发现会 fail closed 的复杂条目，不必等 preview 拒绝。
 
 这不是 append、splice 或 index patch；数组会整体替换并保序，polygon 仍需至少 3 点，
 polyline 至少 2 点。`points` 可与 common fields 同批出现，但不能用于非 path 对象，

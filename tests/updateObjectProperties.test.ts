@@ -602,6 +602,220 @@ describe("map object property editing", () => {
     });
   });
 
+  it("reads scalar properties back in document order with explicit omission markers", async () => {
+    const harness = await createHarness(roots);
+
+    const gate = await harness.service.getObject({
+      mapPath: MAP_PATH,
+      objectId: GATE_ID,
+    });
+    expect(gate.object).toMatchObject({
+      properties: [
+        {
+          name: "locked",
+          type: "bool",
+          value: true,
+        },
+        {
+          name: "strength",
+          type: "int",
+          value: 5,
+        },
+      ],
+      propertyCount: 2,
+    });
+
+    const door = await harness.service.getObject({
+      mapPath: MAP_PATH,
+      objectId: DOOR_ID,
+    });
+    expect(door.object).toMatchObject({
+      properties: [
+        {
+          name: "linked",
+          type: "object",
+          valueOmitted: true,
+          reason: "complex-type",
+        },
+        {
+          name: "style",
+          type: "string",
+          propertytype: "DoorStyle",
+          valueOmitted: true,
+          reason: "custom-propertytype",
+        },
+      ],
+      propertyCount: 2,
+    });
+
+    const plain = await harness.service.getObject(
+      {
+        mapPath: MAP_PATH,
+        objectId: PLAIN_ID,
+      },
+    );
+    expect(plain.object).toMatchObject({
+      properties: [],
+      propertyCount: 0,
+    });
+
+    const oversized = "v".repeat(2_000);
+    const mapAbsolute = join(
+      harness.root,
+      MAP_PATH,
+    );
+    const map = JSON.parse(
+      (await readFile(mapAbsolute)).toString(
+        "utf8",
+      ),
+    ) as JsonObject;
+    const layers = map.layers as JsonObject[];
+    const objects = layers[0]!
+      .objects as JsonObject[];
+    const sign = objects.find(
+      (object) => object.id === SIGN_ID,
+    )!;
+    sign.properties = [
+      {
+        name: "big",
+        type: "string",
+        value: oversized,
+      },
+    ];
+    await writeFile(
+      mapAbsolute,
+      serializeJsonDocument(map),
+    );
+    const reread =
+      await harness.service.getObject({
+        mapPath: MAP_PATH,
+        objectId: SIGN_ID,
+      });
+    expect(reread.object).toMatchObject({
+      properties: [
+        {
+          name: "big",
+          type: "string",
+          valueOmitted: true,
+          reason: "oversized-value",
+          valueCodePoints: 2_000,
+        },
+      ],
+      propertyCount: 1,
+    });
+  });
+
+  it("fails closed reading malformed property entries and truncates beyond the cap", async () => {
+    const harness = await createHarness(roots);
+    const mapAbsolute = join(
+      harness.root,
+      MAP_PATH,
+    );
+    const map = JSON.parse(
+      (await readFile(mapAbsolute)).toString(
+        "utf8",
+      ),
+    ) as JsonObject;
+    const layers = map.layers as JsonObject[];
+    const objects = layers[0]!
+      .objects as JsonObject[];
+    const sign = objects.find(
+      (object) => object.id === SIGN_ID,
+    )!;
+
+    sign.properties = [
+      { name: "dup", type: "int", value: 1 },
+      { name: "dup", type: "int", value: 2 },
+    ];
+    await writeFile(
+      mapAbsolute,
+      serializeJsonDocument(map),
+    );
+    await expect(
+      harness.service.getObject({
+        mapPath: MAP_PATH,
+        objectId: SIGN_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+      message: expect.stringContaining(
+        "duplicate property name",
+      ),
+    });
+
+    sign.properties = [
+      {
+        name: "weird",
+        type: "quaternion",
+        value: 1,
+      },
+    ];
+    await writeFile(
+      mapAbsolute,
+      serializeJsonDocument(map),
+    );
+    await expect(
+      harness.service.getObject({
+        mapPath: MAP_PATH,
+        objectId: SIGN_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+      message: expect.stringContaining(
+        "unrecognized type",
+      ),
+    });
+
+    sign.properties = [
+      {
+        name: "mismatch",
+        type: "int",
+        value: "five",
+      },
+    ];
+    await writeFile(
+      mapAbsolute,
+      serializeJsonDocument(map),
+    );
+    await expect(
+      harness.service.getObject({
+        mapPath: MAP_PATH,
+        objectId: SIGN_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+      message: expect.stringContaining(
+        "inconsistent with its declared type",
+      ),
+    });
+
+    sign.properties = Array.from(
+      { length: 130 },
+      (_, index) => ({
+        name: `p${String(index).padStart(3, "0")}`,
+        type: "int",
+        value: index,
+      }),
+    );
+    await writeFile(
+      mapAbsolute,
+      serializeJsonDocument(map),
+    );
+    const truncated =
+      await harness.service.getObject({
+        mapPath: MAP_PATH,
+        objectId: SIGN_ID,
+      });
+    expect(truncated.object).toMatchObject({
+      propertyCount: 130,
+      propertiesTruncated: true,
+    });
+    expect(
+      (truncated.object as { properties: unknown[] })
+        .properties,
+    ).toHaveLength(128);
+  });
+
   it("round-trips edited object properties through the Tiled CLI", async () => {
     const harness = await createHarness(roots);
 

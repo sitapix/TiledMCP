@@ -3559,7 +3559,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Get map object",
       description:
-        "Returns one supported object with complete shape-specific geometry and effective text styling.",
+        "Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
