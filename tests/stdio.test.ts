@@ -400,12 +400,15 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           polylineMinimum: 2,
           maximum: 256,
           maximumPerChangeSet: 8_192,
+          replacement: "whole-array",
+          budgetScope:
+            "create-and-update-points-per-operation-summed",
           order: "preserved",
           polygonClosure: "implicit",
           polylineClosure: "open",
         },
         polygonAndPolylineUpdates:
-          "common-fields-only-no-dimensions-or-points",
+          "common-fields-and-complete-points-replacement-no-dimensions",
         textObject:
           EXPECTED_TEXT_OBJECT_CAPABILITIES,
         sourcePatch: "object-layer-objects-member-local",
@@ -577,12 +580,15 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         polylineMinimum: 2,
         maximum: 256,
         maximumPerChangeSet: 8_192,
+        replacement: "whole-array",
+        budgetScope:
+          "create-and-update-points-per-operation-summed",
         order: "preserved",
         polygonClosure: "implicit",
         polylineClosure: "open",
       },
       polygonAndPolylineUpdates:
-        "common-fields-only-no-dimensions-or-points",
+        "common-fields-and-complete-points-replacement-no-dimensions",
       textObject:
         EXPECTED_TEXT_OBJECT_CAPABILITIES,
       sourcePatch: "object-layer-objects-member-local",
@@ -1328,6 +1334,21 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
               name: "Trigger",
             },
           },
+          {
+            type: "createObject",
+            layerId: 1,
+            object: {
+              shape: "polygon",
+              x: 40,
+              y: 12,
+              name: "Patrol zone",
+              points: [
+                { x: 0, y: 0 },
+                { x: 12, y: 0 },
+                { x: 6, y: 8 },
+              ],
+            },
+          },
         ],
       },
     });
@@ -1365,10 +1386,23 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
             height: 0,
           },
         },
+        {
+          type: "createObject",
+          layerId: 1,
+          shape: "polygon",
+          object: {
+            shape: "polygon",
+            points: [
+              { x: 0, y: 0 },
+              { x: 12, y: 0 },
+              { x: 6, y: 8 },
+            ],
+          },
+        },
       ],
       summary: {
         affectedObjectLayerIds: [1],
-        createdObjectIds: [1, 2],
+        createdObjectIds: [1, 2, 3],
       },
     });
     if (objectPreview === undefined) {
@@ -1445,7 +1479,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         objects: Array<Record<string, unknown>>;
       }>;
     };
-    expect(objectMap.nextobjectid).toBe(3);
+    expect(objectMap.nextobjectid).toBe(4);
     expect(objectMap.layers[0]?.objects).toEqual([
       expect.objectContaining({
         id: 1,
@@ -1459,6 +1493,67 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         width: 0,
         height: 0,
       }),
+      expect.objectContaining({
+        id: 3,
+        name: "Patrol zone",
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 12, y: 0 },
+          { x: 6, y: 8 },
+        ],
+      }),
+    ]);
+
+    const replacementPoints = [
+      { x: -2, y: 1 },
+      { x: 14, y: 0 },
+      { x: 7, y: 10 },
+    ];
+    const pathUpdatePreviewResponse =
+      await client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: "created.tmj",
+          expectedRevision:
+            objectApply.revision,
+          expectedDependencyRevisions:
+            layeredSummary.dependencyRevisions,
+          operations: [
+            {
+              type: "updateObject",
+              objectId: 3,
+              patch: {
+                points: replacementPoints,
+                name: "Updated patrol zone",
+              },
+            },
+          ],
+        },
+      });
+    expect(
+      pathUpdatePreviewResponse.isError,
+    ).not.toBe(true);
+    const pathUpdatePreview = (
+      pathUpdatePreviewResponse.structuredContent as
+        | {
+            result?: {
+              operations: Array<
+                Record<string, unknown>
+              >;
+            };
+          }
+        | undefined
+    )?.result;
+    expect(pathUpdatePreview?.operations).toEqual([
+      {
+        type: "updateObject",
+        objectId: 3,
+        changedFields: ["name", "points"],
+        patch: {
+          points: replacementPoints,
+          name: "Updated patrol zone",
+        },
+      },
     ]);
 
     const restorePreviewResponse = await client.callTool({

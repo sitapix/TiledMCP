@@ -198,7 +198,7 @@
         "mapPath": "maps/example.tmj",
         "objectId": 7
       },
-      "purpose": "在修改/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。"
+      "purpose": "在整体替换/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。"
     },
     {
       "name": "tiled_validate",
@@ -280,6 +280,27 @@
             }
           },
           {
+            "type": "updateObject",
+            "objectId": 7,
+            "patch": {
+              "name": "Adjusted patrol area",
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 40.5,
+                  "y": -4
+                },
+                {
+                  "x": 20,
+                  "y": 28
+                }
+              ]
+            }
+          },
+          {
             "type": "createObject",
             "layerId": 2,
             "object": {
@@ -348,7 +369,7 @@
           }
         ]
       },
-      "purpose": "在同一待批准 change set 中预览严格 map 根属性编辑，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。"
+      "purpose": "在同一待批准 change set 中预览严格 map 根属性编辑、已有 path 的完整 points 替换，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。"
     },
     {
       "name": "tiled_apply_change_set",

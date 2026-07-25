@@ -70,8 +70,12 @@ import {
 import {
   MAX_CELL_WRITES,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
   MAX_REMOVE_TILESET_GID_SCANS,
   MAX_TILE_OPERATION_SCANS,
+  MIN_POLYGON_OBJECT_POINTS,
+  MIN_POLYLINE_OBJECT_POINTS,
 } from "./maps/mapService.js";
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -81,6 +85,8 @@ export const DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS = 65_536;
 export {
   DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
 } from "./maps/textObjects.js";
+const MAX_ABSOLUTE_OBJECT_SHAPE_COORDINATE =
+  1_000_000_000;
 const MAP_UPDATE_FIELDS = [
   "renderOrder",
   "backgroundColor",
@@ -972,44 +978,208 @@ function addTextObjectPayloadBytes(
 function pendingObjectShapePointCount(
   plan: ChangeSetPlan,
 ): number {
-  if (
-    plan.kind !== "mapEdit" ||
-    !Array.isArray(plan.operations)
-  ) {
+  if (plan.kind !== "mapEdit") {
     return 0;
   }
+  if (!Array.isArray(plan.operations)) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "A map edit plan contains malformed operations while measuring object shape points.",
+    );
+  }
   let total = 0;
-  for (const operation of plan.operations as unknown[]) {
-    if (
-      !isChangeSetRecord(operation) ||
-      operation.type !== "createObject"
-    ) {
-      continue;
-    }
-    const object = operation.object;
-    if (
-      !isChangeSetRecord(object) ||
-      (object.shape !== "polygon" &&
-        object.shape !== "polyline")
-    ) {
-      continue;
-    }
-    if (!Array.isArray(object.points)) {
+  for (
+    let operationIndex = 0;
+    operationIndex < plan.operations.length;
+    operationIndex += 1
+  ) {
+    const operation = plan.operations[
+      operationIndex
+    ] as unknown;
+    if (!isChangeSetRecord(operation)) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
-        "A polygon or polyline createObject operation contains malformed shape points.",
+        "A map edit plan contains a malformed operation while measuring object shape points.",
+        { operationIndex },
       );
     }
-    const nextTotal = total + object.points.length;
-    if (!Number.isSafeInteger(nextTotal)) {
+    let pointPayload:
+      | {
+          points: unknown;
+          minimumPointCount: number;
+        }
+      | undefined;
+    if (operation.type === "createObject") {
+      const object = operation.object;
+      if (!isChangeSetRecord(object)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "A createObject operation contains a malformed object draft.",
+          { operationIndex },
+        );
+      }
+      const hasPoints = hasOwnChangeSetProperty(
+        object,
+        "points",
+      );
+      if (
+        object.shape === "polygon" ||
+        object.shape === "polyline"
+      ) {
+        if (!hasPoints) {
+          throw invalidObjectShapePoints(
+            operationIndex,
+            operation.type,
+          );
+        }
+        pointPayload = {
+          points: object.points,
+          minimumPointCount:
+            object.shape === "polygon"
+              ? MIN_POLYGON_OBJECT_POINTS
+              : MIN_POLYLINE_OBJECT_POINTS,
+        };
+      } else if (hasPoints) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "Only polygon and polyline createObject drafts may contain shape points.",
+          {
+            operationIndex,
+            operationType: operation.type,
+            shape: object.shape,
+          },
+        );
+      }
+    } else if (
+      operation.type === "updateObject"
+    ) {
+      const patch = operation.patch;
+      if (!isChangeSetRecord(patch)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "An updateObject operation contains a malformed patch.",
+          { operationIndex },
+        );
+      }
+      if (
+        hasOwnChangeSetProperty(patch, "points")
+      ) {
+        pointPayload = {
+          points: patch.points,
+          minimumPointCount:
+            MIN_POLYLINE_OBJECT_POINTS,
+        };
+      }
+    }
+    if (pointPayload === undefined) {
+      continue;
+    }
+    const pointCount = validatedObjectShapePointCount(
+      pointPayload.points,
+      pointPayload.minimumPointCount,
+      operationIndex,
+      operation.type,
+    );
+    const nextTotal = total + pointCount;
+    if (
+      !Number.isSafeInteger(total) ||
+      total < 0 ||
+      !Number.isSafeInteger(nextTotal)
+    ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
         "A map edit plan contains too many object shape points to count safely.",
       );
     }
+    if (
+      nextTotal >
+      MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        `A map edit plan may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} polygon/polyline points across create and update operations.`,
+        {
+          actual: nextTotal,
+          limit:
+            MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+        },
+      );
+    }
     total = nextTotal;
   }
   return total;
+}
+
+function validatedObjectShapePointCount(
+  points: unknown,
+  minimumPointCount: number,
+  operationIndex: number,
+  operationType: unknown,
+): number {
+  if (
+    !Array.isArray(points) ||
+    points.length < minimumPointCount ||
+    points.length > MAX_OBJECT_SHAPE_POINTS
+  ) {
+    throw invalidObjectShapePoints(
+      operationIndex,
+      operationType,
+    );
+  }
+  for (
+    let pointIndex = 0;
+    pointIndex < points.length;
+    pointIndex += 1
+  ) {
+    const point = points[pointIndex] as unknown;
+    if (
+      !isChangeSetRecord(point) ||
+      !hasExactKeys(point, ["x", "y"]) ||
+      typeof point.x !== "number" ||
+      !Number.isFinite(point.x) ||
+      Math.abs(point.x) >
+        MAX_ABSOLUTE_OBJECT_SHAPE_COORDINATE ||
+      typeof point.y !== "number" ||
+      !Number.isFinite(point.y) ||
+      Math.abs(point.y) >
+        MAX_ABSOLUTE_OBJECT_SHAPE_COORDINATE
+    ) {
+      throw invalidObjectShapePoints(
+        operationIndex,
+        operationType,
+        pointIndex,
+      );
+    }
+  }
+  return points.length;
+}
+
+function invalidObjectShapePoints(
+  operationIndex: number,
+  operationType: unknown,
+  pointIndex?: number,
+): TiledMcpError {
+  return new TiledMcpError(
+    "INVALID_CHANGE_SET",
+    "A map edit operation contains malformed shape points.",
+    {
+      operationIndex,
+      operationType,
+      ...(pointIndex === undefined
+        ? {}
+        : { pointIndex }),
+    },
+  );
+}
+
+function hasOwnChangeSetProperty(
+  value: Record<string, unknown>,
+  property: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(
+    value,
+    property,
+  );
 }
 
 function isChangeSetRecord(

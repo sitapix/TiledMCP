@@ -3333,12 +3333,15 @@ describe("createTiledMcpServer", () => {
           polylineMinimum: 2,
           maximum: 256,
           maximumPerChangeSet: 8_192,
+          replacement: "whole-array",
+          budgetScope:
+            "create-and-update-points-per-operation-summed",
           order: "preserved",
           polygonClosure: "implicit",
           polylineClosure: "open",
         },
         polygonAndPolylineUpdates:
-          "common-fields-only-no-dimensions-or-points",
+          "common-fields-and-complete-points-replacement-no-dimensions",
         textObject:
           EXPECTED_TEXT_OBJECT_CAPABILITIES,
         sourcePatch: "object-layer-objects-member-local",
@@ -3639,12 +3642,15 @@ describe("createTiledMcpServer", () => {
         polylineMinimum: 2,
         maximum: 256,
         maximumPerChangeSet: 8_192,
+        replacement: "whole-array",
+        budgetScope:
+          "create-and-update-points-per-operation-summed",
         order: "preserved",
         polygonClosure: "implicit",
         polylineClosure: "open",
       },
       polygonAndPolylineUpdates:
-        "common-fields-only-no-dimensions-or-points",
+        "common-fields-and-complete-points-replacement-no-dimensions",
       textObject:
         EXPECTED_TEXT_OBJECT_CAPABILITIES,
       sourcePatch: "object-layer-objects-member-local",
@@ -9130,6 +9136,8 @@ describe("createTiledMcpServer", () => {
     ];
 
     const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
       operations: Array<Record<string, unknown>>;
       summary: {
         affectedObjectLayerIds: number[];
@@ -9205,6 +9213,220 @@ describe("createTiledMcpServer", () => {
         createdObjectIds: [3, 4],
       },
     });
+
+    const created = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      }),
+    );
+    expect(created.changed).toBe(true);
+
+    const afterCreate = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    expect(afterCreate.revision).toBe(
+      created.revision,
+    );
+    const replacementPolygonPoints = [
+      { x: -1, y: 2.5 },
+      { x: 14, y: 0 },
+      { x: 7, y: 11 },
+    ];
+    const replacementPolylinePoints = [
+      { x: 3, y: -4 },
+      { x: 18.5, y: 9 },
+    ];
+    const updatePreview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision:
+            afterCreate.revision,
+          expectedDependencyRevisions:
+            afterCreate.dependencyRevisions,
+          operations: [
+            {
+              type: "updateObject",
+              objectId: 3,
+              patch: {
+                points:
+                  replacementPolygonPoints,
+                name: "Updated patrol zone",
+              },
+            },
+            {
+              type: "updateObject",
+              objectId: 4,
+              patch: {
+                points:
+                  replacementPolylinePoints,
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(updatePreview.operations).toEqual([
+      {
+        type: "updateObject",
+        objectId: 3,
+        changedFields: ["name", "points"],
+        patch: {
+          points: replacementPolygonPoints,
+          name: "Updated patrol zone",
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 4,
+        changedFields: ["points"],
+        patch: {
+          points: replacementPolylinePoints,
+        },
+      },
+    ]);
+
+    const updated = resultOf<{
+      changed: boolean;
+      revision: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId:
+            updatePreview.changeSetId,
+          expectedRevision:
+            updatePreview.expectedRevision,
+        },
+      }),
+    );
+    expect(updated.changed).toBe(true);
+
+    const updatedPolygon = resultOf<{
+      revision: string;
+      object: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_object",
+        arguments: {
+          mapPath: MAP_PATH,
+          objectId: 3,
+        },
+      }),
+    );
+    expect(updatedPolygon).toMatchObject({
+      revision: updated.revision,
+      object: {
+        id: 3,
+        shape: "polygon",
+        name: "Updated patrol zone",
+        points: replacementPolygonPoints,
+      },
+    });
+
+    const updatedPolyline = resultOf<{
+      revision: string;
+      object: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_object",
+        arguments: {
+          mapPath: MAP_PATH,
+          objectId: 4,
+        },
+      }),
+    );
+    expect(updatedPolyline).toMatchObject({
+      revision: updated.revision,
+      object: {
+        id: 4,
+        shape: "polyline",
+        points: replacementPolylinePoints,
+      },
+    });
+
+    for (const {
+      objectId,
+      patch,
+      message,
+    } of [
+      {
+        objectId: RECTANGLE_OBJECT_ID,
+        patch: {
+          points: replacementPolygonPoints,
+        },
+        message:
+          "Points can be updated only on polygon or polyline objects.",
+      },
+      {
+        objectId: 3,
+        patch: {
+          points: replacementPolygonPoints,
+          width: 12,
+        },
+        message:
+          "Polygon and polyline objects do not have editable width or height.",
+      },
+      {
+        objectId: 3,
+        patch: {
+          points: replacementPolygonPoints,
+          text: "not a path field",
+        },
+        message:
+          "Text-specific fields can be updated only on text objects.",
+      },
+    ]) {
+      const mismatch = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision:
+              updated.revision,
+            expectedDependencyRevisions:
+              afterCreate.dependencyRevisions,
+            operations: [
+              {
+                type: "updateObject",
+                objectId,
+                patch,
+              },
+            ],
+          },
+        }),
+      );
+      expect(mismatch.isError).toBe(true);
+      expect(
+        mismatch.structuredContent,
+      ).toMatchObject({
+        result: {
+          error: {
+            code: "OBJECT_SHAPE_MISMATCH",
+            message,
+          },
+        },
+      });
+    }
   });
 
   it("previews, applies and reads a text object with effective defaults", async () => {
@@ -9361,6 +9583,36 @@ describe("createTiledMcpServer", () => {
         type: "updateObject",
         objectId: RECTANGLE_OBJECT_ID,
         patch: { shape: "ellipse" },
+      },
+      {
+        type: "updateObject",
+        objectId: RECTANGLE_OBJECT_ID,
+        patch: {
+          points: [{ x: 0, y: 0 }],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: RECTANGLE_OBJECT_ID,
+        patch: {
+          points: Array.from(
+            { length: 257 },
+            (_, index) => ({
+              x: index,
+              y: -index,
+            }),
+          ),
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: RECTANGLE_OBJECT_ID,
+        patch: {
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1, z: 2 },
+          ],
+        },
       },
       {
         type: "deleteObjects",
@@ -9598,19 +9850,31 @@ describe("createTiledMcpServer", () => {
           expectedRevision: summary.revision,
           expectedDependencyRevisions:
             summary.dependencyRevisions,
-          operations: Array.from(
-            { length: 33 },
-            (_, index) => ({
-              type: "createObject",
-              layerId: OBJECT_LAYER_ID,
-              object: {
-                shape: "polyline",
-                x: index,
-                y: 0,
-                points: maximumPoints,
+          operations: [
+            ...Array.from(
+              { length: 32 },
+              (_, index) => ({
+                type: "createObject",
+                layerId: OBJECT_LAYER_ID,
+                object: {
+                  shape: "polyline",
+                  x: index,
+                  y: 0,
+                  points: maximumPoints,
+                },
+              }),
+            ),
+            {
+              type: "updateObject",
+              objectId: RECTANGLE_OBJECT_ID,
+              patch: {
+                points: [
+                  { x: 0, y: 0 },
+                  { x: 1, y: 1 },
+                ],
               },
-            }),
-          ),
+            },
+          ],
         },
       }),
     );

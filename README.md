@@ -54,7 +54,7 @@
   清空 destination，且不会 clipping 或跳格；
 - rectangle/point/ellipse/capsule、有界 polygon/polyline path 与有界 text 对象的
   create、约束内 update 与 safe delete（正确维护 `nextobjectid`），并提供单对象
-  详情读取以在修改/删除 path 对象或覆盖 text 内容前取得完整语义投影；
+  详情读取以在整体替换/删除 path 对象或覆盖 text 内容前取得完整语义投影；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
 - 不依赖 Tiled 进程的有限正交 tile-layer region PNG 预览，支持图层筛选、GID
   H/V/D、opacity、网格、绝对坐标 gutter，以及最多 64 个固定 amber 样式的绝对
@@ -309,7 +309,7 @@ operation 合计最多写
 没有命中是合法 no-op，preview 会报告 0 次替换，apply 不会改写文件。
 
 对象编辑继续通过通用 `tiled_preview_edits` 的 `createObject`、`updateObject` 和
-`deleteObjects` operations 提供；另有只读 `tiled_get_object` 用于在修改/删除 path
+`deleteObjects` operations 提供；另有只读 `tiled_get_object` 用于在替换/删除 path
 对象或覆盖 text 内容前取得完整、有界的语义投影，所以 registry 为
 24 core / 25 with rasterizer。`createObject.object` 是按 `shape` 判别且拒绝额外 key
 的 strict union：
@@ -331,16 +331,22 @@ operation 合计最多写
 创建后，ellipse/capsule 分别在 TMJ object 中序列化唯一的
 `ellipse:true` / `capsule:true` marker，path 则只写对应的 `polygon` 或 `polyline`
 数组；text wire 则映射为唯一的 nested `text:{text,...}`，并按 TMJ 默认值稀疏省略
-样式字段。七类对象都能继续使用现有基础字段
-`updateObject` 与 `deleteObjects`；update 不提供 shape 字段，不能把一种形状变成另一种，
-也不提供 points 字段；polygon/polyline 还拒绝 width/height update。text 可局部更新
-内容、样式和尺寸，text-specific patch 命中其他形状会拒绝。ellipse/capsule
+样式字段。七类对象都能继续使用现有
+`updateObject` 与 `deleteObjects`；update 不提供 shape 字段，不能把一种形状变成另一种。
+polygon/polyline 的 `patch.points` 会整体替换当前路径数组，并允许与 common fields
+同批出现；它不支持 append、splice 或按 index 修改，仍拒绝 width/height update。
+object-update preview 的 `changedFields` 是 patch key 的去重字典序精确列表，表示请求
+字段而非语义 diff；即使 points 与现值相同，仍会列出 `points`，最终 apply 才折叠为
+exact-byte no-op；若同一 change set 没有其他实际变化，则返回 `changed:false`。
+text 可局部更新内容、样式和尺寸，text-specific patch 命中其他形状会拒绝。ellipse/capsule
 的尺寸更新继续接受 0，但拒绝负数、非有限数和超限值。preview/apply
 继续固定 map 与完整 dependency revisions，只重写目标 object layer 的 `objects`
 member；创建时另推进 `nextobjectid`。
 `tiled_get_capabilities.objectShapeCapabilities` 明确公布可创建形状、path 点数/
-坐标/闭合语义、禁止 shape/points mutation、text 字段/默认值/Unicode 与 payload
-预算、path 的 common-fields-only update 与局部 patch 范围。单 change set 的所有
+坐标/闭合与完整数组替换语义、禁止 shape mutation、text 字段/默认值/Unicode 与 payload
+预算，以及局部 patch 范围。每个 path create 或 points replacement 都按完整 payload
+逐项计入共享预算：单 change set 最多 8,192 点，pending registry 合计最多 65,536 点；
+相同值 no-op、later-wins 或后续 delete 均不抵扣。单 change set 的所有
 text-specific flat fields 以 canonical compact JSON UTF-8 计费，最多 256 KiB；
 pending registry 合计最多 2 MiB。
 
@@ -927,12 +933,14 @@ checkpoint restore。架构与 roadmap
   显式 0。polygon 为 3–256 点、polyline 为 2–256 点，points 使用相对 object x/y 的
   本地像素坐标、保序且每轴限制在 ±1e9；path wire 禁止 width/height，分别写成唯一
   polygon/polyline 数组并把 TMJ dimensions 规范化为 0。单 change set 合计最多
-  8,192 点，pending registry 合计最多保留 65,536 点。七类都能 common-field
-  update/delete，但 update 不允许改变 shape/points，polygon/polyline 也不允许改尺寸。
+  8,192 点，pending registry 合计最多保留 65,536 点；预算同时累计每一次 path create
+  与完整 points replacement，后续覆盖、no-op 或 delete 不抵扣。七类都能 common-field
+  update/delete；update 不允许改变 shape，polygon/polyline 允许整体替换 points，
+  但不支持局部数组 patch，也不允许改尺寸。
   text 使用 flat wire、nested TMJ `text`，允许按字段更新内容、样式和尺寸；内容与字体族
   必须是 well-formed Unicode，分别受 scalar/UTF-8/control 限制，pixel size 为 1..999。
   单 change set 的 canonical text payload 最多 256 KiB，pending 合计 2 MiB。
-  修改/删除 path 对象或覆盖 text 前可先用 `tiled_get_object` 读取完整 points 或解析
+  替换/删除 path 对象或覆盖 text 前可先用 `tiled_get_object` 读取完整 points 或解析
   默认值后的 text 样式；
   tile/template/未知 text profile 会 fail closed。
   对象写回保持 object-layer `objects` member-local。

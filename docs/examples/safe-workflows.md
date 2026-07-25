@@ -171,7 +171,7 @@ proposal 过期或冲突后都必须重新预览和批准；prune/discard/abando
 tombstone，不要
 把 not-found 当成可重试信号。
 
-### 创建 polygon / polyline 对象
+### 创建或整体替换 polygon / polyline points
 
 `createObject.object` 按 `shape` 使用 strict union。polygon 需要 3–256 点，polyline
 需要 2–256 点；每个 point 必须是没有额外字段的 `{x,y}`，两轴都是 ±1e9 内有限数。
@@ -197,17 +197,38 @@ polygon 由 Tiled 隐式闭合，polyline 保持开放；服务端不会自动�
 ```
 
 path create wire 不能携带 `width` / `height`；落盘 TMJ 会规范化为
-`width:0,height:0` 并写入唯一的 `polygon` 或 `polyline` 数组。单个 change set 的
-path points 合计最多 8,192，所有 pending change sets 合计最多保留 65,536 点；
+`width:0,height:0` 并写入唯一的 `polygon` 或 `polyline` 数组。修改已有 path 时，
+先用 `tiled_get_object({mapPath,objectId})` 读取完整 points 与最新 revision/dependencies，
+再把完整新数组放进 `updateObject.patch.points`：
+
+```json
+{
+  "type": "updateObject",
+  "objectId": 17,
+  "patch": {
+    "name": "Adjusted patrol area",
+    "points": [
+      { "x": 0, "y": 0 },
+      { "x": 40.5, "y": -4 },
+      { "x": 20, "y": 28 }
+    ]
+  }
+}
+```
+
+这不是 append、splice 或 index patch；数组会整体替换并保序，polygon 仍需至少 3 点，
+polyline 至少 2 点。`points` 可与 common fields 同批出现，但不能用于非 path 对象，
+也不能与 path dimensions 混用。单个 change set 的每次 create/replacement payload
+都会独立计费，合计最多 8,192；相同值 no-op、later-wins 或后续 delete 不抵扣。
+所有 pending change sets 以相同口径合计最多保留 65,536 点；
 客户端应读取 `objectShapeCapabilities.polygonAndPolylinePoints` 和
-`limits.maxPendingObjectShapePoints`，不要靠拆批绕过预算。后续
-`updateObject` 只允许 common fields，不能更新 shape、points 或 path dimensions；
-删除仍须使用会执行悬挂 object-reference 检查的 `deleteObjects`。
+`limits.maxPendingObjectShapePoints`，不要靠拆批绕过预算。shape 与 path dimensions
+仍不可更新；删除仍须使用会执行悬挂 object-reference 检查的 `deleteObjects`。
 
 ### 读取并更新 text 对象
 
 `tiled_list_objects` 只返回适合最多 10,000 项列表的精简 geometry，不返回 path points
-或 text 正文/样式。需要修改公共字段/删除既有 path 对象，或覆盖 text 正文/样式时，
+或 text 正文/样式。需要替换/删除既有 path 对象，或覆盖 text 正文/样式时，
 先按列表返回的全图唯一 ID 调用
 `tiled_get_object({mapPath,objectId})`。它返回 map `revision`、完整
 `dependencyRevisions` 和一个严格 shape-discriminated object；polygon/polyline 带完整

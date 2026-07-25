@@ -99,14 +99,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281",
+        "revision": "sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d",
         "serverVersion": "0.0.1",
-        "size": 56737
+        "size": 57312
       },
-      "byteLength": 56737,
+      "byteLength": 57312,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281",
+      "sha256": "sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d",
       "uri": "tiled://guide"
     }
   ],
@@ -134,9 +134,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281",
+        "revision": "sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d",
         "serverVersion": "0.0.1",
-        "size": 56737
+        "size": 57312
       },
       "annotations": {
         "audience": [
@@ -148,7 +148,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 56737,
+      "size": 57312,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -9083,6 +9083,10 @@
                       "polygonAndPolylinePoints": {
                         "additionalProperties": false,
                         "properties": {
+                          "budgetScope": {
+                            "const": "create-and-update-points-per-operation-summed",
+                            "type": "string"
+                          },
                           "coordinateSpace": {
                             "const": "object-local-pixels-relative-to-x-y",
                             "type": "string"
@@ -9114,6 +9118,10 @@
                           "polylineMinimum": {
                             "const": 2,
                             "type": "number"
+                          },
+                          "replacement": {
+                            "const": "whole-array",
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -9122,6 +9130,8 @@
                           "polylineMinimum",
                           "maximum",
                           "maximumPerChangeSet",
+                          "replacement",
+                          "budgetScope",
                           "order",
                           "polygonClosure",
                           "polylineClosure"
@@ -9129,7 +9139,7 @@
                         "type": "object"
                       },
                       "polygonAndPolylineUpdates": {
-                        "const": "common-fields-only-no-dimensions-or-points",
+                        "const": "common-fields-and-complete-points-replacement-no-dimensions",
                         "type": "string"
                       },
                       "shapeMutation": {
@@ -17689,6 +17699,31 @@
                           "minimum": 1,
                           "type": "integer"
                         },
+                        "points": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "maximum": 1000000000,
+                                "minimum": -1000000000,
+                                "type": "number"
+                              },
+                              "y": {
+                                "maximum": 1000000000,
+                                "minimum": -1000000000,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 256,
+                          "minItems": 2,
+                          "type": "array"
+                        },
                         "rotation": {
                           "maximum": 1000000000,
                           "minimum": -1000000000,
@@ -19465,6 +19500,7 @@
                                   "y",
                                   "width",
                                   "height",
+                                  "points",
                                   "name",
                                   "className",
                                   "rotation",
@@ -19544,6 +19580,27 @@
                                   "maximum": 999,
                                   "minimum": 1,
                                   "type": "integer"
+                                },
+                                "points": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "x": {
+                                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                      },
+                                      "y": {
+                                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                      }
+                                    },
+                                    "required": [
+                                      "x",
+                                      "y"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "maxItems": 256,
+                                  "minItems": 2,
+                                  "type": "array"
                                 },
                                 "rotation": {
                                   "allOf": [

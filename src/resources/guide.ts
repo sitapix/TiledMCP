@@ -162,8 +162,8 @@ For an existing map:
    limit. Search does not return property values or resolve inherited
    properties, Wang assignments, or image-derived semantics.
 4. Use \`tiled_get_region\` for a bounded tile rectangle and
-   \`tiled_list_objects\` for bounded object discovery. Before changing common
-   fields or deleting a polygon/polyline, or replacing text content/style, call
+   \`tiled_list_objects\` for bounded object discovery. Before replacing points
+   or deleting a polygon/polyline, or replacing text content/style, call
    \`tiled_get_object\` with the listed object ID to obtain its complete
    bounded semantic projection and current map/dependency revisions.
 5. Use \`tiled_render_tileset_sheet\` with that \`mapPath\` and
@@ -352,9 +352,11 @@ is implicit and polyline remains open. The server does not alter the supplied
 sequence.
 
 Polygon/polyline create wire forbids \`width\` and \`height\`; TMJ output writes
-both dimensions as zero and exactly one corresponding path array. One change
-set may create at most 8,192 path points, and all pending change sets together
-retain at most 65,536 path points.
+both dimensions as zero and exactly one corresponding path array. Every path
+create and every complete points replacement is charged by its full payload:
+one change set may contain at most 8,192 path points, and all pending change
+sets together retain at most 65,536. No-op values, later replacements, and
+later deletes do not refund this intent budget.
 
 Text uses flat wire fields: required \`text\`, optional dimensions, and optional
 \`fontFamily\`, \`pixelSize\`, \`color\`, \`bold\`, \`italic\`, \`underline\`,
@@ -368,9 +370,15 @@ and permit no control characters. Both reject unpaired surrogates. Pixel size
 is an integer from 1 through 999.
 
 All seven shapes can be updated or safely deleted. \`updateObject.patch\` has no
-shape or points field, so an update cannot change shape or path geometry.
-Polygon/polyline updates also reject \`width\` and \`height\`, allowing only
-common fields. Text updates may patch common fields, dimensions, and any
+shape field, so an update cannot change shape. For polygon/polyline targets,
+\`points\` replaces the complete ordered array; append, splice, and index
+patches are unsupported. It may accompany common fields, while \`width\` and
+\`height\` remain invalid and points on a non-path target fail with a shape
+mismatch. An object-update preview's \`changedFields\` is the exact sorted list
+of patch keys, not a semantic diff; an identical replacement still lists
+\`points\`, while apply collapses it to an exact-byte no-op and returns
+\`changed:false\` when the change set has no other net change.
+Text updates may patch common fields, dimensions, and any
 non-empty subset of the flat text fields; text-specific fields reject a
 non-text target. Every ellipse or capsule update preserves the marker and
 continues to accept zero dimensions while interpreting omitted stored

@@ -101,6 +101,7 @@ import type {
   MapEditOperation,
   MapEditPlan,
   ObjectDraft,
+  ObjectPathPoint,
   PlannedMapEditOperation,
   ResolvedAddTilesetToMapOperation,
   ResolvedCreateLayerOperation,
@@ -4701,20 +4702,7 @@ function validateAndSummarizeOperations(
         operation.object.shape === "polyline"
       ) {
         objectShapePoints += operation.object.points.length;
-        if (
-          objectShapePoints >
-          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
-        ) {
-          throw new TiledMcpError(
-            "RESULT_LIMIT_EXCEEDED",
-            `A change set may create at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} polygon/polyline points.`,
-            {
-              actual: objectShapePoints,
-              limit:
-                MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
-            },
-          );
-        }
+        assertObjectShapePointBudget(objectShapePoints);
       }
       affectedLayerIds.add(created.layer.id);
       affectedObjectLayerIds.add(created.layer.id);
@@ -4746,6 +4734,15 @@ function validateAndSummarizeOperations(
       assertTextObjectPayloadBudget(
         textObjectPayloadBytes,
       );
+      if (
+        Object.prototype.hasOwnProperty.call(
+          operation.patch,
+          "points",
+        )
+      ) {
+        objectShapePoints += operation.patch.points?.length ?? 0;
+        assertObjectShapePointBudget(objectShapePoints);
+      }
       affectedLayerIds.add(updated.layer.id);
       affectedObjectLayerIds.add(updated.layer.id);
       updatedObjectIds.add(operation.objectId);
@@ -8818,6 +8815,7 @@ function updateBasicObject(
     "rotation",
     "visible",
     "opacity",
+    "points",
     ...TEXT_OBJECT_FIELDS,
   ]);
   if (keys.length === 0) {
@@ -8846,6 +8844,22 @@ function updateBasicObject(
       { path: mapPath, objectId, shape },
     );
   }
+  const hasPointsPatch =
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "points",
+    );
+  if (
+    hasPointsPatch &&
+    shape !== "polygon" &&
+    shape !== "polyline"
+  ) {
+    throw new TiledMcpError(
+      "OBJECT_SHAPE_MISMATCH",
+      "Points can be updated only on polygon or polyline objects.",
+      { path: mapPath, objectId, shape },
+    );
+  }
   if (
     shape === "point" &&
     (Object.prototype.hasOwnProperty.call(patch, "width") ||
@@ -8869,6 +8883,14 @@ function updateBasicObject(
     );
   }
   assertObjectPatch(patch, context);
+  if (hasPointsPatch) {
+    assertObjectPathPoints(
+      patch.points,
+      shape as "polygon" | "polyline",
+      `${context}.points`,
+      "INVALID_ARGUMENT",
+    );
+  }
 
   if (hasTextPatch) {
     location.object.text =
@@ -8877,9 +8899,18 @@ function updateBasicObject(
         patch as Readonly<Record<string, unknown>>,
       );
   }
+  if (hasPointsPatch) {
+    const points = patch.points as ObjectPathPoint[];
+    location.object[
+      shape as "polygon" | "polyline"
+    ] = points.map((point) => ({
+      x: point.x,
+      y: point.y,
+    }));
+  }
   for (const key of keys) {
     const value = patch[key as keyof typeof patch];
-    if (textObjectFields.has(key)) {
+    if (key === "points" || textObjectFields.has(key)) {
       continue;
     } else if (key === "className") {
       location.object.type = value as string;
@@ -9424,6 +9455,25 @@ function assertTextObjectPayloadBudget(
         actual,
         limit:
           MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+      },
+    );
+  }
+}
+
+function assertObjectShapePointBudget(
+  actual: number,
+): void {
+  if (
+    actual >
+    MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A change set may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} polygon/polyline points across create and update operations.`,
+      {
+        actual,
+        limit:
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
       },
     );
   }

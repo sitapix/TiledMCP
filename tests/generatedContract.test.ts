@@ -426,6 +426,9 @@ describe("generated MCP contract", () => {
         polylineMinimum: 2,
         maximum: 256,
         maximumPerChangeSet: 8_192,
+        replacement: "whole-array",
+        budgetScope:
+          "create-and-update-points-per-operation-summed",
         order: "preserved",
         polygonClosure: "implicit",
         polylineClosure: "open",
@@ -439,7 +442,7 @@ describe("generated MCP contract", () => {
         `${capabilitiesLabel} objectShapeCapabilities`,
       ).const,
     ).toBe(
-      "common-fields-only-no-dimensions-or-points",
+      "common-fields-and-complete-points-replacement-no-dimensions",
     );
     expectExactLiteralSchema(
       schemaProperty(
@@ -493,6 +496,82 @@ describe("generated MCP contract", () => {
         "text",
       ),
     ).toBe(2);
+    for (const [
+      direction,
+      schema,
+    ] of [
+      [
+        "input",
+        previewEditsTool.inputSchema,
+      ],
+      [
+        "output",
+        previewEditsTool.outputSchema,
+      ],
+    ] as const) {
+      const updateSchemas =
+        findObjectSchemasWithPropertyConst(
+          schema,
+          "type",
+          "updateObject",
+        );
+      expect(
+        updateSchemas,
+        `tiled_preview_edits ${direction} updateObject branches`,
+      ).toHaveLength(1);
+      const updateSchema = updateSchemas[0];
+      if (updateSchema === undefined) {
+        throw new Error(
+          `Missing tiled_preview_edits ${direction} updateObject branch`,
+        );
+      }
+      const patchSchema = schemaProperty(
+        updateSchema,
+        "patch",
+        `tiled_preview_edits ${direction} updateObject`,
+      );
+      const pointsSchema = schemaProperty(
+        patchSchema,
+        "points",
+        `tiled_preview_edits ${direction} updateObject patch`,
+      );
+      expect(pointsSchema.type).toBe("array");
+      expect(pointsSchema.minItems).toBe(2);
+      expect(pointsSchema.maxItems).toBe(256);
+      const pointSchema = asRecord(
+        pointsSchema.items,
+        `tiled_preview_edits ${direction} updateObject patch points.items`,
+      );
+      expect(
+        pointSchema.additionalProperties,
+      ).toBe(false);
+      expect(
+        Object.keys(
+          asRecord(
+            pointSchema.properties,
+            `tiled_preview_edits ${direction} updateObject patch point properties`,
+          ),
+        ).sort(),
+      ).toEqual(["x", "y"]);
+      if (direction === "output") {
+        const changedFieldsSchema =
+          schemaProperty(
+            updateSchema,
+            "changedFields",
+            "tiled_preview_edits output updateObject",
+          );
+        const changedFieldItems = asRecord(
+          changedFieldsSchema.items,
+          "tiled_preview_edits output updateObject changedFields.items",
+        );
+        expect(
+          asStringArray(
+            changedFieldItems.enum,
+            "tiled_preview_edits output updateObject changedFields enum",
+          ),
+        ).toContain("points");
+      }
+    }
 
     const getObjectIndex =
       toolNames.indexOf("tiled_get_object");
@@ -1140,6 +1219,68 @@ function countExactConst(
     ) && record.const === expected
       ? 1
       : 0,
+  );
+}
+
+function findObjectSchemasWithPropertyConst(
+  value: unknown,
+  propertyName: string,
+  expected: unknown,
+): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return value.flatMap((child) =>
+      findObjectSchemasWithPropertyConst(
+        child,
+        propertyName,
+        expected,
+      ),
+    );
+  }
+  if (
+    value === null ||
+    typeof value !== "object"
+  ) {
+    return [];
+  }
+  const record = value as Record<
+    string,
+    unknown
+  >;
+  const properties =
+    record.properties !== null &&
+    typeof record.properties === "object" &&
+    !Array.isArray(record.properties)
+      ? (record.properties as Record<
+          string,
+          unknown
+        >)
+      : undefined;
+  const propertySchema =
+    properties?.[propertyName];
+  const ownMatch =
+    propertySchema !== null &&
+    typeof propertySchema === "object" &&
+    !Array.isArray(propertySchema) &&
+    (
+      propertySchema as Record<
+        string,
+        unknown
+      >
+    ).const === expected
+      ? [record]
+      : [];
+  return Object.values(record).reduce<
+    Array<Record<string, unknown>>
+  >(
+    (matches, child) => [
+      ...matches,
+      ...findObjectSchemasWithPropertyConst(
+        child,
+        propertyName,
+        expected,
+      ),
+    ],
+    ownMatch,
   );
 }
 

@@ -1161,9 +1161,11 @@ strict union：rectangle 保持可选尺寸，point 不允许尺寸；ellipse/ca
 和 `height` 也可省略，并按 Tiled 语义规范化为 0，显式提供时必须为有限、非负且不超过
 1,000,000,000 的数。polygon 分支要求 3–256 个、polyline 分支要求 2–256 个 strict
 `{x,y}` points；坐标是相对 object x/y anchor 的本地像素，每轴为 ±1e9 内有限数，
-数组保序。单 change set 的 path create points 合计最多 8,192，MCP 输入层与 plan/apply
-共用验证路径都会独立执行该预算；pending change-set registry 合计最多保留 65,536 个
-path points，并通过 capability `limits.maxPendingObjectShapePoints` 公布。
+数组保序。单 change set 的每次 path create 与每次 points replacement 都按完整 payload
+逐项累计，合计最多 8,192；MCP 输入、plan/apply 与 closed output 各自重验该预算。
+相同值 no-op、later-wins 或后续 delete 都不抵扣；pending change-set registry 以相同
+口径合计最多保留 65,536 个 path points，并通过 capability
+`limits.maxPendingObjectShapePoints` 公布。
 
 planner 为新对象分配现有 `nextobjectid` 高水位，并把 wire-only `shape` 转成 Tiled JSON：
 rectangle 不写形状 marker，point 写 `point:true`，ellipse 写 `ellipse:true`，Tiled 1.12
@@ -1182,9 +1184,16 @@ Unicode scalar / 16,384 UTF-8 bytes，只放行 TAB/LF/CR 三种 Cc；fontFamily
 `text:{text,...}`，并以 TMJ 文件格式默认值 `sans-serif/16/#000000/false styles/`
 `kerning:true/left/top/wrap:false` 做稀疏省略；不做字体存在性检查、字体测量或自动尺寸。
 
-七类对象都可以 update/delete，但 update patch 故意没有 `shape` 或 `points`，因此不能
-改变对象形状或 path。polygon/polyline 只允许 common fields update，width/height 也会以
+七类对象都可以 update/delete，但 update patch 故意没有 `shape`，因此不能改变对象
+形状。`patch.points` 对 polygon/polyline 执行保序的完整数组替换，不支持 append、
+splice 或 index patch；公共 wire schema 先约束 2–256 个 strict `{x,y}`，planner 解析
+目标后再按 polygon 3–256 / polyline 2–256 重验。points 可与 common fields 同批更新，
+但 path 的 width/height 以及非 path 目标的 points 都以
 `OBJECT_SHAPE_MISMATCH` 拒绝。每次 update/delete 前都重新从 marker 推导现有 shape；
+object-update preview 的 `changedFields` 由 patch own keys 去重后按字典序生成，closed
+output 要求两者精确一致，避免授权摘要隐藏 payload。该字段是 request-field list，
+并非 semantic diff；相同 points 仍出现在列表中，但最终 source comparison 会折叠为
+exact-byte no-op；同一 change set 没有其他实际变化时才返回 `changed:false`。
 存量对象缺失的 width/height 按 Tiled 语义解释为 0，显式存在时必须继续为有限非负数，
 即使 patch 只修改 x/name 等其他字段，也不能让已有无效尺寸混入已验证结果。对
 ellipse/capsule 把 width/height 更新为 0 是合法 Tiled 语义；null、负数、非有限数和超过 1e9 的值
@@ -1227,8 +1236,9 @@ properties、vendor siblings 或 template/tile data；tile/template 稳定报
 `ellipseAndCapsuleDimensions:"optional-nonnegative-default-zero",`
 `polygonAndPolylinePoints:{coordinateSpace:"object-local-pixels-relative-to-x-y",`
 `polygonMinimum:3,polylineMinimum:2,maximum:256,maximumPerChangeSet:8192,`
+`replacement:"whole-array",budgetScope:"create-and-update-points-per-operation-summed",`
 `order:"preserved",polygonClosure:"implicit",polylineClosure:"open"},`
-`polygonAndPolylineUpdates:"common-fields-only-no-dimensions-or-points",`
+`polygonAndPolylineUpdates:"common-fields-and-complete-points-replacement-no-dimensions",`
 `textObject:{...bounded flat-wire/default/Unicode/payload contract...},`
 `sourcePatch:"object-layer-objects-member-local"}`。`creatable` 只描述 create wire union；
 七种 shape 都继续支持约束内的 common-field update 和 safe delete。
@@ -1612,7 +1622,7 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
 | usage analysis 扫描 / distinct aggregation | 1,000,000 cells+objects / 100,000 tiles |
 | usage analysis 摘要 / 输出 | 64 layers + 64 tilesets；top tiles 1–128（默认 64）；256 KiB |
 | 单 change set 对象 mutation | 10,000 objects |
-| polygon/polyline points | polygon 3–256、polyline 2–256；单 change set 合计 8,192；pending registry 合计 65,536 |
+| polygon/polyline points | polygon 3–256、polyline 2–256；create 与每次完整 replacement 按 operation payload 累计，单 change set 合计 8,192，pending registry 合计 65,536 |
 | text object content/style | 正文 4,096 Unicode scalars / 16,384 UTF-8 bytes；font family 256 scalars / 1,024 bytes；pixel size 1..999；canonical flat text payload 每 change set 256 KiB、pending registry 2 MiB |
 | layer deletion subtree / preview samples | 10,000 layers、depth 64、100,000 objects；layer/object ID 各 32 |
 | 单 change set 重写的 JSON 子树 | 128 |
@@ -1775,7 +1785,7 @@ M1 明确拒绝：
 | region copy 发生重叠级联、裁剪/跳过空格、丢 flags，或未验证将被覆盖的坏 GID | tile 图案错位、目标未按授权清空、坏数据被隐藏或局部提交 | strict 完整 bounds、operation-start source/destination snapshots、memmove、0 明确覆盖、两侧 observed-GID fail-closed、`2*cellCount` 共享 scan + 完整 write 预算、destination data-member-local patch | strict/extra keys、跨层/同层非零 origin、四方向 overlap、0 清空、flags、source/destination malformed、bounds/no clipping、scan/write 边界、前序 source 可见/后序 later-wins、bounded destructive preview、no-op、BOM/CRLF、tamper/stale revision、Tiled round trip |
 | map-root patch 接受宽松 key、吞掉默认值 intent 或重写完整 TMJ | 错误字段落盘、渲染变化漏报或无关 source diff | strict/nonempty schema、member existence-aware detection、root-member-local patch、完整 target tree 复核 | 4 render orders、颜色写入/删除、class 长度边界、extra/empty rejection、later-wins、rendering flag、BOM/CRLF、net no-op、tamper/stale revision |
 | tileset removal 漏扫隐藏/锁定/Group/template 引用、把相邻 `firstgid` 当重映射目标或漏 pin 被移除依赖 | 留下 unresolved/错绑 GID，或批准后删除了不同 binding | exclusive strict operation、完整 cell/object scan、encoded-GID binding identity、template fail-closed、`TILESET_IN_USE`、旧 dependency-set CAS、array-element-local deletion | nested hidden/locked tile layers、tile objects、template、transform flags、malformed/目标/非目标 GID、1,000,000 scan 边界、乱序 binding 原 index、其他 firstgid/source 保持、TSJ 保留、summary tamper/stale map/dependency、Tiled round trip |
-| polygon/polyline points 被当成绝对坐标、自动闭合/重排、注入 dimensions 或批量放大 | path 错位、形状变化、输出/验证工作无界 | shape-discriminated strict union、object-local pixel contract、保序、3/2..256、每批 8,192、±1e9、path dimensions/point update 禁止、plan/apply 重验 | min/max/aggregate 边界、负数/小数/超限/non-finite、extra key、outer/inner shape mismatch、width/height 注入、common update/safe delete、Tiled round trip |
+| polygon/polyline points 被当成绝对坐标、自动闭合/重排、以局部 patch 误改、注入 dimensions 或批量放大 | path 错位、形状变化、输出/验证工作无界 | shape-discriminated strict create、target-resolved complete-array replacement、object-local pixel contract、保序、3/2..256、create+update intent 每批 8,192、±1e9、path dimensions 禁止、plan/apply 重验 | min/max/create+update aggregate 边界、no-op/later-delete 不抵扣、负数/小数/超限/non-finite、extra key、非 path mismatch、width/height 注入、common+points update、source/alias 保真、Tiled round trip |
 | text 内容/字体含非法 Unicode 或控制字符、样式宽松 coercion、raw 默认值漂移、payload retention 放大 | 生成无效 JSON、Tiled 显示/编辑语义变化、内存耗尽 | flat strict union、well-formed scalar/Cc 单遍验证、pixel 1..999、nested known-key fail-closed、TMJ 默认值稀疏映射、256 KiB/change-set + 2 MiB pending canonical UTF-8 预算、独立有界详情读取 | 空/多行/Unicode、lone surrogate/C0、scalar/byte 双边界、颜色/enum/bool/pixel 边界、默认删除、unknown nested key、text patch shape mismatch、aggregate/pending/alias/release、closed output、Tiled round trip |
 | layer patch 吞掉默认值 intent 或重写完整 layer | 字段未落盘或无关 source diff 爆炸 | member existence-aware change detection、object-member local patch、完整 target tree 复核 | 4 类 layer、缺失默认字段插入、tint 删除/no-op、13 modes、BOM/CRLF、mixed batch、stale revision |
 | layer subtree 删除提升 children、留下 object 悬挂引用或降低 ID 高水位 | 层级/逻辑损坏、未来 ID 复用 | exclusive plan、显式 descendant confirmation、surviving-document typed-reference scan、array-element local patch | leaf/empty/non-empty Group、direct/list/class refs、locked warning、32-ID samples、high-water marks、BOM/CRLF、tamper/stale revision |

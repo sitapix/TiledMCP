@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281",
+    "revision": "sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d",
     "serverVersion": "0.0.1",
-    "size": 56737
+    "size": 57312
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 56737,
+  "size": 57312,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 56737 UTF-8 bytes, revision `sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281`.
+Content contract: `text`, 57312 UTF-8 bytes, revision `sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d`.
 
 Resource templates: none.
 
@@ -9307,6 +9307,10 @@ Output schema:
                 "polygonAndPolylinePoints": {
                   "additionalProperties": false,
                   "properties": {
+                    "budgetScope": {
+                      "const": "create-and-update-points-per-operation-summed",
+                      "type": "string"
+                    },
                     "coordinateSpace": {
                       "const": "object-local-pixels-relative-to-x-y",
                       "type": "string"
@@ -9338,6 +9342,10 @@ Output schema:
                     "polylineMinimum": {
                       "const": 2,
                       "type": "number"
+                    },
+                    "replacement": {
+                      "const": "whole-array",
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -9346,6 +9354,8 @@ Output schema:
                     "polylineMinimum",
                     "maximum",
                     "maximumPerChangeSet",
+                    "replacement",
+                    "budgetScope",
                     "order",
                     "polygonClosure",
                     "polylineClosure"
@@ -9353,7 +9363,7 @@ Output schema:
                   "type": "object"
                 },
                 "polygonAndPolylineUpdates": {
-                  "const": "common-fields-only-no-dimensions-or-points",
+                  "const": "common-fields-and-complete-points-replacement-no-dimensions",
                   "type": "string"
                 },
                 "shapeMutation": {
@@ -11455,7 +11465,7 @@ Annotations:
 }
 ```
 
-Example purpose: 在修改/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。
+Example purpose: 在整体替换/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。
 
 ```json
 {
@@ -16838,7 +16848,7 @@ Annotations:
 }
 ```
 
-Example purpose: 在同一待批准 change set 中预览严格 map 根属性编辑，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。
+Example purpose: 在同一待批准 change set 中预览严格 map 根属性编辑、已有 path 的完整 points 替换，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。
 
 ```json
 {
@@ -16854,6 +16864,27 @@ Example purpose: 在同一待批准 change set 中预览严格 map 根属性编�
           "backgroundColor": "#334455"
         },
         "type": "updateMap"
+      },
+      {
+        "objectId": 7,
+        "patch": {
+          "name": "Adjusted patrol area",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 40.5,
+              "y": -4
+            },
+            {
+              "x": 20,
+              "y": 28
+            }
+          ]
+        },
+        "type": "updateObject"
       },
       {
         "layerId": 2,
@@ -18268,6 +18299,31 @@ Input schema:
                     "maximum": 999,
                     "minimum": 1,
                     "type": "integer"
+                  },
+                  "points": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "maximum": 1000000000,
+                          "minimum": -1000000000,
+                          "type": "number"
+                        },
+                        "y": {
+                          "maximum": 1000000000,
+                          "minimum": -1000000000,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 256,
+                    "minItems": 2,
+                    "type": "array"
                   },
                   "rotation": {
                     "maximum": 1000000000,
@@ -20049,6 +20105,7 @@ Output schema:
                             "y",
                             "width",
                             "height",
+                            "points",
                             "name",
                             "className",
                             "rotation",
@@ -20128,6 +20185,27 @@ Output schema:
                             "maximum": 999,
                             "minimum": 1,
                             "type": "integer"
+                          },
+                          "points": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "x": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                },
+                                "y": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 256,
+                            "minItems": 2,
+                            "type": "array"
                           },
                           "rotation": {
                             "allOf": [

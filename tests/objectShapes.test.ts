@@ -451,29 +451,34 @@ describe("extended object shape editing", () => {
     ).toEqual(before);
   });
 
-  it("enforces the aggregate path-point budget at its exact boundary", async () => {
+  it("shares the aggregate path-point budget across creates and complete replacements", async () => {
     const harness = await createHarness(roots);
     const fullPathPoints = Array.from(
       { length: MAX_OBJECT_SHAPE_POINTS },
       (_, index) => ({ x: index, y: -index }),
     );
-    const boundaryOperations = Array.from(
+    const boundaryOperations: MapEditOperation[] = [
+      ...Array.from(
+        { length: 31 },
+        (_, index): MapEditOperation => ({
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          object: {
+            shape: "polyline",
+            x: index,
+            y: 0,
+            points: fullPathPoints,
+          },
+        }),
+      ),
       {
-        length:
-          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET /
-          MAX_OBJECT_SHAPE_POINTS,
-      },
-      (_, index): MapEditOperation => ({
-        type: "createObject",
-        layerId: OBJECT_LAYER_ID,
-        object: {
-          shape: "polyline",
-          x: index,
-          y: 0,
+        type: "updateObject",
+        objectId: 3,
+        patch: {
           points: fullPathPoints,
         },
-      }),
-    );
+      },
+    ];
     const boundary = await plan(
       harness.service,
       boundaryOperations,
@@ -497,22 +502,16 @@ describe("extended object shape editing", () => {
         }),
       ),
       {
-        type: "createObject",
-        layerId: OBJECT_LAYER_ID,
-        object: {
-          shape: "polyline",
-          x: 31,
-          y: 0,
+        type: "updateObject",
+        objectId: 3,
+        patch: {
           points: fullPathPoints.slice(0, 255),
         },
       },
       {
-        type: "createObject",
-        layerId: OBJECT_LAYER_ID,
-        object: {
-          shape: "polyline",
-          x: 32,
-          y: 0,
+        type: "updateObject",
+        objectId: 3,
+        patch: {
           points: fullPathPoints.slice(0, 2),
         },
       },
@@ -537,7 +536,7 @@ describe("extended object shape editing", () => {
     ).toEqual(before);
   });
 
-  it("updates common path fields, rejects path geometry patches, and safely deletes paths", async () => {
+  it("replaces complete path geometry with common fields and safely deletes paths", async () => {
     const harness = await createHarness(roots);
     const create = await plan(harness.service, [
       {
@@ -577,6 +576,11 @@ describe("extended object shape editing", () => {
         patch: {
           x: 10.5,
           y: -8,
+          points: [
+            { x: -1.5, y: 2.25 },
+            { x: 6, y: -3 },
+            { x: -1.5, y: 2.25 },
+          ],
           name: "Updated polygon",
           className: "Zone",
           rotation: 30,
@@ -587,15 +591,21 @@ describe("extended object shape editing", () => {
       {
         type: "updateObject",
         objectId: 4,
-        patch: { name: "Updated line" },
+        patch: {
+          name: "Updated line",
+          points: [
+            { x: -2, y: -2 },
+            { x: 3.5, y: 4 },
+          ],
+        },
       },
     ]);
     await harness.service.applyEdits(update);
     expect(requireObjects(await readMap(harness.root))[2]).toMatchObject({
       polygon: [
-        { x: 0, y: 0 },
-        { x: 4, y: 0 },
-        { x: 0, y: 4 },
+        { x: -1.5, y: 2.25 },
+        { x: 6, y: -3 },
+        { x: -1.5, y: 2.25 },
       ],
       x: 10.5,
       y: -8,
@@ -607,6 +617,19 @@ describe("extended object shape editing", () => {
       width: 0,
       height: 0,
     });
+    expect(requireObjects(await readMap(harness.root))[2]).not.toHaveProperty(
+      "points",
+    );
+    expect(requireObjects(await readMap(harness.root))[3]).toMatchObject({
+      polyline: [
+        { x: -2, y: -2 },
+        { x: 3.5, y: 4 },
+      ],
+      name: "Updated line",
+    });
+    expect(requireObjects(await readMap(harness.root))[3]).not.toHaveProperty(
+      "points",
+    );
 
     const beforeRejectedPatch = await readFile(
       join(harness.root, MAP_PATH),
@@ -630,23 +653,69 @@ describe("extended object shape editing", () => {
         code: "OBJECT_SHAPE_MISMATCH",
       });
     }
+    for (const operation of [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 4,
+        patch: {
+          points: [{ x: 0, y: 0 }],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          points: Array.from(
+            { length: MAX_OBJECT_SHAPE_POINTS + 1 },
+            (_, index) => ({ x: index, y: 0 }),
+          ),
+        },
+      },
+      unsafeOperation({
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1, extra: true },
+            { x: 2, y: 2 },
+          ],
+        },
+      }),
+    ] satisfies MapEditOperation[]) {
+      await expect(
+        plan(harness.service, [operation]),
+      ).rejects.toMatchObject({
+        name: "TiledMcpError",
+        code: "INVALID_ARGUMENT",
+      });
+    }
     await expect(
       plan(harness.service, [
-        unsafeOperation({
+        {
           type: "updateObject",
-          objectId: 3,
+          objectId: ELLIPSE_ID,
           patch: {
             points: [
               { x: 0, y: 0 },
               { x: 1, y: 1 },
-              { x: 2, y: 2 },
             ],
           },
-        }),
+        },
       ]),
     ).rejects.toMatchObject({
       name: "TiledMcpError",
-      code: "INVALID_ARGUMENT",
+      code: "OBJECT_SHAPE_MISMATCH",
     });
     expect(
       await readFile(join(harness.root, MAP_PATH)),
@@ -689,6 +758,11 @@ describe("extended object shape editing", () => {
         patch: {
           name: "Updated before commit",
           x: 2.5,
+          points: [
+            { x: -1, y: -1 },
+            { x: 5, y: 0 },
+            { x: 1, y: 6 },
+          ],
         },
       },
       {
@@ -726,9 +800,9 @@ describe("extended object shape editing", () => {
     ]);
     expect(objects[2]).toMatchObject({
       polygon: [
-        { x: 0, y: 0 },
-        { x: 4, y: 0 },
-        { x: 0, y: 4 },
+        { x: -1, y: -1 },
+        { x: 5, y: 0 },
+        { x: 1, y: 6 },
       ],
       name: "Updated before commit",
       x: 2.5,
@@ -802,6 +876,17 @@ describe("extended object shape editing", () => {
           patch: { name: "Must not change" },
         },
         {
+          type: "updateObject",
+          objectId: 3,
+          patch: {
+            points: [
+              { x: 0, y: 0 },
+              { x: 2, y: 0 },
+              { x: 0, y: 2 },
+            ],
+          },
+        },
+        {
           type: "deleteObjects",
           objectIds: [3],
         },
@@ -863,7 +948,14 @@ describe("extended object shape editing", () => {
       {
         type: "updateObject",
         objectId: 3,
-        patch: { name: "Updated dimensionless polygon" },
+        patch: {
+          name: "Updated dimensionless polygon",
+          points: [
+            { x: -2, y: 1 },
+            { x: 3, y: -4 },
+            { x: 7.5, y: 2.25 },
+          ],
+        },
       },
       {
         type: "deleteObjects",
@@ -878,15 +970,134 @@ describe("extended object shape editing", () => {
       id: 3,
       name: "Updated dimensionless polygon",
       polygon: [
-        { x: 0, y: 0 },
-        { x: 1, y: 0 },
-        { x: 0, y: 1 },
+        { x: -2, y: 1 },
+        { x: 3, y: -4 },
+        { x: 7.5, y: 2.25 },
       ],
       vendorPathExtension: { preserve: true },
     });
     expect(saved[2]).not.toHaveProperty("width");
     expect(saved[2]).not.toHaveProperty("height");
     expect(saved.map((object) => object.id)).not.toContain(4);
+  });
+
+  it("treats an identical complete points replacement as an exact-byte no-op", async () => {
+    const harness = await createHarness(roots);
+    const points = [
+      { x: -2.5, y: 1 },
+      { x: 4, y: -3.25 },
+      { x: 0, y: 7 },
+    ];
+    const create = await plan(harness.service, [
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 12,
+          y: 18,
+          points,
+        },
+      },
+    ]);
+    await harness.service.applyEdits(create);
+
+    const mapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(mapPath);
+    const beforeSnapshot = await mapSnapshot(
+      harness.service,
+    );
+    const requestedPoints = structuredClone(points);
+    const edit = await plan(harness.service, [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: { points: requestedPoints },
+      },
+    ]);
+    const preview =
+      new ChangeSetRegistry().put(edit);
+    expect(preview.operations).toEqual([
+      {
+        type: "updateObject",
+        objectId: 3,
+        changedFields: ["points"],
+        patch: { points },
+      },
+    ]);
+
+    requestedPoints[0] = { x: 999, y: 999 };
+    expect(
+      edit.operations[0]?.type === "updateObject"
+        ? edit.operations[0].patch.points
+        : undefined,
+    ).toEqual(points);
+
+    const result =
+      await harness.service.applyEdits(edit);
+    expect(result).toMatchObject({
+      beforeRevision: beforeSnapshot.revision,
+      revision: beforeSnapshot.revision,
+      changed: false,
+    });
+    expect(await readFile(mapPath)).toEqual(before);
+  });
+
+  it("collapses sequential points replacements that restore the original array to an exact-byte no-op", async () => {
+    const harness = await createHarness(roots);
+    const originalPoints = [
+      { x: 0, y: 0 },
+      { x: 12, y: -3 },
+      { x: 5.5, y: 9 },
+    ];
+    const create = await plan(harness.service, [
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 4,
+          y: 8,
+          points: originalPoints,
+        },
+      },
+    ]);
+    await harness.service.applyEdits(create);
+
+    const mapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(mapPath);
+    const snapshot = await mapSnapshot(
+      harness.service,
+    );
+    const edit = await plan(harness.service, [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          points: [
+            { x: -2, y: 1 },
+            { x: 6, y: 2 },
+            { x: 3, y: 14 },
+          ],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          points: originalPoints,
+        },
+      },
+    ]);
+
+    const result =
+      await harness.service.applyEdits(edit);
+    expect(result).toMatchObject({
+      beforeRevision: snapshot.revision,
+      revision: snapshot.revision,
+      changed: false,
+    });
+    expect(await readFile(mapPath)).toEqual(before);
   });
 
   it("updates common fields and positive dimensions without changing either shape", async () => {
@@ -1601,6 +1812,17 @@ describe("extended object shape editing", () => {
           height: 30,
         },
       },
+      {
+        type: "updateObject",
+        objectId: 4,
+        patch: {
+          points: [
+            { x: -4.5, y: 1 },
+            { x: 20, y: -3.25 },
+            { x: 7, y: 14 },
+          ],
+        },
+      },
     ]);
 
     await harness.service.applyEdits(edit);
@@ -1630,9 +1852,9 @@ describe("extended object shape editing", () => {
     expect(requireObjects(saved)[3]).toMatchObject({
       id: 4,
       polygon: [
-        { x: 0, y: 0 },
-        { x: 16, y: 0 },
-        { x: 8, y: 12 },
+        { x: -4.5, y: 1 },
+        { x: 20, y: -3.25 },
+        { x: 7, y: 14 },
       ],
       width: 0,
       height: 0,
@@ -1898,6 +2120,28 @@ describe("extended object shape editing", () => {
           height: 24,
         },
       },
+      {
+        type: "updateObject",
+        objectId: 5,
+        patch: {
+          points: [
+            { x: -7.5, y: 2 },
+            { x: 11.25, y: -6 },
+            { x: 3, y: 9.5 },
+          ],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 6,
+        patch: {
+          points: [
+            { x: -4.25, y: 3.5 },
+            { x: -4.25, y: 3.5 },
+            { x: 8, y: -2 },
+          ],
+        },
+      },
     ]);
     await harness.service.applyEdits(edit);
 
@@ -1966,9 +2210,9 @@ describe("extended object shape editing", () => {
         expect.objectContaining({
           id: 5,
           polygon: [
-            { x: 0, y: 0 },
-            { x: 9.25, y: -3 },
-            { x: -2, y: 7.5 },
+            { x: -7.5, y: 2 },
+            { x: 11.25, y: -6 },
+            { x: 3, y: 9.5 },
           ],
           width: 0,
           height: 0,
@@ -1981,9 +2225,9 @@ describe("extended object shape editing", () => {
         expect.objectContaining({
           id: 6,
           polyline: [
-            { x: 0, y: 0 },
-            { x: 4.5, y: 1 },
-            { x: -3, y: 6 },
+            { x: -4.25, y: 3.5 },
+            { x: -4.25, y: 3.5 },
+            { x: 8, y: -2 },
           ],
           width: 0,
           height: 0,
@@ -2019,6 +2263,31 @@ describe("extended object shape editing", () => {
         }),
       ]),
     );
+    const exportedPolygon = objects.find(
+      (object) => object.id === 5,
+    );
+    const exportedPolyline = objects.find(
+      (object) => object.id === 6,
+    );
+    expect(exportedPolygon).not.toHaveProperty("points");
+    expect(exportedPolygon).not.toHaveProperty("polyline");
+    expect(exportedPolyline).not.toHaveProperty("points");
+    expect(exportedPolyline).not.toHaveProperty("polygon");
+    await expect(
+      harness.service.getObject({
+        mapPath: "maps/roundtrip.tmj",
+        objectId: 5,
+      }),
+    ).resolves.toMatchObject({
+      object: {
+        shape: "polygon",
+        points: [
+          { x: -7.5, y: 2 },
+          { x: 11.25, y: -6 },
+          { x: 3, y: 9.5 },
+        ],
+      },
+    });
   }, 40_000);
 });
 

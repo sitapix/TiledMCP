@@ -76,11 +76,56 @@ function objectOf(
   >;
 }
 
+function validUpdateOutput(): Record<string, unknown> {
+  const output = validOutput();
+  const result = output.result as Record<
+    string,
+    unknown
+  >;
+  result.operations = [
+    {
+      type: "updateObject",
+      objectId: 7,
+      changedFields: ["points"],
+      patch: {
+        points: [
+          { x: 0, y: 0 },
+          { x: 8, y: -2 },
+        ],
+      },
+    },
+  ];
+  const summary = result.summary as Record<
+    string,
+    unknown
+  >;
+  summary.createdObjectIds = [];
+  summary.updatedObjectIds = [7];
+  return output;
+}
+
+function patchOf(
+  output: Record<string, unknown>,
+): Record<string, unknown> {
+  return operationOf(output).patch as Record<
+    string,
+    unknown
+  >;
+}
+
 describe("polygon/polyline change-set output schema", () => {
   it("accepts a bounded strict path object preview", () => {
     expect(
       previewEditsToolOutputSchema.safeParse(
         validOutput(),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("accepts a bounded strict whole-path update preview", () => {
+    expect(
+      previewEditsToolOutputSchema.safeParse(
+        validUpdateOutput(),
       ).success,
     ).toBe(true);
   });
@@ -130,41 +175,148 @@ describe("polygon/polyline change-set output schema", () => {
     ).toBe(false);
   });
 
-  it("rejects a forged aggregate of more than 8,192 individually valid path points", () => {
+  it.each([
+    {
+      name: "one-point update",
+      mutate(output: Record<string, unknown>) {
+        patchOf(output).points = [
+          { x: 0, y: 0 },
+        ];
+      },
+    },
+    {
+      name: "257-point update",
+      mutate(output: Record<string, unknown>) {
+        patchOf(output).points = Array.from(
+          { length: 257 },
+          (_, index) => ({
+            x: index,
+            y: -index,
+          }),
+        );
+      },
+    },
+    {
+      name: "update point with an extra key",
+      mutate(output: Record<string, unknown>) {
+        patchOf(output).points = [
+          { x: 0, y: 0 },
+          { x: 1, y: 1, z: 2 },
+        ];
+      },
+    },
+  ])("rejects a forged $name", ({ mutate }) => {
+    const output = validUpdateOutput();
+    mutate(output);
+    expect(
+      previewEditsToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    {
+      name: "missing changed field",
+      changedFields: [] as string[],
+    },
+    {
+      name: "duplicate changed field",
+      changedFields: [
+        "points",
+        "points",
+      ],
+    },
+    {
+      name: "extra changed field",
+      changedFields: ["name", "points"],
+    },
+  ])(
+    "rejects forged $name metadata",
+    ({ changedFields }) => {
+      const output = validUpdateOutput();
+      operationOf(output).changedFields =
+        changedFields;
+      expect(
+        previewEditsToolOutputSchema.safeParse(
+          output,
+        ).success,
+      ).toBe(false);
+    },
+  );
+
+  it("requires changedFields to use sorted patch-key order", () => {
+    const output = validUpdateOutput();
+    patchOf(output).name = "Replacement";
+    operationOf(output).changedFields = [
+      "points",
+      "name",
+    ];
+    expect(
+      previewEditsToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(false);
+    operationOf(output).changedFields = [
+      "name",
+      "points",
+    ];
+    expect(
+      previewEditsToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(true);
+  });
+
+  it("rejects a forged create-plus-update aggregate of more than 8,192 individually valid path points", () => {
     const output = validOutput();
     const result = output.result as Record<
       string,
       unknown
     >;
-    result.operations = Array.from(
-      { length: 33 },
-      (_, operationIndex) => ({
-        type: "createObject",
-        layerId: 1,
-        shape: "polyline",
-        object: {
+    result.operations = [
+      ...Array.from(
+        { length: 32 },
+        (_, operationIndex) => ({
+          type: "createObject",
+          layerId: 1,
           shape: "polyline",
-          x: operationIndex,
-          y: 0,
-          points: Array.from(
-            { length: 256 },
-            (_, pointIndex) => ({
-              x: pointIndex,
-              y: -pointIndex,
-            }),
-          ),
+          object: {
+            shape: "polyline",
+            x: operationIndex,
+            y: 0,
+            points: Array.from(
+              { length: 256 },
+              (_, pointIndex) => ({
+                x: pointIndex,
+                y: -pointIndex,
+              }),
+            ),
+          },
+        }),
+      ),
+      {
+        type: "updateObject",
+        objectId: 7,
+        changedFields: ["points"],
+        patch: {
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
         },
-      }),
-    );
+      },
+    ];
     const summary = result.summary as Record<
       string,
       unknown
     >;
     summary.operationCount = 33;
     summary.createdObjectIds = Array.from(
-      { length: 33 },
+      { length: 32 },
       (_, index) => index + 1,
     );
+    summary.updatedObjectIds = [7];
 
     expect(
       previewEditsToolOutputSchema.safeParse(

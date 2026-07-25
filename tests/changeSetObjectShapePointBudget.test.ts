@@ -11,6 +11,7 @@ import {
 import {
   ChangeSetRegistry,
   DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
+  type ChangeSetApplyResult,
 } from "../src/changeSets.js";
 import {
   stableJson,
@@ -107,7 +108,195 @@ describe("ChangeSetRegistry object shape-point budget", () => {
     );
   });
 
-  it("does not let returned preview aliases mutate the pending budget", () => {
+  it("charges update-only point replacements", () => {
+    const registry = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      2,
+    );
+
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(41, 2)]),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "CHANGE_SET_LIMIT_EXCEEDED",
+        details: expect.objectContaining({
+          limit: 2,
+          pendingObjectShapePoints: 2,
+          requestedObjectShapePoints: 2,
+        }),
+      }),
+    );
+  });
+
+  it("charges mixed creates and every update without net-state discounts", () => {
+    const exact = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      5,
+    );
+    expect(() =>
+      exact.put(
+        mapEditPlan([
+          createPath("polygon", 3),
+          updatePath(1, 2),
+        ]),
+      ),
+    ).not.toThrow();
+
+    const noDiscount = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      6,
+    );
+    expect(() =>
+      noDiscount.put(
+        mapEditPlan([
+          createPath("polygon", 3),
+          updatePath(1, 2),
+          updatePath(1, 2),
+          {
+            type: "deleteObjects",
+            objectIds: [1],
+          },
+        ]),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "CHANGE_SET_LIMIT_EXCEEDED",
+        details: expect.objectContaining({
+          limit: 6,
+          pendingObjectShapePoints: 0,
+          requestedObjectShapePoints: 7,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a forged mixed plan above the per-change-set point limit before retaining it", () => {
+    const fullPayloadCount = 256;
+    const operations: MapEditOperation[] = [
+      ...Array.from(
+        { length: 31 },
+        (): MapEditOperation =>
+          createPath(
+            "polyline",
+            fullPayloadCount,
+          ),
+      ),
+      updatePath(1, 255),
+      updatePath(1, 2),
+    ];
+    const registry = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      8_193,
+    );
+
+    expect(() =>
+      registry.put(mapEditPlan(operations)),
+    ).toThrow(
+      expect.objectContaining({
+        name: "TiledMcpError",
+        code: "INVALID_CHANGE_SET",
+        details: {
+          actual: 8_193,
+          limit: 8_192,
+        },
+      }),
+    );
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(2, 2)]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("accepts coordinate bounds exactly", () => {
+    const operation = updatePath(41, 2);
+    const points = (
+      operation as unknown as {
+        patch: {
+          points: Array<{
+            x: number;
+            y: number;
+          }>;
+        };
+      }
+    ).patch.points;
+    points[0] = {
+      x: -1_000_000_000,
+      y: 1_000_000_000,
+    };
+    points[1] = {
+      x: 1_000_000_000,
+      y: -1_000_000_000,
+    };
+
+    expect(() =>
+      new ChangeSetRegistry(
+        60_000,
+        4,
+        0,
+        2,
+      ).put(mapEditPlan([operation])),
+    ).not.toThrow();
+  });
+
+  it("does not let source-plan or returned-preview aliases mutate an update charge", () => {
+    const registry = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      2,
+    );
+    const plan = mapEditPlan([
+      updatePath(41, 2),
+    ]);
+    const preview = registry.put(plan);
+    const sourceOperation = plan
+      .operations[0] as unknown as {
+      patch: {
+        points: Array<{ x: number; y: number }>;
+      };
+    };
+    const previewOperation = preview
+      .operations[0] as {
+      patch: {
+        points: Array<{ x: number; y: number }>;
+      };
+    };
+    sourceOperation.patch.points.length = 0;
+    previewOperation.patch.points.length = 0;
+
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "CHANGE_SET_LIMIT_EXCEEDED",
+        details: expect.objectContaining({
+          limit: 2,
+          pendingObjectShapePoints: 2,
+          requestedObjectShapePoints: 2,
+        }),
+      }),
+    );
+  });
+
+  it("does not let returned create-preview aliases mutate the pending budget", () => {
     const registry = new ChangeSetRegistry(
       60_000,
       4,
@@ -158,6 +347,101 @@ describe("ChangeSetRegistry object shape-point budget", () => {
     expect(() =>
       registry.put(
         mapEditPlan([createPath("polygon", 3)]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("retains update points after failed apply and releases them after a successful retry", async () => {
+    const registry = new ChangeSetRegistry(
+      60_000,
+      4,
+      0,
+      2,
+    );
+    const preview = registry.put(
+      mapEditPlan([updatePath(41, 2)]),
+    );
+
+    await expect(
+      registry.apply(
+        preview.changeSetId,
+        preview.expectedRevision,
+        async () => {
+          throw new Error("expected failure");
+        },
+      ),
+    ).rejects.toThrow("expected failure");
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "CHANGE_SET_LIMIT_EXCEEDED",
+        details: expect.objectContaining({
+          pendingObjectShapePoints: 2,
+        }),
+      }),
+    );
+
+    await applyMapEdit(registry, preview);
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("retains update points while apply is in flight even after its TTL passes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(
+      new Date("2026-07-25T00:00:00.000Z"),
+    );
+    const registry = new ChangeSetRegistry(
+      1_000,
+      4,
+      0,
+      2,
+    );
+    const preview = registry.put(
+      mapEditPlan([updatePath(41, 2)]),
+    );
+    let resolveApply:
+      | ((
+          result: ChangeSetApplyResult,
+        ) => void)
+      | undefined;
+    const deferred =
+      new Promise<ChangeSetApplyResult>(
+        (resolve) => {
+          resolveApply = resolve;
+        },
+      );
+    const applying = registry.apply(
+      preview.changeSetId,
+      preview.expectedRevision,
+      async () => deferred,
+    );
+
+    vi.advanceTimersByTime(1_001);
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "CHANGE_SET_LIMIT_EXCEEDED",
+        details: expect.objectContaining({
+          pendingObjectShapePoints: 2,
+        }),
+      }),
+    );
+
+    resolveApply?.(commitResult());
+    await applying;
+    expect(() =>
+      registry.put(
+        mapEditPlan([updatePath(42, 2)]),
       ),
     ).not.toThrow();
   });
@@ -237,15 +521,139 @@ describe("ChangeSetRegistry object shape-point budget", () => {
     ).not.toThrow();
   });
 
-  it("rejects malformed path points without throwing a runtime TypeError", () => {
-    const malformed = mapEditPlan([
-      createPath("polygon", 3),
-    ]);
+  it.each([
+    {
+      name: "non-array create points",
+      operation: {
+        type: "createObject",
+        layerId: 1,
+        object: {
+          shape: "polygon",
+          x: 0,
+          y: 0,
+          points: "not-an-array",
+        },
+      },
+    },
+    {
+      name: "polygon with only two points",
+      operation: createPath("polygon", 2),
+    },
+    {
+      name: "polyline with only one point",
+      operation: createPath("polyline", 1),
+    },
+    {
+      name: "create with more than 256 points",
+      operation: createPath("polygon", 257),
+    },
+    {
+      name: "non-path create with points",
+      operation: {
+        type: "createObject",
+        layerId: 1,
+        object: {
+          shape: "rectangle",
+          x: 0,
+          y: 0,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        },
+      },
+    },
+    {
+      name: "non-record update patch",
+      operation: {
+        type: "updateObject",
+        objectId: 1,
+        patch: "not-an-object",
+      },
+    },
+    {
+      name: "non-array update points",
+      operation: {
+        type: "updateObject",
+        objectId: 1,
+        patch: {
+          points: null,
+        },
+      },
+    },
+    {
+      name: "update with only one point",
+      operation: updatePath(1, 1),
+    },
+    {
+      name: "update with more than 256 points",
+      operation: updatePath(1, 257),
+    },
+    {
+      name: "point missing y",
+      operation: forgedPointUpdate({
+        x: 0,
+      }),
+    },
+    {
+      name: "point with an extra key",
+      operation: forgedPointUpdate({
+        x: 0,
+        y: 0,
+        z: 0,
+      }),
+    },
+    {
+      name: "non-finite point coordinate",
+      operation: forgedPointUpdate({
+        x: Number.POSITIVE_INFINITY,
+        y: 0,
+      }),
+    },
+    {
+      name: "out-of-range point coordinate",
+      operation: forgedPointUpdate({
+        x: 1_000_000_001,
+        y: 0,
+      }),
+    },
+    {
+      name: "nested point coordinate",
+      operation: forgedPointUpdate({
+        x: { nested: true },
+        y: 0,
+      }),
+    },
+  ])(
+    "maps forged $name failures to INVALID_CHANGE_SET",
+    ({ operation }) => {
+      expect(() =>
+        new ChangeSetRegistry(
+          60_000,
+          4,
+          0,
+          1_000,
+        ).put(
+          mapEditPlan([
+            operation as unknown as MapEditOperation,
+          ]),
+        ),
+      ).toThrow(
+        expect.objectContaining({
+          name: "TiledMcpError",
+          code: "INVALID_CHANGE_SET",
+        }),
+      );
+    },
+  );
+
+  it("rejects forged non-array operations with INVALID_CHANGE_SET", () => {
+    const malformed = mapEditPlan([]);
     (
-      malformed.operations[0] as unknown as {
-        object: { points: unknown };
+      malformed as unknown as {
+        operations: unknown;
       }
-    ).object.points = "not-an-array";
+    ).operations = "not-an-array";
     malformed.id = planId(malformed);
 
     expect(() =>
@@ -253,14 +661,14 @@ describe("ChangeSetRegistry object shape-point budget", () => {
         60_000,
         4,
         0,
-        3,
+        1_000,
       ).put(malformed),
     ).toThrow(
       expect.objectContaining({
         name: "TiledMcpError",
         code: "INVALID_CHANGE_SET",
         message: expect.stringContaining(
-          "malformed shape points",
+          "malformed operations",
         ),
       }),
     );
@@ -286,9 +694,67 @@ function createPath(
   };
 }
 
+function updatePath(
+  objectId: number,
+  pointCount: number,
+): MapEditOperation {
+  return {
+    type: "updateObject",
+    objectId,
+    patch: {
+      points: Array.from(
+        { length: pointCount },
+        (_, index) => ({
+          x: index,
+          y: -index,
+        }),
+      ),
+    },
+  };
+}
+
+function forgedPointUpdate(
+  point: Record<string, unknown>,
+): MapEditOperation {
+  return {
+    type: "updateObject",
+    objectId: 1,
+    patch: {
+      points: [
+        point,
+        { x: 1, y: 1 },
+      ],
+    },
+  } as unknown as MapEditOperation;
+}
+
 function mapEditPlan(
   operations: MapEditOperation[],
 ): MapEditPlan {
+  const createdObjectIds =
+    operations.flatMap((operation, index) =>
+      operation.type === "createObject"
+        ? [index + 1]
+        : [],
+    );
+  const updatedObjectIds = [
+    ...new Set(
+      operations.flatMap((operation) =>
+        operation.type === "updateObject"
+          ? [operation.objectId]
+          : [],
+      ),
+    ),
+  ];
+  const deletedObjectIds = [
+    ...new Set(
+      operations.flatMap((operation) =>
+        operation.type === "deleteObjects"
+          ? operation.objectIds
+          : [],
+      ),
+    ),
+  ];
   const unsigned: Omit<MapEditPlan, "id"> = {
     kind: "mapEdit",
     version: 1,
@@ -302,11 +768,9 @@ function mapEditPlan(
       affectedLayerIds: [1],
       affectedTileLayerIds: [],
       affectedObjectLayerIds: [1],
-      createdObjectIds: operations.map(
-        (_, index) => index + 1,
-      ),
-      updatedObjectIds: [],
-      deletedObjectIds: [],
+      createdObjectIds,
+      updatedObjectIds,
+      deletedObjectIds,
     },
   };
   return {
@@ -342,20 +806,17 @@ async function applyMapEdit(
   await registry.apply(
     preview.changeSetId,
     preview.expectedRevision,
-    async (plan) => {
-      if (plan.kind !== "mapEdit") {
-        throw new Error(
-          "Expected a map-edit plan fixture.",
-        );
-      }
-      return {
-        path: plan.mapPath,
-        beforeRevision: plan.baseRevision,
-        revision: APPLIED_REVISION,
-        checkpointId: null,
-        changed: true,
-        changeSetId: plan.id,
-      };
-    },
+    async () => commitResult(),
   );
+}
+
+function commitResult(): ChangeSetApplyResult {
+  return {
+    path: MAP_PATH,
+    beforeRevision: BASE_REVISION,
+    revision: APPLIED_REVISION,
+    checkpointId: null,
+    changed: true,
+    changeSetId: "operation-result",
+  };
 }

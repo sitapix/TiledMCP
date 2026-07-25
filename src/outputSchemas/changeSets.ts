@@ -327,6 +327,11 @@ const objectPatchOutputSchema = z
     y: objectCoordinateOutputSchema.optional(),
     width: objectExtentOutputSchema.optional(),
     height: objectExtentOutputSchema.optional(),
+    points: z
+      .array(objectPathPointOutputSchema)
+      .min(MIN_POLYLINE_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS)
+      .optional(),
     name: objectStringOutputSchema.optional(),
     className: objectStringOutputSchema.optional(),
     rotation: objectCoordinateOutputSchema.optional(),
@@ -616,6 +621,7 @@ const updateObjectOperationPreviewOutputSchema = z
         "y",
         "width",
         "height",
+        "points",
         "name",
         "className",
         "rotation",
@@ -637,7 +643,27 @@ const updateObjectOperationPreviewOutputSchema = z
     ),
     patch: objectPatchOutputSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((operation, context) => {
+    const expectedFields = Object.keys(
+      operation.patch,
+    ).sort();
+    if (
+      operation.changedFields.length !==
+        expectedFields.length ||
+      operation.changedFields.some(
+        (field, index) =>
+          field !== expectedFields[index],
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["changedFields"],
+        message:
+          "updateObject changedFields must exactly equal the sorted patch keys",
+      });
+    }
+  });
 
 const updateLayerOperationPreviewOutputSchema = z
   .object({
@@ -1536,6 +1562,12 @@ const genericMapEditPreviewOutputSchema = z
           ) {
             pathPointCount +=
               operation.object.points.length;
+          } else if (
+            operation.type === "updateObject" &&
+            operation.patch.points !== undefined
+          ) {
+            pathPointCount +=
+              operation.patch.points.length;
           }
           if (operation.type === "createObject") {
             try {
@@ -1566,7 +1598,7 @@ const genericMapEditPreviewOutputSchema = z
           context.addIssue({
             code: "custom",
             message:
-              `Polygon and polyline createObject previews may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+              `Polygon and polyline create and update previews may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
           });
         }
         if (

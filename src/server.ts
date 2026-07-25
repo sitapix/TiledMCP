@@ -907,6 +907,11 @@ const objectPatchSchema = z
     y: objectCoordinateSchema.optional(),
     width: objectExtentSchema.optional(),
     height: objectExtentSchema.optional(),
+    points: z
+      .array(objectPathPointSchema)
+      .min(MIN_POLYLINE_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS)
+      .optional(),
     name: objectStringSchema.optional(),
     className: objectStringSchema.optional(),
     rotation: objectCoordinateSchema.optional(),
@@ -1459,12 +1464,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             maximum: MAX_OBJECT_SHAPE_POINTS,
             maximumPerChangeSet:
               MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+            replacement: "whole-array",
+            budgetScope:
+              "create-and-update-points-per-operation-summed",
             order: "preserved",
             polygonClosure: "implicit",
             polylineClosure: "open",
           },
           polygonAndPolylineUpdates:
-            "common-fields-only-no-dimensions-or-points",
+            "common-fields-and-complete-points-replacement-no-dimensions",
           textObject: {
             wireLayout:
               "flat-on-create-object-and-update-patch",
@@ -3065,6 +3073,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 ) {
                   pathPointCount +=
                     operation.object.points.length;
+                } else if (
+                  operation.type ===
+                    "updateObject" &&
+                  operation.patch.points !==
+                    undefined
+                ) {
+                  pathPointCount +=
+                    operation.patch.points.length;
                 }
                 if (
                   operation.type ===
@@ -3099,7 +3115,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 context.addIssue({
                   code: "custom",
                   message:
-                    `Polygon and polyline createObject operations may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+                    `Polygon and polyline create and update operations may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
                 });
               }
               if (

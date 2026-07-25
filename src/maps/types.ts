@@ -205,6 +205,11 @@ export interface UpdateObjectOperation {
     y?: number;
     width?: number;
     height?: number;
+    /**
+     * Whole-array replacement for an existing polygon or polyline. Coordinates
+     * remain local to the object's x/y anchor and do not change its shape.
+     */
+    points?: ObjectPathPoint[];
     name?: string;
     className?: string;
     rotation?: number;
