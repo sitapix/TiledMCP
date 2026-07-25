@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:b2e18f665b5b1fe3cfc3aaf036555bfee242481fa125b5646d457fe07ac5ada2",
+    "revision": "sha256:7434c055437636322df1fc155c215cbc20728014972c70ed86c8caef817c9d98",
     "serverVersion": "0.0.1",
-    "size": 73874
+    "size": 74079
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 73874,
+  "size": 74079,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 73874 UTF-8 bytes, revision `sha256:b2e18f665b5b1fe3cfc3aaf036555bfee242481fa125b5646d457fe07ac5ada2`.
+Content contract: `text`, 74079 UTF-8 bytes, revision `sha256:7434c055437636322df1fc155c215cbc20728014972c70ed86c8caef817c9d98`.
 
 Resource templates: none.
 
@@ -12240,7 +12240,7 @@ Output schema:
                   "type": "string"
                 },
                 "chunkedLayers": {
-                  "const": "read-only-summary-region-usage",
+                  "const": "read-only-summary-region-usage-preview",
                   "type": "string"
                 },
                 "compressions": {
@@ -30083,7 +30083,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
+Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
 
 Annotations:
 
@@ -30183,13 +30183,13 @@ Input schema:
                 "type": "integer"
               },
               "x": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
+                "maximum": 1000000000,
+                "minimum": -1000000000,
                 "type": "integer"
               },
               "y": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
+                "maximum": 1000000000,
+                "minimum": -1000000000,
                 "type": "integer"
               }
             },
@@ -30236,13 +30236,13 @@ Input schema:
           "type": "integer"
         },
         "x": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
+          "maximum": 1000000000,
+          "minimum": -1000000000,
           "type": "integer"
         },
         "y": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
+          "maximum": 1000000000,
+          "minimum": -1000000000,
           "type": "integer"
         }
       },
@@ -31047,7 +31047,10 @@ Output schema:
               "type": "object"
             },
             "renderProfile": {
-              "const": "finite-orthogonal-static-atlas-tilelayers-v1",
+              "enum": [
+                "finite-orthogonal-static-atlas-tilelayers-v1",
+                "infinite-orthogonal-static-atlas-chunked-tilelayers-v1"
+              ],
               "type": "string"
             },
             "scale": {

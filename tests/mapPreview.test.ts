@@ -417,7 +417,7 @@ describe("renderNativePreview", () => {
         () => ({ x: 0, y: 0, width: 1, height: 1 }),
       ),
     ],
-    ["a negative coordinate", [{ x: -1, y: 0, width: 2, height: 1 }]],
+    ["a beyond-bound negative coordinate", [{ x: -1_000_000_001, y: 0, width: 2, height: 1 }]],
     [
       "an overflowing extent",
       [{ x: Number.MAX_SAFE_INTEGER, y: 0, width: 1, height: 1 }],

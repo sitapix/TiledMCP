@@ -129,6 +129,7 @@ const MAX_ABSOLUTE_NATIVE_PREVIEW_OBJECT_NUMBER =
   1_000_000_000;
 
 const GLYPHS: Readonly<Record<string, readonly string[]>> = {
+  "-": ["000", "000", "111", "000", "000"],
   "0": ["111", "101", "101", "101", "111"],
   "1": ["010", "110", "010", "010", "111"],
   "2": ["111", "001", "111", "100", "111"],
@@ -767,7 +768,9 @@ function validateHighlightRect(
     const positive = field === "width" || field === "height";
     if (
       !Number.isSafeInteger(value) ||
-      (positive ? value <= 0 : value < 0)
+      (positive
+        ? value <= 0
+        : Math.abs(value) > 1_000_000_000)
     ) {
       throw invalidHighlightRect(sourceIndex, field, value);
     }
@@ -810,7 +813,7 @@ function invalidHighlightRect(
 ): TiledMcpError {
   return new TiledMcpError(
     "INVALID_ARGUMENT",
-    `highlights[${sourceIndex}] must be a strict non-negative safe tile rectangle with positive width and height.`,
+    `highlights[${sourceIndex}] must be a strict bounded safe tile rectangle with positive width and height.`,
     { sourceIndex, field, value },
   );
 }

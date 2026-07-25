@@ -374,12 +374,19 @@ const safeIntegerSchema = z
   .int()
   .min(Number.MIN_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
-const nonnegativeSafeIntegerSchema = safeIntegerSchema.min(0);
 const positiveSafeIntegerSchema = safeIntegerSchema.min(1);
 const nativePreviewHighlightRectInputSchema = z
   .object({
-    x: nonnegativeSafeIntegerSchema,
-    y: nonnegativeSafeIntegerSchema,
+    x: z
+      .number()
+      .int()
+      .min(-1_000_000_000)
+      .max(1_000_000_000),
+    y: z
+      .number()
+      .int()
+      .min(-1_000_000_000)
+      .max(1_000_000_000),
     width: positiveSafeIntegerSchema,
     height: positiveSafeIntegerSchema,
   })
@@ -2406,7 +2413,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxDecodedBytesPerLayer:
             MAX_DECODED_TILE_DATA_BYTES,
           chunkedLayers:
-            "read-only-summary-region-usage",
+            "read-only-summary-region-usage-preview",
           chunkCoordinates:
             "absolute-tile-space-negative-allowed",
           chunkOverlap: "fail-closed",
@@ -3523,14 +3530,22 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.",
+        "Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
           region: z
             .object({
-              x: z.number().int().min(0),
-              y: z.number().int().min(0),
+              x: z
+                .number()
+                .int()
+                .min(-1_000_000_000)
+                .max(1_000_000_000),
+              y: z
+                .number()
+                .int()
+                .min(-1_000_000_000)
+                .max(1_000_000_000),
               width: z.number().int().positive(),
               height: z.number().int().positive(),
             })

@@ -91,7 +91,9 @@
 坐标（允许负值），chunk 外的格子为空；chunk data 沿用 layer 级 encoding/
 compression 解码；重叠 chunk 使读取顺序相关，直接 fail closed；单层最多 4,096
 个 chunk；summary 报告 `infinite:true`、只读 profile 标记与每层内容 bounds +
-`startX`/`startY`。native preview 尚不渲染 chunked layer；所有编辑与
+`startX`/`startY`。`tiled_render_preview` 同样支持 chunked layer：无限地图必须
+显式给出绝对坐标 region（允许负坐标，坐标标注含负号字形），render profile 报告
+`infinite-orthogonal-static-atlas-chunked-tilelayers-v1`；所有编辑与
 preview-edit 路径对无限地图继续 fail closed。
 已存在的 tile object 仍会在受支持工作流中被校验、引用扫描并原样保留，并可在
 native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试，或再以 opt-in 方式叠加

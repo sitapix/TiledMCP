@@ -1341,21 +1341,27 @@ const nativePreviewResultOutputSchema = z
           nativePreviewObjectDebugOutputSchema,
       })
       .strict(),
-    renderProfile: z.literal(
+    renderProfile: z.enum([
       "finite-orthogonal-static-atlas-tilelayers-v1",
-    ),
+      "infinite-orthogonal-static-atlas-chunked-tilelayers-v1",
+    ]),
     truncated: z.literal(false),
   })
   .strict()
   .superRefine((result, context) => {
+    const infiniteProfile =
+      result.renderProfile ===
+      "infinite-orthogonal-static-atlas-chunked-tilelayers-v1";
     const region = result.tileRegion;
     const regionRight = region.x + region.width;
     const regionBottom = region.y + region.height;
     const regionCells =
       region.width * region.height;
     if (
-      region.x < 0 ||
-      region.y < 0 ||
+      (!infiniteProfile &&
+        (region.x < 0 || region.y < 0)) ||
+      Math.abs(region.x) > 1_000_000_000 ||
+      Math.abs(region.y) > 1_000_000_000 ||
       region.width <= 0 ||
       region.height <= 0 ||
       !Number.isSafeInteger(regionRight) ||
@@ -1366,7 +1372,7 @@ const nativePreviewResultOutputSchema = z
       context.addIssue({
         code: "custom",
         message:
-          "tileRegion must be a positive, safe, bounded finite-map tile rectangle",
+          "tileRegion must be a positive, safe, bounded tile rectangle",
         path: ["tileRegion"],
       });
       return;

@@ -57,7 +57,10 @@ empty), chunk data decodes with the same layer-level encoding and
 compression rules, overlapping chunks fail closed as order-dependent, at
 most 4,096 chunks resolve per layer, and the summary reports
 \`infinite:true\` with per-layer content bounds and \`startX\`/\`startY\`.
-The native preview does not render chunked layers yet. Every edit and
+\`tiled_render_preview\` renders chunked layers too: infinite maps
+require an explicit absolute-coordinate region (negative coordinates and
+coordinate labels are supported) and the render profile reports
+\`infinite-orthogonal-static-atlas-chunked-tilelayers-v1\`. Every edit and
 preview-edit path still fails closed on infinite maps and encoded data —
 the write profile is unchanged — and \`tiled_validate\` keeps reporting
 both as outside the editable profile. Inspect

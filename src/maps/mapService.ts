@@ -1401,7 +1401,9 @@ export class MapService {
   async renderPreview(
     input: RenderPreviewInput,
   ): Promise<RenderPreviewResult> {
-    const context = await this.loadEditableContext(input.mapPath);
+    const context = await this.loadEditableContext(input.mapPath, {
+      allowInfinite: true,
+    });
     const map = context.loaded.document;
     const tileWidth = expectInteger(
       map.tilewidth,
@@ -1628,8 +1630,9 @@ export class MapService {
           objectDebug:
             rendered.objectDebugOverlay,
         },
-        renderProfile:
-          "finite-orthogonal-static-atlas-tilelayers-v1",
+        renderProfile: context.infinite
+          ? "infinite-orthogonal-static-atlas-chunked-tilelayers-v1"
+          : "finite-orthogonal-static-atlas-tilelayers-v1",
         truncated: false,
       },
     };

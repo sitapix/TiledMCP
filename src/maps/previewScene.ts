@@ -7,7 +7,10 @@ import {
   type JsonValue,
 } from "../formats/json.js";
 import { decodeGid } from "./gid.js";
-import { resolveTileLayerCells } from "./tileData.js";
+import {
+  readChunkedRegionGids,
+  resolveTileLayerCells,
+} from "./tileData.js";
 
 export const MAX_PREVIEW_REGION_CELLS = 20_000;
 export const MAX_PREVIEW_LAYERS = 128;
@@ -91,7 +94,13 @@ export function buildPreviewScene(
   input: PreviewLayerSelectionInput,
 ): PreviewScene {
   assertSupportedRenderOrder(map, mapPath);
-  const region = resolveRegion(input.region, mapWidth, mapHeight);
+  const infinite = map.infinite === true;
+  const region = resolveRegion(
+    input.region,
+    mapWidth,
+    mapHeight,
+    infinite,
+  );
   const locations = collectLayerLocations(
     expectArray(map.layers, `${mapPath}.layers`),
     `${mapPath}.layers`,
@@ -175,7 +184,7 @@ export function buildPreviewScene(
         located.id,
       );
     }
-    return readPreviewTileLayer(located, region);
+    return readPreviewTileLayer(located, region, infinite);
   });
   const activeLayerCount = layers.filter((layer) => layer.opacity > 0).length;
   const maximumDraws = region.width * region.height * activeLayerCount;
@@ -247,7 +256,15 @@ function resolveRegion(
   value: PreviewRegion | undefined,
   mapWidth: number,
   mapHeight: number,
+  infinite = false,
 ): PreviewRegion {
+  if (infinite && value === undefined) {
+    throw new TiledMcpError(
+      "PREVIEW_REGION_REQUIRED",
+      "Infinite maps have no finite bounds; provide an explicit absolute-coordinate region.",
+      {},
+    );
+  }
   const region = value ?? { x: 0, y: 0, width: mapWidth, height: mapHeight };
   for (const field of ["x", "y", "width", "height"] as const) {
     const fieldValue = region[field];
@@ -268,6 +285,37 @@ function resolveRegion(
   }
   const right = region.x + region.width;
   const bottom = region.y + region.height;
+  if (infinite) {
+    if (
+      Math.abs(region.x) > 1_000_000_000 ||
+      Math.abs(region.y) > 1_000_000_000 ||
+      !Number.isSafeInteger(right) ||
+      !Number.isSafeInteger(bottom) ||
+      Math.abs(right) > 1_000_000_001 ||
+      Math.abs(bottom) > 1_000_000_001
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The preview region must stay within ±1,000,000,000 absolute tile coordinates.",
+        { region },
+      );
+    }
+    const cells = region.width * region.height;
+    if (
+      !Number.isSafeInteger(cells) ||
+      cells > MAX_PREVIEW_REGION_CELLS
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `A preview region may contain at most ${MAX_PREVIEW_REGION_CELLS} cells.`,
+        {
+          actual: cells,
+          limit: MAX_PREVIEW_REGION_CELLS,
+        },
+      );
+    }
+    return region;
+  }
   if (
     region.x < 0 ||
     region.y < 0 ||
@@ -404,9 +452,49 @@ function collectLayerLocations(
 function readPreviewTileLayer(
   located: LocatedLayer,
   region: PreviewRegion,
+  infinite = false,
 ): PreviewTileLayer {
   const layer = located.object;
   assertLeafRenderProperties(layer, located.path, located.id);
+  if (infinite && "chunks" in layer) {
+    // Chunked layers materialize exactly the requested region: the renderer
+    // intersects layer bounds with the region, so a region-shaped synthetic
+    // layer samples identically while decoding only intersecting chunks.
+    const cells = readChunkedRegionGids(
+      layer,
+      located.id,
+      located.path,
+      region,
+    );
+    for (const [index, value] of cells.entries()) {
+      if (
+        typeof value !== "number" ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        value > 0xffffffff
+      ) {
+        throw new TiledMcpError(
+          "INVALID_GID",
+          `Layer ${located.id} contains an invalid GID.`,
+          { layerId: located.id, index, gid: value },
+        );
+      }
+    }
+    return {
+      id: located.id,
+      name: located.name,
+      x: region.x,
+      y: region.y,
+      width: region.width,
+      height: region.height,
+      data: cells as number[],
+      opacity: readOpacity(
+        layer.opacity,
+        located.path,
+        located.id,
+      ),
+    };
+  }
   const width = expectInteger(layer.width, `${located.path}.width`);
   const height = expectInteger(layer.height, `${located.path}.height`);
   if (width <= 0 || height <= 0) {

@@ -1464,8 +1464,12 @@ M2 第二步在同一模块落地 infinite/chunk 只读：`readChunkedTileLayerS
 fail closed**——重叠让读取顺序相关，正对应 7.2 的"不能以最后覆盖掩盖问题"），
 `readChunkedRegionGids` 只解码与区域相交的 chunk（chunk data 复用 layer 级
 encoding/compression 解码核心），chunk 外格子为空。`loadEditableContext` 增加
-默认关闭的 `allowInfinite` 开关：只有 summary/region/usage 三个只读工具显式
-打开，所有 mutation planner 与 native preview 不改一行即保持 fail closed。
+默认关闭的 `allowInfinite` 开关：只有 summary/region/usage/preview 四个只读工具
+显式打开，所有 mutation planner 不改一行即保持 fail closed。native preview 对
+chunked layer 的做法是"区域即层"：合成一个 bounds 恰为请求区域的
+PreviewTileLayer（只解码相交 chunk），渲染器既有的层/区域求交采样天然支持负坐
+标；无限地图必须显式给出 region（`PREVIEW_REGION_REQUIRED`），坐标标注补充了负
+号字形。
 summary 的 `editableProfile` 对无限地图报
 `infinite-orthogonal-tmj-read-only-chunked` 并给出每层内容 bounds 与
 `startx`/`starty`（Tiled 写出侧的 localBounds 语义）。

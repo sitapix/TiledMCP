@@ -216,7 +216,7 @@ describe("infinite chunked map read-only support", () => {
         scale: 1,
       }),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_MAP_PROFILE",
+      code: "PREVIEW_REGION_REQUIRED",
     });
 
     await expect(
@@ -300,6 +300,58 @@ describe("infinite chunked map read-only support", () => {
       details: expect.objectContaining({
         limit: 4_096,
       }),
+    });
+  });
+
+  it("renders native previews of chunked regions with negative coordinates", async () => {
+    const harness = await createHarness(
+      roots,
+      defaultChunks(),
+    );
+    const rendered =
+      await harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        region: {
+          x: -3,
+          y: -2,
+          width: 6,
+          height: 4,
+        },
+        scale: 4,
+        overlays: {
+          grid: true,
+          coordinates: true,
+          highlights: [
+            {
+              x: -2,
+              y: -1,
+              width: 2,
+              height: 1,
+            },
+          ],
+        },
+      });
+    expect(
+      rendered.png.byteLength,
+    ).toBeGreaterThan(0);
+    expect(rendered.result).toMatchObject({
+      renderProfile:
+        "infinite-orthogonal-static-atlas-chunked-tilelayers-v1",
+      tileRegion: {
+        x: -3,
+        y: -2,
+        width: 6,
+        height: 4,
+      },
+    });
+
+    await expect(
+      harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        scale: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "PREVIEW_REGION_REQUIRED",
     });
   });
 
