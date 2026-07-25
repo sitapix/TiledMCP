@@ -1420,7 +1420,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_render_preview` | **已实现 native v1 + object debug v2**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格、绝对坐标、最多 64 个固定样式的绝对 tile 矩形高亮，以及 1–64 个显式 basic object（含 ellipse/Tiled 1.12 capsule）的固定 geometry/text-box 调试轮廓；不支持的视觉语义 fail closed。完整 object-layer 与碰撞渲染仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
+| `tiled_render_preview` | **已实现 native v1 + object debug v3**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格、绝对坐标、最多 64 个固定样式的绝对 tile 矩形高亮，以及 1–64 个显式对象（basic geometry、ellipse/Tiled 1.12 capsule、text box 与 tile object 的 Tiled 对齐 frame 轮廓）的固定调试轮廓；不支持的视觉语义 fail closed。完整 object-layer 与碰撞渲染仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
 | `tiled_render_tileset_sheet` | **已实现基础版**。按地图摘要给出的 opaque asset id 渲染连续 local id 的分页 atlas sheet；安全预算不足时自动减小每页容量，不静默缩放 tile。语义名仍是后续能力 | `mapPath`, `tilesetAssetId`, `page?`, `pageSize?`, `columns?`, `scale?` |
 | `tiled_render_tiles` | **已实现 static root-atlas v1**。按输入顺序放大并标注 1–64 个唯一、显式且可稀疏的 local IDs；不分页、不缩减选集，预算不足时整次失败。动画胶片条、Wang 分组和语义名不在 v1 内 | `mapPath`, `tilesetAssetId`, `localIds`, `columns?`, `scale?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 | `tiled_render_diff` | 后续候选。按显式 changeSetId、revision 或比较资产渲染差异，不读取“上一步操作” | `mapPath`, `changeSetId?\|compareWithRevision?\|compareWith?`, `region?` |
@@ -1480,7 +1480,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
       overlapMode: "tile-union";
     };
     objectDebug: {
-      profile: "explicit-basic-object-geometry-v2";
+      profile: "explicit-basic-object-geometry-v3";
       style: "geometry-cyan-v1";
       color: { r: 34; g: 211; b: 238; a: 255 };
       strokeWidth: 1;
@@ -1503,6 +1503,17 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
         degenerateExtent:
           "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle";
       };
+      tileObjectFrames: {
+        source: "tiled-1.12-object-outline-rect";
+        alignmentResolution: "tileset-objectalignment-unspecified-bottom-left";
+        tileOffsetScaling: "scaled-by-object-over-tile-size";
+        missingDimensionDefault: "tileset-tile-size";
+        flipFlags: "image-only-outline-unchanged";
+        rotationCenter: "object-anchor";
+        danglingGidPolicy: "fail-closed";
+        imageRendering: false;
+        collisionShapes: false;
+      };
       selectedObjectCount: number;
       renderedObjectCount: number;
       entries: Array<{
@@ -1516,8 +1527,12 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
           | "capsule"
           | "polygon"
           | "polyline"
-          | "text";
-        representation: "geometry-outline" | "text-box-only";
+          | "text"
+          | "tile";
+        representation:
+          | "geometry-outline"
+          | "text-box-only"
+          | "tile-frame-only";
         rendered: boolean;
         clipped: boolean;
       }>; // <= 64，和显式 objectIds 输入顺序一一对应
@@ -1648,15 +1663,27 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   layer 与 ancestor Group 的 visibility/opacity，但该 policy 会固定回显；所选
   object layer/ancestor 的 `x/y` 必须为 0、`offsetx/y` 必须为 0、`parallaxx/y`
   必须为 1，否则 fail closed，不能把未知定位语义近似为 map origin。
-- object debug v2 的 profile 固定为
-  `explicit-basic-object-geometry-v2`：rectangle 画闭合矩形，point 画原点十字，
+- object debug v3 的 profile 固定为
+  `explicit-basic-object-geometry-v3`：rectangle 画闭合矩形，point 画原点十字，
   polygon 闭合、polyline 保持开放，text 只画旋转后的 layout box 且
   `representation:"text-box-only"`，不画 glyph、不宣称 font/wrap/alignment 保真。
   ellipse 使用对象 bounds；Tiled 1.12 capsule 使用
   `min(width,height)/2` 的圆角半径，由两个半圆和两条直边组成，正方形 capsule 与同
   bounds ellipse 等价。任一单独为零的尺寸按 bounds line 处理；双零尺寸按以 object
-  anchor 为圆心的 20 map-pixel 圆处理。tile object 仍缺 object alignment/
-  tile offset/GID transform，template 仍缺继承解析，因此两类明确拒绝，不降级成矩形。
+  anchor 为圆心的 20 map-pixel 圆处理。template 仍缺继承解析，明确拒绝，不降级成
+  矩形。
+- tile object 以 `representation:"tile-frame-only"` 绘制 Tiled 1.12.2 的 object
+  outline 矩形加锚点十字，不渲染 tile 图像或 collision shape。frame 几何按官方源码
+  逐条对齐：alignment 取 tileset `objectalignment`，缺省/`unspecified` 在正交地图上
+  解析为 bottom-left；frame 左上角为
+  `anchor − alignmentOffset(size) + tileoffset × (objectSize / tilesetTileSize)`；
+  缺省或为 0 的 width/height 默认为 tileset tile 尺寸；旋转绕对象锚点。H/V/D 与保留的
+  raw `0x10000000` flag 位只翻转图像不改变 outline——与 Tiled 自己的
+  ShowTileObjectOutlines 完全一致，因此 frame 不随 flip 变化并按此写入契约。
+  dangling/越界 GID、空 GID、`gid` 与 shape marker 并存、非法 `objectalignment` 枚举
+  或畸形 `tileoffset` 一律 fail closed，不画 Tiled 的红叉占位符。frame 解析读取所选
+  tileset 的 TSJ 并对 pinned dependency revision 做 CAS，漂移时以
+  `DEPENDENCY_REVISION_CONFLICT` 拒绝。
 - ellipse/capsule 使用 `uniform-angle-output-sagitta-v1`：在量化前的连续 output space
   以最大 0.25px chord error 计算均匀角度段数，至少 12 段并向上取四的倍数；每对象最多
   4096 个曲线段，全选集合计最多 65536 个。capsule 的两条直边不计入曲线段预算，但仍
@@ -1689,6 +1716,12 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   limits 增加两个 required curve-segment key。缓存旧 discovery/exact output schema 的
   客户端升级后必须重新执行 discovery/刷新 schema；selection/style/representation
   语义不变。
+- object debug v3 是同类 pre-Frozen clean break：profile 升为 v3，entry shape union
+  增加 `tile`、representation union 增加 `tile-frame-only`，成功 output 与
+  capabilities 都固定新增 closed `tileObjectFrames` 契约块，limitations 将
+  `tile-objects-unsupported` 替换为
+  `tile-frame-only-no-image-or-collision-rendering`。其余
+  selection/style/budget 语义不变；旧客户端同样必须刷新 discovery。
 - native v1 支持静态 external atlas、透明色、layer opacity、orthogonal H/V/D 与 bit 29
   忽略；D 总是先于 H/V，非方形 tile 的 D 暂时 fail closed。atlas tile 尺寸必须与 map
   grid 相同。blend/tint、parallax、非零 pixel offset、非默认 group opacity、动画、

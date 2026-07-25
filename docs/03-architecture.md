@@ -1747,10 +1747,19 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
   map service 在 atlas image I/O 前用对象编辑共享的 strict parser 一次性解析全选集，
   保存 ancestor Group context，并拒绝 selected object layer/ancestor 的非默认
   x/y、offset 或 parallax。显式 debug 忽略 visibility/opacity，但固定 metadata
-  公开该 policy。tile/template 继续由 profile gate 拒绝，不能以 rectangle bounds
-  冒充未知的 tile alignment、GID transform 或 template 继承语义。
+  公开该 policy。template 继续由 profile gate 拒绝；tile object 不再拒绝，而是按
+  Tiled 1.12.2 官方源码逐条对齐的 `tile-frame-only` frame 投影：gid 经完整 encoded
+  校验并解析到 pinned binding，选中 tileset 的 TSJ 在 binding revision CAS 下重读，
+  取 `objectalignment`（缺省/`unspecified` 在正交地图解析为 bottom-left）与
+  `tileoffset`（按 objectSize/tilesetTileSize 缩放），缺省或为 0 的对象尺寸默认为
+  tileset tile 尺寸，锚点相对的预旋转 box offset 由投影层算好后交给 renderer。
+  H/V/D 与保留的 raw `0x10000000` 位只翻转图像不改变 outline——与 Tiled 自身的
+  ShowTileObjectOutlines 一致。dangling/空 GID、`gid` 与 shape marker 并存、非法
+  alignment 枚举或畸形 tileoffset 一律 fail closed，不画占位符。
 - renderer 输入只含有界 typed geometry DTO。rectangle/text box 生成四条闭合边，
-  polygon 闭合、polyline 开放、point 只生成固定 5px origin crosshair；text 不含 glyph。
+  polygon 闭合、polyline 开放、point 只生成固定 5px origin crosshair；text 不含 glyph；
+  tile frame 生成带锚点相对 `boxOffsetX/boxOffsetY` 的四条闭合边，复用同一旋转、
+  裁剪与 raster 管线。
   ellipse 以 bounds 生成闭合曲线；Tiled 1.12 capsule 使用
   `min(width,height)/2` 半径、两个半圆与两条直边，正方形退化为同 bounds ellipse。
   单零尺寸按 bounds line，双零尺寸按 anchor-centered 20 map-pixel circle，均与 Tiled
@@ -1771,6 +1780,12 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
   algorithm/policy/limits，并同步扩展 supportedShapes、收窄 limitations。
   这是 pre-Frozen clean break；旧 discovery/output schema 缓存必须刷新，但 style、
   selection、representation 与 ordered entry 语义保持不变。
+- profile 随后升为 v3：shape union 新增 `tile`、representation 新增
+  `tile-frame-only`，成功结果与 capabilities 固定新增 closed `tileObjectFrames`
+  契约块（source/alignment/tileoffset/缺省尺寸/flip/旋转/dangling-gid policy），
+  limitations 将 `tile-objects-unsupported` 替换为
+  `tile-frame-only-no-image-or-collision-rendering`。同为 pre-Frozen clean break，
+  其余语义与预算不变。
 - native renderer v1 只保证 finite orthogonal、numeric-array tile layer、静态 external
   atlas、map-grid 等尺寸 tile、透明色、layer opacity 和 orthogonal H/V/D。它明确拒绝
   blend/tint、parallax、非零 pixel/group offset、非默认 group opacity、动画、
@@ -1857,8 +1872,9 @@ M0 不追求完整地图 CRUD。验收标准：
   commit/abandon 裁决。
 - 已实现 tileset contact sheet，以及正交 tile-layer region preview、图层筛选、
   H/V/D、opacity、网格、绝对坐标 gutter、固定样式的有界绝对 tile 矩形高亮和显式
-  basic-object geometry/text-box debug（含 ellipse/Tiled 1.12 capsule 的有界确定性曲线）；
-  完整 object-layer、tile object 与碰撞 overlay 仍待实现。
+  basic-object geometry/text-box debug（含 ellipse/Tiled 1.12 capsule 的有界确定性
+  曲线）与 tile object 的 Tiled 对齐 frame 轮廓 debug（不渲染 tile 图像）；
+  完整 object-layer 与碰撞 overlay 仍待实现。
 - 通过 `tmxrasterizer` 或 one-shot Tiled 做可选兼容性/视觉复核。
 
 M1 明确拒绝：

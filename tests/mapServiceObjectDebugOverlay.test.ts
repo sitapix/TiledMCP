@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import sharp from "sharp";
 import {
   afterEach,
   beforeEach,
@@ -78,7 +79,7 @@ describe("MapService native object debug overlay", () => {
     const metadata = objectDebugOf(rendered.result);
 
     expect(metadata).toMatchObject({
-      profile: "explicit-basic-object-geometry-v2",
+      profile: "explicit-basic-object-geometry-v3",
       style: "geometry-cyan-v1",
       visibilityPolicy:
         "explicit-ignore-object-and-layer-visibility-opacity",
@@ -173,7 +174,7 @@ describe("MapService native object debug overlay", () => {
       scale: 1,
     });
     expect(objectDebugOf(rendered.result)).toMatchObject({
-      profile: "explicit-basic-object-geometry-v2",
+      profile: "explicit-basic-object-geometry-v3",
       selectedObjectCount: 0,
       renderedObjectCount: 0,
       entries: [],
@@ -368,7 +369,7 @@ describe("MapService native object debug overlay", () => {
       overlays: { objectIds: [12, 11, 13] },
     });
     expect(objectDebugOf(rendered.result)).toMatchObject({
-      profile: "explicit-basic-object-geometry-v2",
+      profile: "explicit-basic-object-geometry-v3",
       selectedObjectCount: 3,
       renderedObjectCount: 3,
       entries: [
@@ -402,18 +403,19 @@ describe("MapService native object debug overlay", () => {
 
   it.each([
     {
-      name: "tile",
-      object: {
-        ...rectangleObject(11),
-        gid: 1,
-      },
-      code: "UNSUPPORTED_OBJECT_PROFILE",
-      feature: "gid",
-    },
-    {
       name: "template",
       object: {
         ...rectangleObject(11),
+        template: "../templates/object.tx",
+      },
+      code: "UNSUPPORTED_OBJECT_PROFILE",
+      feature: "template",
+    },
+    {
+      name: "template tile",
+      object: {
+        ...rectangleObject(11),
+        gid: 1,
         template: "../templates/object.tx",
       },
       code: "UNSUPPORTED_OBJECT_PROFILE",
@@ -441,6 +443,212 @@ describe("MapService native object debug overlay", () => {
       });
     },
   );
+
+  it("projects tile-object frames with Tiled alignment, scaled tile offsets and dimension defaults", async () => {
+    const map = supportedMap();
+    map.tilesets = [
+      { firstgid: 1, source: "../tiles/frame.tsj" },
+    ];
+    objectLayerOf(map).objects = [
+      {
+        gid: 1,
+        height: 16,
+        id: 11,
+        name: "Crate",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 16,
+        x: 16,
+        y: 32,
+      },
+      {
+        // Flip flags and the preserved raw 0x10000000 bit must not change
+        // the outline geometry, and the omitted dimensions default to the
+        // tileset tile size.
+        gid: 0xd0000001,
+        id: 12,
+        name: "FlippedProp",
+        rotation: 0,
+        type: "",
+        visible: true,
+        x: 40,
+        y: 40,
+      },
+    ];
+    map.nextobjectid = 13;
+    await writeTileset(root, "frame.tsj", {
+      tileoffset: { x: 2, y: -4 },
+    });
+    await writeMap(root, map);
+
+    const rendered = await service.renderPreview({
+      mapPath: MAP_PATH,
+      scale: 1,
+      overlays: { objectIds: [11, 12] },
+    });
+    const metadata = objectDebugOf(rendered.result);
+    expect(metadata).toMatchObject({
+      selectedObjectCount: 2,
+      renderedObjectCount: 2,
+      entries: [
+        {
+          sourceIndex: 0,
+          objectId: 11,
+          layerId: OBJECT_LAYER_ID,
+          shape: "tile",
+          representation: "tile-frame-only",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 1,
+          objectId: 12,
+          layerId: OBJECT_LAYER_ID,
+          shape: "tile",
+          representation: "tile-frame-only",
+          rendered: true,
+          clipped: false,
+        },
+      ],
+    });
+
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [34, 211, 238, 255] as const;
+    // Bottom-left alignment lifts the 16x16 frame above the anchor, and the
+    // tileset tile offset (2,-4) shifts it scaled by object/tile size.
+    expect(pixel(decoded, 18, 12)).toEqual(cyan);
+    expect(pixel(decoded, 34, 12)).toEqual(cyan);
+    expect(pixel(decoded, 34, 28)).toEqual(cyan);
+    expect(pixel(decoded, 26, 20)).toEqual([
+      0, 0, 0, 0,
+    ]);
+    // The anchor crosshair stays at the object position.
+    expect(pixel(decoded, 16, 32)).toEqual(cyan);
+    // Flip flags leave the defaulted 16x16 frame unchanged.
+    expect(pixel(decoded, 42, 20)).toEqual(cyan);
+    expect(pixel(decoded, 58, 36)).toEqual(cyan);
+  });
+
+  it("honors an explicit tileset objectalignment for tile frames", async () => {
+    const map = supportedMap();
+    map.tilesets = [
+      { firstgid: 1, source: "../tiles/frame.tsj" },
+    ];
+    objectLayerOf(map).objects = [
+      {
+        gid: 1,
+        height: 16,
+        id: 11,
+        name: "Centered",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 16,
+        x: 32,
+        y: 32,
+      },
+    ];
+    map.nextobjectid = 12;
+    await writeTileset(root, "frame.tsj", {
+      objectalignment: "center",
+    });
+    await writeMap(root, map);
+
+    const rendered = await service.renderPreview({
+      mapPath: MAP_PATH,
+      scale: 1,
+      overlays: { objectIds: [11] },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [34, 211, 238, 255] as const;
+    expect(pixel(decoded, 24, 24)).toEqual(cyan);
+    expect(pixel(decoded, 40, 40)).toEqual(cyan);
+  });
+
+  it.each([
+    {
+      name: "dangling gid",
+      gid: 99,
+      tileset: {},
+      code: "GID_OUT_OF_RANGE",
+    },
+    {
+      name: "empty gid",
+      gid: 0,
+      tileset: {},
+      code: "INVALID_DOCUMENT",
+    },
+    {
+      name: "unsupported objectalignment",
+      gid: 1,
+      tileset: { objectalignment: "diagonal" },
+      code: "INVALID_DOCUMENT",
+    },
+    {
+      name: "malformed tileoffset",
+      gid: 1,
+      tileset: { tileoffset: { x: 2 } },
+      code: "INVALID_DOCUMENT",
+    },
+  ])(
+    "fails closed on a tile-object frame with a $name",
+    async ({ gid, tileset, code }) => {
+      const map = supportedMap();
+      map.tilesets = [
+        {
+          firstgid: 1,
+          source: "../tiles/frame.tsj",
+        },
+      ];
+      objectLayerOf(map).objects = [
+        {
+          ...rectangleObject(11),
+          gid,
+        },
+      ];
+      await writeTileset(root, "frame.tsj", tileset);
+      await writeMap(root, map);
+
+      await expect(
+        service.renderPreview({
+          mapPath: MAP_PATH,
+          scale: 1,
+          overlays: { objectIds: [11] },
+        }),
+      ).rejects.toMatchObject({ code });
+    },
+  );
+
+  it("rejects a tile object that also carries a shape marker", async () => {
+    const map = supportedMap();
+    map.tilesets = [
+      { firstgid: 1, source: "../tiles/frame.tsj" },
+    ];
+    objectLayerOf(map).objects = [
+      {
+        ...rectangleObject(11),
+        ellipse: true,
+        gid: 1,
+      },
+    ];
+    await writeTileset(root, "frame.tsj", {});
+    await writeMap(root, map);
+
+    await expect(
+      service.renderPreview({
+        mapPath: MAP_PATH,
+        scale: 1,
+        overlays: { objectIds: [11] },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+      details: {
+        objectId: 11,
+        feature: "ellipse",
+      },
+    });
+  });
 
   it.each([
     {
@@ -857,4 +1065,81 @@ async function writeMap(
     JSON.stringify(map),
     "utf8",
   );
+}
+
+async function writeTileset(
+  root: string,
+  name: string,
+  extra: JsonObject,
+): Promise<void> {
+  await mkdir(join(root, "tiles"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, "tiles", "terrain.svg"),
+    [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">',
+      '<rect width="32" height="32" fill="#559955"/>',
+      "</svg>",
+    ].join(""),
+    "utf8",
+  );
+  await writeFile(
+    join(root, "tiles", name),
+    JSON.stringify({
+      columns: 2,
+      image: "terrain.svg",
+      imageheight: 32,
+      imagewidth: 32,
+      margin: 0,
+      name: "Frames",
+      spacing: 0,
+      tilecount: 4,
+      tiledversion: "1.12.2",
+      tileheight: 16,
+      tilewidth: 16,
+      type: "tileset",
+      version: "1.10",
+      ...extra,
+    }),
+    "utf8",
+  );
+}
+
+async function decodeRgba(png: Buffer): Promise<{
+  data: Buffer;
+  width: number;
+  height: number;
+}> {
+  const { data, info } = await sharp(png)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return {
+    data,
+    width: info.width,
+    height: info.height,
+  };
+}
+
+function pixel(
+  decoded: {
+    data: Buffer;
+    width: number;
+    height: number;
+  },
+  x: number,
+  y: number,
+): [number, number, number, number] {
+  expect(x).toBeGreaterThanOrEqual(0);
+  expect(y).toBeGreaterThanOrEqual(0);
+  expect(x).toBeLessThan(decoded.width);
+  expect(y).toBeLessThan(decoded.height);
+  const index = (y * decoded.width + x) * 4;
+  return [
+    decoded.data[index] ?? -1,
+    decoded.data[index + 1] ?? -1,
+    decoded.data[index + 2] ?? -1,
+    decoded.data[index + 3] ?? -1,
+  ];
 }

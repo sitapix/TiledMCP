@@ -78,9 +78,10 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-无限地图、压缩 tile data、内嵌/图片集合 tileset、tile object 的创建/语义编辑/
-native debug、模板和跨文件事务尚未实现；对应的不支持操作会被明确拒绝，不会静默降级。
-已存在的 tile object 仍会在受支持工作流中被校验、引用扫描并原样保留。
+无限地图、压缩 tile data、内嵌/图片集合 tileset、tile object 的创建/语义编辑、
+模板和跨文件事务尚未实现；对应的不支持操作会被明确拒绝，不会静默降级。
+已存在的 tile object 仍会在受支持工作流中被校验、引用扫描并原样保留，并可在
+native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试（不渲染 tile 图像）。
 
 tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UTF-8 最多
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
@@ -363,9 +364,13 @@ object layers。需要核对受支持对象的锚点与几何时，可在 `overl
 rectangle、point、polygon 与 polyline 使用固定 cyan 单像素轮廓和 5px 原点十字，
 text 只画旋转后的 layout box，不渲染 glyph，因此不能用于确认字体、换行或对齐。
 ellipse 与 Tiled 1.12 capsule 也使用同一轮廓样式，并按 output-space chord error
-自适应细分；tile object 与 template 继续 fail closed。需要完整 object-layer、字体、
-tile object 或碰撞视觉语义时，仍应使用实际 discovery 到的可选 `tiled_render_map`
-或 Tiled 1.12.2。
+自适应细分。tile object 以 `tile-frame-only` 画 Tiled 1.12.2 的 object outline
+矩形与锚点十字：alignment 取 tileset `objectalignment`（缺省在正交地图解析为
+bottom-left）、tileoffset 按 objectSize/tileSize 缩放、缺省尺寸默认为 tile 尺寸，
+flip 位不改变轮廓（与 Tiled 自己的 outline 一致）；不渲染 tile 图像或 collision，
+dangling GID 与非法 alignment/tileoffset fail closed。template 继续 fail closed。
+需要完整 object-layer、字体、tile 图像或碰撞视觉语义时，仍应使用实际 discovery 到的
+可选 `tiled_render_map` 或 Tiled 1.12.2。
 
 修改已有图层的通用显示/元数据字段时，在同一个 `tiled_preview_edits` 中使用第 7 种
 operation：
@@ -1100,10 +1105,13 @@ checkpoint restore。架构与 roadmap
   `overlays.objectIds` 另接受 1–64 个唯一 positive safe object ID，并严格保留输入顺序；
   `layerIds` 仍只选择 tile layer，两种选择互不隐含。对象使用 map pixel 坐标，local path
   point 先围绕 `(x,y)` 按 Tiled 正角顺时针旋转，再映射到输出并裁到
-  `contentPixelRect`。固定 `explicit-basic-object-geometry-v2` 画 rectangle/point/
-  ellipse/capsule/polygon/polyline 的几何轮廓与 text layout box，并总是画 5px 原点十字；
+  `contentPixelRect`。固定 `explicit-basic-object-geometry-v3` 画 rectangle/point/
+  ellipse/capsule/polygon/polyline 的几何轮廓、text layout box 与 tile object 的
+  Tiled 对齐 frame 轮廓，并总是画 5px 原点十字；
   ellipse 取对象 bounds，capsule 半径为 `min(width,height)/2` 并由两个半圆和两条直边
   构成。单零尺寸按线段处理，双零尺寸按以 anchor 为圆心的 20 map-pixel 圆处理。
+  tile frame 按 tileset `objectalignment`/缩放 `tileoffset` 定位，缺省尺寸默认为
+  tile 尺寸，flip 位不改变轮廓，dangling GID fail closed。
   曲线在连续 output space 以最大 0.25px chord error 均匀角度细分，至少 12 段、四的倍数，
   单对象最多 4096 个曲线段、全选集最多 65536 个；完全离区的旋转 bounds 会先跳过细分，
   相交的超长直边仍先裁线再 raster。任何预算溢出都拒绝整次预览，不会降低精度。

@@ -97,7 +97,7 @@ function validOutput(): Record<string, unknown> {
         },
         objectDebug: {
           profile:
-            "explicit-basic-object-geometry-v2",
+            "explicit-basic-object-geometry-v3",
           style: "geometry-cyan-v1",
           color: {
             r: 34,
@@ -132,6 +132,22 @@ function validOutput(): Record<string, unknown> {
               "two-semicircles-plus-two-straight-segments",
             degenerateExtent:
               "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+          },
+          tileObjectFrames: {
+            source:
+              "tiled-1.12-object-outline-rect",
+            alignmentResolution:
+              "tileset-objectalignment-unspecified-bottom-left",
+            tileOffsetScaling:
+              "scaled-by-object-over-tile-size",
+            missingDimensionDefault:
+              "tileset-tile-size",
+            flipFlags:
+              "image-only-outline-unchanged",
+            rotationCenter: "object-anchor",
+            danglingGidPolicy: "fail-closed",
+            imageRendering: false,
+            collisionShapes: false,
           },
           selectedObjectCount: 0,
           renderedObjectCount: 0,

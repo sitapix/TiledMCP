@@ -25,6 +25,7 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
   prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
@@ -640,6 +641,8 @@ describe("renderNativePreview", () => {
         degenerateExtent:
           "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
       },
+      tileObjectFrames:
+        NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
       selectedObjectCount: 4,
       renderedObjectCount: 3,
       entries: [
@@ -682,6 +685,150 @@ describe("renderNativePreview", () => {
       ],
     });
   });
+
+  it("draws tile-object frames offset from their anchors and rotates them clockwise", async () => {
+    const objects = [
+      {
+        sourceIndex: 0,
+        objectId: 21,
+        layerId: 2,
+        shape: "tile",
+        representation: "tile-frame-only",
+        x: 8,
+        y: 12,
+        rotation: 0,
+        width: 6,
+        height: 4,
+        boxOffsetX: 1,
+        boxOffsetY: -5,
+      },
+      {
+        sourceIndex: 1,
+        objectId: 22,
+        layerId: 2,
+        shape: "tile",
+        representation: "tile-frame-only",
+        x: 4,
+        y: 10,
+        rotation: 90,
+        width: 4,
+        height: 2,
+        boxOffsetX: 1,
+        boxOffsetY: -3,
+      },
+    ] satisfies NativePreviewObjectInput[];
+    const rendered = await renderNativePreview({
+      tileWidth: 8,
+      tileHeight: 8,
+      region: { x: 0, y: 0, width: 2, height: 2 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        objectDebug: objects,
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+    // The unrotated frame spans (9,7)-(15,11): anchor plus box offset.
+    expect(pixel(decoded, 9, 7)).toEqual(cyan);
+    expect(pixel(decoded, 15, 11)).toEqual(cyan);
+    expect(pixel(decoded, 12, 9)).toEqual(TRANSPARENT);
+    // The anchor crosshair stays at the object position outside the frame.
+    expect(pixel(decoded, 8, 12)).toEqual(cyan);
+    // Positive rotation turns the offset frame clockwise around its anchor.
+    expect(pixel(decoded, 7, 11)).toEqual(cyan);
+    expect(pixel(decoded, 5, 15)).toEqual(cyan);
+
+    expect(
+      rendered.objectDebugOverlay.entries,
+    ).toEqual([
+      {
+        sourceIndex: 0,
+        objectId: 21,
+        layerId: 2,
+        shape: "tile",
+        representation: "tile-frame-only",
+        rendered: true,
+        clipped: false,
+      },
+      {
+        sourceIndex: 1,
+        objectId: 22,
+        layerId: 2,
+        shape: "tile",
+        representation: "tile-frame-only",
+        rendered: true,
+        clipped: false,
+      },
+    ]);
+  });
+
+  it.each([
+    {
+      name: "missing box offset",
+      mutate(object: Record<string, unknown>) {
+        delete object.boxOffsetX;
+      },
+    },
+    {
+      name: "geometry-outline representation",
+      mutate(object: Record<string, unknown>) {
+        object.representation = "geometry-outline";
+      },
+    },
+    {
+      name: "path points",
+      mutate(object: Record<string, unknown>) {
+        object.points = [{ x: 0, y: 0 }];
+      },
+    },
+  ])(
+    "rejects a tile-frame input with $name",
+    async ({ mutate }) => {
+      const object: Record<string, unknown> = {
+        sourceIndex: 0,
+        objectId: 21,
+        layerId: 2,
+        shape: "tile",
+        representation: "tile-frame-only",
+        x: 8,
+        y: 12,
+        rotation: 0,
+        width: 6,
+        height: 4,
+        boxOffsetX: 1,
+        boxOffsetY: -5,
+      };
+      mutate(object);
+      await expect(
+        renderNativePreview({
+          tileWidth: 8,
+          tileHeight: 8,
+          region: { x: 0, y: 0, width: 2, height: 2 },
+          layers: [],
+          atlases: [],
+          scale: 1,
+          overlays: {
+            grid: false,
+            coordinates: false,
+            objectDebug: [
+              object as unknown as NativePreviewObjectInput,
+            ],
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+      });
+    },
+  );
 
   it("rotates clockwise around the object anchor and clips huge offscreen segments before rasterizing", async () => {
     const rendered = await renderNativePreview({

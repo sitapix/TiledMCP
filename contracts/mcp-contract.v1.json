@@ -101,14 +101,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:f98501d5ad17754ac44cbb35e5ea6e671611e9d6e420a0c58d72d4145ccbcbd1",
+        "revision": "sha256:d5291060a89a3dd93693b596cf57d019bba1ad9039acf699f52aeef05a8702dd",
         "serverVersion": "0.0.1",
-        "size": 62328
+        "size": 63244
       },
-      "byteLength": 62328,
+      "byteLength": 63244,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:f98501d5ad17754ac44cbb35e5ea6e671611e9d6e420a0c58d72d4145ccbcbd1",
+      "sha256": "sha256:d5291060a89a3dd93693b596cf57d019bba1ad9039acf699f52aeef05a8702dd",
       "uri": "tiled://guide"
     }
   ],
@@ -136,9 +136,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:f98501d5ad17754ac44cbb35e5ea6e671611e9d6e420a0c58d72d4145ccbcbd1",
+        "revision": "sha256:d5291060a89a3dd93693b596cf57d019bba1ad9039acf699f52aeef05a8702dd",
         "serverVersion": "0.0.1",
-        "size": 62328
+        "size": 63244
       },
       "annotations": {
         "audience": [
@@ -150,7 +150,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 62328,
+      "size": 63244,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -9230,7 +9230,7 @@
                                 "type": "string"
                               },
                               {
-                                "const": "tile-objects-unsupported",
+                                "const": "tile-frame-only-no-image-or-collision-rendering",
                                 "type": "string"
                               },
                               {
@@ -9265,7 +9265,7 @@
                             "type": "string"
                           },
                           "profile": {
-                            "const": "explicit-basic-object-geometry-v2",
+                            "const": "explicit-basic-object-geometry-v3",
                             "type": "string"
                           },
                           "quantization": {
@@ -9280,6 +9280,10 @@
                               },
                               {
                                 "const": "text-box-only",
+                                "type": "string"
+                              },
+                              {
+                                "const": "tile-frame-only",
                                 "type": "string"
                               }
                             ],
@@ -9326,9 +9330,66 @@
                               {
                                 "const": "text",
                                 "type": "string"
+                              },
+                              {
+                                "const": "tile",
+                                "type": "string"
                               }
                             ],
                             "type": "array"
+                          },
+                          "tileObjectFrames": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "alignmentResolution": {
+                                "const": "tileset-objectalignment-unspecified-bottom-left",
+                                "type": "string"
+                              },
+                              "collisionShapes": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "danglingGidPolicy": {
+                                "const": "fail-closed",
+                                "type": "string"
+                              },
+                              "flipFlags": {
+                                "const": "image-only-outline-unchanged",
+                                "type": "string"
+                              },
+                              "imageRendering": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "missingDimensionDefault": {
+                                "const": "tileset-tile-size",
+                                "type": "string"
+                              },
+                              "rotationCenter": {
+                                "const": "object-anchor",
+                                "type": "string"
+                              },
+                              "source": {
+                                "const": "tiled-1.12-object-outline-rect",
+                                "type": "string"
+                              },
+                              "tileOffsetScaling": {
+                                "const": "scaled-by-object-over-tile-size",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "alignmentResolution",
+                              "tileOffsetScaling",
+                              "missingDimensionDefault",
+                              "flipFlags",
+                              "rotationCenter",
+                              "danglingGidPolicy",
+                              "imageRendering",
+                              "collisionShapes"
+                            ],
+                            "type": "object"
                           },
                           "visibilityPolicy": {
                             "const": "explicit-ignore-object-and-layer-visibility-opacity",
@@ -9357,6 +9418,7 @@
                           "drawOrder",
                           "quantization",
                           "curveTessellation",
+                          "tileObjectFrames",
                           "workBudget",
                           "limitations"
                         ],
@@ -26553,7 +26615,8 @@
                                 "representation": {
                                   "enum": [
                                     "geometry-outline",
-                                    "text-box-only"
+                                    "text-box-only",
+                                    "tile-frame-only"
                                   ],
                                   "type": "string"
                                 },
@@ -26565,7 +26628,8 @@
                                     "capsule",
                                     "polygon",
                                     "polyline",
-                                    "text"
+                                    "text",
+                                    "tile"
                                   ],
                                   "type": "string"
                                 },
@@ -26598,7 +26662,7 @@
                             "type": "string"
                           },
                           "profile": {
-                            "const": "explicit-basic-object-geometry-v2",
+                            "const": "explicit-basic-object-geometry-v3",
                             "type": "string"
                           },
                           "quantization": {
@@ -26623,6 +26687,59 @@
                             "const": "geometry-cyan-v1",
                             "type": "string"
                           },
+                          "tileObjectFrames": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "alignmentResolution": {
+                                "const": "tileset-objectalignment-unspecified-bottom-left",
+                                "type": "string"
+                              },
+                              "collisionShapes": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "danglingGidPolicy": {
+                                "const": "fail-closed",
+                                "type": "string"
+                              },
+                              "flipFlags": {
+                                "const": "image-only-outline-unchanged",
+                                "type": "string"
+                              },
+                              "imageRendering": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "missingDimensionDefault": {
+                                "const": "tileset-tile-size",
+                                "type": "string"
+                              },
+                              "rotationCenter": {
+                                "const": "object-anchor",
+                                "type": "string"
+                              },
+                              "source": {
+                                "const": "tiled-1.12-object-outline-rect",
+                                "type": "string"
+                              },
+                              "tileOffsetScaling": {
+                                "const": "scaled-by-object-over-tile-size",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "alignmentResolution",
+                              "tileOffsetScaling",
+                              "missingDimensionDefault",
+                              "flipFlags",
+                              "rotationCenter",
+                              "danglingGidPolicy",
+                              "imageRendering",
+                              "collisionShapes"
+                            ],
+                            "type": "object"
+                          },
                           "visibilityPolicy": {
                             "const": "explicit-ignore-object-and-layer-visibility-opacity",
                             "type": "string"
@@ -26639,6 +26756,7 @@
                           "drawOrder",
                           "quantization",
                           "curveTessellation",
+                          "tileObjectFrames",
                           "selectedObjectCount",
                           "renderedObjectCount",
                           "entries"

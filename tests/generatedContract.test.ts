@@ -416,13 +416,15 @@ describe("generated MCP contract", () => {
           "polygon",
           "polyline",
           "text",
+          "tile",
         ],
         representations: [
           "geometry-outline",
           "text-box-only",
+          "tile-frame-only",
         ],
         profile:
-          "explicit-basic-object-geometry-v2",
+          "explicit-basic-object-geometry-v3",
         style: "geometry-cyan-v1",
         color: {
           r: 34,
@@ -458,11 +460,27 @@ describe("generated MCP contract", () => {
           degenerateExtent:
             "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
         },
+        tileObjectFrames: {
+          source:
+            "tiled-1.12-object-outline-rect",
+          alignmentResolution:
+            "tileset-objectalignment-unspecified-bottom-left",
+          tileOffsetScaling:
+            "scaled-by-object-over-tile-size",
+          missingDimensionDefault:
+            "tileset-tile-size",
+          flipFlags:
+            "image-only-outline-unchanged",
+          rotationCenter: "object-anchor",
+          danglingGidPolicy: "fail-closed",
+          imageRendering: false,
+          collisionShapes: false,
+        },
         workBudget:
           "included-in-native-preview-pixel-blend-limit",
         limitations: [
           "explicit-selection-only",
-          "tile-objects-unsupported",
+          "tile-frame-only-no-image-or-collision-rendering",
           "text-box-only-no-glyph-rendering",
           "template-objects-unsupported",
           "non-default-selected-layer-or-ancestor-positioning-unsupported",
@@ -1109,6 +1127,7 @@ describe("generated MCP contract", () => {
       "polygon",
       "polyline",
       "text",
+      "tile",
     ]);
     expectExactLiteralSchema(
       schemaProperty(
@@ -1135,6 +1154,30 @@ describe("generated MCP contract", () => {
           "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
       },
       `${nativePreviewLabel} object debug curve tessellation`,
+    );
+    expectExactLiteralSchema(
+      schemaProperty(
+        objectDebugOutputSchema,
+        "tileObjectFrames",
+        `${nativePreviewLabel} object debug output`,
+      ),
+      {
+        source:
+          "tiled-1.12-object-outline-rect",
+        alignmentResolution:
+          "tileset-objectalignment-unspecified-bottom-left",
+        tileOffsetScaling:
+          "scaled-by-object-over-tile-size",
+        missingDimensionDefault:
+          "tileset-tile-size",
+        flipFlags:
+          "image-only-outline-unchanged",
+        rotationCenter: "object-anchor",
+        danglingGidPolicy: "fail-closed",
+        imageRendering: false,
+        collisionShapes: false,
+      },
+      `${nativePreviewLabel} object debug tile-object frames`,
     );
 
     const applicationErrorContractSchema =

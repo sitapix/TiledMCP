@@ -23,6 +23,7 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
 } from "../images/mapPreview.js";
 import {
   DEFAULT_TILE_RENDER_COLUMNS,
@@ -1030,10 +1031,12 @@ const nativePreviewObjectDebugEntryOutputSchema = z
       "polygon",
       "polyline",
       "text",
+      "tile",
     ]),
     representation: z.enum([
       "geometry-outline",
       "text-box-only",
+      "tile-frame-only",
     ]),
     rendered: z.boolean(),
     clipped: z.boolean(),
@@ -1113,6 +1116,33 @@ const nativePreviewObjectDebugOutputSchema = z
         degenerateExtent: z.literal(
           "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
         ),
+      })
+      .strict(),
+    tileObjectFrames: z
+      .object({
+        source: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.source,
+        ),
+        alignmentResolution: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.alignmentResolution,
+        ),
+        tileOffsetScaling: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.tileOffsetScaling,
+        ),
+        missingDimensionDefault: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.missingDimensionDefault,
+        ),
+        flipFlags: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.flipFlags,
+        ),
+        rotationCenter: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.rotationCenter,
+        ),
+        danglingGidPolicy: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.danglingGidPolicy,
+        ),
+        imageRendering: z.literal(false),
+        collisionShapes: z.literal(false),
       })
       .strict(),
     selectedObjectCount:
@@ -1444,7 +1474,9 @@ const nativePreviewResultOutputSchema = z
       const expectedRepresentation =
         entry.shape === "text"
           ? "text-box-only"
-          : "geometry-outline";
+          : entry.shape === "tile"
+            ? "tile-frame-only"
+            : "geometry-outline";
       if (
         entry.representation !==
         expectedRepresentation

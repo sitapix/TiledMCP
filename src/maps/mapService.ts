@@ -1347,11 +1347,23 @@ export class MapService {
       input.overlays?.highlights,
       scene.region,
     );
-    const objectDebug = prepareNativePreviewObjectDebug(
-      map,
-      context.loaded.path,
-      input.overlays?.objectIds,
-    );
+    const preparedObjectDebug =
+      prepareNativePreviewObjectDebug(
+        map,
+        context.loaded.path,
+        input.overlays?.objectIds,
+        context.bindings,
+      );
+    if (
+      preparedObjectDebug !== undefined &&
+      preparedObjectDebug.pendingTileFrames.length > 0
+    ) {
+      await this.resolveTileObjectFrames(
+        context.bindings,
+        preparedObjectDebug,
+      );
+    }
+    const objectDebug = preparedObjectDebug?.objects;
 
     const atlases: NativePreviewAtlas[] = [];
     const sources: Array<Record<string, unknown>> = [];
@@ -1535,6 +1547,160 @@ export class MapService {
           "finite-orthogonal-static-atlas-tilelayers-v1",
         truncated: false,
       },
+    };
+  }
+
+  private async resolveTileObjectFrames(
+    bindings: readonly TilesetBinding[],
+    prepared: PreparedNativePreviewObjectDebug,
+  ): Promise<void> {
+    const frames = new Map<
+      string,
+      {
+        tileWidth: number;
+        tileHeight: number;
+        objectAlignment: string;
+        tileOffsetX: number;
+        tileOffsetY: number;
+      }
+    >();
+    for (const pending of prepared.pendingTileFrames) {
+      let frame = frames.get(pending.assetId);
+      if (frame === undefined) {
+        const binding = bindings.find(
+          (candidate) =>
+            candidate.assetId === pending.assetId,
+        );
+        if (binding === undefined) {
+          throw new TiledMcpError(
+            "INTERNAL_ERROR",
+            `Tile object frame tileset ${pending.assetId} disappeared from the map context.`,
+            { assetId: pending.assetId },
+          );
+        }
+        frame =
+          await this.loadTileObjectFrameTileset(
+            binding,
+          );
+        frames.set(pending.assetId, frame);
+      }
+      const entry =
+        prepared.objects[pending.entryIndex];
+      if (
+        entry === undefined ||
+        entry.shape !== "tile"
+      ) {
+        throw new TiledMcpError(
+          "INTERNAL_ERROR",
+          "Tile object frame lost its prepared debug entry.",
+          { objectId: pending.objectId },
+        );
+      }
+      const width =
+        pending.rawWidth === 0
+          ? frame.tileWidth
+          : pending.rawWidth;
+      const height =
+        pending.rawHeight === 0
+          ? frame.tileHeight
+          : pending.rawHeight;
+      const alignmentOffset =
+        tileObjectAlignmentOffset(
+          frame.objectAlignment,
+          width,
+          height,
+        );
+      const boxOffsetX =
+        -alignmentOffset.x +
+        (frame.tileOffsetX * width) /
+          frame.tileWidth;
+      const boxOffsetY =
+        -alignmentOffset.y +
+        (frame.tileOffsetY * height) /
+          frame.tileHeight;
+      for (const [field, value] of [
+        ["width", width],
+        ["height", height],
+        ["boxOffsetX", boxOffsetX],
+        ["boxOffsetY", boxOffsetY],
+      ] as const) {
+        if (
+          !Number.isFinite(value) ||
+          Math.abs(value) >
+            MAX_ABSOLUTE_OBJECT_NUMBER
+        ) {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `Object ${pending.objectId} tile frame ${field} is outside the supported numeric range.`,
+            {
+              objectId: pending.objectId,
+              field,
+              value,
+            },
+          );
+        }
+      }
+      entry.width = width;
+      entry.height = height;
+      entry.boxOffsetX = boxOffsetX;
+      entry.boxOffsetY = boxOffsetY;
+    }
+  }
+
+  private async loadTileObjectFrameTileset(
+    binding: TilesetBinding,
+  ): Promise<{
+    tileWidth: number;
+    tileHeight: number;
+    objectAlignment: string;
+    tileOffsetX: number;
+    tileOffsetY: number;
+  }> {
+    const snapshot = await this.store.readSnapshot(
+      binding.path,
+    );
+    if (snapshot.revision !== binding.revision) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} changed while the tile object frames were being prepared.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision: binding.revision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    const document =
+      this.store.parseSnapshot(snapshot).document;
+    const tileWidth = expectInteger(
+      document.tilewidth,
+      `${binding.path}.tilewidth`,
+    );
+    const tileHeight = expectInteger(
+      document.tileheight,
+      `${binding.path}.tileheight`,
+    );
+    assertPositiveInteger(
+      tileWidth,
+      `${binding.path}.tilewidth`,
+    );
+    assertPositiveInteger(
+      tileHeight,
+      `${binding.path}.tileheight`,
+    );
+    const tileOffset = readTilesetTileOffset(
+      document,
+      binding.path,
+    );
+    return {
+      tileWidth,
+      tileHeight,
+      objectAlignment: readTilesetObjectAlignment(
+        document,
+        binding.path,
+      ),
+      tileOffsetX: tileOffset.x,
+      tileOffsetY: tileOffset.y,
     };
   }
 
@@ -10426,11 +10592,25 @@ function assertObjectShapePointBudget(
   }
 }
 
+interface PendingTileObjectFrame {
+  entryIndex: number;
+  objectId: number;
+  assetId: string;
+  rawWidth: number;
+  rawHeight: number;
+}
+
+interface PreparedNativePreviewObjectDebug {
+  objects: NativePreviewObjectInput[];
+  pendingTileFrames: PendingTileObjectFrame[];
+}
+
 function prepareNativePreviewObjectDebug(
   map: JsonObject,
   mapPath: string,
   objectIds: readonly number[] | undefined,
-): NativePreviewObjectInput[] | undefined {
+  bindings: readonly TilesetBinding[],
+): PreparedNativePreviewObjectDebug | undefined {
   if (objectIds === undefined) {
     return undefined;
   }
@@ -10472,6 +10652,8 @@ function prepareNativePreviewObjectDebug(
 
   const index = buildObjectEditIndex(map, mapPath);
   const selected: NativePreviewObjectInput[] = [];
+  const pendingTileFrames: PendingTileObjectFrame[] =
+    [];
   let pointCount = 0;
   for (const [sourceIndex, objectId] of objectIds.entries()) {
     const location = findObjectLocation(
@@ -10479,6 +10661,28 @@ function prepareNativePreviewObjectDebug(
       objectId,
       mapPath,
     );
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        location.object,
+        "template",
+      ) &&
+      Object.prototype.hasOwnProperty.call(
+        location.object,
+        "gid",
+      )
+    ) {
+      pendingTileFrames.push(
+        prepareTileObjectFrameEntry(
+          location,
+          objectId,
+          sourceIndex,
+          selected,
+          bindings,
+          mapPath,
+        ),
+      );
+      continue;
+    }
     const shape = assertBasicEditableObject(
       location.object,
       objectId,
@@ -10575,7 +10779,241 @@ function prepareNativePreviewObjectDebug(
       points,
     });
   }
-  return selected;
+  return { objects: selected, pendingTileFrames };
+}
+
+const TILESET_OBJECT_ALIGNMENTS = new Set([
+  "unspecified",
+  "topleft",
+  "top",
+  "topright",
+  "left",
+  "center",
+  "right",
+  "bottomleft",
+  "bottom",
+  "bottomright",
+]);
+
+function prepareTileObjectFrameEntry(
+  location: ObjectLocation,
+  objectId: number,
+  sourceIndex: number,
+  selected: NativePreviewObjectInput[],
+  bindings: readonly TilesetBinding[],
+  mapPath: string,
+): PendingTileObjectFrame {
+  const object = location.object;
+  const gid = object.gid;
+  if (
+    typeof gid !== "number" ||
+    !Number.isSafeInteger(gid) ||
+    gid < 0 ||
+    gid > 0xffffffff
+  ) {
+    throw new TiledMcpError(
+      "INVALID_TILE_DATA",
+      `Object ${objectId}.gid must be an unsigned 32-bit GID.`,
+      { path: mapPath, objectId },
+    );
+  }
+  const tileRef = gidToTileRef(
+    gid,
+    "orthogonal",
+    bindings,
+  );
+  if (tileRef === null) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Object ${objectId}.gid must reference a tile; tile objects cannot use the empty GID.`,
+      { path: mapPath, objectId },
+    );
+  }
+  const conflictingMarker = [
+    "point",
+    "ellipse",
+    "capsule",
+    "polygon",
+    "polyline",
+    "text",
+  ].find((marker) =>
+    Object.prototype.hasOwnProperty.call(
+      object,
+      marker,
+    ),
+  );
+  if (conflictingMarker !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Object ${objectId} combines gid with the ${conflictingMarker} shape marker.`,
+      {
+        path: mapPath,
+        objectId,
+        feature: conflictingMarker,
+      },
+    );
+  }
+  assertNativePreviewObjectRenderContext(
+    location,
+    objectId,
+    mapPath,
+  );
+  const rawWidth = readTileObjectDimension(
+    object.width,
+    objectId,
+    "width",
+    mapPath,
+  );
+  const rawHeight = readTileObjectDimension(
+    object.height,
+    objectId,
+    "height",
+    mapPath,
+  );
+  const pending: PendingTileObjectFrame = {
+    entryIndex: selected.length,
+    objectId,
+    assetId: tileRef.tileset.assetId,
+    rawWidth,
+    rawHeight,
+  };
+  selected.push({
+    sourceIndex,
+    objectId,
+    layerId: location.layer.id,
+    x: object.x as number,
+    y: object.y as number,
+    rotation: displayNumber(object.rotation, 0),
+    shape: "tile",
+    representation: "tile-frame-only",
+    width: 0,
+    height: 0,
+    boxOffsetX: 0,
+    boxOffsetY: 0,
+  });
+  return pending;
+}
+
+function readTileObjectDimension(
+  value: JsonValue | undefined,
+  objectId: number,
+  field: "width" | "height",
+  mapPath: string,
+): number {
+  if (value === undefined) {
+    return 0;
+  }
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    value > MAX_ABSOLUTE_OBJECT_NUMBER
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Object ${objectId}.${field} must be a finite nonnegative number.`,
+      { path: mapPath, objectId, field },
+    );
+  }
+  return value;
+}
+
+function readTilesetObjectAlignment(
+  document: JsonObject,
+  tilesetPath: string,
+): string {
+  const value = document.objectalignment;
+  if (value === undefined) {
+    return "unspecified";
+  }
+  if (
+    typeof value !== "string" ||
+    !TILESET_OBJECT_ALIGNMENTS.has(value)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${tilesetPath}.objectalignment is not a supported Tiled alignment.`,
+      { path: tilesetPath, value },
+    );
+  }
+  return value;
+}
+
+function readTilesetTileOffset(
+  document: JsonObject,
+  tilesetPath: string,
+): { x: number; y: number } {
+  const value = document.tileoffset;
+  if (value === undefined) {
+    return { x: 0, y: 0 };
+  }
+  if (!isRecordValue(value)) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${tilesetPath}.tileoffset must be an object.`,
+      { path: tilesetPath },
+    );
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).sort().join(",") !== "x,y"
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${tilesetPath}.tileoffset must contain exactly x and y.`,
+      { path: tilesetPath },
+    );
+  }
+  for (const axis of ["x", "y"] as const) {
+    const component = record[axis];
+    if (
+      typeof component !== "number" ||
+      !Number.isSafeInteger(component) ||
+      Math.abs(component) >
+        MAX_ABSOLUTE_OBJECT_NUMBER
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${tilesetPath}.tileoffset.${axis} must be a bounded integer.`,
+        { path: tilesetPath, axis },
+      );
+    }
+  }
+  return {
+    x: record.x as number,
+    y: record.y as number,
+  };
+}
+
+/**
+ * Tiled resolves "unspecified" to bottom-left on orthogonal maps; the offset
+ * is subtracted from the object anchor to reach the frame's top-left corner.
+ */
+function tileObjectAlignmentOffset(
+  alignment: string,
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  switch (alignment) {
+    case "topleft":
+      return { x: 0, y: 0 };
+    case "top":
+      return { x: width / 2, y: 0 };
+    case "topright":
+      return { x: width, y: 0 };
+    case "left":
+      return { x: 0, y: height / 2 };
+    case "center":
+      return { x: width / 2, y: height / 2 };
+    case "right":
+      return { x: width, y: height / 2 };
+    case "bottom":
+      return { x: width / 2, y: height };
+    case "bottomright":
+      return { x: width, y: height };
+    default:
+      return { x: 0, y: height };
+  }
 }
 
 function assertNativePreviewObjectRenderContext(

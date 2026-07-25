@@ -81,6 +81,7 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
 } from "./images/mapPreview.js";
 import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
@@ -2125,10 +2126,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "polygon",
               "polyline",
               "text",
+              "tile",
             ],
             representations: [
               "geometry-outline",
               "text-box-only",
+              "tile-frame-only",
             ],
             profile: NATIVE_PREVIEW_OBJECT_PROFILE,
             style: NATIVE_PREVIEW_OBJECT_STYLE,
@@ -2167,11 +2170,13 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               degenerateExtent:
                 "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
             },
+            tileObjectFrames:
+              NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
             workBudget:
               "included-in-native-preview-pixel-blend-limit",
             limitations: [
               "explicit-selection-only",
-              "tile-objects-unsupported",
+              "tile-frame-only-no-image-or-collision-rendering",
               "text-box-only-no-glyph-rendering",
               "template-objects-unsupported",
               "non-default-selected-layer-or-ancestor-positioning-unsupported",

@@ -236,13 +236,27 @@ and zero. Highlight work shares the native preview pixel-blend limit.
 
 \`overlays.objectIds\` is strict, ordered, unique, all-or-error, and limited to
 64 positive safe IDs. The fixed
-\`explicit-basic-object-geometry-v2\` overlay draws rectangle, point, ellipse,
+\`explicit-basic-object-geometry-v3\` overlay draws rectangle, point, ellipse,
 Tiled 1.12 capsule, polygon, and open polyline geometry in opaque cyan with a
 one-pixel stroke and 5-pixel origin crosshair. Text objects render only their
 rotated layout box, never glyphs. Ellipses use their bounds. Capsules use
 \`min(width,height)/2\` radii, two semicircles, and two straight sides. A single
 zero extent becomes a bounds line; a double-zero curve becomes an
 anchor-centered 20-map-pixel circle.
+
+Tile objects render as \`tile-frame-only\`: the Tiled 1.12.2 object outline
+rectangle plus the anchor crosshair, never the tile image or its collision
+shapes. The frame's top-left is the anchor minus the tileset
+\`objectalignment\` offset (\`unspecified\` resolves to bottom-left on
+orthogonal maps) plus the tileset \`tileoffset\` scaled by object size over
+tileset tile size; omitted or zero dimensions default to the tileset tile
+size, and rotation turns the frame around the anchor. Flip flags — including
+the preserved raw \`0x10000000\` bit — mirror only the image, so the outline
+never changes, exactly matching Tiled's own tile object outlines. Dangling or
+empty GIDs, a \`gid\` combined with a shape marker, unknown \`objectalignment\`
+values, and malformed \`tileoffset\` members fail closed instead of drawing a
+placeholder. Frame resolution re-reads the selected tilesets under their
+pinned dependency revisions and rejects drift.
 
 Curve tessellation uses uniform angles in continuous output space with at most
 0.25 pixels of chord error, at least 12 segments rounded to a multiple of four,
@@ -261,11 +275,11 @@ marker: \`rendered\` means at least one pixel from either was written inside the
 content rectangle, while \`clipped\` means any segment or marker arm was partly
 or wholly clipped. Both flags can therefore be true.
 Explicit debug selection ignores object/layer visibility and opacity, as
-reported by \`visibilityPolicy\`. It rejects tile objects, templates, and
+reported by \`visibilityPolicy\`. It rejects templates and
 selected layer/group positioning with non-default x/y, offset, or parallax.
 Selected path geometry is capped at 8192 points, and clipped stroke work shares
 the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
-object-layer, font, tile-object, antialiased curve styling, and collision
+object-layer, font, tile-image, antialiased curve styling, and collision
 rendering.
 
 ## Attach an existing tileset safely

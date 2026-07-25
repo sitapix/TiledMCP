@@ -42,7 +42,24 @@ export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
 export const NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE = "source-over";
 export const NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE = "tile-union";
 export const NATIVE_PREVIEW_OBJECT_PROFILE =
-  "explicit-basic-object-geometry-v2";
+  "explicit-basic-object-geometry-v3";
+export const NATIVE_PREVIEW_TILE_OBJECT_FRAMES =
+  Object.freeze({
+    source:
+      "tiled-1.12-object-outline-rect",
+    alignmentResolution:
+      "tileset-objectalignment-unspecified-bottom-left",
+    tileOffsetScaling:
+      "scaled-by-object-over-tile-size",
+    missingDimensionDefault:
+      "tileset-tile-size",
+    flipFlags:
+      "image-only-outline-unchanged",
+    rotationCenter: "object-anchor",
+    danglingGidPolicy: "fail-closed",
+    imageRendering: false,
+    collisionShapes: false,
+  } as const);
 export const NATIVE_PREVIEW_OBJECT_STYLE =
   "geometry-cyan-v1";
 export const NATIVE_PREVIEW_OBJECT_COLOR =
@@ -147,11 +164,13 @@ export type NativePreviewObjectShape =
   | "capsule"
   | "polygon"
   | "polyline"
-  | "text";
+  | "text"
+  | "tile";
 
 export type NativePreviewObjectRepresentation =
   | "geometry-outline"
-  | "text-box-only";
+  | "text-box-only"
+  | "tile-frame-only";
 
 export interface NativePreviewObjectPoint {
   x: number;
@@ -170,6 +189,12 @@ export interface NativePreviewObjectInput {
   width?: number;
   height?: number;
   points?: readonly NativePreviewObjectPoint[];
+  /**
+   * Top-left of a tile object's frame relative to its anchor, already
+   * combining Tiled's negated alignment offset and the scaled tile offset.
+   */
+  boxOffsetX?: number;
+  boxOffsetY?: number;
 }
 
 export interface NativePreviewObjectRenderEntry {
@@ -215,6 +240,7 @@ export interface NativePreviewObjectRenderMetadata {
     degenerateExtent:
       "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle";
   };
+  tileObjectFrames: typeof NATIVE_PREVIEW_TILE_OBJECT_FRAMES;
   selectedObjectCount: number;
   renderedObjectCount: number;
   entries: readonly NativePreviewObjectRenderEntry[];
@@ -792,6 +818,7 @@ function validateNativePreviewObjectInput(
     "polygon",
     "polyline",
     "text",
+    "tile",
   ] as const;
   if (
     typeof object.shape !== "string" ||
@@ -818,10 +845,17 @@ function validateNativePreviewObjectInput(
     object.shape === "capsule" ||
     object.shape === "text"
       ? ["height", "width"]
-      : object.shape === "polygon" ||
-          object.shape === "polyline"
-        ? ["points"]
-        : [];
+      : object.shape === "tile"
+        ? [
+            "boxOffsetX",
+            "boxOffsetY",
+            "height",
+            "width",
+          ]
+        : object.shape === "polygon" ||
+            object.shape === "polyline"
+          ? ["points"]
+          : [];
   const expectedKeys = [...commonKeys, ...shapeKeys].sort();
   if (
     Object.keys(object).sort().join(",") !==
@@ -853,7 +887,9 @@ function validateNativePreviewObjectInput(
   const expectedRepresentation =
     object.shape === "text"
       ? "text-box-only"
-      : "geometry-outline";
+      : object.shape === "tile"
+        ? "tile-frame-only"
+        : "geometry-outline";
   if (object.representation !== expectedRepresentation) {
     throw invalidObjectDebug(
       index,
@@ -866,7 +902,8 @@ function validateNativePreviewObjectInput(
     object.shape === "rectangle" ||
     object.shape === "ellipse" ||
     object.shape === "capsule" ||
-    object.shape === "text"
+    object.shape === "text" ||
+    object.shape === "tile"
   ) {
     validateObjectDebugNumber(
       object.width,
@@ -880,6 +917,20 @@ function validateNativePreviewObjectInput(
       "height",
       true,
     );
+    if (object.shape === "tile") {
+      validateObjectDebugNumber(
+        object.boxOffsetX,
+        index,
+        "boxOffsetX",
+        false,
+      );
+      validateObjectDebugNumber(
+        object.boxOffsetY,
+        index,
+        "boxOffsetY",
+        false,
+      );
+    }
     return;
   }
   if (
@@ -1499,6 +1550,8 @@ function objectDebugMetadataBase(): Omit<
       degenerateExtent:
         "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
     },
+    tileObjectFrames:
+      NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
   };
 }
 
@@ -1603,6 +1656,23 @@ function objectGeometry(
         width,
         height,
       ),
+      closed: true,
+      curveSegments: 0,
+    };
+  }
+  if (object.shape === "tile") {
+    const width = object.width ?? 0;
+    const height = object.height ?? 0;
+    const offsetX = object.boxOffsetX ?? 0;
+    const offsetY = object.boxOffsetY ?? 0;
+    return {
+      points: rectangleGeometryPoints(
+        width,
+        height,
+      ).map((point) => ({
+        x: point.x + offsetX,
+        y: point.y + offsetY,
+      })),
       closed: true,
       curveSegments: 0,
     };

@@ -78,7 +78,7 @@ function validResult(): Record<string, unknown> {
       },
       objectDebug: {
         profile:
-          "explicit-basic-object-geometry-v2",
+          "explicit-basic-object-geometry-v3",
         style: "geometry-cyan-v1",
         color: {
           r: 34,
@@ -112,6 +112,22 @@ function validResult(): Record<string, unknown> {
             "two-semicircles-plus-two-straight-segments",
           degenerateExtent:
             "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+        },
+        tileObjectFrames: {
+          source:
+            "tiled-1.12-object-outline-rect",
+          alignmentResolution:
+            "tileset-objectalignment-unspecified-bottom-left",
+          tileOffsetScaling:
+            "scaled-by-object-over-tile-size",
+          missingDimensionDefault:
+            "tileset-tile-size",
+          flipFlags:
+            "image-only-outline-unchanged",
+          rotationCenter: "object-anchor",
+          danglingGidPolicy: "fail-closed",
+          imageRendering: false,
+          collisionShapes: false,
         },
         selectedObjectCount: 2,
         renderedObjectCount: 1,
@@ -198,6 +214,38 @@ describe("native preview object debug output contract", () => {
       ).toBe(true);
     },
   );
+
+  it("accepts a tile entry only with its tile-frame-only representation", () => {
+    const output = validOutput();
+    const first = entriesOf(output)[0];
+    if (first === undefined) {
+      throw new Error("Missing object debug entry.");
+    }
+    first.shape = "tile";
+    expect(
+      nativePreviewToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(false);
+    first.representation = "tile-frame-only";
+    expect(
+      nativePreviewToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(true);
+  });
+
+  it("rejects a fixed tile-object frame contract drift", () => {
+    const output = validOutput();
+    const frames = objectDebugOf(output)
+      .tileObjectFrames as Record<string, unknown>;
+    frames.flipFlags = "geometry-follows-flips";
+    expect(
+      nativePreviewToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(false);
+  });
 
   it.each([
     {
@@ -457,13 +505,15 @@ describe("native preview object debug server contract", () => {
         "polygon",
         "polyline",
         "text",
+        "tile",
       ],
       representations: [
         "geometry-outline",
         "text-box-only",
+        "tile-frame-only",
       ],
       profile:
-        "explicit-basic-object-geometry-v2",
+        "explicit-basic-object-geometry-v3",
       style: "geometry-cyan-v1",
       color: {
         r: 34,
@@ -498,11 +548,27 @@ describe("native preview object debug server contract", () => {
         degenerateExtent:
           "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
       },
+      tileObjectFrames: {
+        source:
+          "tiled-1.12-object-outline-rect",
+        alignmentResolution:
+          "tileset-objectalignment-unspecified-bottom-left",
+        tileOffsetScaling:
+          "scaled-by-object-over-tile-size",
+        missingDimensionDefault:
+          "tileset-tile-size",
+        flipFlags:
+          "image-only-outline-unchanged",
+        rotationCenter: "object-anchor",
+        danglingGidPolicy: "fail-closed",
+        imageRendering: false,
+        collisionShapes: false,
+      },
       workBudget:
         "included-in-native-preview-pixel-blend-limit",
       limitations: [
         "explicit-selection-only",
-        "tile-objects-unsupported",
+        "tile-frame-only-no-image-or-collision-rendering",
         "text-box-only-no-glyph-rendering",
         "template-objects-unsupported",
         "non-default-selected-layer-or-ancestor-positioning-unsupported",
