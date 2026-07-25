@@ -56,7 +56,8 @@
   `nextobjectid`）；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
 - 不依赖 Tiled 进程的有限正交 tile-layer region PNG 预览，支持图层筛选、GID
-  H/V/D、opacity、网格和绝对坐标 gutter；
+  H/V/D、opacity、网格、绝对坐标 gutter，以及最多 64 个固定 amber 样式的绝对
+  tile 矩形高亮；
 - Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览，后者返回 map/外部 TSJ
   revision、PNG hash/尺寸、renderer 版本与实际生效选项；
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
@@ -191,7 +192,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_find_tiles` | 按 map + asset id 精确检索显式 class/property metadata，返回分页 `TileRef` |
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |
 | `tiled_render_tileset_sheet` | 按 `tilesetAssetId` 返回带 local ID 的分页 PNG sheet |
-| `tiled_render_preview` | 内建渲染有限正交 tile layer，可选 region、图层、网格和坐标 |
+| `tiled_render_preview` | 内建渲染有限正交 tile layer，可选 region、图层、网格、坐标和有界矩形高亮 |
 | `tiled_list_objects` | 有界列出全部或指定 object layer 的对象 |
 | `tiled_validate` | 只读结构与 MVP profile 校验 |
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
@@ -747,7 +748,8 @@ gate、构建 `dist/`，并包含真实 production stdio smoke；
 矩形 tile copy 与
 object 编辑闭环，
 以及 atlas 几何、SVG 安全预检、图片预算和
-native preview 的图层选择、H/V/D、opacity、region/overlay/工作量预算与 MCP image wire
+native preview 的图层选择、H/V/D、opacity、region/grid/coordinate/highlight overlay、
+tile-union 与工作量预算，以及 MCP image wire
 contract；TSJ 详情另覆盖稀疏分页、Tiled 1.12 tile `type`、动画采样、
 collision/Wang 计数、严格 rendering 枚举、聚合扫描/256 KiB 输出预算和非法 atlas；
 tile 检索覆盖 class 兼容规则、`all`/`any`、标量 property 精确比较、稀疏分页、
@@ -994,10 +996,16 @@ checkpoint restore。架构与 roadmap
   持久化 Resource，因此编码后仍超限会明确报错。
 - native preview v1 只渲染有限正交 TMJ 的静态外部 atlas tile layer，要求 atlas tile
   尺寸与 map grid 相同。它支持整数 scale 1–4、矩形 region、显式 tile-layer 选择、
-  H/V/D（非方形 tile 的 D 暂拒绝）、layer opacity、透明色、网格和绝对坐标 gutter。
+  H/V/D（非方形 tile 的 D 暂拒绝）、layer opacity、透明色、网格、绝对坐标 gutter，
+  以及最多 64 个绝对 map tile 矩形高亮。每个高亮必须与最终 `tileRegion` 相交；部分
+  越界会裁剪，完全不相交或坐标加法溢出会拒绝。固定
+  `selection-amber-v1` 使用 RGBA `(250,204,21,96)` 的 `source-over` fill、无边框；
+  重叠或重复矩形按 tile union 每格只混合一次，使输入顺序不影响 PNG。
+  结果总是返回保序的 requested/rendered/clipped entries、union 后
+  `highlightedTileCount`、固定颜色与 blend/overlap mode；未请求时 entries 为空且计数为 0。
   隐式选择会把可见 object/image layer 作为 `omittedLayers` 返回并标记 `partial: true`；
   blend/tint、parallax、非零像素 offset、group opacity、动画 tile、tileoffset 和
   image collection 会稳定报 `UNSUPPORTED_RENDER_FEATURE`/`UNSUPPORTED_TILESET`，
   不会静默近似。输出上限同样是 2048 单边、150 万像素和 8 MiB，另有 3000 万次
-  pixel-blend 工作量上限。多 atlas 结果中的 image revision 对应各自精确读取的 bytes，
+  pixel-blend 工作量上限；高亮 union fill 也计入该上限。多 atlas 结果中的 image revision 对应各自精确读取的 bytes，
   `snapshotConsistency: "non-atomic-read-set"` 明示这些图片并非同一时刻的原子快照。

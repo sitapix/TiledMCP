@@ -1703,6 +1703,18 @@ describe("MapService", () => {
       omittedLayersTruncated: false,
       partial: false,
       snapshotConsistency: "non-atomic-read-set",
+      overlays: {
+        grid: false,
+        coordinates: false,
+        highlights: {
+          style: "selection-amber-v1",
+          entries: [],
+          highlightedTileCount: 0,
+          color: { r: 250, g: 204, b: 21, a: 96 },
+          blendMode: "source-over",
+          overlapMode: "tile-union",
+        },
+      },
       truncated: false,
     });
 
@@ -1719,6 +1731,41 @@ describe("MapService", () => {
     expect([...decoded.data.subarray(16 * 4, 16 * 4 + 4)]).toEqual([
       70, 122, 163, 255,
     ]);
+  });
+
+  it("rejects a disjoint native highlight before loading atlas images", async () => {
+    await expect(
+      harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        region: {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        overlays: {
+          highlights: [
+            {
+              x: 1,
+              y: 1,
+              width: 1,
+              height: 1,
+            },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: {
+        sourceIndex: 0,
+        tileRegion: {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+      },
+    });
   });
 
   it("does not load atlas images for opacity-zero tile layers", async () => {

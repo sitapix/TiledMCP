@@ -1570,7 +1570,7 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
 | 简单 SVG 源码 | 256 KiB |
 | tileset 原图解码 | 4096² pixels，单边 8192 px |
 | tileset sheet surface | 1.5 megapixels，单边 2048 px |
-| native preview region | 20,000 cells / 128 tile layers / 250,000 potential draws / 30M pixel blends |
+| native preview region/overlay | 20,000 cells / 128 tile layers / 64 highlight rectangles / 250,000 potential draws / 30M pixel blends |
 | native preview atlas aggregate | 64 images / 64 MiB source / 16M decoded pixels |
 | native preview surface | 1.5 megapixels，单边 2048 px，scale 1–4 |
 | `tmxrasterizer` 输入图片集合 | root atlas / per-tile / image-layer 统一去重；64 images / 64 MiB source / 16M decoded pixels；单边 8192 px |
@@ -1596,6 +1596,13 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
 - 大地图 native preview 要求 region；若整图或显式 region 仍超限，返回
   `PREVIEW_REGION_REQUIRED`/`PREVIEW_DIMENSIONS_EXCEEDED`，不返回伪完整缩略图。
   当前还没有 render Resource/TTL，不能声称提供 `resource_link`。
+- native highlight 输入是最多 64 个绝对 tile 矩形。scene 确定最终 `tileRegion` 后、
+  atlas I/O 前先验证安全整数与右/下边界、要求每项非空相交，并把部分越界项裁成
+  `renderedTileRect`；完全不相交 fail closed，不静默 omission。renderer 仍重复权威校验。
+  绘制顺序固定为 tile layers → highlight tile union → grid → coordinates；固定
+  `selection-amber-v1` 是无边框 RGBA `(250,204,21,96)` source-over fill。所有矩形先
+  合并成 tile union，使重复/重叠和输入顺序不改变像素；union 格数及每项 requested /
+  rendered / clipped metadata 有界返回。union fill 也计入 30M pixel-blend work limit。
 - native renderer v1 只保证 finite orthogonal、numeric-array tile layer、静态 external
   atlas、map-grid 等尺寸 tile、透明色、layer opacity 和 orthogonal H/V/D。它明确拒绝
   blend/tint、parallax、非零 pixel/group offset、非默认 group opacity、动画、
@@ -1679,7 +1686,8 @@ M0 不追求完整地图 CRUD。验收标准：
   current-before-verified prepared discard，以及含混 prepared 状态的动作分离
   commit/abandon 裁决。
 - 已实现 tileset contact sheet，以及正交 tile-layer region preview、图层筛选、
-  H/V/D、opacity、网格和绝对坐标 gutter；对象/碰撞/高亮 overlay 仍待实现。
+  H/V/D、opacity、网格、绝对坐标 gutter 和固定样式的有界绝对 tile 矩形高亮；对象/
+  碰撞 overlay 仍待实现。
 - 通过 `tmxrasterizer` 或 one-shot Tiled 做可选兼容性/视觉复核。
 
 M1 明确拒绝：
@@ -1727,7 +1735,7 @@ M1 明确拒绝：
 | symlink/外部引用逃逸 | 越权读写 | canonical root、静态组件/父目录验证；hostile parent swap 不在 direct backend 保证内 | `..`、绝对路径、静态 symlink、FIFO；主动 swap 作为 unsupported 对抗边界 |
 | 压缩炸弹/巨图 | OOM 或阻塞 | checked size、流式上限、像素配额 | gzip/zlib/zstd 超限、伪造尺寸、截断数据 |
 | Tiled 版本/导出插件变化 | adapter 行为漂移 | runtime probe、格式动态发现 | pinned Tiled 集成测试 + capability 缺失测试 |
-| native preview 与 Tiled 不同 | 模型视觉误判 | 明确支持子集、rasterizer 对照 | golden image + perceptual diff + unsupported cases |
+| native preview 与 Tiled 不同，或重叠 highlight 重复混色/越界静默消失 | 模型视觉误判、输入顺序改变 PNG、授权位置不清 | 明确支持子集、highlight safe-add + require-intersection + clip metadata、固定 fill-only style、tile-union、共享 pixel-blend budget、rasterizer 对照 | golden image + perceptual diff + unsupported cases；highlight overlap/order/clip/disjoint/overflow/64 限制/预算边界 |
 | checkpoint blob 损坏、prepared 误判、并发 writer/GC 超卖或 GC 误删 | 无法恢复、错误删除恢复点或绕过容量上限 | hash verify、全量 prepared/committed 根追踪、target→store 锁序、discard exact-before + raw-manifest CAS、inventory 不完整时首次 GC unlink 前阻断 | corruption、缺失引用、未知 entry、symlink、扫描上限、并发 writer/GC、untracked/new/deleted file restore，以及 exact-before/create-missing、after/unrelated/ambiguous、target/manifest race、post-unlink failure |
 | committed checkpoint batch prune 的后项 pin 漂移、多目标锁序不一致、中途故障或 partial replay 被误当成续跑 | 错删未获批恢复点、锁环、丢失删除事实、重复执行剩余删除或提前回收共享 object | 首次 unlink 前全成员 raw/semantic pin barrier、去重 target 的统一确定性排序与 `all targets → store` 锁序、canonical-ID prefix commit、逐项目录 durability、stop-on-first、`cached-final-no-resume`，以及仅在全部成员 durable unlink 且 post-delete hooks 完成后运行一次 GC | 后项 missing/raw-byte drift 时全批零删除；同目标去重、锁不可用零删除与反序多目标并发无死锁；首项 unlink→fsync fault、后项 unlink fault 和末项 post-delete hook fault 分别验证 unconfirmed/deleted prefix 与 GC gate；partial 的并发/后续 replay 返回 exact cache 且不再进入 storage；完整 batch 验证共享 object sweep，partial 明确 not-run，GC blocker 不反转 manifest 删除事实 |
 

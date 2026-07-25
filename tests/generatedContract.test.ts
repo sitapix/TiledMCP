@@ -264,6 +264,122 @@ describe("generated MCP contract", () => {
       ),
     ).toBe(2);
 
+    const nativePreviewCapabilitiesSchema =
+      schemaProperty(
+        capabilitySuccessSchema,
+        "nativePreviewCapabilities",
+        `${capabilitiesLabel} capability result`,
+      );
+    expectExactLiteralSchema(
+      schemaProperty(
+        nativePreviewCapabilitiesSchema,
+        "highlightRectangles",
+        `${capabilitiesLabel} nativePreviewCapabilities`,
+      ),
+      {
+        coordinateSpace: "absolute-map-tiles",
+        maxRectangles: 64,
+        intersectionPolicy:
+          "require-intersection-and-clip-to-tile-region",
+        style: "selection-amber-v1",
+        color: { r: 250, g: 204, b: 21, a: 96 },
+        blendMode: "source-over",
+        overlapMode: "tile-union",
+        border: "none",
+        drawOrder:
+          "after-tile-layers-before-grid-and-coordinates",
+        workBudget:
+          "included-in-native-preview-pixel-blend-limit",
+      },
+      `${capabilitiesLabel} native preview highlights`,
+    );
+    const nativePreviewLimitsSchema =
+      schemaProperty(
+        capabilitySuccessSchema,
+        "limits",
+        `${capabilitiesLabel} capability result`,
+      );
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxNativePreviewHighlights",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(64);
+
+    const nativePreviewIndex =
+      toolNames.indexOf("tiled_render_preview");
+    expect(nativePreviewIndex).toBeGreaterThanOrEqual(
+      0,
+    );
+    const nativePreviewTool =
+      toolDefinitions[nativePreviewIndex];
+    if (nativePreviewTool === undefined) {
+      throw new Error(
+        "Missing tiled_render_preview definition",
+      );
+    }
+    const nativePreviewLabel =
+      `contract.toolDefinitions[${nativePreviewIndex}]`;
+    const nativePreviewInputSchema = asRecord(
+      nativePreviewTool.inputSchema,
+      `${nativePreviewLabel}.inputSchema`,
+    );
+    const highlightInputSchema = schemaProperty(
+      schemaProperty(
+        nativePreviewInputSchema,
+        "overlays",
+        `${nativePreviewLabel}.inputSchema`,
+      ),
+      "highlights",
+      `${nativePreviewLabel}.inputSchema.overlays`,
+    );
+    expect(highlightInputSchema.minItems).toBe(1);
+    expect(highlightInputSchema.maxItems).toBe(64);
+    expectClosedRootObjectSchema(
+      highlightInputSchema.items,
+      `${nativePreviewLabel}.inputSchema.overlays.highlights.items`,
+    );
+
+    const nativePreviewSuccessSchema =
+      findResultBranchWithProperty(
+        nativePreviewTool.outputSchema,
+        "mimeType",
+        `${nativePreviewLabel}.outputSchema`,
+      );
+    const highlightOutputSchema = schemaProperty(
+      schemaProperty(
+        nativePreviewSuccessSchema,
+        "overlays",
+        `${nativePreviewLabel} success result`,
+      ),
+      "highlights",
+      `${nativePreviewLabel} success result overlays`,
+    );
+    expect(
+      Object.keys(
+        asRecord(
+          highlightOutputSchema.properties,
+          `${nativePreviewLabel} highlight output properties`,
+        ),
+      ).sort(),
+    ).toEqual(
+      [
+        "blendMode",
+        "color",
+        "entries",
+        "highlightedTileCount",
+        "overlapMode",
+        "style",
+      ].sort(),
+    );
+    const highlightEntriesSchema = schemaProperty(
+      highlightOutputSchema,
+      "entries",
+      `${nativePreviewLabel} highlight output`,
+    );
+    expect(highlightEntriesSchema.maxItems).toBe(64);
+
     const applicationErrorContractSchema =
       schemaProperty(
         capabilitySuccessSchema,
@@ -609,6 +725,43 @@ function findCapabilitySuccessSchema(
   if (match === undefined) {
     throw new Error(
       `${label} is missing its capability-success branch`,
+    );
+  }
+  return match;
+}
+
+function findResultBranchWithProperty(
+  outputSchema: unknown,
+  propertyName: string,
+  label: string,
+): Record<string, unknown> {
+  const output = asRecord(outputSchema, label);
+  const resultSchema = schemaProperty(
+    output,
+    "result",
+    label,
+  );
+  const branches = asRecordArray(
+    resultSchema.anyOf,
+    `${label}.properties.result.anyOf`,
+  );
+  const matches = branches.filter((branch) => {
+    const properties = branch.properties;
+    return (
+      properties !== null &&
+      typeof properties === "object" &&
+      !Array.isArray(properties) &&
+      propertyName in properties
+    );
+  });
+  expect(
+    matches,
+    `${label} branches with ${propertyName}`,
+  ).toHaveLength(1);
+  const match = matches[0];
+  if (match === undefined) {
+    throw new Error(
+      `${label} is missing a branch with ${propertyName}`,
     );
   }
   return match;

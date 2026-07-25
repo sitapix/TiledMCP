@@ -171,6 +171,28 @@ proposal 过期或冲突后都必须重新预览和批准；prune/discard/abando
 tombstone，不要
 把 not-found 当成可重试信号。
 
+需要把待核对区域直接标在图片中时，可在 `tiled_render_preview` 传入：
+
+```json
+{
+  "mapPath": "maps/example.tmj",
+  "region": { "x": 8, "y": 4, "width": 12, "height": 8 },
+  "overlays": {
+    "grid": true,
+    "highlights": [
+      { "x": 10, "y": 6, "width": 3, "height": 2 },
+      { "x": 12, "y": 7, "width": 4, "height": 3 }
+    ]
+  }
+}
+```
+
+这些坐标是绝对 map tiles，不是 region-local。每项必须和最终 `tileRegion` 相交；部分
+越界会裁剪并在结果中同时报告 requested/rendered rect，完全不相交则拒绝整次 render。
+高亮固定为无边框 amber 半透明 fill，重叠格按 tile union 只混合一次。客户端应保留
+entries、`highlightedTileCount`、color、blend/overlap mode 与 PNG hash，不能仅凭图片
+猜回选区。
+
 ## 裁决含混的 prepared checkpoint
 
 先让启动对账运行，并重新调用 `tiled_list_checkpoints`。只有仍为 `prepared` 且机器路径
@@ -278,7 +300,9 @@ discard 同样会因 create 目标已存在而拒绝。只有目标当前严格�
 ## Raster 预览是可选能力
 
 `tiled_render_preview` 与 `tiled_render_tileset_sheet` 是核心内建渲染能力，不依赖 Tiled
-GUI 或 `tmxrasterizer`。优先用它们完成有限正交地图的常规视觉闭环。
+GUI 或 `tmxrasterizer`。优先用它们完成有限正交地图的常规视觉闭环；native preview
+还能以最多 64 个固定样式的绝对 tile 矩形标出核对区域，其 union fill 与底图共享
+pixel-blend 工作预算。
 
 只有当 `tools/list` 包含 `tiled_render_map`，并且 capability 报告 rasterizer
 `available: true` 且带有已探测 version 时，才可调用可选的整图 raster 预览。客户端应按

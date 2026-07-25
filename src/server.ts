@@ -49,9 +49,14 @@ import {
   MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
+  MAX_NATIVE_PREVIEW_HIGHLIGHTS,
   MAX_NATIVE_PREVIEW_PIXELS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_SCALE,
+  NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+  NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_STYLE,
 } from "./images/mapPreview.js";
 import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
@@ -276,6 +281,34 @@ const safeIntegerSchema = z
   .int()
   .min(Number.MIN_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
+const nonnegativeSafeIntegerSchema = safeIntegerSchema.min(0);
+const positiveSafeIntegerSchema = safeIntegerSchema.min(1);
+const nativePreviewHighlightRectInputSchema = z
+  .object({
+    x: nonnegativeSafeIntegerSchema,
+    y: nonnegativeSafeIntegerSchema,
+    width: positiveSafeIntegerSchema,
+    height: positiveSafeIntegerSchema,
+  })
+  .strict()
+  .superRefine((rect, context) => {
+    if (!Number.isSafeInteger(rect.x + rect.width)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Highlight rectangle right edge must be a safe integer",
+        path: ["width"],
+      });
+    }
+    if (!Number.isSafeInteger(rect.y + rect.height)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Highlight rectangle bottom edge must be a safe integer",
+        path: ["height"],
+      });
+    }
+  });
 const objectCoordinateSchema = z.number().min(-1_000_000_000).max(1_000_000_000);
 const objectExtentSchema = z.number().min(0).max(1_000_000_000);
 const objectStringSchema = z.string().max(1_024);
@@ -1655,8 +1688,25 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           defaultScale: DEFAULT_NATIVE_PREVIEW_SCALE,
           layerSelection: ["visible", "explicit"],
-          overlays: ["grid", "coordinates"],
+          overlays: ["grid", "coordinates", "highlights"],
           regionCoordinates: "absolute-map-tiles",
+          highlightRectangles: {
+            coordinateSpace: "absolute-map-tiles",
+            maxRectangles: MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+            intersectionPolicy:
+              "require-intersection-and-clip-to-tile-region",
+            style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+            color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+            blendMode:
+              NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+            overlapMode:
+              NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+            border: "none",
+            drawOrder:
+              "after-tile-layers-before-grid-and-coordinates",
+            workBudget:
+              "included-in-native-preview-pixel-blend-limit",
+          },
           reportsOmittedVisibleLayers: true,
         },
         rasterMapCapabilities: {
@@ -1765,6 +1815,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxNativePreviewEdge: MAX_NATIVE_PREVIEW_EDGE,
           maxNativePreviewPixels: MAX_NATIVE_PREVIEW_PIXELS,
           maxNativePreviewScale: MAX_NATIVE_PREVIEW_SCALE,
+          maxNativePreviewHighlights:
+            MAX_NATIVE_PREVIEW_HIGHLIGHTS,
           maxNativePreviewRegionCells: MAX_PREVIEW_REGION_CELLS,
           maxNativePreviewLayers: MAX_PREVIEW_LAYERS,
           maxNativePreviewTileDraws: MAX_PREVIEW_TILE_DRAWS,
@@ -2390,7 +2442,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits. Asset discovery may update project-internal safety metadata.",
+        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and reports visible non-tile layers it omits. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -2431,6 +2483,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .object({
               grid: z.boolean().optional(),
               coordinates: z.boolean().optional(),
+              highlights: z
+                .array(
+                  nativePreviewHighlightRectInputSchema,
+                )
+                .min(1)
+                .max(
+                  MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+                )
+                .optional(),
             })
             .strict()
             .optional(),
@@ -2453,6 +2514,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   ...(overlays.coordinates === undefined
                     ? {}
                     : { coordinates: overlays.coordinates }),
+                  ...(overlays.highlights === undefined
+                    ? {}
+                    : { highlights: overlays.highlights }),
                 };
           const rendered = await maps.renderPreview({
             mapPath,

@@ -20,6 +20,17 @@ export const DEFAULT_NATIVE_PREVIEW_SCALE = 2;
 export const MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS = 16_000_000;
 export const MAX_NATIVE_PREVIEW_PIXEL_BLENDS = 30_000_000;
+export const MAX_NATIVE_PREVIEW_HIGHLIGHTS = 64;
+export const NATIVE_PREVIEW_HIGHLIGHT_STYLE = "selection-amber-v1";
+export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
+  Object.freeze({
+    r: 250,
+    g: 204,
+    b: 21,
+    a: 96,
+  } as const);
+export const NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE = "source-over";
+export const NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE = "tile-union";
 
 const COORDINATE_GUTTER_PADDING = 2;
 const COORDINATE_GLYPH_WIDTH = 3;
@@ -28,6 +39,12 @@ const COORDINATE_GLYPH_GAP = 1;
 const GUTTER_BACKGROUND: Rgba = [17, 24, 39, 255];
 const COORDINATE_COLOR: Rgba = [226, 232, 240, 255];
 const GRID_COLOR: Rgba = [255, 255, 255, 104];
+const HIGHLIGHT_FILL_COLOR: Rgba = [
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR.r,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR.g,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR.b,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR.a,
+];
 
 const GLYPHS: Readonly<Record<string, readonly string[]>> = {
   "0": ["111", "101", "101", "101", "111"],
@@ -57,6 +74,30 @@ export interface NativePreviewAtlas {
 export interface NativePreviewOverlayInput {
   grid: boolean;
   coordinates: boolean;
+  highlights?: readonly NativePreviewHighlightInput[];
+}
+
+export interface NativePreviewHighlightInput {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface NativePreviewHighlightRenderEntry {
+  sourceIndex: number;
+  requestedTileRect: NativePreviewHighlightInput;
+  renderedTileRect: NativePreviewHighlightInput;
+  clipped: boolean;
+}
+
+export interface NativePreviewHighlightRenderMetadata {
+  style: typeof NATIVE_PREVIEW_HIGHLIGHT_STYLE;
+  color: typeof NATIVE_PREVIEW_HIGHLIGHT_COLOR;
+  blendMode: typeof NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE;
+  overlapMode: typeof NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE;
+  highlightedTileCount: number;
+  entries: readonly NativePreviewHighlightRenderEntry[];
 }
 
 export interface RenderNativePreviewInput {
@@ -90,6 +131,7 @@ export interface NativePreviewRender {
     pixelOrigin: { x: number; y: number };
     pixelsPerTile: { x: number; y: number };
   };
+  highlightOverlay: NativePreviewHighlightRenderMetadata;
 }
 
 interface PreviewLayout {
@@ -103,12 +145,25 @@ interface PreviewLayout {
   tilePixelHeight: number;
 }
 
+interface ResolvedNativePreviewHighlights {
+  metadata: NativePreviewHighlightRenderMetadata;
+  tileMask: Uint8Array;
+}
+
 export async function renderNativePreview(
   input: RenderNativePreviewInput,
 ): Promise<NativePreviewRender> {
   validateInput(input);
   const layout = computeLayout(input);
-  assertPixelBlendBudget(input, layout);
+  const resolvedHighlights = resolveNativePreviewHighlights(
+    input.overlays.highlights,
+    input.region,
+  );
+  assertPixelBlendBudget(
+    input,
+    layout,
+    resolvedHighlights.metadata.highlightedTileCount,
+  );
   const canvas = Buffer.alloc(layout.width * layout.height * 4);
   const background = parseMapBackgroundColor(input.backgroundColor);
   if (background !== undefined) {
@@ -129,6 +184,12 @@ export async function renderNativePreview(
   for (const layer of input.layers) {
     renderLayer(canvas, layout, input, layer);
   }
+  renderHighlights(
+    canvas,
+    layout,
+    input.region,
+    resolvedHighlights.tileMask,
+  );
   if (input.overlays.grid) {
     drawGrid(canvas, layout, input.region);
   }
@@ -174,6 +235,7 @@ export async function renderNativePreview(
         y: layout.tilePixelHeight,
       },
     },
+    highlightOverlay: resolvedHighlights.metadata,
   };
 }
 
@@ -221,6 +283,289 @@ function validateInput(input: RenderNativePreviewInput): void {
       );
     }
   }
+}
+
+export function prepareNativePreviewHighlightOverlay(
+  highlights: readonly NativePreviewHighlightInput[] | undefined,
+  region: PreviewRegion,
+): NativePreviewHighlightRenderMetadata {
+  return resolveNativePreviewHighlights(highlights, region).metadata;
+}
+
+function resolveNativePreviewHighlights(
+  highlights: readonly NativePreviewHighlightInput[] | undefined,
+  region: PreviewRegion,
+): ResolvedNativePreviewHighlights {
+  if (highlights === undefined) {
+    return {
+      metadata: emptyHighlightMetadata(),
+      tileMask: new Uint8Array(0),
+    };
+  }
+  if (
+    !Array.isArray(highlights) ||
+    highlights.length === 0 ||
+    highlights.length > MAX_NATIVE_PREVIEW_HIGHLIGHTS
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `highlights must contain between 1 and ${MAX_NATIVE_PREVIEW_HIGHLIGHTS} rectangles when provided.`,
+      {
+        count: Array.isArray(highlights) ? highlights.length : null,
+        min: 1,
+        max: MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+      },
+    );
+  }
+
+  const regionRight = checkedRectEnd(
+    region.x,
+    region.width,
+    "region",
+    "x",
+  );
+  const regionBottom = checkedRectEnd(
+    region.y,
+    region.height,
+    "region",
+    "y",
+  );
+  const entries: NativePreviewHighlightRenderEntry[] = [];
+  for (const [sourceIndex, highlight] of highlights.entries()) {
+    validateHighlightRect(highlight, sourceIndex);
+    const requestedRight = highlight.x + highlight.width;
+    const requestedBottom = highlight.y + highlight.height;
+    const renderedLeft = Math.max(highlight.x, region.x);
+    const renderedTop = Math.max(highlight.y, region.y);
+    const renderedRight = Math.min(requestedRight, regionRight);
+    const renderedBottom = Math.min(requestedBottom, regionBottom);
+    if (
+      renderedLeft >= renderedRight ||
+      renderedTop >= renderedBottom
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `highlights[${sourceIndex}] must intersect the rendered tile region.`,
+        {
+          sourceIndex,
+          requestedTileRect: highlight,
+          tileRegion: region,
+        },
+      );
+    }
+    const requestedTileRect = {
+      x: highlight.x,
+      y: highlight.y,
+      width: highlight.width,
+      height: highlight.height,
+    };
+    const renderedTileRect = {
+      x: renderedLeft,
+      y: renderedTop,
+      width: renderedRight - renderedLeft,
+      height: renderedBottom - renderedTop,
+    };
+    const clipped =
+      requestedTileRect.x !== renderedTileRect.x ||
+      requestedTileRect.y !== renderedTileRect.y ||
+      requestedTileRect.width !== renderedTileRect.width ||
+      requestedTileRect.height !== renderedTileRect.height;
+    entries.push({
+      sourceIndex,
+      requestedTileRect,
+      renderedTileRect,
+      clipped,
+    });
+  }
+  const tileMask = buildHighlightTileMask(entries, region);
+  const highlightedTileCount = countHighlightedTiles(tileMask);
+  return {
+    metadata: {
+      style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+      color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+      blendMode: NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+      overlapMode: NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+      highlightedTileCount,
+      entries,
+    },
+    tileMask,
+  };
+}
+
+function emptyHighlightMetadata(): NativePreviewHighlightRenderMetadata {
+  return {
+    style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+    color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+    blendMode: NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+    overlapMode: NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+    highlightedTileCount: 0,
+    entries: [],
+  };
+}
+
+function buildHighlightTileMask(
+  entries: readonly NativePreviewHighlightRenderEntry[],
+  region: PreviewRegion,
+): Uint8Array {
+  const cellCount = region.width * region.height;
+  if (
+    !Number.isSafeInteger(cellCount) ||
+    cellCount <= 0 ||
+    cellCount > MAX_NATIVE_PREVIEW_PIXELS
+  ) {
+    throw new TiledMcpError(
+      "PREVIEW_DIMENSIONS_EXCEEDED",
+      "The highlight tile region exceeds the native preview work dimensions.",
+      {
+        region,
+        maxCells: MAX_NATIVE_PREVIEW_PIXELS,
+      },
+    );
+  }
+  const differences = new Int16Array(cellCount);
+  for (const entry of entries) {
+    const left = entry.renderedTileRect.x - region.x;
+    const top = entry.renderedTileRect.y - region.y;
+    const right = left + entry.renderedTileRect.width;
+    const bottom = top + entry.renderedTileRect.height;
+    addHighlightDifference(differences, region.width, region.height, left, top, 1);
+    addHighlightDifference(
+      differences,
+      region.width,
+      region.height,
+      right,
+      top,
+      -1,
+    );
+    addHighlightDifference(
+      differences,
+      region.width,
+      region.height,
+      left,
+      bottom,
+      -1,
+    );
+    addHighlightDifference(
+      differences,
+      region.width,
+      region.height,
+      right,
+      bottom,
+      1,
+    );
+  }
+
+  const tileMask = new Uint8Array(cellCount);
+  for (let y = 0; y < region.height; y += 1) {
+    for (let x = 0; x < region.width; x += 1) {
+      const index = y * region.width + x;
+      const overlap =
+        (differences[index] ?? 0) +
+        (x === 0 ? 0 : (differences[index - 1] ?? 0)) +
+        (y === 0
+          ? 0
+          : (differences[index - region.width] ?? 0)) -
+        (x === 0 || y === 0
+          ? 0
+          : (differences[index - region.width - 1] ?? 0));
+      differences[index] = overlap;
+      if (overlap > 0) {
+        tileMask[index] = 1;
+      }
+    }
+  }
+  return tileMask;
+}
+
+function addHighlightDifference(
+  differences: Int16Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  delta: number,
+): void {
+  if (x >= width || y >= height) {
+    return;
+  }
+  const index = y * width + x;
+  differences[index] = (differences[index] ?? 0) + delta;
+}
+
+function countHighlightedTiles(tileMask: Uint8Array): number {
+  let count = 0;
+  for (const highlighted of tileMask) {
+    count += highlighted;
+  }
+  return count;
+}
+
+function validateHighlightRect(
+  highlight: NativePreviewHighlightInput,
+  sourceIndex: number,
+): void {
+  if (
+    typeof highlight !== "object" ||
+    highlight === null ||
+    Array.isArray(highlight)
+  ) {
+    throw invalidHighlightRect(sourceIndex, null, highlight);
+  }
+  const keys = Object.keys(highlight).sort();
+  if (keys.join(",") !== "height,width,x,y") {
+    throw invalidHighlightRect(sourceIndex, "shape", highlight);
+  }
+  for (const field of ["x", "y", "width", "height"] as const) {
+    const value = highlight[field];
+    const positive = field === "width" || field === "height";
+    if (
+      !Number.isSafeInteger(value) ||
+      (positive ? value <= 0 : value < 0)
+    ) {
+      throw invalidHighlightRect(sourceIndex, field, value);
+    }
+  }
+  checkedRectEnd(
+    highlight.x,
+    highlight.width,
+    `highlights[${sourceIndex}]`,
+    "x",
+  );
+  checkedRectEnd(
+    highlight.y,
+    highlight.height,
+    `highlights[${sourceIndex}]`,
+    "y",
+  );
+}
+
+function checkedRectEnd(
+  origin: number,
+  size: number,
+  rect: string,
+  axis: "x" | "y",
+): number {
+  const end = origin + size;
+  if (!Number.isSafeInteger(end)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${rect} ${axis} extent exceeds the safe integer range.`,
+      { rect, axis, origin, size },
+    );
+  }
+  return end;
+}
+
+function invalidHighlightRect(
+  sourceIndex: number,
+  field: string | null,
+  value: unknown,
+): TiledMcpError {
+  return new TiledMcpError(
+    "INVALID_ARGUMENT",
+    `highlights[${sourceIndex}] must be a strict non-negative safe tile rectangle with positive width and height.`,
+    { sourceIndex, field, value },
+  );
 }
 
 function computeLayout(input: RenderNativePreviewInput): PreviewLayout {
@@ -310,6 +655,7 @@ function assertOutputBudget(
 function assertPixelBlendBudget(
   input: RenderNativePreviewInput,
   layout: PreviewLayout,
+  highlightedTileCount: number,
 ): void {
   const pixelsPerTile =
     layout.tilePixelWidth * layout.tilePixelHeight;
@@ -320,6 +666,17 @@ function assertPixelBlendBudget(
     MAX_NATIVE_PREVIEW_PIXEL_BLENDS / pixelsPerTile,
   );
   let tileDraws = 0;
+  const highlightPixelBlends = highlightedTileCount * pixelsPerTile;
+  if (
+    !Number.isSafeInteger(highlightPixelBlends) ||
+    highlightPixelBlends > MAX_NATIVE_PREVIEW_PIXEL_BLENDS
+  ) {
+    throw previewPixelBlendBudgetExceeded({
+      tileDraws,
+      pixelsPerTile,
+      highlightPixelBlends,
+    });
+  }
   for (const layer of input.layers) {
     if (layer.opacity === 0) {
       continue;
@@ -348,22 +705,41 @@ function assertPixelBlendBudget(
         }
         if (gid !== 0) {
           tileDraws += 1;
-          if (tileDraws > maximumTileDraws) {
-            throw new TiledMcpError(
-              "RESULT_LIMIT_EXCEEDED",
-              `The preview exceeds the ${MAX_NATIVE_PREVIEW_PIXEL_BLENDS} pixel-blend work limit. Reduce region, layers or scale.`,
-              {
-                tileDraws,
-                pixelsPerTile,
-                pixelBlends: tileDraws * pixelsPerTile,
-                limit: MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
-              },
-            );
+          if (
+            tileDraws > maximumTileDraws ||
+            tileDraws * pixelsPerTile + highlightPixelBlends >
+              MAX_NATIVE_PREVIEW_PIXEL_BLENDS
+          ) {
+            throw previewPixelBlendBudgetExceeded({
+              tileDraws,
+              pixelsPerTile,
+              highlightPixelBlends,
+            });
           }
         }
       }
     }
   }
+}
+
+function previewPixelBlendBudgetExceeded(input: {
+  tileDraws: number;
+  pixelsPerTile: number;
+  highlightPixelBlends: number;
+}): TiledMcpError {
+  const tilePixelBlends = input.tileDraws * input.pixelsPerTile;
+  return new TiledMcpError(
+    "RESULT_LIMIT_EXCEEDED",
+    `The preview exceeds the ${MAX_NATIVE_PREVIEW_PIXEL_BLENDS} pixel-blend work limit. Reduce region, layers, highlights or scale.`,
+    {
+      tileDraws: input.tileDraws,
+      pixelsPerTile: input.pixelsPerTile,
+      tilePixelBlends,
+      highlightPixelBlends: input.highlightPixelBlends,
+      pixelBlends: tilePixelBlends + input.highlightPixelBlends,
+      limit: MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
+    },
+  );
 }
 
 function previewDimensionsExceeded(
@@ -467,6 +843,43 @@ function renderLayer(
           ? {}
           : { transparentColor: atlas.transparentColor }),
       });
+    }
+  }
+}
+
+function renderHighlights(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  region: PreviewRegion,
+  tileMask: Uint8Array,
+): void {
+  if (tileMask.length === 0) {
+    return;
+  }
+  for (let row = 0; row < region.height; row += 1) {
+    let column = 0;
+    while (column < region.width) {
+      const index = row * region.width + column;
+      if (tileMask[index] !== 1) {
+        column += 1;
+        continue;
+      }
+      const runStart = column;
+      while (
+        column < region.width &&
+        tileMask[row * region.width + column] === 1
+      ) {
+        column += 1;
+      }
+      blendLine(
+        canvas,
+        layout.width,
+        layout.contentLeft + runStart * layout.tilePixelWidth,
+        layout.contentTop + row * layout.tilePixelHeight,
+        (column - runStart) * layout.tilePixelWidth,
+        layout.tilePixelHeight,
+        HIGHLIGHT_FILL_COLOR,
+      );
     }
   }
 }

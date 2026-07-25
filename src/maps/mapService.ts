@@ -38,8 +38,10 @@ import {
   MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
   MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
   DEFAULT_NATIVE_PREVIEW_SCALE,
+  prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
+  type NativePreviewHighlightInput,
 } from "../images/mapPreview.js";
 import {
   parseTransparentColor,
@@ -463,6 +465,7 @@ export interface RenderPreviewInput {
   overlays?: {
     grid?: boolean;
     coordinates?: boolean;
+    highlights?: NativePreviewHighlightInput[];
   };
 }
 
@@ -1066,6 +1069,10 @@ export class MapService {
         ...(input.layerIds === undefined ? {} : { layerIds: input.layerIds }),
       },
     );
+    prepareNativePreviewHighlightOverlay(
+      input.overlays?.highlights,
+      scene.region,
+    );
 
     const atlases: NativePreviewAtlas[] = [];
     const sources: Array<Record<string, unknown>> = [];
@@ -1149,6 +1156,9 @@ export class MapService {
     const overlays = {
       grid: input.overlays?.grid ?? false,
       coordinates: input.overlays?.coordinates ?? false,
+      ...(input.overlays?.highlights === undefined
+        ? {}
+        : { highlights: input.overlays.highlights }),
     };
     let rendered;
     try {
@@ -1232,7 +1242,11 @@ export class MapService {
         partial: scene.omittedLayerCount > 0,
         snapshotConsistency: "non-atomic-read-set",
         scale,
-        overlays,
+        overlays: {
+          grid: overlays.grid,
+          coordinates: overlays.coordinates,
+          highlights: rendered.highlightOverlay,
+        },
         renderProfile:
           "finite-orthogonal-static-atlas-tilelayers-v1",
         truncated: false,

@@ -3,7 +3,12 @@ import { z } from "zod";
 import {
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
+  MAX_NATIVE_PREVIEW_HIGHLIGHTS,
   MAX_NATIVE_PREVIEW_SCALE,
+  NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+  NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_STYLE,
 } from "../images/mapPreview.js";
 import {
   MAX_TILESET_SHEET_BYTES,
@@ -520,6 +525,42 @@ const omittedPreviewLayerOutputSchema = z
   })
   .strict();
 
+const positiveNativePreviewTileRectOutputSchema =
+  z
+    .object({
+      x: nonnegativeIntegerOutputSchema.max(
+        Number.MAX_SAFE_INTEGER,
+      ),
+      y: nonnegativeIntegerOutputSchema.max(
+        Number.MAX_SAFE_INTEGER,
+      ),
+      width: positiveIntegerOutputSchema.max(
+        Number.MAX_SAFE_INTEGER,
+      ),
+      height: positiveIntegerOutputSchema.max(
+        Number.MAX_SAFE_INTEGER,
+      ),
+    })
+    .strict()
+    .superRefine((rect, context) => {
+      if (!Number.isSafeInteger(rect.x + rect.width)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Highlight rectangle right edge must be a safe integer",
+          path: ["width"],
+        });
+      }
+      if (!Number.isSafeInteger(rect.y + rect.height)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Highlight rectangle bottom edge must be a safe integer",
+          path: ["height"],
+        });
+      }
+    });
+
 const nativePreviewResultOutputSchema = z
   .object({
     mimeType: z.literal("image/png"),
@@ -563,6 +604,59 @@ const nativePreviewResultOutputSchema = z
       .object({
         grid: z.boolean(),
         coordinates: z.boolean(),
+        highlights: z
+          .object({
+            style: z.literal(
+              NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+            ),
+            entries: z
+              .array(
+                z
+                  .object({
+                    sourceIndex:
+                      nonnegativeIntegerOutputSchema.max(
+                        MAX_NATIVE_PREVIEW_HIGHLIGHTS -
+                          1,
+                      ),
+                    requestedTileRect:
+                      positiveNativePreviewTileRectOutputSchema,
+                    renderedTileRect:
+                      positiveNativePreviewTileRectOutputSchema,
+                    clipped: z.boolean(),
+                  })
+                  .strict(),
+              )
+              .max(
+                MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+              ),
+            highlightedTileCount:
+              nonnegativeIntegerOutputSchema.max(
+                MAX_PREVIEW_REGION_CELLS,
+              ),
+            color: z
+              .object({
+                r: z.literal(
+                  NATIVE_PREVIEW_HIGHLIGHT_COLOR.r,
+                ),
+                g: z.literal(
+                  NATIVE_PREVIEW_HIGHLIGHT_COLOR.g,
+                ),
+                b: z.literal(
+                  NATIVE_PREVIEW_HIGHLIGHT_COLOR.b,
+                ),
+                a: z.literal(
+                  NATIVE_PREVIEW_HIGHLIGHT_COLOR.a,
+                ),
+              })
+              .strict(),
+            blendMode: z.literal(
+              NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+            ),
+            overlapMode: z.literal(
+              NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+            ),
+          })
+          .strict(),
       })
       .strict(),
     renderProfile: z.literal(
@@ -570,7 +664,163 @@ const nativePreviewResultOutputSchema = z
     ),
     truncated: z.literal(false),
   })
-  .strict();
+  .strict()
+  .superRefine((result, context) => {
+    const region = result.tileRegion;
+    const regionRight = region.x + region.width;
+    const regionBottom = region.y + region.height;
+    const regionCells =
+      region.width * region.height;
+    if (
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width <= 0 ||
+      region.height <= 0 ||
+      !Number.isSafeInteger(regionRight) ||
+      !Number.isSafeInteger(regionBottom) ||
+      !Number.isSafeInteger(regionCells) ||
+      regionCells > MAX_PREVIEW_REGION_CELLS
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "tileRegion must be a positive, safe, bounded finite-map tile rectangle",
+        path: ["tileRegion"],
+      });
+      return;
+    }
+
+    const highlightedTiles =
+      new Uint8Array(regionCells);
+    const entries =
+      result.overlays.highlights.entries;
+    for (const [index, entry] of entries.entries()) {
+      const entryPath = [
+        "overlays",
+        "highlights",
+        "entries",
+        index,
+      ] as const;
+      if (entry.sourceIndex !== index) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Highlight sourceIndex must equal its ordered entry index",
+          path: [...entryPath, "sourceIndex"],
+        });
+      }
+
+      const requested = entry.requestedTileRect;
+      const requestedRight =
+        requested.x + requested.width;
+      const requestedBottom =
+        requested.y + requested.height;
+      const expectedRendered = {
+        x: Math.max(requested.x, region.x),
+        y: Math.max(requested.y, region.y),
+        width:
+          Math.min(requestedRight, regionRight) -
+          Math.max(requested.x, region.x),
+        height:
+          Math.min(requestedBottom, regionBottom) -
+          Math.max(requested.y, region.y),
+      };
+      if (
+        expectedRendered.width <= 0 ||
+        expectedRendered.height <= 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Each highlight entry must intersect tileRegion",
+          path: [...entryPath, "requestedTileRect"],
+        });
+        continue;
+      }
+
+      const rendered = entry.renderedTileRect;
+      const renderedMatchesIntersection =
+        rendered.x === expectedRendered.x &&
+        rendered.y === expectedRendered.y &&
+        rendered.width ===
+          expectedRendered.width &&
+        rendered.height ===
+          expectedRendered.height;
+      if (!renderedMatchesIntersection) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "renderedTileRect must equal the exact half-open intersection of requestedTileRect and tileRegion",
+          path: [...entryPath, "renderedTileRect"],
+        });
+      }
+
+      const expectedClipped =
+        requested.x !== rendered.x ||
+        requested.y !== rendered.y ||
+        requested.width !== rendered.width ||
+        requested.height !== rendered.height;
+      if (entry.clipped !== expectedClipped) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "clipped must exactly report whether requestedTileRect differs from renderedTileRect",
+          path: [...entryPath, "clipped"],
+        });
+      }
+
+      const renderedRight =
+        rendered.x + rendered.width;
+      const renderedBottom =
+        rendered.y + rendered.height;
+      if (
+        rendered.x < region.x ||
+        rendered.y < region.y ||
+        renderedRight > regionRight ||
+        renderedBottom > regionBottom
+      ) {
+        continue;
+      }
+      for (
+        let y = rendered.y;
+        y < renderedBottom;
+        y += 1
+      ) {
+        const rowOffset =
+          (y - region.y) * region.width;
+        for (
+          let x = rendered.x;
+          x < renderedRight;
+          x += 1
+        ) {
+          highlightedTiles[
+            rowOffset + x - region.x
+          ] = 1;
+        }
+      }
+    }
+
+    let highlightedTileCount = 0;
+    for (const highlighted of highlightedTiles) {
+      highlightedTileCount += highlighted;
+    }
+    if (
+      result.overlays.highlights
+        .highlightedTileCount !==
+      highlightedTileCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "highlightedTileCount must equal the tile union of rendered highlight entries",
+        path: [
+          "overlays",
+          "highlights",
+          "highlightedTileCount",
+        ],
+      });
+    }
+  });
 
 export const nativePreviewToolOutputSchema =
   toolOutputSchema(nativePreviewResultOutputSchema);

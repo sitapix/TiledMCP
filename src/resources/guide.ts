@@ -165,7 +165,9 @@ For an existing map:
 5. Use \`tiled_render_tileset_sheet\` with that \`mapPath\` and
    \`tilesetAssetId\` to see local tile IDs. Pages are zero-based.
 6. Use \`tiled_render_preview\` to inspect the current map or a bounded region.
-   Grid and coordinate overlays can make tile positions explicit.
+   Grid and coordinate overlays can make tile positions explicit. Use up to 64
+   fixed-style absolute tile rectangles in \`overlays.highlights\` to call out
+   a bounded selection without editing the map.
 
 Use \`tiled_analyze_usage\` when you need a read-only inventory of the whole
 map rather than a selected region. It recursively scans every finite tile-layer
@@ -208,6 +210,18 @@ Native preview v1 renders static atlas tile layers. A result with
 \`omittedLayers\` and the declared \`renderProfile\`. Object layers and
 unsupported drawing semantics are reported or rejected rather than silently
 rendered incorrectly.
+
+Each highlight rectangle is strict \`{x,y,width,height}\` in absolute map tile
+coordinates. It must intersect the effective \`tileRegion\`; a partial overlap
+is clipped and reported with ordered \`requestedTileRect\`,
+\`renderedTileRect\`, and \`clipped\` metadata, while a disjoint or
+safe-integer-overflowing rectangle rejects the whole render. The fixed
+\`selection-amber-v1\` overlay is a borderless RGBA \`(250,204,21,96)\`
+\`source-over\` fill. Repeated and overlapping rectangles are rendered as one
+tile union, so their input order cannot change the PNG. The result always
+reports the fixed style/color/modes, bounded entries, and exact
+\`highlightedTileCount\`; without requested highlights those are an empty list
+and zero. Highlight work shares the native preview pixel-blend limit.
 
 ## Attach an existing tileset safely
 

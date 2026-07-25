@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:b87d5d2b019634841390c4e7e2a2124c6781358f533d24532b093dc97b5b3de7",
+    "revision": "sha256:ca33c934c12861ee5bbb2e980b7438fbc0f7972f8e558397d1ae2d3209d6235e",
     "serverVersion": "0.0.1",
-    "size": 53422
+    "size": 54337
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 53422,
+  "size": 54337,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 53422 UTF-8 bytes, revision `sha256:b87d5d2b019634841390c4e7e2a2124c6781358f533d24532b093dc97b5b3de7`.
+Content contract: `text`, 54337 UTF-8 bytes, revision `sha256:ca33c934c12861ee5bbb2e980b7438fbc0f7972f8e558397d1ae2d3209d6235e`.
 
 Resource templates: none.
 
@@ -8610,6 +8610,10 @@ Output schema:
                   "const": 2048,
                   "type": "number"
                 },
+                "maxNativePreviewHighlights": {
+                  "const": 64,
+                  "type": "number"
+                },
                 "maxNativePreviewLayerLabelLength": {
                   "const": 128,
                   "type": "number"
@@ -8905,6 +8909,7 @@ Output schema:
                 "maxNativePreviewEdge",
                 "maxNativePreviewPixels",
                 "maxNativePreviewScale",
+                "maxNativePreviewHighlights",
                 "maxNativePreviewRegionCells",
                 "maxNativePreviewLayers",
                 "maxNativePreviewTileDraws",
@@ -9074,6 +9079,88 @@ Output schema:
                   "const": 2,
                   "type": "number"
                 },
+                "highlightRectangles": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blendMode": {
+                      "const": "source-over",
+                      "type": "string"
+                    },
+                    "border": {
+                      "const": "none",
+                      "type": "string"
+                    },
+                    "color": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "a": {
+                          "const": 96,
+                          "type": "number"
+                        },
+                        "b": {
+                          "const": 21,
+                          "type": "number"
+                        },
+                        "g": {
+                          "const": 204,
+                          "type": "number"
+                        },
+                        "r": {
+                          "const": 250,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "r",
+                        "g",
+                        "b",
+                        "a"
+                      ],
+                      "type": "object"
+                    },
+                    "coordinateSpace": {
+                      "const": "absolute-map-tiles",
+                      "type": "string"
+                    },
+                    "drawOrder": {
+                      "const": "after-tile-layers-before-grid-and-coordinates",
+                      "type": "string"
+                    },
+                    "intersectionPolicy": {
+                      "const": "require-intersection-and-clip-to-tile-region",
+                      "type": "string"
+                    },
+                    "maxRectangles": {
+                      "const": 64,
+                      "type": "number"
+                    },
+                    "overlapMode": {
+                      "const": "tile-union",
+                      "type": "string"
+                    },
+                    "style": {
+                      "const": "selection-amber-v1",
+                      "type": "string"
+                    },
+                    "workBudget": {
+                      "const": "included-in-native-preview-pixel-blend-limit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "coordinateSpace",
+                    "maxRectangles",
+                    "intersectionPolicy",
+                    "style",
+                    "color",
+                    "blendMode",
+                    "overlapMode",
+                    "border",
+                    "drawOrder",
+                    "workBudget"
+                  ],
+                  "type": "object"
+                },
                 "layerSelection": {
                   "items": [
                     {
@@ -9095,6 +9182,10 @@ Output schema:
                     },
                     {
                       "const": "coordinates",
+                      "type": "string"
+                    },
+                    {
+                      "const": "highlights",
                       "type": "string"
                     }
                   ],
@@ -9141,6 +9232,7 @@ Output schema:
                 "layerSelection",
                 "overlays",
                 "regionCoordinates",
+                "highlightRectangles",
                 "reportsOmittedVisibleLayers"
               ],
               "type": "object"
@@ -23073,7 +23165,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers and reports visible non-tile layers it omits. Asset discovery may update project-internal safety metadata.
+Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and reports visible non-tile layers it omits. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -23087,7 +23179,7 @@ Annotations:
 }
 ```
 
-Example purpose: 用内建渲染器生成带网格和绝对坐标的有界地图预览。
+Example purpose: 用内建渲染器生成带网格、绝对坐标和 tile-union 矩形高亮的有界地图预览。
 
 ```json
 {
@@ -23098,7 +23190,21 @@ Example purpose: 用内建渲染器生成带网格和绝对坐标的有界地图
     "mapPath": "maps/example.tmj",
     "overlays": {
       "coordinates": true,
-      "grid": true
+      "grid": true,
+      "highlights": [
+        {
+          "height": 2,
+          "width": 3,
+          "x": 2,
+          "y": 2
+        },
+        {
+          "height": 3,
+          "width": 3,
+          "x": 4,
+          "y": 3
+        }
+      ]
     },
     "region": {
       "height": 8,
@@ -23143,6 +23249,43 @@ Input schema:
         },
         "grid": {
           "type": "boolean"
+        },
+        "highlights": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "height": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
         }
       },
       "type": "object"
@@ -23442,11 +23585,159 @@ Output schema:
                 },
                 "grid": {
                   "type": "boolean"
+                },
+                "highlights": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "blendMode": {
+                      "const": "source-over",
+                      "type": "string"
+                    },
+                    "color": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "a": {
+                          "const": 96,
+                          "type": "number"
+                        },
+                        "b": {
+                          "const": 21,
+                          "type": "number"
+                        },
+                        "g": {
+                          "const": 204,
+                          "type": "number"
+                        },
+                        "r": {
+                          "const": 250,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "r",
+                        "g",
+                        "b",
+                        "a"
+                      ],
+                      "type": "object"
+                    },
+                    "entries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "clipped": {
+                            "type": "boolean"
+                          },
+                          "renderedTileRect": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "x": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "y": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "requestedTileRect": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "x": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "y": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceIndex": {
+                            "maximum": 63,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "sourceIndex",
+                          "requestedTileRect",
+                          "renderedTileRect",
+                          "clipped"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 64,
+                      "type": "array"
+                    },
+                    "highlightedTileCount": {
+                      "maximum": 20000,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "overlapMode": {
+                      "const": "tile-union",
+                      "type": "string"
+                    },
+                    "style": {
+                      "const": "selection-amber-v1",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "style",
+                    "entries",
+                    "highlightedTileCount",
+                    "color",
+                    "blendMode",
+                    "overlapMode"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
                 "grid",
-                "coordinates"
+                "coordinates",
+                "highlights"
               ],
               "type": "object"
             },

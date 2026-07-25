@@ -1,0 +1,192 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  nativePreviewToolOutputSchema,
+} from "../src/outputSchemas/read.js";
+
+const REVISION =
+  `sha256:${"0".repeat(64)}` as const;
+
+function validOutput(): Record<string, unknown> {
+  return {
+    result: {
+      mimeType: "image/png",
+      pixelSize: { width: 32, height: 32 },
+      byteLength: 1,
+      sha256: REVISION,
+      map: {
+        path: "maps/example.tmj",
+        revision: REVISION,
+      },
+      dependencyRevisions: {},
+      sources: [],
+      tileRegion: {
+        x: 4,
+        y: 6,
+        width: 2,
+        height: 2,
+      },
+      coordinateTransform: {
+        tileOrigin: { x: 4, y: 6 },
+        pixelOrigin: { x: 0, y: 0 },
+        pixelsPerTile: { x: 16, y: 16 },
+      },
+      contentPixelRect: {
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 32,
+      },
+      layerIds: [],
+      layerSelection: "visible",
+      omittedLayers: [],
+      omittedLayerCount: 0,
+      omittedLayersTruncated: false,
+      partial: false,
+      snapshotConsistency:
+        "non-atomic-read-set",
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        highlights: {
+          style: "selection-amber-v1",
+          entries: [
+            {
+              sourceIndex: 0,
+              requestedTileRect: {
+                x: 3,
+                y: 6,
+                width: 2,
+                height: 2,
+              },
+              renderedTileRect: {
+                x: 4,
+                y: 6,
+                width: 1,
+                height: 2,
+              },
+              clipped: true,
+            },
+            {
+              sourceIndex: 1,
+              requestedTileRect: {
+                x: 4,
+                y: 6,
+                width: 2,
+                height: 2,
+              },
+              renderedTileRect: {
+                x: 4,
+                y: 6,
+                width: 2,
+                height: 2,
+              },
+              clipped: false,
+            },
+          ],
+          highlightedTileCount: 4,
+          color: {
+            r: 250,
+            g: 204,
+            b: 21,
+            a: 96,
+          },
+          blendMode: "source-over",
+          overlapMode: "tile-union",
+        },
+      },
+      renderProfile:
+        "finite-orthogonal-static-atlas-tilelayers-v1",
+      truncated: false,
+    },
+  };
+}
+
+function resultOf(
+  output: Record<string, unknown>,
+): Record<string, unknown> {
+  return output.result as Record<string, unknown>;
+}
+
+function highlightsOf(
+  output: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = resultOf(output);
+  const overlays = result.overlays as Record<
+    string,
+    unknown
+  >;
+  return overlays.highlights as Record<
+    string,
+    unknown
+  >;
+}
+
+function entriesOf(
+  output: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  return highlightsOf(output).entries as Array<
+    Record<string, unknown>
+  >;
+}
+
+describe("native preview highlight output schema", () => {
+  it("accepts ordered clipped metadata and a tile-union count", () => {
+    expect(
+      nativePreviewToolOutputSchema.safeParse(
+        validOutput(),
+      ).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "ordered source index",
+      mutate(output: Record<string, unknown>) {
+        const first = entriesOf(output)[0];
+        if (first !== undefined) {
+          first.sourceIndex = 1;
+        }
+      },
+    },
+    {
+      name: "exact rendered intersection",
+      mutate(output: Record<string, unknown>) {
+        const first = entriesOf(output)[0];
+        if (first !== undefined) {
+          first.renderedTileRect = {
+            x: 4,
+            y: 6,
+            width: 1,
+            height: 1,
+          };
+        }
+      },
+    },
+    {
+      name: "exact clipped flag",
+      mutate(output: Record<string, unknown>) {
+        const first = entriesOf(output)[0];
+        if (first !== undefined) {
+          first.clipped = false;
+        }
+      },
+    },
+    {
+      name: "exact highlighted tile union",
+      mutate(output: Record<string, unknown>) {
+        highlightsOf(output).highlightedTileCount =
+          3;
+      },
+    },
+  ])("rejects a forged $name", ({ mutate }) => {
+    const output = validOutput();
+    mutate(output);
+    expect(
+      nativePreviewToolOutputSchema.safeParse(
+        output,
+      ).success,
+    ).toBe(false);
+  });
+});

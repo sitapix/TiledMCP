@@ -162,10 +162,24 @@
         "scale": 2,
         "overlays": {
           "grid": true,
-          "coordinates": true
+          "coordinates": true,
+          "highlights": [
+            {
+              "x": 2,
+              "y": 2,
+              "width": 3,
+              "height": 2
+            },
+            {
+              "x": 4,
+              "y": 3,
+              "width": 3,
+              "height": 3
+            }
+          ]
         }
       },
-      "purpose": "用内建渲染器生成带网格和绝对坐标的有界地图预览。"
+      "purpose": "用内建渲染器生成带网格、绝对坐标和 tile-union 矩形高亮的有界地图预览。"
     },
     {
       "name": "tiled_list_objects",

@@ -4,10 +4,17 @@ import { describe, expect, it } from "vitest";
 import type { AtlasGeometry } from "../src/images/atlas.js";
 import {
   MAX_NATIVE_PREVIEW_EDGE,
+  MAX_NATIVE_PREVIEW_HIGHLIGHTS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_PIXELS,
+  NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+  NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+  NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+  prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
+  type NativePreviewHighlightInput,
 } from "../src/images/mapPreview.js";
 import {
   GID_DIAGONAL_OR_HEX_60,
@@ -224,6 +231,283 @@ describe("renderNativePreview", () => {
     expect(pixel(decoded, 7, 10)).toEqual([255, 104, 104, 255]);
     expect(pixel(decoded, 23, 10)).toEqual([255, 104, 104, 255]);
     expect(pixel(decoded, 8, 10)).toEqual(RED);
+  });
+
+  it("renders absolute clipped highlights as an order-independent tile union before grid and coordinates", async () => {
+    const atlas = previewAtlas({
+      rgba: solidPixels(16, 16, RED),
+      imageWidth: 16,
+      imageHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+      tileCount: 1,
+      columns: 1,
+    });
+    const highlights = [
+      { x: 11, y: 20, width: 1, height: 1 },
+      { x: 11, y: 20, width: 1, height: 1 },
+      { x: 9, y: 21, width: 2, height: 1 },
+    ] satisfies NativePreviewHighlightInput[];
+    const render = (ordered: readonly NativePreviewHighlightInput[]) =>
+      renderNativePreview({
+        tileWidth: 16,
+        tileHeight: 16,
+        region: { x: 10, y: 20, width: 4, height: 2 },
+        layers: [
+          tileLayer({
+            x: 10,
+            y: 20,
+            width: 4,
+            height: 2,
+            data: Array.from({ length: 8 }, () => 1),
+          }),
+        ],
+        atlases: [atlas],
+        scale: 1,
+        overlays: {
+          grid: true,
+          coordinates: true,
+          highlights: ordered,
+        },
+      });
+
+    const rendered = await render(highlights);
+    const reordered = await render(highlights.toReversed());
+    const decoded = await decodeRgba(rendered.png);
+
+    expect(rendered.png).toEqual(reordered.png);
+    expect(rendered.highlightOverlay).toEqual({
+      style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+      color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+      blendMode: NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+      overlapMode: NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+      highlightedTileCount: 2,
+      entries: [
+        {
+          sourceIndex: 0,
+          requestedTileRect: highlights[0],
+          renderedTileRect: highlights[0],
+          clipped: false,
+        },
+        {
+          sourceIndex: 1,
+          requestedTileRect: highlights[1],
+          renderedTileRect: highlights[1],
+          clipped: false,
+        },
+        {
+          sourceIndex: 2,
+          requestedTileRect: highlights[2],
+          renderedTileRect: { x: 10, y: 21, width: 1, height: 1 },
+          clipped: true,
+        },
+      ],
+    });
+
+    // The duplicate selection is blended exactly once over the red tile.
+    expect(pixel(decoded, 29, 11)).toEqual([253, 77, 8, 255]);
+    // Grid is composited after the highlight at the absolute x=11 boundary.
+    expect(pixel(decoded, 27, 11)).toEqual([254, 150, 109, 255]);
+    // An unselected tile remains unchanged.
+    expect(pixel(decoded, 45, 11)).toEqual(RED);
+    // The partially clipped third entry still selects its visible tile.
+    expect(pixel(decoded, 13, 27)).toEqual([253, 77, 8, 255]);
+    // Coordinate glyphs remain above and outside the content overlay.
+    expect(pixel(decoded, 32, 2)).toEqual([226, 232, 240, 255]);
+  });
+
+  it("normalizes bounded highlight metadata with nonzero region origins", () => {
+    expect(
+      prepareNativePreviewHighlightOverlay(
+        [
+          { x: 8, y: 12, width: 4, height: 3 },
+          { x: 10, y: 13, width: 2, height: 2 },
+        ],
+        { x: 10, y: 13, width: 3, height: 2 },
+      ),
+    ).toEqual({
+      style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+      color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+      blendMode: NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+      overlapMode: NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+      highlightedTileCount: 4,
+      entries: [
+        {
+          sourceIndex: 0,
+          requestedTileRect: { x: 8, y: 12, width: 4, height: 3 },
+          renderedTileRect: { x: 10, y: 13, width: 2, height: 2 },
+          clipped: true,
+        },
+        {
+          sourceIndex: 1,
+          requestedTileRect: { x: 10, y: 13, width: 2, height: 2 },
+          renderedTileRect: { x: 10, y: 13, width: 2, height: 2 },
+          clipped: false,
+        },
+      ],
+    });
+    expect(
+      prepareNativePreviewHighlightOverlay(
+        undefined,
+        { x: 10, y: 13, width: 3, height: 2 },
+      ),
+    ).toEqual({
+      style: NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+      color: NATIVE_PREVIEW_HIGHLIGHT_COLOR,
+      blendMode: NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
+      overlapMode: NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
+      highlightedTileCount: 0,
+      entries: [],
+    });
+  });
+
+  it("renders a fixed amber union over transparent pixels at scale four", async () => {
+    const rendered = await renderNativePreview({
+      tileWidth: 1,
+      tileHeight: 1,
+      region: { x: 3, y: 4, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 4,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        highlights: [
+          { x: 3, y: 4, width: 1, height: 1 },
+        ],
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+
+    expect(rendered.pixelSize).toEqual({
+      width: 4,
+      height: 4,
+    });
+    expect(pixel(decoded, 2, 2)).toEqual([
+      NATIVE_PREVIEW_HIGHLIGHT_COLOR.r,
+      NATIVE_PREVIEW_HIGHLIGHT_COLOR.g,
+      NATIVE_PREVIEW_HIGHLIGHT_COLOR.b,
+      NATIVE_PREVIEW_HIGHLIGHT_COLOR.a,
+    ]);
+  });
+
+  it.each([
+    ["an empty list", []],
+    [
+      "too many rectangles",
+      Array.from(
+        { length: MAX_NATIVE_PREVIEW_HIGHLIGHTS + 1 },
+        () => ({ x: 0, y: 0, width: 1, height: 1 }),
+      ),
+    ],
+    ["a negative coordinate", [{ x: -1, y: 0, width: 2, height: 1 }]],
+    [
+      "an overflowing extent",
+      [{ x: Number.MAX_SAFE_INTEGER, y: 0, width: 1, height: 1 }],
+    ],
+    ["no region intersection", [{ x: 2, y: 0, width: 1, height: 1 }]],
+    [
+      "only a half-open boundary touch",
+      [{ x: 1, y: 0, width: 1, height: 1 }],
+    ],
+    [
+      "an extra property",
+      [{ x: 0, y: 0, width: 1, height: 1, label: "not-supported" }],
+    ],
+  ])("rejects highlight input with %s", (_label, highlights) => {
+    expect(() =>
+      prepareNativePreviewHighlightOverlay(
+        highlights,
+        { x: 0, y: 0, width: 1, height: 1 },
+      ),
+    ).toThrow(expect.objectContaining({ code: "INVALID_ARGUMENT" }));
+  });
+
+  it("counts 64 overlapping rectangles once and aggregates their union into the blend budget", async () => {
+    const highlights = Array.from(
+      { length: MAX_NATIVE_PREVIEW_HIGHLIGHTS },
+      () => ({ x: 0, y: 0, width: 100, height: 100 }),
+    );
+    const rendered = await renderNativePreview({
+      tileWidth: 4,
+      tileHeight: 4,
+      region: { x: 0, y: 0, width: 100, height: 100 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        highlights,
+      },
+    });
+
+    expect(rendered.highlightOverlay.highlightedTileCount).toBe(10_000);
+
+    const tileWidth = 500;
+    const tileHeight = 500;
+    const layersAtTileBudget =
+      MAX_NATIVE_PREVIEW_PIXEL_BLENDS / (tileWidth * tileHeight);
+    await expect(
+      renderNativePreview({
+        tileWidth,
+        tileHeight,
+        region: { x: 0, y: 0, width: 1, height: 1 },
+        layers: Array.from(
+          { length: layersAtTileBudget - 1 },
+          (_, index) =>
+            tileLayer({
+              id: index + 1,
+              width: 1,
+              height: 1,
+              data: [1],
+            }),
+        ),
+        atlases: [],
+        scale: 1,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          highlights: [
+            { x: 0, y: 0, width: 1, height: 1 },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "GID_OUT_OF_RANGE",
+    });
+    await expect(
+      renderNativePreview({
+        tileWidth,
+        tileHeight,
+        region: { x: 0, y: 0, width: 1, height: 1 },
+        layers: Array.from(
+          { length: layersAtTileBudget },
+          (_, index) =>
+            tileLayer({
+              id: index + 1,
+              width: 1,
+              height: 1,
+              data: [1],
+            }),
+        ),
+        atlases: [],
+        scale: 1,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          highlights: [{ x: 0, y: 0, width: 1, height: 1 }],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        tileDraws: layersAtTileBudget,
+        pixelsPerTile: tileWidth * tileHeight,
+        highlightPixelBlends: tileWidth * tileHeight,
+        limit: MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
+      },
+    });
   });
 
   it.each([

@@ -2748,6 +2748,23 @@ describe("createTiledMcpServer", () => {
         layerSelection: string[];
         overlays: string[];
         regionCoordinates: string;
+        highlightRectangles: {
+          coordinateSpace: string;
+          maxRectangles: number;
+          intersectionPolicy: string;
+          style: string;
+          color: {
+            r: number;
+            g: number;
+            b: number;
+            a: number;
+          };
+          blendMode: string;
+          overlapMode: string;
+          border: string;
+          drawOrder: string;
+          workBudget: string;
+        };
         reportsOmittedVisibleLayers: boolean;
       };
       limits: {
@@ -2802,6 +2819,7 @@ describe("createTiledMcpServer", () => {
         maxNativePreviewEdge: number;
         maxNativePreviewPixels: number;
         maxNativePreviewScale: number;
+        maxNativePreviewHighlights: number;
         maxNativePreviewRegionCells: number;
         maxNativePreviewLayers: number;
         maxNativePreviewTileDraws: number;
@@ -3377,8 +3395,23 @@ describe("createTiledMcpServer", () => {
         supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
         defaultScale: 2,
         layerSelection: ["visible", "explicit"],
-        overlays: ["grid", "coordinates"],
+        overlays: ["grid", "coordinates", "highlights"],
         regionCoordinates: "absolute-map-tiles",
+        highlightRectangles: {
+          coordinateSpace: "absolute-map-tiles",
+          maxRectangles: 64,
+          intersectionPolicy:
+            "require-intersection-and-clip-to-tile-region",
+          style: "selection-amber-v1",
+          color: { r: 250, g: 204, b: 21, a: 96 },
+          blendMode: "source-over",
+          overlapMode: "tile-union",
+          border: "none",
+          drawOrder:
+            "after-tile-layers-before-grid-and-coordinates",
+          workBudget:
+            "included-in-native-preview-pixel-blend-limit",
+        },
         reportsOmittedVisibleLayers: true,
       },
       limits: {
@@ -3433,6 +3466,7 @@ describe("createTiledMcpServer", () => {
         maxNativePreviewEdge: 2_048,
         maxNativePreviewPixels: 1_500_000,
         maxNativePreviewScale: 4,
+        maxNativePreviewHighlights: 64,
         maxNativePreviewRegionCells: 20_000,
         maxNativePreviewLayers: 128,
         maxNativePreviewTileDraws: 250_000,
@@ -4106,7 +4140,14 @@ describe("createTiledMcpServer", () => {
         name: "tiled_render_preview",
         arguments: {
           mapPath: MAP_PATH,
-          overlays: { grid: true, coordinates: true },
+          overlays: {
+            grid: true,
+            coordinates: true,
+            highlights: [
+              { x: 0, y: 0, width: 2, height: 2 },
+              { x: 1, y: 1, width: 2, height: 2 },
+            ],
+          },
         },
       }),
     );
@@ -4158,6 +4199,38 @@ describe("createTiledMcpServer", () => {
           omittedLayersTruncated: boolean;
           partial: boolean;
           snapshotConsistency: string;
+          overlays: {
+            grid: boolean;
+            coordinates: boolean;
+            highlights: {
+              style: string;
+              entries: Array<{
+                sourceIndex: number;
+                requestedTileRect: {
+                  x: number;
+                  y: number;
+                  width: number;
+                  height: number;
+                };
+                renderedTileRect: {
+                  x: number;
+                  y: number;
+                  width: number;
+                  height: number;
+                };
+                clipped: boolean;
+              }>;
+              highlightedTileCount: number;
+              color: {
+                r: number;
+                g: number;
+                b: number;
+                a: number;
+              };
+              blendMode: string;
+              overlapMode: string;
+            };
+          };
           renderProfile: string;
           truncated: boolean;
         };
@@ -4197,6 +4270,51 @@ describe("createTiledMcpServer", () => {
       omittedLayersTruncated: false,
       partial: true,
       snapshotConsistency: "non-atomic-read-set",
+      overlays: {
+        grid: true,
+        coordinates: true,
+        highlights: {
+          style: "selection-amber-v1",
+          entries: [
+            {
+              sourceIndex: 0,
+              requestedTileRect: {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+              },
+              renderedTileRect: {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+              },
+              clipped: false,
+            },
+            {
+              sourceIndex: 1,
+              requestedTileRect: {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 2,
+              },
+              renderedTileRect: {
+                x: 1,
+                y: 1,
+                width: 1,
+                height: 1,
+              },
+              clipped: true,
+            },
+          ],
+          highlightedTileCount: 4,
+          color: { r: 250, g: 204, b: 21, a: 96 },
+          blendMode: "source-over",
+          overlapMode: "tile-union",
+        },
+      },
       renderProfile: "finite-orthogonal-static-atlas-tilelayers-v1",
       truncated: false,
     });
@@ -4222,6 +4340,56 @@ describe("createTiledMcpServer", () => {
         error: {
           code: "LAYER_TYPE_MISMATCH",
           details: { layerId: OBJECT_LAYER_ID },
+        },
+      },
+    });
+  });
+
+  it("rejects a native preview highlight outside the effective tile region without image content", async () => {
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_render_preview",
+        arguments: {
+          mapPath: MAP_PATH,
+          region: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+          overlays: {
+            highlights: [
+              {
+                x: 1,
+                y: 1,
+                width: 1,
+                height: 1,
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(response.isError).toBe(true);
+    expect(
+      response.content.every(
+        (block) => block.type !== "image",
+      ),
+    ).toBe(true);
+    expect(response.structuredContent).toMatchObject({
+      result: {
+        ok: false,
+        error: {
+          code: "INVALID_ARGUMENT",
+          details: {
+            sourceIndex: 0,
+            tileRegion: {
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+            },
+          },
         },
       },
     });

@@ -1280,7 +1280,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_render_preview` | **已实现 native v1**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格与绝对坐标；不支持的视觉语义 fail closed。对象、碰撞和高亮仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
+| `tiled_render_preview` | **已实现 native v1**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格、绝对坐标和最多 64 个固定样式的绝对 tile 矩形高亮；不支持的视觉语义 fail closed。对象与碰撞仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
 | `tiled_render_tileset_sheet` | **已实现基础版**。按地图摘要给出的 opaque asset id 渲染连续 local id 的分页 atlas sheet；安全预算不足时自动减小每页容量，不静默缩放 tile。语义名与任意 `tileIds` 选择留待注册表实现 | `mapPath`, `tilesetAssetId`, `page?`, `pageSize?`, `columns?`, `scale?` |
 | `tiled_render_tiles` | 后续候选。放大少量 tile、动画胶片条或 wang set 分组 | `tileset`, `tileIds?`, `animation?`, `wangset?`, `scale?` |
 | `tiled_render_diff` | 后续候选。按显式 changeSetId、revision 或比较资产渲染差异，不读取“上一步操作” | `mapPath`, `changeSetId?\|compareWithRevision?\|compareWith?`, `region?` |
@@ -1322,6 +1322,23 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
     tileOrigin: { x: number; y: number };
     pixelOrigin: { x: number; y: number };
     pixelsPerTile: { x: number; y: number };
+  };
+  overlays?: {
+    grid: boolean;
+    coordinates: boolean;
+    highlights: {
+      style: "selection-amber-v1";
+      entries: Array<{
+        sourceIndex: number;
+        requestedTileRect: { x: number; y: number; width: number; height: number };
+        renderedTileRect: { x: number; y: number; width: number; height: number };
+        clipped: boolean;
+      }>; // <= 64，和输入顺序一一对应
+      highlightedTileCount: number; // tile union 后的精确格数，<= tileRegion cells
+      color: { r: 250; g: 204; b: 21; a: 96 };
+      blendMode: "source-over";
+      overlapMode: "tile-union";
+    };
   };
   layerIds?: number[];
   page?: {
@@ -1409,16 +1426,28 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   `PREVIEW_REGION_REQUIRED`，不自动裁剪或降 scale。`layerIds` 省略时按文档顺序渲染
   有效可见 tile layer，并把可见但未支持的 object/image layer 放入 `omittedLayers`、
   标记 `partial: true`；显式 ID 只接受 tile layer，隐藏状态不阻止显式渲染。
+- `overlays.highlights` 若出现则必须包含 1–64 个 strict
+  `{x,y,width,height}` 矩形，使用绝对 map tile 坐标；`x/y` 非负、`width/height`
+  为正，四项与右/下边界都必须是安全整数。每一项必须和最终生效的 `tileRegion`
+  非空相交，否则整个调用以 `INVALID_ARGUMENT` 失败且不返回图片；允许部分越过
+  `tileRegion`，但只绘制交集，并在公开 metadata 中同时保留 requested 与 rendered
+  矩形及 `clipped` 标记。高亮位于 tile layer 之后、grid 和 coordinate gutter
+  之前；固定 `selection-amber-v1` 为 RGBA `(250,204,21,96)`、`source-over`、
+  fill-only/no-border。重叠或重复矩形按 tile union 每格只混合一次，因此输入顺序不影响
+  PNG；公开 entries 仍按输入保序，`highlightedTileCount` 是 union 后的精确格数。
+  即使未请求高亮，结果也固定返回相同对象、空 entries 和 0 count。
 - native v1 支持静态 external atlas、透明色、layer opacity、orthogonal H/V/D 与 bit 29
   忽略；D 总是先于 H/V，非方形 tile 的 D 暂时 fail closed。atlas tile 尺寸必须与 map
   grid 相同。blend/tint、parallax、非零 pixel offset、非默认 group opacity、动画、
   per-tile image subrect、tileoffset、`tilerendersize:grid`、image collection 和
   非有限/非正交地图不做近似。
-- native preview 上限为 region 20,000 cells、128 个 tile layer、250,000 次潜在 tile
+- native preview 上限为 region 20,000 cells、128 个 tile layer、64 个 highlight
+  rectangle、250,000 次潜在 tile
   draw、30,000,000 次 pixel blend、64 个实际 atlas；`omittedLayers` 最多内联 128 项，
   超出时返回总数和 `omittedLayersTruncated`。atlas 源文件累计 64 MiB、声明解码像素累计 16,000,000。
   输出为 scale 1–4、2048 单边、1,500,000 像素、编码后 8 MiB。精确值由
-  `tiled_get_capabilities` 返回。
+  `tiled_get_capabilities` 返回。union 后的高亮 fill 工作也计入同一个 pixel-blend
+  上限，不能通过大量重叠矩形绕过预算。
 - map 与 TSJ 会在响应前复核 revision；每个 image revision 精确绑定本次读取并渲染的
   bytes，但多图片读取集合不是跨文件原子快照。结果以
   `snapshotConsistency: "non-atomic-read-set"` 明示这一点。
