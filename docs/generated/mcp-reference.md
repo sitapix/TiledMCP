@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:ca33c934c12861ee5bbb2e980b7438fbc0f7972f8e558397d1ae2d3209d6235e",
+    "revision": "sha256:e64e12ef1ce396e7951441cac96b52ec7aebe864db869403a52128b8ef1e6de6",
     "serverVersion": "0.0.1",
-    "size": 54337
+    "size": 55150
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 54337,
+  "size": 55150,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 54337 UTF-8 bytes, revision `sha256:ca33c934c12861ee5bbb2e980b7438fbc0f7972f8e558397d1ae2d3209d6235e`.
+Content contract: `text`, 55150 UTF-8 bytes, revision `sha256:e64e12ef1ce396e7951441cac96b52ec7aebe864db869403a52128b8ef1e6de6`.
 
 Resource templates: none.
 
@@ -8654,6 +8654,10 @@ Output schema:
                   "const": 200000,
                   "type": "number"
                 },
+                "maxPendingObjectShapePoints": {
+                  "const": 65536,
+                  "type": "number"
+                },
                 "maxRasterInputAggregateBytes": {
                   "const": 67108864,
                   "type": "number"
@@ -8851,6 +8855,7 @@ Output schema:
                 "maxRegionCells",
                 "maxChangeSetCellWrites",
                 "maxPendingChangeSetCellWrites",
+                "maxPendingObjectShapePoints",
                 "maxStampPatternEdge",
                 "maxStampPatternCells",
                 "maxObjectMutationsPerChangeSet",
@@ -9274,12 +9279,72 @@ Output schema:
                     {
                       "const": "capsule",
                       "type": "string"
+                    },
+                    {
+                      "const": "polygon",
+                      "type": "string"
+                    },
+                    {
+                      "const": "polyline",
+                      "type": "string"
                     }
                   ],
                   "type": "array"
                 },
                 "ellipseAndCapsuleDimensions": {
                   "const": "optional-nonnegative-default-zero",
+                  "type": "string"
+                },
+                "polygonAndPolylinePoints": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coordinateSpace": {
+                      "const": "object-local-pixels-relative-to-x-y",
+                      "type": "string"
+                    },
+                    "maximum": {
+                      "const": 256,
+                      "type": "number"
+                    },
+                    "maximumPerChangeSet": {
+                      "const": 8192,
+                      "type": "number"
+                    },
+                    "order": {
+                      "const": "preserved",
+                      "type": "string"
+                    },
+                    "polygonClosure": {
+                      "const": "implicit",
+                      "type": "string"
+                    },
+                    "polygonMinimum": {
+                      "const": 3,
+                      "type": "number"
+                    },
+                    "polylineClosure": {
+                      "const": "open",
+                      "type": "string"
+                    },
+                    "polylineMinimum": {
+                      "const": 2,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "coordinateSpace",
+                    "polygonMinimum",
+                    "polylineMinimum",
+                    "maximum",
+                    "maximumPerChangeSet",
+                    "order",
+                    "polygonClosure",
+                    "polylineClosure"
+                  ],
+                  "type": "object"
+                },
+                "polygonAndPolylineUpdates": {
+                  "const": "common-fields-only-no-dimensions-or-points",
                   "type": "string"
                 },
                 "shapeMutation": {
@@ -9295,6 +9360,8 @@ Output schema:
                 "creatable",
                 "shapeMutation",
                 "ellipseAndCapsuleDimensions",
+                "polygonAndPolylinePoints",
+                "polygonAndPolylineUpdates",
                 "sourcePatch"
               ],
               "type": "object"
@@ -15367,7 +15434,7 @@ Annotations:
 }
 ```
 
-Example purpose: 预览一次严格、非空的 map 根属性编辑并取得待批准 change set。
+Example purpose: 在同一待批准 change set 中预览严格 map 根属性编辑及使用 object-local points 的 polygon/polyline 创建。
 
 ```json
 {
@@ -15383,6 +15450,54 @@ Example purpose: 预览一次严格、非空的 map 根属性编辑并取得待�
           "backgroundColor": "#334455"
         },
         "type": "updateMap"
+      },
+      {
+        "layerId": 2,
+        "object": {
+          "name": "Patrol area",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 32,
+              "y": 0
+            },
+            {
+              "x": 16,
+              "y": 24
+            }
+          ],
+          "shape": "polygon",
+          "x": 96,
+          "y": 64
+        },
+        "type": "createObject"
+      },
+      {
+        "layerId": 2,
+        "object": {
+          "name": "Guard route",
+          "points": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 24,
+              "y": -8
+            },
+            {
+              "x": 48,
+              "y": 16
+            }
+          ],
+          "shape": "polyline",
+          "x": 48,
+          "y": 80
+        },
+        "type": "createObject"
       }
     ]
   },
@@ -16399,6 +16514,150 @@ Input schema:
                       "shape",
                       "x",
                       "y"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "className": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "opacity": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "points": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "maximum": 1000000000,
+                              "minimum": -1000000000,
+                              "type": "number"
+                            },
+                            "y": {
+                              "maximum": 1000000000,
+                              "minimum": -1000000000,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 256,
+                        "minItems": 3,
+                        "type": "array"
+                      },
+                      "rotation": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "shape": {
+                        "const": "polygon",
+                        "type": "string"
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "x": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "y": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "x",
+                      "y",
+                      "points"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "className": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "opacity": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "points": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "x": {
+                              "maximum": 1000000000,
+                              "minimum": -1000000000,
+                              "type": "number"
+                            },
+                            "y": {
+                              "maximum": 1000000000,
+                              "minimum": -1000000000,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 256,
+                        "minItems": 2,
+                        "type": "array"
+                      },
+                      "rotation": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "shape": {
+                        "const": "polyline",
+                        "type": "string"
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "x": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "y": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "x",
+                      "y",
+                      "points"
                     ],
                     "type": "object"
                   }
@@ -17864,6 +18123,184 @@ Output schema:
                           },
                           "shape": {
                             "const": "capsule",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 3,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polygon",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polygon",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 2,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polyline",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polyline",
                             "type": "string"
                           },
                           "type": {

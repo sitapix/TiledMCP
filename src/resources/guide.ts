@@ -39,8 +39,8 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
 
 The M1 edit profile is intentionally narrow: finite orthogonal TMJ maps,
 external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle,
-point, ellipse, or Tiled 1.12 capsule objects. Unsupported Tiled semantics
-fail closed instead of being approximated.
+point, ellipse, Tiled 1.12 capsule, and bounded polygon/polyline objects.
+Unsupported Tiled semantics fail closed instead of being approximated.
 
 ## Filesystem threat model
 
@@ -341,18 +341,30 @@ union. Rectangle keeps optional \`width\` and \`height\`; point accepts no
 dimensions. Ellipse and capsule dimensions are also optional and default to
 zero. Explicit values must be finite, nonnegative, and at most 1,000,000,000.
 They serialize the corresponding \`ellipse:true\` or \`capsule:true\` Tiled
-marker.
+marker. Polygon requires 3–256 points and polyline requires 2–256. Each point
+is a strict \`{x,y}\` pair of finite local-pixel coordinates within ±1,000,000,000,
+relative to the object's \`x\`/\`y\` anchor; order is preserved. Polygon closure
+is implicit and polyline remains open. The server does not alter the supplied
+sequence.
 
-All four shapes can be updated or safely deleted. \`updateObject.patch\` has
-no shape field, so an update cannot change shape. Every ellipse or capsule
-update preserves the marker and continues to accept zero dimensions while
-interpreting omitted stored dimensions as zero and rejecting null, negative,
-non-finite, or oversized values. Object edits remain local
-to the owning object layer's \`objects\` member; creation separately advances
-\`nextobjectid\`. Inspect
+Polygon/polyline create wire forbids \`width\` and \`height\`; TMJ output writes
+both dimensions as zero and exactly one corresponding path array. One change
+set may create at most 8,192 path points, and all pending change sets together
+retain at most 65,536 path points.
+
+All six shapes can be updated or safely deleted. \`updateObject.patch\` has no
+shape or points field, so an update cannot change shape or path geometry.
+Polygon/polyline updates also reject \`width\` and \`height\`, allowing only
+common fields. Every ellipse or capsule update preserves the marker and
+continues to accept zero dimensions while interpreting omitted stored
+dimensions as zero and rejecting null, negative, non-finite, or oversized
+values. Object edits remain local to the owning object layer's \`objects\`
+member; creation separately advances \`nextobjectid\`. Inspect
 \`objectShapeCapabilities\` for the exact create union, shape-mutation policy,
-dimension rule, and source-patch scope. These operations do not add standalone
-tools, so the registry remains 23 core tools or 24 with the rasterizer.
+dimension/path rules, and source-patch scope; inspect
+\`limits.maxPendingObjectShapePoints\` for the pending-registry cap. These
+operations do not add standalone tools, so the registry remains 23 core tools
+or 24 with the rasterizer.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the

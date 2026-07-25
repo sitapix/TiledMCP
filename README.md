@@ -52,8 +52,8 @@
 - 通过同一 union 的第 15 种、可混批 `copyRegion` operation 在同一 map 内复制一个完整
   tile 矩形；source/destination 先快照、同层重叠采用 memmove 语义，空 source 会明确
   清空 destination，且不会 clipping 或跳格；
-- 基础 rectangle/point/ellipse/capsule 对象的有界列表与 create/update/delete（正确维护
-  `nextobjectid`）；
+- rectangle/point/ellipse/capsule 对象及有界 polygon/polyline path 对象的
+  create、基础字段 update 与 safe delete（正确维护 `nextobjectid`）；
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
 - 不依赖 Tiled 进程的有限正交 tile-layer region PNG 预览，支持图层筛选、GID
   H/V/D、opacity、网格、绝对坐标 gutter，以及最多 64 个固定 amber 样式的绝对
@@ -71,7 +71,7 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-无限地图、压缩 tile data、内嵌/图片集合 tileset、tile/text/polygon/polyline
+无限地图、压缩 tile data、内嵌/图片集合 tileset、tile/text
 对象、模板和跨文件事务尚未实现；
 这些输入会被明确拒绝，不会静默降级。
 
@@ -122,7 +122,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 
 目标是以 **TMJ/TSJ（JSON）无损读写**为地基，把 **Tiled CLI 与一次性脚本执行**作为格式转换、AutoMapping、Wang 编辑和兼容性验证后端，逐步提供面向结果的高层编辑工具与回滚安全网，并把**视觉闭环做成一等能力**：模型借助带 id 标注的 tileset 索引图选料，改完后渲染自查、对比确认。
 
-首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的 tileset sheet、基础 tile/rectangle/point/ellipse/capsule 对象编辑、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复。无限地图、跨文件事务、复杂属性、World/Template、Wang 与程序化生成将在基础读写闭环稳定后分期加入。
+首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的 tileset sheet、基础 tile/rectangle/point/ellipse/capsule 与有界 polygon/polyline 对象编辑、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复。无限地图、跨文件事务、复杂属性、World/Template、Wang 与程序化生成将在基础读写闭环稳定后分期加入。
 
 ## 快速开始
 
@@ -314,16 +314,23 @@ operation 合计最多写
 - `rectangle` 保持现有可选 `width` / `height` 契约；
 - `point` 不接受尺寸；
 - `ellipse` 与 Tiled 1.12 `capsule` 的 `width` / `height` 都可省略，省略时按 Tiled
-  语义写为 0；显式值必须有限、非负且不超过 `1,000,000,000`。
+  语义写为 0；显式值必须有限、非负且不超过 `1,000,000,000`；
+- `polygon` 要求 3–256 个、`polyline` 要求 2–256 个 strict `{x,y}` points。
+  点是相对 object `x/y` anchor 的本地像素坐标，每轴必须为
+  `[-1,000,000,000,1,000,000,000]` 内有限数，并原序保存；polygon 隐式闭合，
+  polyline 保持开放。这两类 wire 禁止 `width` / `height`，TMJ 中规范化写为 0。
 
 创建后，ellipse/capsule 分别在 TMJ object 中序列化唯一的
-`ellipse:true` / `capsule:true` marker。四类对象都能继续使用现有基础字段
+`ellipse:true` / `capsule:true` marker，path 则只写对应的 `polygon` 或 `polyline`
+数组。六类对象都能继续使用现有基础字段
 `updateObject` 与 `deleteObjects`；update 不提供 shape 字段，不能把一种形状变成另一种，
-ellipse/capsule 的尺寸更新继续接受 0，但拒绝负数、非有限数和超限值。preview/apply
+也不提供 points 字段；polygon/polyline 还拒绝 width/height update。ellipse/capsule
+的尺寸更新继续接受 0，但拒绝负数、非有限数和超限值。preview/apply
 继续固定 map 与完整 dependency revisions，只重写目标 object layer 的 `objects`
 member；创建时另推进 `nextobjectid`。
-`tiled_get_capabilities.objectShapeCapabilities` 明确公布可创建形状、禁止 shape
-mutation、ellipse/capsule 的可选非负尺寸与局部 patch 范围。
+`tiled_get_capabilities.objectShapeCapabilities` 明确公布可创建形状、path 点数/
+坐标/闭合语义、禁止 shape/points mutation、path 的 common-fields-only update 与局部
+patch 范围。
 
 修改已有图层的通用显示/元数据字段时，在同一个 `tiled_preview_edits` 中使用第 7 种
 operation：
@@ -745,8 +752,8 @@ gate、构建 `dist/`，并包含真实 production stdio smoke；
 
 测试覆盖路径沙箱、JSON 词法保真、revision 冲突、原子提交、checkpoint 启动对账、
 全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp、四向 flood fill、
-矩形 tile copy 与
-object 编辑闭环，
+矩形 tile copy 与 rectangle/point/ellipse/capsule/polygon/polyline object 编辑闭环
+（含 path 单项、change-set aggregate、pending registry 与 closed output 预算），
 以及 atlas 几何、SVG 安全预检、图片预算和
 native preview 的图层选择、H/V/D、opacity、region/grid/coordinate/highlight overlay、
 tile-union 与工作量预算，以及 MCP image wire
@@ -898,11 +905,14 @@ checkpoint restore。架构与 roadmap
   共用的 scan 和 1 次共享 tile-write 预算。preview 标为 destructive，只返回完整 counts/
   regions 而不返回 cell list；apply 仅把 copy 执行时改变的 destination layer `data`
   纳入局部 patch 候选，后序恢复原值时仍折叠为 exact-byte no-op。
-- `createObject` 的 strict shape union 支持 rectangle、point、ellipse 与 Tiled 1.12
-  capsule；后两者的 width/height 可省略并默认 0，也接受显式 0，且分别写出唯一
-  `ellipse:true` / `capsule:true` marker。四类都能 update/delete，但 update 不允许改变
-  shape；尺寸仍拒绝负数、非有限数和超过 1e9 的值。对象写回保持 object-layer
-  `objects` member-local。
+- `createObject` 的 strict shape union 支持 rectangle、point、ellipse、Tiled 1.12
+  capsule、polygon 与 polyline；ellipse/capsule 的 width/height 可省略并默认 0，也接受
+  显式 0。polygon 为 3–256 点、polyline 为 2–256 点，points 使用相对 object x/y 的
+  本地像素坐标、保序且每轴限制在 ±1e9；path wire 禁止 width/height，分别写成唯一
+  polygon/polyline 数组并把 TMJ dimensions 规范化为 0。单 change set 合计最多
+  8,192 点，pending registry 合计最多保留 65,536 点。六类都能 common-field
+  update/delete，但 update 不允许改变 shape/points，polygon/polyline 也不允许改尺寸。
+  对象写回保持 object-layer `objects` member-local。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
 - 使用同一规范化路径并遵守锁协议的 TiledMCP 写者由锁与 raw-byte CAS 保护；不遵守该锁

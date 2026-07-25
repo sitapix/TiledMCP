@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 import {
+  MAX_OBJECT_SHAPE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+  MIN_POLYGON_OBJECT_POINTS,
+  MIN_POLYLINE_OBJECT_POINTS,
+} from "../maps/mapService.js";
+import {
   MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
 } from "../storage/checkpoints.js";
@@ -215,6 +221,32 @@ const capsuleObjectDraftOutputSchema = z
     ...objectCommonOutputShape,
     width: objectExtentOutputSchema.optional(),
     height: objectExtentOutputSchema.optional(),
+  })
+  .strict();
+const objectPathPointOutputSchema = z
+  .object({
+    x: objectCoordinateOutputSchema,
+    y: objectCoordinateOutputSchema,
+  })
+  .strict();
+const polygonObjectDraftOutputSchema = z
+  .object({
+    shape: z.literal("polygon"),
+    ...objectCommonOutputShape,
+    points: z
+      .array(objectPathPointOutputSchema)
+      .min(MIN_POLYGON_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
+  })
+  .strict();
+const polylineObjectDraftOutputSchema = z
+  .object({
+    shape: z.literal("polyline"),
+    ...objectCommonOutputShape,
+    points: z
+      .array(objectPathPointOutputSchema)
+      .min(MIN_POLYLINE_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
   })
   .strict();
 const objectPatchOutputSchema = z
@@ -451,6 +483,22 @@ const createObjectOperationPreviewOutputSchema =
         layerId: positiveIdOutputSchema,
         shape: z.literal("capsule"),
         object: capsuleObjectDraftOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("createObject"),
+        layerId: positiveIdOutputSchema,
+        shape: z.literal("polygon"),
+        object: polygonObjectDraftOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("createObject"),
+        layerId: positiveIdOutputSchema,
+        shape: z.literal("polyline"),
+        object: polylineObjectDraftOutputSchema,
       })
       .strict(),
   ]);
@@ -1361,7 +1409,30 @@ const genericMapEditPreviewOutputSchema = z
     operations: z
       .array(genericOperationPreviewOutputSchema)
       .min(1)
-      .max(128),
+      .max(128)
+      .superRefine((operations, context) => {
+        let pathPointCount = 0;
+        for (const operation of operations) {
+          if (
+            operation.type === "createObject" &&
+            (operation.shape === "polygon" ||
+              operation.shape === "polyline")
+          ) {
+            pathPointCount +=
+              operation.object.points.length;
+          }
+        }
+        if (
+          pathPointCount >
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              `Polygon and polyline createObject previews may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+          });
+        }
+      }),
     summary: genericMapEditSummaryOutputSchema,
   })
   .strict();

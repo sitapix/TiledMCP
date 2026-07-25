@@ -2937,7 +2937,7 @@ describe("MapService", () => {
   it.each([
     ["template", "template", "../templates/enemy.tx"],
     ["tile", "gid", 1],
-    ["polygon", "polygon", [{ x: 0, y: 0 }, { x: 8, y: 0 }]],
+    ["text", "text", { text: "Unsupported text object" }],
   ] as const)(
     "rejects semantic updates to a complex %s object",
     async (_label, feature, value) => {

@@ -112,6 +112,10 @@ const MAX_OBJECT_STRING_LENGTH = 1_024;
 const MAX_OBJECT_DISPLAY_STRING_LENGTH = 128;
 const MAX_LAYER_OPERATION_ID_SAMPLE = 32;
 const MAX_ABSOLUTE_OBJECT_NUMBER = 1_000_000_000;
+export const MIN_POLYGON_OBJECT_POINTS = 3;
+export const MIN_POLYLINE_OBJECT_POINTS = 2;
+export const MAX_OBJECT_SHAPE_POINTS = 256;
+export const MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET = 8_192;
 const MAX_TILED_SIGNED_ID = 0x7fffffff;
 const MAX_EDITABLE_DOCUMENT_BYTES = 64 * 1024 * 1024;
 export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
@@ -373,7 +377,9 @@ type BasicEditableObjectShape =
   | "rectangle"
   | "point"
   | "ellipse"
-  | "capsule";
+  | "capsule"
+  | "polygon"
+  | "polyline";
 
 export interface CreateMapInput {
   mapPath: string;
@@ -3458,6 +3464,7 @@ function validateAndSummarizeOperations(
   let cellWrites = 0;
   let tileOperationScans = 0;
   let objectMutations = 0;
+  let objectShapePoints = 0;
   const affectedLayerIds = new Set<number>();
   const affectedTileLayerIds = new Set<number>();
   const affectedObjectLayerIds = new Set<number>();
@@ -4633,6 +4640,26 @@ function validateAndSummarizeOperations(
         `operations[${operationIndex}].object`,
         getObjectIndex(),
       );
+      if (
+        operation.object.shape === "polygon" ||
+        operation.object.shape === "polyline"
+      ) {
+        objectShapePoints += operation.object.points.length;
+        if (
+          objectShapePoints >
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may create at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} polygon/polyline points.`,
+            {
+              actual: objectShapePoints,
+              limit:
+                MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+            },
+          );
+        }
+      }
       affectedLayerIds.add(created.layer.id);
       affectedObjectLayerIds.add(created.layer.id);
       createdObjectIds.add(expectInteger(created.object.id, "created object id"));
@@ -8658,18 +8685,27 @@ function createBasicObject(
   }
 
   assertObjectDraft(draft, context);
+  const hasDimensions =
+    draft.shape === "rectangle" ||
+    draft.shape === "ellipse" ||
+    draft.shape === "capsule";
   const object: JsonObject = {
-    height: draft.shape === "point" ? 0 : (draft.height ?? 0),
+    height: hasDimensions ? (draft.height ?? 0) : 0,
     id: nextObjectId,
     name: draft.name ?? "",
     rotation: draft.rotation ?? 0,
     type: draft.className ?? "",
     visible: draft.visible ?? true,
-    width: draft.shape === "point" ? 0 : (draft.width ?? 0),
+    width: hasDimensions ? (draft.width ?? 0) : 0,
     x: draft.x,
     y: draft.y,
   };
-  if (draft.shape !== "rectangle") {
+  if (draft.shape === "polygon" || draft.shape === "polyline") {
+    object[draft.shape] = draft.points.map((point) => ({
+      x: point.x,
+      y: point.y,
+    }));
+  } else if (draft.shape !== "rectangle") {
     object[draft.shape] = true;
   }
   if (draft.opacity !== undefined) {
@@ -8731,6 +8767,17 @@ function updateBasicObject(
       "OBJECT_SHAPE_MISMATCH",
       "Point objects do not have editable width or height.",
       { path: mapPath, objectId },
+    );
+  }
+  if (
+    (shape === "polygon" || shape === "polyline") &&
+    (Object.prototype.hasOwnProperty.call(patch, "width") ||
+      Object.prototype.hasOwnProperty.call(patch, "height"))
+  ) {
+    throw new TiledMcpError(
+      "OBJECT_SHAPE_MISMATCH",
+      "Polygon and polyline objects do not have editable width or height.",
+      { path: mapPath, objectId, shape },
     );
   }
   assertObjectPatch(patch, context);
@@ -8931,14 +8978,18 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     draft.shape !== "rectangle" &&
     draft.shape !== "point" &&
     draft.shape !== "ellipse" &&
-    draft.shape !== "capsule"
+    draft.shape !== "capsule" &&
+    draft.shape !== "polygon" &&
+    draft.shape !== "polyline"
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context}.shape must be rectangle, point, ellipse or capsule.`,
+      `${context}.shape must be rectangle, point, ellipse, capsule, polygon or polyline.`,
     );
   }
-  if (draft.shape !== "point") {
+  if (draft.shape === "polygon" || draft.shape === "polyline") {
+    commonKeys.add("points");
+  } else if (draft.shape !== "point") {
     commonKeys.add("width");
     commonKeys.add("height");
   }
@@ -8951,14 +9002,25 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
   }
   assertObjectNumber(draft.x, `${context}.x`);
   assertObjectNumber(draft.y, `${context}.y`);
-  if (draft.shape !== "point") {
+  if (draft.shape === "polygon" || draft.shape === "polyline") {
+    assertObjectPathPoints(
+      draft.points,
+      draft.shape,
+      `${context}.points`,
+      "INVALID_ARGUMENT",
+    );
+  } else if (draft.shape !== "point") {
+    const sizedDraft = draft as ObjectDraft & {
+      width?: unknown;
+      height?: unknown;
+    };
     if (
       Object.prototype.hasOwnProperty.call(
         draft,
         "width",
       )
     ) {
-      assertObjectSize(draft.width, `${context}.width`);
+      assertObjectSize(sizedDraft.width, `${context}.width`);
     }
     if (
       Object.prototype.hasOwnProperty.call(
@@ -8966,10 +9028,82 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
         "height",
       )
     ) {
-      assertObjectSize(draft.height, `${context}.height`);
+      assertObjectSize(sizedDraft.height, `${context}.height`);
     }
   }
   assertOptionalObjectFields(draft, context);
+}
+
+function assertObjectPathPoints(
+  value: unknown,
+  shape: "polygon" | "polyline",
+  context: string,
+  errorCode: "INVALID_ARGUMENT" | "INVALID_DOCUMENT",
+): void {
+  const minimum =
+    shape === "polygon"
+      ? MIN_POLYGON_OBJECT_POINTS
+      : MIN_POLYLINE_OBJECT_POINTS;
+  if (
+    !Array.isArray(value) ||
+    value.length < minimum ||
+    value.length > MAX_OBJECT_SHAPE_POINTS
+  ) {
+    throw new TiledMcpError(
+      errorCode,
+      `${context} must contain between ${minimum} and ${MAX_OBJECT_SHAPE_POINTS} points for a ${shape}.`,
+      {
+        shape,
+        count: Array.isArray(value) ? value.length : null,
+        min: minimum,
+        max: MAX_OBJECT_SHAPE_POINTS,
+      },
+    );
+  }
+  for (const [pointIndex, point] of value.entries()) {
+    if (!isRecordValue(point)) {
+      throw new TiledMcpError(
+        errorCode,
+        `${context}[${pointIndex}] must be an object with exactly x and y.`,
+        { shape, pointIndex },
+      );
+    }
+    const keys = Object.keys(point).sort();
+    if (keys.length !== 2 || keys[0] !== "x" || keys[1] !== "y") {
+      throw new TiledMcpError(
+        errorCode,
+        `${context}[${pointIndex}] must contain exactly x and y.`,
+        { shape, pointIndex },
+      );
+    }
+    assertObjectPathCoordinate(
+      point.x,
+      `${context}[${pointIndex}].x`,
+      errorCode,
+    );
+    assertObjectPathCoordinate(
+      point.y,
+      `${context}[${pointIndex}].y`,
+      errorCode,
+    );
+  }
+}
+
+function assertObjectPathCoordinate(
+  value: unknown,
+  context: string,
+  errorCode: "INVALID_ARGUMENT" | "INVALID_DOCUMENT",
+): void {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    Math.abs(value) > MAX_ABSOLUTE_OBJECT_NUMBER
+  ) {
+    throw new TiledMcpError(
+      errorCode,
+      `${context} must be a finite number between -${MAX_ABSOLUTE_OBJECT_NUMBER} and ${MAX_ABSOLUTE_OBJECT_NUMBER}.`,
+    );
+  }
 }
 
 function assertObjectPatch(
@@ -9114,8 +9248,6 @@ function assertBasicEditableObject(
   const unsupportedKeys = [
     "template",
     "gid",
-    "polygon",
-    "polyline",
     "text",
   ];
   const unsupported = unsupportedKeys.find((key) =>
@@ -9124,7 +9256,7 @@ function assertBasicEditableObject(
   if (unsupported !== undefined) {
     throw new TiledMcpError(
       "UNSUPPORTED_OBJECT_PROFILE",
-      `Object ${objectId} uses ${unsupported}, which is outside basic rectangle/point/ellipse/capsule editing.`,
+      `Object ${objectId} uses ${unsupported}, which is outside rectangle/point/ellipse/capsule/polygon/polyline editing.`,
       { path: mapPath, objectId, feature: unsupported },
     );
   }
@@ -9132,6 +9264,8 @@ function assertBasicEditableObject(
     "point",
     "ellipse",
     "capsule",
+    "polygon",
+    "polyline",
   ] as const;
   const presentShapeMarkers =
     shapeMarkers.filter((marker) =>
@@ -9141,7 +9275,14 @@ function assertBasicEditableObject(
       ),
     );
   for (const marker of presentShapeMarkers) {
-    if (object[marker] !== true) {
+    if (marker === "polygon" || marker === "polyline") {
+      assertObjectPathPoints(
+        object[marker],
+        marker,
+        `object ${objectId}.${marker}`,
+        "INVALID_DOCUMENT",
+      );
+    } else if (object[marker] !== true) {
       throw new TiledMcpError(
         "INVALID_DOCUMENT",
         `Object ${objectId}.${marker} must be true when present.`,
@@ -9164,32 +9305,50 @@ function assertBasicEditableObject(
     presentShapeMarkers[0] ?? "rectangle";
   assertObjectNumber(object.x, `object ${objectId}.x`);
   assertObjectNumber(object.y, `object ${objectId}.y`);
-  const dimensionsMayBeOmitted =
-    shape === "ellipse" ||
-    shape === "capsule";
-  if (
-    !dimensionsMayBeOmitted ||
-    Object.prototype.hasOwnProperty.call(
-      object,
-      "width",
-    )
-  ) {
-    assertObjectSize(
-      object.width,
-      `object ${objectId}.width`,
-    );
-  }
-  if (
-    !dimensionsMayBeOmitted ||
-    Object.prototype.hasOwnProperty.call(
-      object,
-      "height",
-    )
-  ) {
-    assertObjectSize(
-      object.height,
-      `object ${objectId}.height`,
-    );
+  if (shape === "polygon" || shape === "polyline") {
+    for (const field of ["width", "height"] as const) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          object,
+          field,
+        )
+      ) {
+        assertStoredPathDimension(
+          object[field],
+          `object ${objectId}.${field}`,
+          mapPath,
+          objectId,
+        );
+      }
+    }
+  } else {
+    const dimensionsMayBeOmitted =
+      shape === "ellipse" ||
+      shape === "capsule";
+    if (
+      !dimensionsMayBeOmitted ||
+      Object.prototype.hasOwnProperty.call(
+        object,
+        "width",
+      )
+    ) {
+      assertObjectSize(
+        object.width,
+        `object ${objectId}.width`,
+      );
+    }
+    if (
+      !dimensionsMayBeOmitted ||
+      Object.prototype.hasOwnProperty.call(
+        object,
+        "height",
+      )
+    ) {
+      assertObjectSize(
+        object.height,
+        `object ${objectId}.height`,
+      );
+    }
   }
   if (object.rotation !== undefined) {
     assertObjectNumber(object.rotation, `object ${objectId}.rotation`);
@@ -9229,6 +9388,26 @@ function assertBasicEditableObject(
     );
   }
   return shape;
+}
+
+function assertStoredPathDimension(
+  value: unknown,
+  context: string,
+  mapPath: string,
+  objectId: number,
+): void {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    value > MAX_ABSOLUTE_OBJECT_NUMBER
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} must be a finite nonnegative number no greater than ${MAX_ABSOLUTE_OBJECT_NUMBER}.`,
+      { path: mapPath, objectId },
+    );
+  }
 }
 
 function summarizeObjectLocation(

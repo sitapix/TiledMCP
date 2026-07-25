@@ -291,10 +291,30 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           "destination-tile-layer-data-member-local",
       },
       objectShapeCapabilities: {
-        creatable: ["rectangle", "point", "ellipse", "capsule"],
+        creatable: [
+          "rectangle",
+          "point",
+          "ellipse",
+          "capsule",
+          "polygon",
+          "polyline",
+        ],
         shapeMutation: false,
         ellipseAndCapsuleDimensions:
           "optional-nonnegative-default-zero",
+        polygonAndPolylinePoints: {
+          coordinateSpace:
+            "object-local-pixels-relative-to-x-y",
+          polygonMinimum: 3,
+          polylineMinimum: 2,
+          maximum: 256,
+          maximumPerChangeSet: 8_192,
+          order: "preserved",
+          polygonClosure: "implicit",
+          polylineClosure: "open",
+        },
+        polygonAndPolylineUpdates:
+          "common-fields-only-no-dimensions-or-points",
         sourcePatch: "object-layer-objects-member-local",
       },
       layerOperations: [
@@ -370,6 +390,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
+        maxPendingObjectShapePoints: 65_536,
       },
       textContentContract: {
         name: "tiled-mcp-summary",
@@ -442,10 +463,30 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       ),
     });
     expect(capabilities?.objectShapeCapabilities).toEqual({
-      creatable: ["rectangle", "point", "ellipse", "capsule"],
+      creatable: [
+        "rectangle",
+        "point",
+        "ellipse",
+        "capsule",
+        "polygon",
+        "polyline",
+      ],
       shapeMutation: false,
       ellipseAndCapsuleDimensions:
         "optional-nonnegative-default-zero",
+      polygonAndPolylinePoints: {
+        coordinateSpace:
+          "object-local-pixels-relative-to-x-y",
+        polygonMinimum: 3,
+        polylineMinimum: 2,
+        maximum: 256,
+        maximumPerChangeSet: 8_192,
+        order: "preserved",
+        polygonClosure: "implicit",
+        polylineClosure: "open",
+      },
+      polygonAndPolylineUpdates:
+        "common-fields-only-no-dimensions-or-points",
       sourcePatch: "object-layer-objects-member-local",
     });
 

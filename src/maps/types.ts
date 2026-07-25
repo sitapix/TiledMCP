@@ -129,6 +129,11 @@ interface ObjectCommonInput {
   opacity?: number;
 }
 
+export interface ObjectPathPoint {
+  x: number;
+  y: number;
+}
+
 export type ObjectDraft =
   | (ObjectCommonInput & {
       shape: "rectangle";
@@ -145,6 +150,15 @@ export type ObjectDraft =
        */
       width?: number;
       height?: number;
+    })
+  | (ObjectCommonInput & {
+      shape: "polygon" | "polyline";
+      /**
+       * Ordered pixel coordinates relative to the object's x/y anchor.
+       * Polygons are implicitly closed by Tiled; callers must not repeat the
+       * first point unless that duplicate is intentional.
+       */
+      points: ObjectPathPoint[];
     });
 
 export interface CreateObjectOperation {

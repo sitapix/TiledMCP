@@ -2629,6 +2629,17 @@ describe("createTiledMcpServer", () => {
         creatable: string[];
         shapeMutation: boolean;
         ellipseAndCapsuleDimensions: string;
+        polygonAndPolylinePoints: {
+          coordinateSpace: string;
+          polygonMinimum: number;
+          polylineMinimum: number;
+          maximum: number;
+          maximumPerChangeSet: number;
+          order: string;
+          polygonClosure: string;
+          polylineClosure: string;
+        };
+        polygonAndPolylineUpdates: string;
         sourcePatch: string;
       };
       layerOperations: string[];
@@ -2813,6 +2824,7 @@ describe("createTiledMcpServer", () => {
         maxReplaceTileScans: number;
         maxStampPatternEdge: number;
         maxStampPatternCells: number;
+        maxPendingObjectShapePoints: number;
         maxCreateTileLayerCells: number;
         maxLayerNameLength: number;
         maxNativePreviewBytes: number;
@@ -3211,10 +3223,30 @@ describe("createTiledMcpServer", () => {
       },
       objectOperations: ["createObject", "updateObject", "deleteObjects"],
       objectShapeCapabilities: {
-        creatable: ["rectangle", "point", "ellipse", "capsule"],
+        creatable: [
+          "rectangle",
+          "point",
+          "ellipse",
+          "capsule",
+          "polygon",
+          "polyline",
+        ],
         shapeMutation: false,
         ellipseAndCapsuleDimensions:
           "optional-nonnegative-default-zero",
+        polygonAndPolylinePoints: {
+          coordinateSpace:
+            "object-local-pixels-relative-to-x-y",
+          polygonMinimum: 3,
+          polylineMinimum: 2,
+          maximum: 256,
+          maximumPerChangeSet: 8_192,
+          order: "preserved",
+          polygonClosure: "implicit",
+          polylineClosure: "open",
+        },
+        polygonAndPolylineUpdates:
+          "common-fields-only-no-dimensions-or-points",
         sourcePatch: "object-layer-objects-member-local",
       },
       layerOperations: [
@@ -3460,6 +3492,7 @@ describe("createTiledMcpServer", () => {
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
+        maxPendingObjectShapePoints: 65_536,
         maxCreateTileLayerCells: 100_000,
         maxLayerNameLength: 1_024,
         maxNativePreviewBytes: 8 * 1024 * 1024,
@@ -3491,10 +3524,30 @@ describe("createTiledMcpServer", () => {
       },
     });
     expect(capabilities.objectShapeCapabilities).toEqual({
-      creatable: ["rectangle", "point", "ellipse", "capsule"],
+      creatable: [
+        "rectangle",
+        "point",
+        "ellipse",
+        "capsule",
+        "polygon",
+        "polyline",
+      ],
       shapeMutation: false,
       ellipseAndCapsuleDimensions:
         "optional-nonnegative-default-zero",
+      polygonAndPolylinePoints: {
+        coordinateSpace:
+          "object-local-pixels-relative-to-x-y",
+        polygonMinimum: 3,
+        polylineMinimum: 2,
+        maximum: 256,
+        maximumPerChangeSet: 8_192,
+        order: "preserved",
+        polygonClosure: "implicit",
+        polylineClosure: "open",
+      },
+      polygonAndPolylineUpdates:
+        "common-fields-only-no-dimensions-or-points",
       sourcePatch: "object-layer-objects-member-local",
     });
     expect(
@@ -8917,6 +8970,105 @@ describe("createTiledMcpServer", () => {
     });
   });
 
+  it("previews bounded object-local polygon and polyline points through closed schemas", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions: Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const polygonPoints = [
+      { x: 0, y: 0 },
+      { x: 12.5, y: -4 },
+      { x: 20, y: 8 },
+    ];
+    const polylinePoints = [
+      { x: -2, y: 1 },
+      { x: 0, y: 3 },
+      { x: 9.5, y: 7 },
+    ];
+
+    const preview = resultOf<{
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        affectedObjectLayerIds: number[];
+        createdObjectIds: number[];
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "polygon",
+                x: 40,
+                y: 50,
+                points: polygonPoints,
+                name: "Patrol zone",
+              },
+            },
+            {
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "polyline",
+                x: 4,
+                y: 6,
+                points: polylinePoints,
+                rotation: 15,
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(preview).toMatchObject({
+      operations: [
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          shape: "polygon",
+          object: {
+            shape: "polygon",
+            x: 40,
+            y: 50,
+            points: polygonPoints,
+            name: "Patrol zone",
+          },
+        },
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          shape: "polyline",
+          object: {
+            shape: "polyline",
+            x: 4,
+            y: 6,
+            points: polylinePoints,
+            rotation: 15,
+          },
+        },
+      ],
+      summary: {
+        affectedObjectLayerIds: [
+          OBJECT_LAYER_ID,
+        ],
+        createdObjectIds: [3, 4],
+      },
+    });
+  });
+
   it("rejects invalid object shapes, empty updates and duplicate deletion IDs in the strict schema", async () => {
     const summary = resultOf<{
       revision: string;
@@ -8997,6 +9149,85 @@ describe("createTiledMcpServer", () => {
           width: 3,
         },
       },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 1,
+          y: 2,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 1,
+          y: 2,
+          points: [{ x: 0, y: 0 }],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 1,
+          y: 2,
+          width: 3,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+          ],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "rectangle",
+          x: 1,
+          y: 2,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+          ],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 1,
+          y: 2,
+          points: [
+            { x: 0, y: 0, z: 1 },
+            { x: 1, y: 1 },
+          ],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 1,
+          y: 2,
+          points: [
+            { x: 0, y: 0 },
+            { x: 1_000_000_001, y: 0 },
+            { x: 0, y: 1 },
+          ],
+        },
+      },
     ]) {
       const response = asToolResponse(
         await harness.client.callTool({
@@ -9016,6 +9247,50 @@ describe("createTiledMcpServer", () => {
         text: expect.stringContaining("Input validation error"),
       });
     }
+
+    const maximumPoints = Array.from(
+      { length: 256 },
+      (_, index) => ({
+        x: index,
+        y: -index,
+      }),
+    );
+    const aggregateOverflow = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: Array.from(
+            { length: 33 },
+            (_, index) => ({
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "polyline",
+                x: index,
+                y: 0,
+                points: maximumPoints,
+              },
+            }),
+          ),
+        },
+      }),
+    );
+    expect(aggregateOverflow.isError).toBe(true);
+    expect(
+      aggregateOverflow.structuredContent,
+    ).toBeUndefined();
+    expect(
+      aggregateOverflow.content[0],
+    ).toMatchObject({
+      type: "text",
+      text: expect.stringContaining(
+        "Input validation error",
+      ),
+    });
   });
 
   it("requires preview to match the revision the caller actually inspected", async () => {

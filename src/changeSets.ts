@@ -73,6 +73,7 @@ import {
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 256;
 export const DEFAULT_MAX_PENDING_CELL_WRITES = 200_000;
+export const DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS = 65_536;
 const MAP_UPDATE_FIELDS = [
   "renderOrder",
   "backgroundColor",
@@ -680,6 +681,8 @@ export class ChangeSetRegistry {
     private readonly ttlMs = DEFAULT_TTL_MS,
     private readonly maxEntries = DEFAULT_MAX_ENTRIES,
     private readonly maxPendingCellWrites = DEFAULT_MAX_PENDING_CELL_WRITES,
+    private readonly maxPendingObjectShapePoints =
+      DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
   ) {}
 
   put(plan: ChangeSetPlan): ChangeSetPreview {
@@ -709,6 +712,31 @@ export class ChangeSetRegistry {
         "CHANGE_SET_LIMIT_EXCEEDED",
         "Pending change sets exceed the in-memory cell budget. Apply one or wait for expiry.",
         { limit: this.maxPendingCellWrites },
+      );
+    }
+    const pendingObjectShapePoints = [...this.entries.values()].reduce(
+      (total, entry) =>
+        total +
+        (entry.result
+          ? 0
+          : pendingObjectShapePointCount(entry.plan)),
+      0,
+    );
+    const requestedObjectShapePoints =
+      pendingObjectShapePointCount(plan);
+    if (
+      pendingObjectShapePoints +
+        requestedObjectShapePoints >
+      this.maxPendingObjectShapePoints
+    ) {
+      throw new TiledMcpError(
+        "CHANGE_SET_LIMIT_EXCEEDED",
+        "Pending change sets exceed the in-memory object shape-point budget. Apply one or wait for expiry.",
+        {
+          limit: this.maxPendingObjectShapePoints,
+          pendingObjectShapePoints,
+          requestedObjectShapePoints,
+        },
       );
     }
     const now = Date.now();
@@ -790,6 +818,59 @@ export class ChangeSetRegistry {
     } while (this.entries.has(id));
     return id;
   }
+}
+
+function pendingObjectShapePointCount(
+  plan: ChangeSetPlan,
+): number {
+  if (
+    plan.kind !== "mapEdit" ||
+    !Array.isArray(plan.operations)
+  ) {
+    return 0;
+  }
+  let total = 0;
+  for (const operation of plan.operations as unknown[]) {
+    if (
+      !isChangeSetRecord(operation) ||
+      operation.type !== "createObject"
+    ) {
+      continue;
+    }
+    const object = operation.object;
+    if (
+      !isChangeSetRecord(object) ||
+      (object.shape !== "polygon" &&
+        object.shape !== "polyline")
+    ) {
+      continue;
+    }
+    if (!Array.isArray(object.points)) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "A polygon or polyline createObject operation contains malformed shape points.",
+      );
+    }
+    const nextTotal = total + object.points.length;
+    if (!Number.isSafeInteger(nextTotal)) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "A map edit plan contains too many object shape points to count safely.",
+      );
+    }
+    total = nextTotal;
+  }
+  return total;
+}
+
+function isChangeSetRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
 }
 
 function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
@@ -1538,7 +1619,7 @@ function summarizeOperation(
         width: operation.width,
         height: operation.height,
       },
-      tile: operation.tile,
+      tile: structuredClone(operation.tile),
     };
   }
 
@@ -1966,7 +2047,7 @@ function summarizeOperation(
       type: operation.type,
       layerId: operation.layerId,
       shape: operation.object.shape,
-      object: operation.object,
+      object: structuredClone(operation.object),
     };
   }
 
@@ -1975,7 +2056,7 @@ function summarizeOperation(
       type: operation.type,
       objectId: operation.objectId,
       changedFields: Object.keys(operation.patch).sort(),
-      patch: operation.patch,
+      patch: structuredClone(operation.patch),
     };
   }
 
@@ -2278,7 +2359,9 @@ function summarizeOperation(
       width: maxX - minX + 1,
       height: maxY - minY + 1,
     },
-    sample: operation.cells.slice(0, 8),
+    sample: structuredClone(
+      operation.cells.slice(0, 8),
+    ),
     omittedCellCount: Math.max(0, operation.cells.length - 8),
   };
 }

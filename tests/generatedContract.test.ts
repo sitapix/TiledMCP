@@ -306,6 +306,85 @@ describe("generated MCP contract", () => {
         `${capabilitiesLabel} limits`,
       ).const,
     ).toBe(64);
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxPendingObjectShapePoints",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(65_536);
+
+    const objectShapeCapabilitiesSchema =
+      schemaProperty(
+        capabilitySuccessSchema,
+        "objectShapeCapabilities",
+        `${capabilitiesLabel} capability result`,
+      );
+    expectExactLiteralSchema(
+      schemaProperty(
+        objectShapeCapabilitiesSchema,
+        "polygonAndPolylinePoints",
+        `${capabilitiesLabel} objectShapeCapabilities`,
+      ),
+      {
+        coordinateSpace:
+          "object-local-pixels-relative-to-x-y",
+        polygonMinimum: 3,
+        polylineMinimum: 2,
+        maximum: 256,
+        maximumPerChangeSet: 8_192,
+        order: "preserved",
+        polygonClosure: "implicit",
+        polylineClosure: "open",
+      },
+      `${capabilitiesLabel} polygon/polyline points`,
+    );
+    expect(
+      schemaProperty(
+        objectShapeCapabilitiesSchema,
+        "polygonAndPolylineUpdates",
+        `${capabilitiesLabel} objectShapeCapabilities`,
+      ).const,
+    ).toBe(
+      "common-fields-only-no-dimensions-or-points",
+    );
+
+    const previewEditsIndex =
+      toolNames.indexOf("tiled_preview_edits");
+    expect(previewEditsIndex).toBeGreaterThanOrEqual(
+      0,
+    );
+    const previewEditsTool =
+      toolDefinitions[previewEditsIndex];
+    if (previewEditsTool === undefined) {
+      throw new Error(
+        "Missing tiled_preview_edits definition",
+      );
+    }
+    expect(
+      countExactConst(
+        previewEditsTool.inputSchema,
+        "polygon",
+      ),
+    ).toBe(1);
+    expect(
+      countExactConst(
+        previewEditsTool.inputSchema,
+        "polyline",
+      ),
+    ).toBe(1);
+    expect(
+      countExactConst(
+        previewEditsTool.outputSchema,
+        "polygon",
+      ),
+    ).toBe(2);
+    expect(
+      countExactConst(
+        previewEditsTool.outputSchema,
+        "polyline",
+      ),
+    ).toBe(2);
 
     const nativePreviewIndex =
       toolNames.indexOf("tiled_render_preview");
@@ -879,6 +958,39 @@ function expectExactLiteralSchema(
       `${label}.${key}`,
     );
   }
+}
+
+function countExactConst(
+  value: unknown,
+  expected: unknown,
+): number {
+  if (Array.isArray(value)) {
+    return value.reduce(
+      (count, child) =>
+        count + countExactConst(child, expected),
+      0,
+    );
+  }
+  if (
+    value === null ||
+    typeof value !== "object"
+  ) {
+    return 0;
+  }
+  const record = value as Record<
+    string,
+    unknown
+  >;
+  return Object.values(record).reduce<number>(
+    (count, child) =>
+      count + countExactConst(child, expected),
+    Object.prototype.hasOwnProperty.call(
+      record,
+      "const",
+    ) && record.const === expected
+      ? 1
+      : 0,
+  );
 }
 
 function expectClosedSchemaTree(

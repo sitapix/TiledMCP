@@ -22,7 +22,11 @@ import {
   serializeJsonDocument,
   type JsonObject,
 } from "../src/formats/json.js";
-import { MapService } from "../src/maps/mapService.js";
+import {
+  MAX_OBJECT_SHAPE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+  MapService,
+} from "../src/maps/mapService.js";
 import type {
   MapEditOperation,
   MapEditPlan,
@@ -50,7 +54,7 @@ interface MapSnapshot {
   dependencies: Record<string, string>;
 }
 
-describe("ellipse and capsule object editing", () => {
+describe("extended object shape editing", () => {
   const roots = new Set<string>();
 
   afterEach(async () => {
@@ -224,6 +228,665 @@ describe("ellipse and capsule object editing", () => {
     });
     expect(objects[3]).not.toHaveProperty("ellipse");
     expect(objects[3]).not.toHaveProperty("point");
+  });
+
+  it("previews and applies native polygon and polyline creation with ordered local points", async () => {
+    const harness = await createHarness(roots);
+    const polygonPoints = [
+      { x: 0, y: 0 },
+      { x: 12.5, y: -4 },
+      { x: -3, y: 8.25 },
+    ];
+    const polylinePoints = [
+      { x: -2.5, y: 1 },
+      { x: -2.5, y: 1 },
+    ];
+    const operations: MapEditOperation[] = [
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 40.5,
+          y: -3,
+          points: polygonPoints,
+          name: "Patrol area",
+          className: "Navigation",
+          rotation: -12.5,
+          visible: false,
+          opacity: 0.4,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 70,
+          y: 9.25,
+          points: polylinePoints,
+          name: "Degenerate route",
+        },
+      },
+    ];
+
+    const edit = await plan(harness.service, operations);
+    expect(edit.operations).toEqual(operations);
+    expect(
+      new ChangeSetRegistry().put(edit).operations,
+    ).toEqual([
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        shape: "polygon",
+        object: expect.objectContaining({
+          shape: "polygon",
+          points: polygonPoints,
+        }),
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        shape: "polyline",
+        object: expect.objectContaining({
+          shape: "polyline",
+          points: polylinePoints,
+        }),
+      },
+    ]);
+
+    polygonPoints[1] = { x: 999, y: 999 };
+    polylinePoints.push({ x: 999, y: 999 });
+    expect(edit.operations).not.toEqual(operations);
+    const tampered = structuredClone(edit);
+    const tamperedOperation = tampered.operations[0];
+    if (
+      tamperedOperation?.type !== "createObject" ||
+      tamperedOperation.object.shape !== "polygon"
+    ) {
+      throw new Error("Expected a polygon creation operation.");
+    }
+    const tamperedPoint = tamperedOperation.object.points[0];
+    if (tamperedPoint === undefined) {
+      throw new Error("Expected a polygon point.");
+    }
+    tamperedPoint.x = 999;
+    const beforeTamperedApply = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    await expect(
+      harness.service.applyEdits(tampered),
+    ).rejects.toMatchObject({
+      name: "TiledMcpError",
+      code: "CHANGE_SET_TAMPERED",
+    });
+    expect(
+      await readFile(join(harness.root, MAP_PATH)),
+    ).toEqual(beforeTamperedApply);
+
+    await harness.service.applyEdits(edit);
+
+    const objects = requireObjects(
+      await readMap(harness.root),
+    );
+    expect(objects[2]).toMatchObject({
+      id: 3,
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 12.5, y: -4 },
+        { x: -3, y: 8.25 },
+      ],
+      width: 0,
+      height: 0,
+      x: 40.5,
+      y: -3,
+      name: "Patrol area",
+      type: "Navigation",
+      rotation: -12.5,
+      visible: false,
+      opacity: 0.4,
+    });
+    expect(objects[2]).not.toHaveProperty("points");
+    expect(objects[2]).not.toHaveProperty("polyline");
+    expect(objects[3]).toMatchObject({
+      id: 4,
+      polyline: [
+        { x: -2.5, y: 1 },
+        { x: -2.5, y: 1 },
+      ],
+      width: 0,
+      height: 0,
+      x: 70,
+      y: 9.25,
+      name: "Degenerate route",
+    });
+    expect(objects[3]).not.toHaveProperty("points");
+    expect(objects[3]).not.toHaveProperty("polygon");
+  });
+
+  it("bounds and strictly validates polygon and polyline creation points", async () => {
+    const harness = await createHarness(roots);
+    const validPolygon = {
+      shape: "polygon",
+      x: 0,
+      y: 0,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+    };
+    const invalidDrafts = [
+      { ...validPolygon, points: validPolygon.points.slice(0, 2) },
+      {
+        shape: "polyline",
+        x: 0,
+        y: 0,
+        points: [{ x: 0, y: 0 }],
+      },
+      {
+        ...validPolygon,
+        points: Array.from(
+          { length: MAX_OBJECT_SHAPE_POINTS + 1 },
+          (_, index) => ({ x: index, y: 0 }),
+        ),
+      },
+      { ...validPolygon, points: undefined },
+      {
+        ...validPolygon,
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0, label: "unsupported" },
+          { x: 0, y: 1 },
+        ],
+      },
+      {
+        ...validPolygon,
+        points: [
+          { x: 0, y: 0 },
+          { x: Number.NaN, y: 0 },
+          { x: 0, y: 1 },
+        ],
+      },
+      {
+        ...validPolygon,
+        points: [
+          { x: 0, y: 0 },
+          { x: 1_000_000_001, y: 0 },
+          { x: 0, y: 1 },
+        ],
+      },
+      { ...validPolygon, width: 0 },
+      {
+        shape: "polyline",
+        x: 0,
+        y: 0,
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        height: 0,
+      },
+    ];
+    const before = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+
+    for (const object of invalidDrafts) {
+      await expect(
+        plan(harness.service, [
+          unsafeOperation({
+            type: "createObject",
+            layerId: OBJECT_LAYER_ID,
+            object,
+          }),
+        ]),
+      ).rejects.toMatchObject({
+        name: "TiledMcpError",
+        code: "INVALID_ARGUMENT",
+      });
+    }
+    expect(
+      await readFile(join(harness.root, MAP_PATH)),
+    ).toEqual(before);
+  });
+
+  it("enforces the aggregate path-point budget at its exact boundary", async () => {
+    const harness = await createHarness(roots);
+    const fullPathPoints = Array.from(
+      { length: MAX_OBJECT_SHAPE_POINTS },
+      (_, index) => ({ x: index, y: -index }),
+    );
+    const boundaryOperations = Array.from(
+      {
+        length:
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET /
+          MAX_OBJECT_SHAPE_POINTS,
+      },
+      (_, index): MapEditOperation => ({
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: index,
+          y: 0,
+          points: fullPathPoints,
+        },
+      }),
+    );
+    const boundary = await plan(
+      harness.service,
+      boundaryOperations,
+    );
+    expect(boundary.operations).toHaveLength(
+      boundaryOperations.length,
+    );
+
+    const overBudgetOperations = [
+      ...Array.from(
+        { length: 31 },
+        (_, index): MapEditOperation => ({
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          object: {
+            shape: "polyline",
+            x: index,
+            y: 0,
+            points: fullPathPoints,
+          },
+        }),
+      ),
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 31,
+          y: 0,
+          points: fullPathPoints.slice(0, 255),
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 32,
+          y: 0,
+          points: fullPathPoints.slice(0, 2),
+        },
+      },
+    ] satisfies MapEditOperation[];
+    const before = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    await expect(
+      plan(harness.service, overBudgetOperations),
+    ).rejects.toMatchObject({
+      name: "TiledMcpError",
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        actual:
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET + 1,
+        limit:
+          MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+      },
+    });
+    expect(
+      await readFile(join(harness.root, MAP_PATH)),
+    ).toEqual(before);
+  });
+
+  it("updates common path fields, rejects path geometry patches, and safely deletes paths", async () => {
+    const harness = await createHarness(roots);
+    const create = await plan(harness.service, [
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 1,
+          y: 2,
+          points: [
+            { x: 0, y: 0 },
+            { x: 4, y: 0 },
+            { x: 0, y: 4 },
+          ],
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 5,
+          y: 6,
+          points: [
+            { x: 0, y: 0 },
+            { x: 8, y: -2 },
+          ],
+        },
+      },
+    ]);
+    await harness.service.applyEdits(create);
+
+    const update = await plan(harness.service, [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          x: 10.5,
+          y: -8,
+          name: "Updated polygon",
+          className: "Zone",
+          rotation: 30,
+          visible: false,
+          opacity: 0.25,
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 4,
+        patch: { name: "Updated line" },
+      },
+    ]);
+    await harness.service.applyEdits(update);
+    expect(requireObjects(await readMap(harness.root))[2]).toMatchObject({
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 0, y: 4 },
+      ],
+      x: 10.5,
+      y: -8,
+      name: "Updated polygon",
+      type: "Zone",
+      rotation: 30,
+      visible: false,
+      opacity: 0.25,
+      width: 0,
+      height: 0,
+    });
+
+    const beforeRejectedPatch = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    for (const operation of [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: { width: 1 },
+      },
+      {
+        type: "updateObject",
+        objectId: 4,
+        patch: { height: 1 },
+      },
+    ] satisfies MapEditOperation[]) {
+      await expect(
+        plan(harness.service, [operation]),
+      ).rejects.toMatchObject({
+        name: "TiledMcpError",
+        code: "OBJECT_SHAPE_MISMATCH",
+      });
+    }
+    await expect(
+      plan(harness.service, [
+        unsafeOperation({
+          type: "updateObject",
+          objectId: 3,
+          patch: {
+            points: [
+              { x: 0, y: 0 },
+              { x: 1, y: 1 },
+              { x: 2, y: 2 },
+            ],
+          },
+        }),
+      ]),
+    ).rejects.toMatchObject({
+      name: "TiledMcpError",
+      code: "INVALID_ARGUMENT",
+    });
+    expect(
+      await readFile(join(harness.root, MAP_PATH)),
+    ).toEqual(beforeRejectedPatch);
+
+    const deletion = await plan(harness.service, [
+      {
+        type: "deleteObjects",
+        objectIds: [3, 4],
+      },
+    ]);
+    await harness.service.applyEdits(deletion);
+    expect(
+      requireObjects(await readMap(harness.root)).map(
+        (object) => object.id,
+      ),
+    ).toEqual([ELLIPSE_ID, CAPSULE_ID]);
+  });
+
+  it("supports create then common update or safe delete in one plan", async () => {
+    const harness = await createHarness(roots);
+    const edit = await plan(harness.service, [
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 0,
+          y: 0,
+          points: [
+            { x: 0, y: 0 },
+            { x: 4, y: 0 },
+            { x: 0, y: 4 },
+          ],
+        },
+      },
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: {
+          name: "Updated before commit",
+          x: 2.5,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 0,
+          y: 0,
+          points: [
+            { x: 0, y: 0 },
+            { x: 2, y: 2 },
+          ],
+        },
+      },
+      {
+        type: "deleteObjects",
+        objectIds: [4],
+      },
+    ]);
+
+    expect(edit.summary).toMatchObject({
+      createdObjectIds: [3, 4],
+      updatedObjectIds: [3],
+      deletedObjectIds: [4],
+    });
+    await harness.service.applyEdits(edit);
+    const objects = requireObjects(
+      await readMap(harness.root),
+    );
+    expect(objects.map((object) => object.id)).toEqual([
+      ELLIPSE_ID,
+      CAPSULE_ID,
+      3,
+    ]);
+    expect(objects[2]).toMatchObject({
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 4, y: 0 },
+        { x: 0, y: 4 },
+      ],
+      name: "Updated before commit",
+      x: 2.5,
+    });
+  });
+
+  it("fails path updates and deletion closed across malformed stored path profiles", async () => {
+    const harness = await createHarness(roots);
+    const validPolygon = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+    ];
+    const malformedProfiles: JsonObject[] = [
+      { polygon: "not-an-array" },
+      { polygon: validPolygon.slice(0, 2) },
+      {
+        polygon: Array.from(
+          { length: MAX_OBJECT_SHAPE_POINTS + 1 },
+          (_, index) => ({ x: index, y: 0 }),
+        ),
+      },
+      {
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0, extra: true },
+          { x: 0, y: 1 },
+        ],
+      },
+      {
+        polygon: [
+          { x: 0, y: 0 },
+          { x: Number.POSITIVE_INFINITY, y: 0 },
+          { x: 0, y: 1 },
+        ],
+      },
+      { polygon: validPolygon, ellipse: true },
+      { polygon: validPolygon, width: -1 },
+      { polyline: [{ x: 0, y: 0 }] },
+    ];
+
+    for (const profile of malformedProfiles) {
+      const malformedMap = baseMap();
+      const layer = (malformedMap.layers as JsonObject[])[0];
+      const objects = layer?.objects as JsonObject[];
+      objects.push({
+        id: 3,
+        name: "Malformed path",
+        type: "",
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        rotation: 0,
+        visible: true,
+        ...profile,
+      });
+      malformedMap.nextobjectid = 4;
+      await writeJson(
+        join(harness.root, MAP_PATH),
+        malformedMap,
+      );
+      const before = await readFile(
+        join(harness.root, MAP_PATH),
+      );
+
+      for (const operation of [
+        {
+          type: "updateObject",
+          objectId: 3,
+          patch: { name: "Must not change" },
+        },
+        {
+          type: "deleteObjects",
+          objectIds: [3],
+        },
+      ] satisfies MapEditOperation[]) {
+        await expect(
+          plan(harness.service, [operation]),
+        ).rejects.toMatchObject({
+          name: "TiledMcpError",
+          code: "INVALID_DOCUMENT",
+        });
+      }
+      expect(
+        await readFile(join(harness.root, MAP_PATH)),
+      ).toEqual(before);
+    }
+  });
+
+  it("accepts omitted or nonnegative stored path dimensions and preserves vendor siblings", async () => {
+    const harness = await createHarness(roots);
+    const map = baseMap();
+    const layer = (map.layers as JsonObject[])[0];
+    const objects = layer?.objects as JsonObject[];
+    objects.push(
+      {
+        id: 3,
+        name: "Dimensionless polygon",
+        type: "",
+        x: 0,
+        y: 0,
+        rotation: 0,
+        visible: true,
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: 1 },
+        ],
+        vendorPathExtension: { preserve: true },
+      },
+      {
+        id: 4,
+        name: "Sized polyline",
+        type: "",
+        x: 0,
+        y: 0,
+        width: 7.5,
+        height: 2,
+        rotation: 0,
+        visible: true,
+        polyline: [
+          { x: 0, y: 0 },
+          { x: 2, y: 2 },
+        ],
+      },
+    );
+    map.nextobjectid = 5;
+    await writeJson(join(harness.root, MAP_PATH), map);
+
+    const edit = await plan(harness.service, [
+      {
+        type: "updateObject",
+        objectId: 3,
+        patch: { name: "Updated dimensionless polygon" },
+      },
+      {
+        type: "deleteObjects",
+        objectIds: [4],
+      },
+    ]);
+    await harness.service.applyEdits(edit);
+    const saved = requireObjects(
+      await readMap(harness.root),
+    );
+    expect(saved[2]).toMatchObject({
+      id: 3,
+      name: "Updated dimensionless polygon",
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+      vendorPathExtension: { preserve: true },
+    });
+    expect(saved[2]).not.toHaveProperty("width");
+    expect(saved[2]).not.toHaveProperty("height");
+    expect(saved.map((object) => object.id)).not.toContain(4);
   });
 
   it("updates common fields and positive dimensions without changing either shape", async () => {
@@ -917,6 +1580,20 @@ describe("ellipse and capsule object editing", () => {
         height: 12,
       }),
       {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: 96,
+          y: 64,
+          points: [
+            { x: 0, y: 0 },
+            { x: 16, y: 0 },
+            { x: 8, y: 12 },
+          ],
+        },
+      },
+      {
         type: "updateObject",
         objectId: CAPSULE_ID,
         patch: {
@@ -943,12 +1620,22 @@ describe("ellipse and capsule object editing", () => {
     const saved = JSON.parse(
       after.slice(1),
     ) as JsonObject;
-    expect(saved.nextobjectid).toBe(4);
+    expect(saved.nextobjectid).toBe(5);
     expect(requireObjects(saved)[2]).toMatchObject({
       id: 3,
       ellipse: true,
       width: 32,
       height: 12,
+    });
+    expect(requireObjects(saved)[3]).toMatchObject({
+      id: 4,
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 16, y: 0 },
+        { x: 8, y: 12 },
+      ],
+      width: 0,
+      height: 0,
     });
   });
 
@@ -1136,6 +1823,40 @@ describe("ellipse and capsule object editing", () => {
         name: "Round-trip capsule",
       }),
       {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polygon",
+          x: -5.5,
+          y: 22,
+          points: [
+            { x: 0, y: 0 },
+            { x: 9.25, y: -3 },
+            { x: -2, y: 7.5 },
+          ],
+          name: "Round-trip polygon",
+          className: "Area",
+          rotation: 17.5,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "polyline",
+          x: 6,
+          y: -8,
+          points: [
+            { x: 0, y: 0 },
+            { x: 4.5, y: 1 },
+            { x: -3, y: 6 },
+          ],
+          name: "Round-trip polyline",
+          className: "Route",
+          rotation: -9,
+        },
+      },
+      {
         type: "updateObject",
         objectId: ELLIPSE_ID,
         patch: {
@@ -1215,6 +1936,36 @@ describe("ellipse and capsule object editing", () => {
           capsule: true,
           width: 14,
           height: 30,
+        }),
+        expect.objectContaining({
+          id: 5,
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 9.25, y: -3 },
+            { x: -2, y: 7.5 },
+          ],
+          width: 0,
+          height: 0,
+          x: -5.5,
+          y: 22,
+          name: "Round-trip polygon",
+          type: "Area",
+          rotation: 17.5,
+        }),
+        expect.objectContaining({
+          id: 6,
+          polyline: [
+            { x: 0, y: 0 },
+            { x: 4.5, y: 1 },
+            { x: -3, y: 6 },
+          ],
+          width: 0,
+          height: 0,
+          x: 6,
+          y: -8,
+          name: "Round-trip polyline",
+          type: "Route",
+          rotation: -9,
         }),
       ]),
     );

@@ -17,6 +17,7 @@ import type {
 import {
   ChangeSetRegistry,
   DEFAULT_MAX_PENDING_CELL_WRITES,
+  DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
 } from "./changeSets.js";
 import {
   TILED_MCP_APPLICATION_ERROR_REGISTRY,
@@ -69,6 +70,8 @@ import {
   MAX_FLOOD_FILL_SCANS,
   MAX_LAYER_NAME_LENGTH,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS,
+  MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
   MAX_REMOVE_TILESET_GID_SCANS,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
@@ -82,6 +85,8 @@ import {
   MAX_USAGE_TILESET_SUMMARIES,
   MAX_USAGE_TOP_TILE_LIMIT,
   MAX_USAGE_UNUSED_LOCAL_ID_SAMPLE,
+  MIN_POLYGON_OBJECT_POINTS,
+  MIN_POLYLINE_OBJECT_POINTS,
   type AnalyzeUsageInput,
   type MapService,
 } from "./maps/mapService.js";
@@ -763,6 +768,35 @@ const capsuleObjectSchema = z
   })
   .strict();
 
+const objectPathPointSchema = z
+  .object({
+    x: objectCoordinateSchema,
+    y: objectCoordinateSchema,
+  })
+  .strict();
+
+const polygonObjectSchema = z
+  .object({
+    shape: z.literal("polygon"),
+    ...objectCommonShape,
+    points: z
+      .array(objectPathPointSchema)
+      .min(MIN_POLYGON_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
+  })
+  .strict();
+
+const polylineObjectSchema = z
+  .object({
+    shape: z.literal("polyline"),
+    ...objectCommonShape,
+    points: z
+      .array(objectPathPointSchema)
+      .min(MIN_POLYLINE_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
+  })
+  .strict();
+
 const createObjectSchema = z
   .object({
     type: z.literal("createObject"),
@@ -772,6 +806,8 @@ const createObjectSchema = z
       pointObjectSchema,
       ellipseObjectSchema,
       capsuleObjectSchema,
+      polygonObjectSchema,
+      polylineObjectSchema,
     ]),
   })
   .strict();
@@ -1300,10 +1336,28 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "point",
             "ellipse",
             "capsule",
+            "polygon",
+            "polyline",
           ],
           shapeMutation: false,
           ellipseAndCapsuleDimensions:
             "optional-nonnegative-default-zero",
+          polygonAndPolylinePoints: {
+            coordinateSpace:
+              "object-local-pixels-relative-to-x-y",
+            polygonMinimum:
+              MIN_POLYGON_OBJECT_POINTS,
+            polylineMinimum:
+              MIN_POLYLINE_OBJECT_POINTS,
+            maximum: MAX_OBJECT_SHAPE_POINTS,
+            maximumPerChangeSet:
+              MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+            order: "preserved",
+            polygonClosure: "implicit",
+            polylineClosure: "open",
+          },
+          polygonAndPolylineUpdates:
+            "common-fields-only-no-dimensions-or-points",
           sourcePatch:
             "object-layer-objects-member-local",
         },
@@ -1736,6 +1790,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxRegionCells: 20_000,
           maxChangeSetCellWrites: MAX_CELL_WRITES,
           maxPendingChangeSetCellWrites: DEFAULT_MAX_PENDING_CELL_WRITES,
+          maxPendingObjectShapePoints:
+            DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
           maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
           maxStampPatternCells:
             MAX_STAMP_PATTERN_CELLS,
@@ -2758,7 +2814,36 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           mapPath: projectPathSchema,
           expectedRevision: revisionSchema,
           expectedDependencyRevisions: dependencyRevisionsSchema,
-          operations: z.array(mapEditSchema).min(1).max(128),
+          operations: z
+            .array(mapEditSchema)
+            .min(1)
+            .max(128)
+            .superRefine((operations, context) => {
+              let pathPointCount = 0;
+              for (const operation of operations) {
+                if (
+                  operation.type ===
+                    "createObject" &&
+                  (operation.object.shape ===
+                    "polygon" ||
+                    operation.object.shape ===
+                      "polyline")
+                ) {
+                  pathPointCount +=
+                    operation.object.points.length;
+                }
+              }
+              if (
+                pathPointCount >
+                MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET
+              ) {
+                context.addIssue({
+                  code: "custom",
+                  message:
+                    `Polygon and polyline createObject operations may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+                });
+              }
+            }),
         })
         .strict(),
       outputSchema:
