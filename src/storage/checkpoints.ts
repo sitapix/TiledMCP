@@ -71,7 +71,7 @@ export const CHECKPOINT_BATCH_PRUNE_GC_NOT_RUN_WARNING =
 
 export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   name: "tiled-mcp-checkpoint-storage",
-  version: 5,
+  version: 6,
   quotaAccounting:
     "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
   quotaScope:
@@ -83,7 +83,7 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   garbageCollectionDeletion:
     "unreferenced-canonical-objects-and-private-crash-temporaries-only",
   validManifestDeletion:
-    "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+    "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-ambiguous-prepared-abandon-or-opt-in-v2-rolling-post-commit-retention",
   explicitBatchPruneCoordination:
     "all-canonical-target-locks-sorted-then-single-checkpoint-store-lock",
   explicitBatchPrunePreflight:
@@ -124,6 +124,22 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
     "target-lock-then-checkpoint-store-lock",
   explicitPreparedDiscardDeletionOrder:
     "manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+  explicitPreparedAdjudicationEligibility:
+    "prepared-manifest-with-ambiguous-safe-target-state-only-machine-reconcilable-and-unsafe-states-rejected",
+  explicitPreparedAdjudicationPins:
+    "manifest-version-retention-full-semantic-state-raw-revision-and-size-plus-safe-target-revision-and-size",
+  explicitPreparedAdjudicationCoordination:
+    "target-mutex-then-target-file-lock-then-checkpoint-store-lock",
+  explicitPreparedCommitEligibility:
+    "prepared-create-manifest-and-safe-regular-target-exactly-matches-after-revision",
+  explicitPreparedCommitOrder:
+    "raw-and-semantic-cas-target-revalidation-atomic-prepared-to-committed-rename-then-checkpoint-directory-fsync",
+  explicitPreparedCommitFailure:
+    "rename-is-commit-point-and-post-rename-failures-return-bounded-unconfirmed-success-without-garbage-collection",
+  explicitPreparedAbandonOrder:
+    "raw-and-semantic-cas-target-revalidation-manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+  explicitPreparedAbandonFailure:
+    "unlink-is-commit-point-and-post-unlink-failures-return-bounded-success",
   incompleteInventoryPolicy:
     "block-entire-sweep-before-first-unlink",
   incompleteCapacityInventoryPolicy:
@@ -154,6 +170,22 @@ export interface CheckpointStoreObserver {
    * became observable but before checkpoint-directory durability is known.
    */
   afterBatchManifestUnlinkedBeforeDirectorySync?(context: {
+    checkpointId: string;
+  }): void | Promise<void>;
+  /**
+   * Prepared-commit-only fault seam. Throwing here models failure after the
+   * prepared-to-committed rename became observable but before checkpoint
+   * directory durability is known.
+   */
+  afterPreparedCheckpointCommitInstalledBeforeDirectorySync?(context: {
+    checkpointId: string;
+  }): void | Promise<void>;
+  /**
+   * Prepared-abandon-only fault seam. Throwing here models failure after the
+   * manifest unlink became observable but before directory durability is
+   * known.
+   */
+  afterPreparedCheckpointAbandonManifestUnlinkedBeforeDirectorySync?(context: {
     checkpointId: string;
   }): void | Promise<void>;
   afterManifestDeletedBeforeGarbageCollection?(context: {
@@ -325,6 +357,38 @@ export interface PreparedCheckpointDiscardStorageExpectation {
   manifestSize: number;
 }
 
+export type PreparedCheckpointAdjudicationTarget =
+  | {
+      existed: false;
+    }
+  | {
+      existed: true;
+      revision: string;
+      size: number;
+    };
+
+export type PreparedCheckpointAdjudicationConflict =
+  | "create-target-matches-after"
+  | "create-target-unrelated"
+  | "existing-target-missing"
+  | "existing-target-unrelated";
+
+export interface PreparedCheckpointAdjudicationStorageExpectation {
+  version: CheckpointManifest["version"];
+  retention?: CheckpointManifest["retention"];
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: "prepared";
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+  target: PreparedCheckpointAdjudicationTarget;
+  conflict: PreparedCheckpointAdjudicationConflict;
+}
+
 export type CheckpointManifestDeletionGarbageCollectionResult =
   | {
       status: "completed";
@@ -455,6 +519,24 @@ export interface CheckpointBatchPruneStorageResult {
 }
 
 export interface PreparedCheckpointDiscardStorageResult {
+  manifest: CheckpointManifest & {
+    status: "prepared";
+  };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointManifestDeletionGarbageCollectionResult;
+}
+
+export interface PreparedCheckpointCommitStorageResult {
+  manifest: CheckpointManifest & {
+    status: "committed";
+  };
+  previousStatus: "prepared";
+  manifestCommitted: true;
+  durability: "confirmed" | "unconfirmed";
+}
+
+export interface PreparedCheckpointAbandonStorageResult {
   manifest: CheckpointManifest & {
     status: "prepared";
   };
@@ -1123,6 +1205,187 @@ export class CheckpointStore {
   }
 
   /**
+   * The caller must hold the authoritative target lock. This method acquires
+   * the checkpoint-store lock second, revalidates both the raw manifest and
+   * its complete semantic state, and treats the atomic rename as the commit
+   * point. No garbage collection runs for this state-only transition.
+   */
+  async commitPreparedCheckpoint(
+    expected: PreparedCheckpointAdjudicationStorageExpectation,
+    validateTarget: (
+      manifest: CheckpointManifest & {
+        status: "prepared";
+      },
+    ) => Promise<void>,
+  ): Promise<PreparedCheckpointCommitStorageResult> {
+    assertPreparedCheckpointAdjudicationStorageExpectation(
+      expected,
+    );
+    if (
+      expected.conflict !==
+        "create-target-matches-after" ||
+      expected.before.existed
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Prepared checkpoint commit requires an ambiguous create whose target matches the after revision.",
+        { checkpointId: expected.id },
+      );
+    }
+
+    let installedManifest:
+      | (CheckpointManifest & {
+          status: "committed";
+        })
+      | undefined;
+    let storeLockReleaseFailed = false;
+    const unconfirmed =
+      (): PreparedCheckpointCommitStorageResult => {
+        if (installedManifest === undefined) {
+          throw new Error(
+            "Prepared checkpoint commit did not reach its rename commit point.",
+          );
+        }
+        return {
+          manifest: installedManifest,
+          previousStatus: "prepared",
+          manifestCommitted: true,
+          durability: "unconfirmed",
+        };
+      };
+
+    try {
+      const result =
+        await this.runStorageExclusive<PreparedCheckpointCommitStorageResult>(
+          async () => {
+            const directories =
+              await this.ensureStorageDirectories();
+            const snapshot =
+              await this.readManifestSnapshot(
+                directories.checkpoints,
+                expected.id,
+              );
+            if (
+              !samePreparedCheckpointAdjudicationExpectation(
+                expected,
+                snapshot,
+              )
+            ) {
+              throw new TiledMcpError(
+                "CHECKPOINT_CHANGED",
+                `Checkpoint ${expected.id} changed after prepared commit inspection.`,
+                { checkpointId: expected.id },
+              );
+            }
+            const prepared =
+              snapshot.manifest as CheckpointManifest & {
+                status: "prepared";
+              };
+            await validateTarget(prepared);
+
+            const committed: CheckpointManifest & {
+              status: "committed";
+            } = {
+              ...prepared,
+              status: "committed",
+            };
+            await this.assertManifestReplacementReserved(
+              directories,
+              prepared,
+              committed,
+            );
+            await atomicWriteJson(
+              join(
+                directories.checkpoints,
+                `${expected.id}.json`,
+              ),
+              committed,
+              async () => {
+                installedManifest = committed;
+                await this.observer
+                  ?.afterPreparedCheckpointCommitInstalledBeforeDirectorySync?.(
+                    {
+                      checkpointId:
+                        committed.id,
+                    },
+                  );
+              },
+            );
+            return {
+              manifest: committed,
+              previousStatus: "prepared",
+              manifestCommitted: true,
+              durability: "confirmed",
+            };
+          },
+          () => {
+            storeLockReleaseFailed = true;
+          },
+        );
+      if (
+        storeLockReleaseFailed &&
+        installedManifest !== undefined
+      ) {
+        return unconfirmed();
+      }
+      return result;
+    } catch (error) {
+      // Rename is the state-transition commit point. Once it succeeds, an
+      // observer, directory fsync, or lock-release failure must not expose a
+      // retryable error that could cause the operator action to be repeated.
+      if (installedManifest !== undefined) {
+        return unconfirmed();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The caller must hold the authoritative target lock. Unlike commit,
+   * abandon never needs the before object: it deletes the ambiguous prepared
+   * recovery point and then reuses the fail-closed garbage collector.
+   */
+  async abandonPreparedCheckpoint(
+    expected: PreparedCheckpointAdjudicationStorageExpectation,
+    validateTarget: (
+      manifest: CheckpointManifest & {
+        status: "prepared";
+      },
+    ) => Promise<void>,
+  ): Promise<PreparedCheckpointAbandonStorageResult> {
+    assertPreparedCheckpointAdjudicationStorageExpectation(
+      expected,
+    );
+    return this.deleteManifestPlanned(
+      expected,
+      "prepared",
+      async (manifest) => {
+        if (
+          !samePreparedCheckpointAdjudicationManifest(
+            expected,
+            manifest,
+          )
+        ) {
+          throw new TiledMcpError(
+            "CHECKPOINT_CHANGED",
+            `Checkpoint ${expected.id} changed after prepared abandon inspection.`,
+            { checkpointId: expected.id },
+          );
+        }
+        await validateTarget(manifest);
+      },
+      async (manifest) => {
+        await this.observer
+          ?.afterPreparedCheckpointAbandonManifestUnlinkedBeforeDirectorySync?.(
+            {
+              checkpointId: manifest.id,
+            },
+          );
+      },
+    );
+  }
+
+  /**
    * Enforces the opt-in rolling retention window while the caller continues
    * to hold the target's mutation lock. This method acquires the checkpoint
    * store lock second and deletes at most one manifest.
@@ -1427,6 +1690,11 @@ export class CheckpointStore {
         status: TStatus;
       },
     ) => Promise<void>,
+    afterUnlinkBeforeDirectorySync?: (
+      manifest: CheckpointManifest & {
+        status: TStatus;
+      },
+    ) => Promise<void>,
   ): Promise<CheckpointManifestDeletionStorageResult<TStatus>> {
     assertCheckpointId(expected.id);
     let deletedManifest:
@@ -1492,6 +1760,9 @@ export class CheckpointStore {
             deletedManifest = deletableManifest;
 
             try {
+              await afterUnlinkBeforeDirectorySync?.(
+                deletableManifest,
+              );
               await syncDirectory(
                 directories.checkpoints,
               );
@@ -2840,6 +3111,210 @@ function sameCheckpointManifestDeletionExpectation<
   );
 }
 
+function assertPreparedCheckpointAdjudicationStorageExpectation(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+): void {
+  assertCheckpointId(expected.id);
+  const validTarget =
+    expected.target.existed === false ||
+    (expected.target.existed === true &&
+      REVISION_PATTERN.test(
+        expected.target.revision,
+      ) &&
+      Number.isSafeInteger(
+        expected.target.size,
+      ) &&
+      expected.target.size >= 0);
+  const validBefore =
+    expected.before.existed === false ||
+    (expected.before.existed === true &&
+      REVISION_PATTERN.test(
+        expected.before.revision,
+      ) &&
+      OBJECT_HASH_PATTERN.test(
+        expected.before.objectHash,
+      ) &&
+      expected.before.revision ===
+        `sha256:${expected.before.objectHash}` &&
+      Number.isSafeInteger(
+        expected.before.size,
+      ) &&
+      expected.before.size >= 0 &&
+      expected.before.size <=
+        MAX_CHECKPOINT_OBJECT_BYTES);
+  if (
+    expected.status !== "prepared" ||
+    typeof expected.createdAt !== "string" ||
+    expected.createdAt.length >
+      MAX_CHECKPOINT_TIMESTAMP_LENGTH ||
+    !Number.isFinite(
+      Date.parse(expected.createdAt),
+    ) ||
+    (expected.label !== undefined &&
+      (typeof expected.label !== "string" ||
+        expected.label.length >
+          MAX_CHECKPOINT_LABEL_LENGTH)) ||
+    typeof expected.path !== "string" ||
+    !REVISION_PATTERN.test(
+      expected.afterRevision,
+    ) ||
+    !REVISION_PATTERN.test(
+      expected.manifestRevision,
+    ) ||
+    !Number.isSafeInteger(
+      expected.manifestSize,
+    ) ||
+    expected.manifestSize < 1 ||
+    !validBefore ||
+    !validTarget ||
+    !validPreparedCheckpointAdjudicationRetention(
+      expected,
+    ) ||
+    !validPreparedCheckpointAdjudicationConflict(
+      expected,
+    )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Prepared checkpoint adjudication expectation is invalid.",
+      { checkpointId: expected.id },
+    );
+  }
+}
+
+function validPreparedCheckpointAdjudicationRetention(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+): boolean {
+  if (expected.version === 1) {
+    return expected.retention === undefined;
+  }
+  if (
+    expected.version !== 2 ||
+    expected.retention === undefined
+  ) {
+    return false;
+  }
+  return (
+    expected.retention.class ===
+      "protected" ||
+    (expected.retention.class ===
+      "rolling" &&
+      Number.isSafeInteger(
+        expected.retention.ordinal,
+      ) &&
+      expected.retention.ordinal > 0)
+  );
+}
+
+function validPreparedCheckpointAdjudicationConflict(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+): boolean {
+  const { before, target } = expected;
+  switch (expected.conflict) {
+    case "create-target-matches-after":
+      return (
+        !before.existed &&
+        target.existed &&
+        target.revision ===
+          expected.afterRevision
+      );
+    case "create-target-unrelated":
+      return (
+        !before.existed &&
+        target.existed &&
+        target.revision !==
+          expected.afterRevision
+      );
+    case "existing-target-missing":
+      return before.existed && !target.existed;
+    case "existing-target-unrelated":
+      return (
+        before.existed &&
+        target.existed &&
+        target.revision !==
+          before.revision &&
+        target.revision !==
+          expected.afterRevision
+      );
+    default:
+      return false;
+  }
+}
+
+function samePreparedCheckpointAdjudicationExpectation(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+  actual: CheckpointManifestSnapshot,
+): boolean {
+  return (
+    expected.manifestRevision ===
+      actual.manifestRevision &&
+    expected.manifestSize ===
+      actual.manifestSize &&
+    samePreparedCheckpointAdjudicationManifest(
+      expected,
+      actual.manifest,
+    )
+  );
+}
+
+function samePreparedCheckpointAdjudicationManifest(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+  actual: CheckpointManifest,
+): boolean {
+  const expectedManifest =
+    preparedCheckpointAdjudicationExpectedManifest(
+      expected,
+    );
+  return (
+    actual.status === "prepared" &&
+    sameManifestIntent(
+      expectedManifest,
+      actual,
+    )
+  );
+}
+
+function preparedCheckpointAdjudicationExpectedManifest(
+  expected: PreparedCheckpointAdjudicationStorageExpectation,
+): CheckpointManifest {
+  const base = {
+    id: expected.id,
+    createdAt: expected.createdAt,
+    label: expected.label ?? "",
+    path: expected.path,
+    status: "prepared" as const,
+    before: expected.before.existed
+      ? { ...expected.before }
+      : { existed: false as const },
+    afterRevision: expected.afterRevision,
+  };
+  if (expected.version === 1) {
+    return {
+      version: 1,
+      ...base,
+    };
+  }
+  const retention = expected.retention;
+  if (retention === undefined) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Version 2 prepared checkpoint adjudication requires retention metadata.",
+      { checkpointId: expected.id },
+    );
+  }
+  return {
+    version: 2,
+    ...base,
+    retention:
+      retention.class === "protected"
+        ? { class: "protected" }
+        : {
+            class: "rolling",
+            ordinal: retention.ordinal,
+          },
+  };
+}
+
 function sameCheckpointBefore(
   expected: CheckpointManifest["before"],
   actual: CheckpointManifest["before"],
@@ -3279,7 +3754,12 @@ async function atomicCreateJson(
   }
 }
 
-async function atomicWriteJson(path: string, value: CheckpointManifest): Promise<void> {
+async function atomicWriteJson(
+  path: string,
+  value: CheckpointManifest,
+  afterInstalledBeforeDirectorySync?: () =>
+    void | Promise<void>,
+): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   let temporaryHandle: FileHandle | undefined;
   let temporaryCreated = false;
@@ -3299,6 +3779,7 @@ async function atomicWriteJson(path: string, value: CheckpointManifest): Promise
     temporaryHandle = undefined;
 
     await rename(temporaryPath, path);
+    await afterInstalledBeforeDirectorySync?.();
     await syncDirectory(dirname(path));
   } finally {
     await temporaryHandle

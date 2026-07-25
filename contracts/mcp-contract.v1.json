@@ -7,7 +7,7 @@
     "size": 3767
   },
   "examples": {
-    "count": 22,
+    "count": 24,
     "path": "examples/mcp-calls.v1.json"
   },
   "format": "tiled-mcp-discovery-contract",
@@ -24,6 +24,8 @@
         "tiled_list_files",
         "tiled_list_checkpoints",
         "tiled_preview_prepared_checkpoint_discard",
+        "tiled_preview_prepared_checkpoint_commit",
+        "tiled_preview_prepared_checkpoint_abandon",
         "tiled_preview_checkpoint_prune",
         "tiled_preview_checkpoint_prune_batch",
         "tiled_preview_checkpoint_restore",
@@ -54,6 +56,8 @@
         "tiled_list_files",
         "tiled_list_checkpoints",
         "tiled_preview_prepared_checkpoint_discard",
+        "tiled_preview_prepared_checkpoint_commit",
+        "tiled_preview_prepared_checkpoint_abandon",
         "tiled_preview_checkpoint_prune",
         "tiled_preview_checkpoint_prune_batch",
         "tiled_preview_checkpoint_restore",
@@ -93,14 +97,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:265306aedd03a7892b1809149b8ccb365a3c559abec70aa0cef21b526b0e8faf",
+        "revision": "sha256:b87d5d2b019634841390c4e7e2a2124c6781358f533d24532b093dc97b5b3de7",
         "serverVersion": "0.0.1",
-        "size": 50685
+        "size": 53422
       },
-      "byteLength": 50685,
+      "byteLength": 53422,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:265306aedd03a7892b1809149b8ccb365a3c559abec70aa0cef21b526b0e8faf",
+      "sha256": "sha256:b87d5d2b019634841390c4e7e2a2124c6781358f533d24532b093dc97b5b3de7",
       "uri": "tiled://guide"
     }
   ],
@@ -128,9 +132,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:265306aedd03a7892b1809149b8ccb365a3c559abec70aa0cef21b526b0e8faf",
+        "revision": "sha256:b87d5d2b019634841390c4e7e2a2124c6781358f533d24532b093dc97b5b3de7",
         "serverVersion": "0.0.1",
-        "size": 50685
+        "size": 53422
       },
       "annotations": {
         "audience": [
@@ -142,7 +146,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 50685,
+      "size": 53422,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -179,6 +183,8 @@
     "tiled_preview_checkpoint_prune_batch": "core",
     "tiled_preview_checkpoint_restore": "core",
     "tiled_preview_edits": "core",
+    "tiled_preview_prepared_checkpoint_abandon": "core",
+    "tiled_preview_prepared_checkpoint_commit": "core",
     "tiled_preview_prepared_checkpoint_discard": "core",
     "tiled_render_map": "tmxrasterizer-version-probe",
     "tiled_render_preview": "core",
@@ -1582,7 +1588,7 @@
         "readOnlyHint": false,
         "title": "Apply an approved local Tiled change"
       },
-      "description": "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific dependency pins.",
+      "description": "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -2765,6 +2771,787 @@
                         "type": "object"
                       }
                     ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changeSetId": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "checkpoint": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "afterRevision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "before": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": false,
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "objectHash": {
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "pattern": "^sha256:[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed",
+                                      "revision",
+                                      "objectHash",
+                                      "size"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "id": {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "status": {
+                                "const": "committed",
+                                "type": "string"
+                              },
+                              "version": {
+                                "const": 1,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "createdAt",
+                              "path",
+                              "status",
+                              "before",
+                              "afterRevision",
+                              "version"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "afterRevision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "before": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": false,
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "objectHash": {
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "pattern": "^sha256:[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed",
+                                      "revision",
+                                      "objectHash",
+                                      "size"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "id": {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "retention": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "class": {
+                                        "const": "protected",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "class"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "class": {
+                                        "const": "rolling",
+                                        "type": "string"
+                                      },
+                                      "ordinal": {
+                                        "exclusiveMinimum": 0,
+                                        "maximum": 9007199254740991,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "class",
+                                      "ordinal"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "const": "committed",
+                                "type": "string"
+                              },
+                              "version": {
+                                "const": 2,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "createdAt",
+                              "path",
+                              "status",
+                              "before",
+                              "afterRevision",
+                              "version",
+                              "retention"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "conflict": {
+                        "const": "create-target-matches-after",
+                        "type": "string"
+                      },
+                      "durability": {
+                        "enum": [
+                          "confirmed",
+                          "unconfirmed"
+                        ],
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "preparedCheckpointCommit",
+                        "type": "string"
+                      },
+                      "manifestCommitted": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "previousStatus": {
+                        "const": "prepared",
+                        "type": "string"
+                      },
+                      "projectAssetModified": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "target": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "existed": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "size": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "existed",
+                          "revision",
+                          "size"
+                        ],
+                        "type": "object"
+                      },
+                      "warnings": {
+                        "items": {
+                          "maxLength": 4096,
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "changeSetId",
+                      "checkpoint",
+                      "previousStatus",
+                      "target",
+                      "conflict",
+                      "manifestCommitted",
+                      "projectAssetModified",
+                      "durability"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changeSetId": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "checkpoint": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "afterRevision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "before": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": false,
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "objectHash": {
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "pattern": "^sha256:[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed",
+                                      "revision",
+                                      "objectHash",
+                                      "size"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "id": {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "status": {
+                                "const": "prepared",
+                                "type": "string"
+                              },
+                              "version": {
+                                "const": 1,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "createdAt",
+                              "path",
+                              "status",
+                              "before",
+                              "afterRevision",
+                              "version"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "afterRevision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "before": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": false,
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "existed": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "objectHash": {
+                                        "pattern": "^[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "revision": {
+                                        "pattern": "^sha256:[0-9a-f]{64}$",
+                                        "type": "string"
+                                      },
+                                      "size": {
+                                        "maximum": 9007199254740991,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "existed",
+                                      "revision",
+                                      "objectHash",
+                                      "size"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "id": {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "label": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "retention": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "class": {
+                                        "const": "protected",
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "class"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "class": {
+                                        "const": "rolling",
+                                        "type": "string"
+                                      },
+                                      "ordinal": {
+                                        "exclusiveMinimum": 0,
+                                        "maximum": 9007199254740991,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "class",
+                                      "ordinal"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "const": "prepared",
+                                "type": "string"
+                              },
+                              "version": {
+                                "const": 2,
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "createdAt",
+                              "path",
+                              "status",
+                              "before",
+                              "afterRevision",
+                              "version",
+                              "retention"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "conflict": {
+                        "enum": [
+                          "create-target-matches-after",
+                          "create-target-unrelated",
+                          "existing-target-missing",
+                          "existing-target-unrelated"
+                        ],
+                        "type": "string"
+                      },
+                      "garbageCollection": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "blockerCount": {
+                                "const": 0,
+                                "type": "number"
+                              },
+                              "blockers": {
+                                "items": [],
+                                "type": "array"
+                              },
+                              "blockersTruncated": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "deletedBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "deletedEntries": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "deletedObjects": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "deletedTemporaryFiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "status": {
+                                "const": "completed",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "deletedBytes",
+                              "deletedEntries",
+                              "deletedObjects",
+                              "deletedTemporaryFiles",
+                              "blockerCount",
+                              "blockers",
+                              "blockersTruncated"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "blockerCount": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "blockers": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "directory": {
+                                      "enum": [
+                                        "checkpoints",
+                                        "objects"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "fileName": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "message": {
+                                      "maxLength": 4096,
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "enum": [
+                                        "entry-inspection-failed",
+                                        "byte-accounting-limit-exceeded",
+                                        "malformed-manifest",
+                                        "missing-referenced-object",
+                                        "non-regular-entry",
+                                        "scan-limit-exceeded",
+                                        "symbolic-link",
+                                        "unexpected-entry"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "directory",
+                                    "reason",
+                                    "message"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "blockersTruncated": {
+                                "type": "boolean"
+                              },
+                              "deletedBytes": {
+                                "const": 0,
+                                "type": "number"
+                              },
+                              "deletedEntries": {
+                                "const": 0,
+                                "type": "number"
+                              },
+                              "deletedObjects": {
+                                "const": 0,
+                                "type": "number"
+                              },
+                              "deletedTemporaryFiles": {
+                                "const": 0,
+                                "type": "number"
+                              },
+                              "status": {
+                                "const": "blocked",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "deletedBytes",
+                              "deletedEntries",
+                              "deletedObjects",
+                              "deletedTemporaryFiles",
+                              "blockerCount",
+                              "blockers",
+                              "blockersTruncated"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "deletionOutcome": {
+                                "const": "unknown-partial-or-none",
+                                "type": "string"
+                              },
+                              "failureCode": {
+                                "const": "INTERNAL_ERROR",
+                                "type": "string"
+                              },
+                              "status": {
+                                "const": "failed",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "failureCode",
+                              "deletionOutcome"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "preparedCheckpointAbandon",
+                        "type": "string"
+                      },
+                      "manifestDeleted": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "projectAssetModified": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "target": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "existed"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "existed",
+                              "revision",
+                              "size"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "warnings": {
+                        "items": {
+                          "maxLength": 4096,
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "changeSetId",
+                      "checkpoint",
+                      "target",
+                      "conflict",
+                      "manifestDeleted",
+                      "projectAssetModified",
+                      "garbageCollection"
+                    ],
+                    "type": "object"
                   },
                   {
                     "additionalProperties": false,
@@ -5970,6 +6757,131 @@
                         "const": true,
                         "type": "boolean"
                       },
+                      "preparedAdjudication": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "abandonDurability": {
+                            "const": "checkpoint-directory-fsync-after-unlink",
+                            "type": "string"
+                          },
+                          "abandonEligibility": {
+                            "const": "ambiguous-conflict-only-machine-reconcilable-states-rejected",
+                            "type": "string"
+                          },
+                          "abandonGarbageCollection": {
+                            "const": "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+                            "type": "string"
+                          },
+                          "abandonPoint": {
+                            "const": "prepared-manifest-unlink",
+                            "type": "string"
+                          },
+                          "abandonPostPointFailure": {
+                            "const": "bounded-success-manifest-deleted-with-fail-closed-garbage-collection",
+                            "type": "string"
+                          },
+                          "commitDurability": {
+                            "const": "checkpoint-directory-fsync-after-rename",
+                            "type": "string"
+                          },
+                          "commitEligibility": {
+                            "const": "create-target-matches-after-only",
+                            "type": "string"
+                          },
+                          "commitPoint": {
+                            "const": "prepared-to-committed-atomic-manifest-rename",
+                            "type": "string"
+                          },
+                          "commitPostPointFailure": {
+                            "const": "bounded-success-durability-unconfirmed-without-garbage-collection",
+                            "type": "string"
+                          },
+                          "expectedRevision": {
+                            "const": "action-domain-separated-sha256-of-full-manifest-and-target-evidence",
+                            "type": "string"
+                          },
+                          "genericForceBoolean": {
+                            "const": "unsupported",
+                            "type": "string"
+                          },
+                          "lockOrder": {
+                            "const": "target-then-checkpoint-store",
+                            "type": "string"
+                          },
+                          "manifestCas": {
+                            "const": "raw-bytes-and-full-semantic-metadata",
+                            "type": "string"
+                          },
+                          "projectAssetMutation": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "scope": {
+                            "const": "single-explicit-ambiguous-prepared-checkpoint",
+                            "type": "string"
+                          },
+                          "standingApproval": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "supportedConflicts": {
+                            "items": [
+                              {
+                                "const": "create-target-matches-after",
+                                "type": "string"
+                              },
+                              {
+                                "const": "create-target-unrelated",
+                                "type": "string"
+                              },
+                              {
+                                "const": "existing-target-missing",
+                                "type": "string"
+                              },
+                              {
+                                "const": "existing-target-unrelated",
+                                "type": "string"
+                              }
+                            ],
+                            "type": "array"
+                          },
+                          "targetObservationCas": {
+                            "const": "required-at-apply",
+                            "type": "string"
+                          },
+                          "tombstones": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "workflow": {
+                            "const": "separate-commit-or-abandon-preview-then-apply",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "scope",
+                          "workflow",
+                          "genericForceBoolean",
+                          "supportedConflicts",
+                          "commitEligibility",
+                          "abandonEligibility",
+                          "expectedRevision",
+                          "targetObservationCas",
+                          "manifestCas",
+                          "lockOrder",
+                          "commitPoint",
+                          "commitDurability",
+                          "commitPostPointFailure",
+                          "abandonPoint",
+                          "abandonDurability",
+                          "abandonPostPointFailure",
+                          "abandonGarbageCollection",
+                          "projectAssetMutation",
+                          "standingApproval",
+                          "tombstones"
+                        ],
+                        "type": "object"
+                      },
                       "preparedCreateExactMatch": {
                         "const": "conflict-provenance-ambiguous",
                         "type": "string"
@@ -6002,7 +6914,7 @@
                             "type": "string"
                           },
                           "forceAbandon": {
-                            "const": "unsupported",
+                            "const": "dedicated-prepared-adjudication-workflow",
                             "type": "string"
                           },
                           "garbageCollection": {
@@ -6014,7 +6926,7 @@
                             "type": "string"
                           },
                           "operatorForcedCommit": {
-                            "const": "unsupported",
+                            "const": "dedicated-prepared-adjudication-workflow",
                             "type": "string"
                           },
                           "projectAssetMutation": {
@@ -6415,6 +7327,38 @@
                             "const": "all-approved-committed-manifest-pins-raw-and-semantic-cas-before-first-unlink",
                             "type": "string"
                           },
+                          "explicitPreparedAbandonFailure": {
+                            "const": "unlink-is-commit-point-and-post-unlink-failures-return-bounded-success",
+                            "type": "string"
+                          },
+                          "explicitPreparedAbandonOrder": {
+                            "const": "raw-and-semantic-cas-target-revalidation-manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+                            "type": "string"
+                          },
+                          "explicitPreparedAdjudicationCoordination": {
+                            "const": "target-mutex-then-target-file-lock-then-checkpoint-store-lock",
+                            "type": "string"
+                          },
+                          "explicitPreparedAdjudicationEligibility": {
+                            "const": "prepared-manifest-with-ambiguous-safe-target-state-only-machine-reconcilable-and-unsafe-states-rejected",
+                            "type": "string"
+                          },
+                          "explicitPreparedAdjudicationPins": {
+                            "const": "manifest-version-retention-full-semantic-state-raw-revision-and-size-plus-safe-target-revision-and-size",
+                            "type": "string"
+                          },
+                          "explicitPreparedCommitEligibility": {
+                            "const": "prepared-create-manifest-and-safe-regular-target-exactly-matches-after-revision",
+                            "type": "string"
+                          },
+                          "explicitPreparedCommitFailure": {
+                            "const": "rename-is-commit-point-and-post-rename-failures-return-bounded-unconfirmed-success-without-garbage-collection",
+                            "type": "string"
+                          },
+                          "explicitPreparedCommitOrder": {
+                            "const": "raw-and-semantic-cas-target-revalidation-atomic-prepared-to-committed-rename-then-checkpoint-directory-fsync",
+                            "type": "string"
+                          },
                           "explicitPreparedDiscardCoordination": {
                             "const": "target-lock-then-checkpoint-store-lock",
                             "type": "string"
@@ -6444,7 +7388,7 @@
                             "type": "string"
                           },
                           "garbageCollectionTrigger": {
-                            "const": "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
+                            "const": "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-approved-prepared-abandon-automatic-rolling-post-commit-or-explicit-internal-call",
                             "type": "string"
                           },
                           "incompleteCapacityInventoryPolicy": {
@@ -6506,11 +7450,11 @@
                             "type": "string"
                           },
                           "validManifestDeletion": {
-                            "const": "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+                            "const": "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-ambiguous-prepared-abandon-or-opt-in-v2-rolling-post-commit-retention",
                             "type": "string"
                           },
                           "version": {
-                            "const": 5,
+                            "const": 6,
                             "type": "number"
                           }
                         },
@@ -6543,6 +7487,14 @@
                           "explicitPreparedDiscardEligibility",
                           "explicitPreparedDiscardCoordination",
                           "explicitPreparedDiscardDeletionOrder",
+                          "explicitPreparedAdjudicationEligibility",
+                          "explicitPreparedAdjudicationPins",
+                          "explicitPreparedAdjudicationCoordination",
+                          "explicitPreparedCommitEligibility",
+                          "explicitPreparedCommitOrder",
+                          "explicitPreparedCommitFailure",
+                          "explicitPreparedAbandonOrder",
+                          "explicitPreparedAbandonFailure",
                           "incompleteInventoryPolicy",
                           "incompleteCapacityInventoryPolicy",
                           "coordination",
@@ -6570,6 +7522,7 @@
                       "restoreScope",
                       "restoresReferencedDependencies",
                       "preparedDiscard",
+                      "preparedAdjudication",
                       "prune",
                       "pruneBatch",
                       "retention",
@@ -8100,6 +9053,14 @@
                             "type": "string"
                           },
                           {
+                            "const": "tiled_preview_prepared_checkpoint_commit",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_preview_prepared_checkpoint_abandon",
+                            "type": "string"
+                          },
+                          {
                             "const": "tiled_preview_checkpoint_prune",
                             "type": "string"
                           },
@@ -8186,6 +9147,14 @@
                           },
                           {
                             "const": "tiled_preview_prepared_checkpoint_discard",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_preview_prepared_checkpoint_commit",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_preview_prepared_checkpoint_abandon",
                             "type": "string"
                           },
                           {
@@ -19200,6 +20169,1392 @@
         "type": "object"
       },
       "title": "Preview map edits"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Preview abandoning an ambiguous prepared recovery checkpoint"
+      },
+      "description": "Pins the full manifest, target observation, and one of four machine-classified ambiguous prepared-checkpoint conflicts. It returns an explicit destructive operator-decision proposal without changing the project asset. Applying it permanently deletes only the recovery manifest and then runs fail-closed garbage collection; safe-discard states and machine-reconcilable existing-file exact-after states are rejected. A create exact-after conflict remains eligible because its provenance is ambiguous. There is no generic force flag.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "checkpointId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpointId"
+        ],
+        "type": "object"
+      },
+      "name": "tiled_preview_prepared_checkpoint_abandon",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "definitions": {
+          "__schema0": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "items": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "changeSetId": {
+                    "pattern": "^changeset:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "checkpoint": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "afterRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "before": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "existed"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "objectHash": {
+                                    "pattern": "^[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "revision": {
+                                    "pattern": "^sha256:[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "size": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "existed",
+                                  "revision",
+                                  "objectHash",
+                                  "size"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "label": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "version": {
+                            "const": 1,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "createdAt",
+                          "path",
+                          "before",
+                          "afterRevision",
+                          "version"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "afterRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "before": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "existed"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "objectHash": {
+                                    "pattern": "^[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "revision": {
+                                    "pattern": "^sha256:[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "size": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "existed",
+                                  "revision",
+                                  "objectHash",
+                                  "size"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "label": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "retention": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "class": {
+                                    "const": "protected",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "class"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "class": {
+                                    "const": "rolling",
+                                    "type": "string"
+                                  },
+                                  "ordinal": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "class",
+                                  "ordinal"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "version": {
+                            "const": 2,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "createdAt",
+                          "path",
+                          "before",
+                          "afterRevision",
+                          "version",
+                          "retention"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "conflict": {
+                    "enum": [
+                      "create-target-matches-after",
+                      "create-target-unrelated",
+                      "existing-target-missing",
+                      "existing-target-unrelated"
+                    ],
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "expectedRevision": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "preparedCheckpointAbandon",
+                    "type": "string"
+                  },
+                  "manifest": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "revision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "operations": {
+                    "items": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "checkpointId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "destructive": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "garbageCollection": {
+                            "const": "fail-closed-after-prepared-manifest-abandon",
+                            "type": "string"
+                          },
+                          "manifestBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "manifestRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "operatorDecisionRequired": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "projectAssetModified": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "removesRecoveryPoint": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "targetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "abandonPreparedCheckpoint",
+                            "type": "string"
+                          },
+                          "warning": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "destructive",
+                          "warning",
+                          "checkpointId",
+                          "targetPath",
+                          "status",
+                          "manifestRevision",
+                          "manifestBytes",
+                          "operatorDecisionRequired",
+                          "removesRecoveryPoint",
+                          "projectAssetModified",
+                          "garbageCollection"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "planDigest": {
+                    "pattern": "^changeset:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "snapshotConsistency": {
+                    "const": "non-atomic-read-set",
+                    "type": "string"
+                  },
+                  "summary": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "checkpointId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "garbageCollection": {
+                        "const": "fail-closed-after-prepared-manifest-abandon",
+                        "type": "string"
+                      },
+                      "manifestBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "manifestRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "operationCount": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "operatorDecisionRequired": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "projectAssetModified": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "removesRecoveryPoint": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "status": {
+                        "const": "prepared",
+                        "type": "string"
+                      },
+                      "targetPath": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "operationCount",
+                      "destructive",
+                      "checkpointId",
+                      "targetPath",
+                      "status",
+                      "manifestRevision",
+                      "manifestBytes",
+                      "operatorDecisionRequired",
+                      "removesRecoveryPoint",
+                      "projectAssetModified",
+                      "garbageCollection",
+                      "warning"
+                    ],
+                    "type": "object"
+                  },
+                  "target": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "existed": {
+                            "const": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "existed"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "existed": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "size": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "existed",
+                          "revision",
+                          "size"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "targetPath": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "changeSetId",
+                  "planDigest",
+                  "targetPath",
+                  "expectedRevision",
+                  "checkpoint",
+                  "manifest",
+                  "target",
+                  "conflict",
+                  "snapshotConsistency",
+                  "createdAt",
+                  "expiresAt",
+                  "kind",
+                  "operations",
+                  "summary"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "ASSET_REGISTRY_CORRUPT",
+                          "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                          "CHANGE_SET_LIMIT_EXCEEDED",
+                          "CHANGE_SET_NOT_FOUND",
+                          "CHECKPOINT_CHANGED",
+                          "CHECKPOINT_CORRUPT",
+                          "CHECKPOINT_NOT_COMMITTED",
+                          "CHECKPOINT_NOT_FOUND",
+                          "CHECKPOINT_QUOTA_EXCEEDED",
+                          "CHECKPOINT_STATE_CONFLICT",
+                          "DEPENDENCY_REVISION_CONFLICT",
+                          "DOCUMENT_CHANGED_DURING_READ",
+                          "DOCUMENT_TOO_LARGE",
+                          "DUPLICATE_JSON_KEY",
+                          "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                          "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                          "FILE_ALREADY_EXISTS",
+                          "FILE_LOCKED",
+                          "FILE_LOCK_CORRUPT",
+                          "FILE_NOT_FOUND",
+                          "GID_OUT_OF_RANGE",
+                          "GID_RANGE_EXHAUSTED",
+                          "IMAGE_CHANGED_DURING_READ",
+                          "IMAGE_DIMENSIONS_EXCEEDED",
+                          "IMAGE_ENCODING_FAILED",
+                          "IMAGE_TOO_LARGE",
+                          "INTERNAL_ERROR",
+                          "INVALID_ARGUMENT",
+                          "INVALID_DOCUMENT",
+                          "INVALID_GID",
+                          "INVALID_JSON",
+                          "INVALID_PROJECT_PATH",
+                          "INVALID_TILESET_ATLAS",
+                          "INVALID_TILESET_IMAGE",
+                          "INVALID_TILE_DATA",
+                          "INVALID_TILE_TRANSFORM",
+                          "JSON_NESTING_LIMIT",
+                          "LAYER_DEPTH_EXCEEDED",
+                          "LAYER_HAS_DESCENDANTS",
+                          "LAYER_ID_EXHAUSTED",
+                          "LAYER_INDEX_OUT_OF_RANGE",
+                          "LAYER_LIMIT_EXCEEDED",
+                          "LAYER_MOVE_CYCLE",
+                          "LAYER_NOT_FOUND",
+                          "LAYER_TYPE_MISMATCH",
+                          "NEXT_LAYER_ID_INVALID",
+                          "NEXT_OBJECT_ID_INVALID",
+                          "OBJECT_ID_EXHAUSTED",
+                          "OBJECT_IN_USE",
+                          "OBJECT_LIMIT_EXCEEDED",
+                          "OBJECT_NOT_FOUND",
+                          "OBJECT_REFERENCE_NOT_FOUND",
+                          "OBJECT_SHAPE_MISMATCH",
+                          "OVERLAY_TOO_DENSE",
+                          "PAGE_OUT_OF_RANGE",
+                          "PARENT_DIRECTORY_NOT_FOUND",
+                          "PATH_OUTSIDE_ROOT",
+                          "PREVIEW_DIMENSIONS_EXCEEDED",
+                          "PREVIEW_REGION_REQUIRED",
+                          "RASTER_TEMP_CLEANUP_FAILED",
+                          "REGION_OUT_OF_BOUNDS",
+                          "RESERVED_PROJECT_PATH",
+                          "RESULT_LIMIT_EXCEEDED",
+                          "REVERT_WOULD_DELETE",
+                          "REVISION_CONFLICT",
+                          "STALE_FILE_LOCK",
+                          "SYMLINK_NOT_ALLOWED",
+                          "TILESET_ALREADY_REFERENCED",
+                          "TILESET_GID_RANGE_OVERLAP",
+                          "TILESET_IMAGE_DIMENSION_MISMATCH",
+                          "TILESET_IN_USE",
+                          "TILESET_NOT_FOUND",
+                          "TILESET_NOT_IN_MAP",
+                          "TILE_ID_OUT_OF_RANGE",
+                          "TMXRASTERIZER_FAILED",
+                          "TMXRASTERIZER_NOT_EXECUTABLE",
+                          "TMXRASTERIZER_NOT_FOUND",
+                          "TMXRASTERIZER_OUTPUT_INVALID",
+                          "TMXRASTERIZER_OUTPUT_LIMIT",
+                          "TMXRASTERIZER_OUTPUT_MISSING",
+                          "TMXRASTERIZER_TIMEOUT",
+                          "UNSAFE_JSON_NUMBER",
+                          "UNSAFE_RENDER_REFERENCE",
+                          "UNSAFE_SVG",
+                          "UNSORTED_TILESET_REFERENCES",
+                          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                          "UNSUPPORTED_FORMAT",
+                          "UNSUPPORTED_IMAGE_FORMAT",
+                          "UNSUPPORTED_MAP_PROFILE",
+                          "UNSUPPORTED_OBJECT_PROFILE",
+                          "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_RENDER_FEATURE",
+                          "UNSUPPORTED_RENDER_LAYER",
+                          "UNSUPPORTED_TILESET",
+                          "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                          "UNSUPPORTED_TILE_ENCODING"
+                        ],
+                        "type": "string"
+                      },
+                      "details": {
+                        "additionalProperties": {
+                          "$ref": "#/definitions/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "message": {
+                        "maxLength": 4096,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "message",
+                      "details"
+                    ],
+                    "type": "object"
+                  },
+                  "ok": {
+                    "const": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "ok",
+                  "error"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
+      "title": "Preview abandoning an ambiguous prepared recovery checkpoint"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Preview committing an ambiguous prepared recovery checkpoint"
+      },
+      "description": "For an ambiguous create checkpoint only, pins the full prepared manifest and current target evidence and requires the target to exactly match the after revision. It returns an explicit operator-decision proposal without changing either the manifest or project asset. Applying the proposal commits only the internal audit checkpoint record; because its before state is target absence, it still cannot be restored as deletion. It does not run garbage collection, and there is no generic force flag.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "checkpointId": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpointId"
+        ],
+        "type": "object"
+      },
+      "name": "tiled_preview_prepared_checkpoint_commit",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "definitions": {
+          "__schema0": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "items": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "changeSetId": {
+                    "pattern": "^changeset:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "checkpoint": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "afterRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "before": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "existed"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "objectHash": {
+                                    "pattern": "^[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "revision": {
+                                    "pattern": "^sha256:[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "size": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "existed",
+                                  "revision",
+                                  "objectHash",
+                                  "size"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "label": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "version": {
+                            "const": 1,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "createdAt",
+                          "path",
+                          "before",
+                          "afterRevision",
+                          "version"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "afterRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "before": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "existed"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "existed": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "objectHash": {
+                                    "pattern": "^[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "revision": {
+                                    "pattern": "^sha256:[0-9a-f]{64}$",
+                                    "type": "string"
+                                  },
+                                  "size": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "existed",
+                                  "revision",
+                                  "objectHash",
+                                  "size"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "label": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "retention": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "class": {
+                                    "const": "protected",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "class"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "class": {
+                                    "const": "rolling",
+                                    "type": "string"
+                                  },
+                                  "ordinal": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "class",
+                                  "ordinal"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "version": {
+                            "const": 2,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "createdAt",
+                          "path",
+                          "before",
+                          "afterRevision",
+                          "version",
+                          "retention"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "conflict": {
+                    "const": "create-target-matches-after",
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "expectedRevision": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "preparedCheckpointCommit",
+                    "type": "string"
+                  },
+                  "manifest": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "revision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "revision",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "operations": {
+                    "items": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "checkpointId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "commitsCheckpointRecord": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "destructive": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "garbageCollection": {
+                            "const": "not-run",
+                            "type": "string"
+                          },
+                          "manifestBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "manifestRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "operatorDecisionRequired": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "projectAssetModified": {
+                            "const": false,
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "const": "prepared",
+                            "type": "string"
+                          },
+                          "targetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "commitPreparedCheckpoint",
+                            "type": "string"
+                          },
+                          "warning": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "destructive",
+                          "warning",
+                          "checkpointId",
+                          "targetPath",
+                          "status",
+                          "manifestRevision",
+                          "manifestBytes",
+                          "operatorDecisionRequired",
+                          "commitsCheckpointRecord",
+                          "projectAssetModified",
+                          "garbageCollection"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "planDigest": {
+                    "pattern": "^changeset:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "snapshotConsistency": {
+                    "const": "non-atomic-read-set",
+                    "type": "string"
+                  },
+                  "summary": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "checkpointId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "commitsCheckpointRecord": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "garbageCollection": {
+                        "const": "not-run",
+                        "type": "string"
+                      },
+                      "manifestBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "manifestRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "operationCount": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "operatorDecisionRequired": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "projectAssetModified": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "status": {
+                        "const": "prepared",
+                        "type": "string"
+                      },
+                      "targetPath": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "operationCount",
+                      "destructive",
+                      "checkpointId",
+                      "targetPath",
+                      "status",
+                      "manifestRevision",
+                      "manifestBytes",
+                      "operatorDecisionRequired",
+                      "commitsCheckpointRecord",
+                      "projectAssetModified",
+                      "garbageCollection",
+                      "warning"
+                    ],
+                    "type": "object"
+                  },
+                  "target": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "existed": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "revision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "size": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "existed",
+                      "revision",
+                      "size"
+                    ],
+                    "type": "object"
+                  },
+                  "targetPath": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "changeSetId",
+                  "planDigest",
+                  "targetPath",
+                  "expectedRevision",
+                  "checkpoint",
+                  "manifest",
+                  "target",
+                  "conflict",
+                  "snapshotConsistency",
+                  "createdAt",
+                  "expiresAt",
+                  "kind",
+                  "operations",
+                  "summary"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "ASSET_REGISTRY_CORRUPT",
+                          "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                          "CHANGE_SET_LIMIT_EXCEEDED",
+                          "CHANGE_SET_NOT_FOUND",
+                          "CHECKPOINT_CHANGED",
+                          "CHECKPOINT_CORRUPT",
+                          "CHECKPOINT_NOT_COMMITTED",
+                          "CHECKPOINT_NOT_FOUND",
+                          "CHECKPOINT_QUOTA_EXCEEDED",
+                          "CHECKPOINT_STATE_CONFLICT",
+                          "DEPENDENCY_REVISION_CONFLICT",
+                          "DOCUMENT_CHANGED_DURING_READ",
+                          "DOCUMENT_TOO_LARGE",
+                          "DUPLICATE_JSON_KEY",
+                          "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                          "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                          "FILE_ALREADY_EXISTS",
+                          "FILE_LOCKED",
+                          "FILE_LOCK_CORRUPT",
+                          "FILE_NOT_FOUND",
+                          "GID_OUT_OF_RANGE",
+                          "GID_RANGE_EXHAUSTED",
+                          "IMAGE_CHANGED_DURING_READ",
+                          "IMAGE_DIMENSIONS_EXCEEDED",
+                          "IMAGE_ENCODING_FAILED",
+                          "IMAGE_TOO_LARGE",
+                          "INTERNAL_ERROR",
+                          "INVALID_ARGUMENT",
+                          "INVALID_DOCUMENT",
+                          "INVALID_GID",
+                          "INVALID_JSON",
+                          "INVALID_PROJECT_PATH",
+                          "INVALID_TILESET_ATLAS",
+                          "INVALID_TILESET_IMAGE",
+                          "INVALID_TILE_DATA",
+                          "INVALID_TILE_TRANSFORM",
+                          "JSON_NESTING_LIMIT",
+                          "LAYER_DEPTH_EXCEEDED",
+                          "LAYER_HAS_DESCENDANTS",
+                          "LAYER_ID_EXHAUSTED",
+                          "LAYER_INDEX_OUT_OF_RANGE",
+                          "LAYER_LIMIT_EXCEEDED",
+                          "LAYER_MOVE_CYCLE",
+                          "LAYER_NOT_FOUND",
+                          "LAYER_TYPE_MISMATCH",
+                          "NEXT_LAYER_ID_INVALID",
+                          "NEXT_OBJECT_ID_INVALID",
+                          "OBJECT_ID_EXHAUSTED",
+                          "OBJECT_IN_USE",
+                          "OBJECT_LIMIT_EXCEEDED",
+                          "OBJECT_NOT_FOUND",
+                          "OBJECT_REFERENCE_NOT_FOUND",
+                          "OBJECT_SHAPE_MISMATCH",
+                          "OVERLAY_TOO_DENSE",
+                          "PAGE_OUT_OF_RANGE",
+                          "PARENT_DIRECTORY_NOT_FOUND",
+                          "PATH_OUTSIDE_ROOT",
+                          "PREVIEW_DIMENSIONS_EXCEEDED",
+                          "PREVIEW_REGION_REQUIRED",
+                          "RASTER_TEMP_CLEANUP_FAILED",
+                          "REGION_OUT_OF_BOUNDS",
+                          "RESERVED_PROJECT_PATH",
+                          "RESULT_LIMIT_EXCEEDED",
+                          "REVERT_WOULD_DELETE",
+                          "REVISION_CONFLICT",
+                          "STALE_FILE_LOCK",
+                          "SYMLINK_NOT_ALLOWED",
+                          "TILESET_ALREADY_REFERENCED",
+                          "TILESET_GID_RANGE_OVERLAP",
+                          "TILESET_IMAGE_DIMENSION_MISMATCH",
+                          "TILESET_IN_USE",
+                          "TILESET_NOT_FOUND",
+                          "TILESET_NOT_IN_MAP",
+                          "TILE_ID_OUT_OF_RANGE",
+                          "TMXRASTERIZER_FAILED",
+                          "TMXRASTERIZER_NOT_EXECUTABLE",
+                          "TMXRASTERIZER_NOT_FOUND",
+                          "TMXRASTERIZER_OUTPUT_INVALID",
+                          "TMXRASTERIZER_OUTPUT_LIMIT",
+                          "TMXRASTERIZER_OUTPUT_MISSING",
+                          "TMXRASTERIZER_TIMEOUT",
+                          "UNSAFE_JSON_NUMBER",
+                          "UNSAFE_RENDER_REFERENCE",
+                          "UNSAFE_SVG",
+                          "UNSORTED_TILESET_REFERENCES",
+                          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                          "UNSUPPORTED_FORMAT",
+                          "UNSUPPORTED_IMAGE_FORMAT",
+                          "UNSUPPORTED_MAP_PROFILE",
+                          "UNSUPPORTED_OBJECT_PROFILE",
+                          "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_RENDER_FEATURE",
+                          "UNSUPPORTED_RENDER_LAYER",
+                          "UNSUPPORTED_TILESET",
+                          "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                          "UNSUPPORTED_TILE_ENCODING"
+                        ],
+                        "type": "string"
+                      },
+                      "details": {
+                        "additionalProperties": {
+                          "$ref": "#/definitions/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "message": {
+                        "maxLength": 4096,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "message",
+                      "details"
+                    ],
+                    "type": "object"
+                  },
+                  "ok": {
+                    "const": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "ok",
+                  "error"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
+      "title": "Preview committing an ambiguous prepared recovery checkpoint"
     },
     {
       "annotations": {

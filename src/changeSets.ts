@@ -11,6 +11,8 @@ import {
 import type {
   CheckpointPruneResult,
   CommitResult,
+  PreparedCheckpointAbandonResult,
+  PreparedCheckpointCommitResult,
   PreparedCheckpointDiscardResult,
 } from "./storage/documentStore.js";
 import {
@@ -39,6 +41,16 @@ import {
   type PreparedCheckpointDiscardPlan,
   type PreparedCheckpointDiscardSummary,
 } from "./storage/preparedCheckpointDiscard.js";
+import {
+  preparedCheckpointAbandonOperationPreview,
+  preparedCheckpointCommitOperationPreview,
+  type PreparedCheckpointAbandonOperationPreview,
+  type PreparedCheckpointAbandonPlan,
+  type PreparedCheckpointAbandonSummary,
+  type PreparedCheckpointCommitOperationPreview,
+  type PreparedCheckpointCommitPlan,
+  type PreparedCheckpointCommitSummary,
+} from "./storage/preparedCheckpointAdjudication.js";
 import type {
   MapEditOperation,
   MapEditPlan,
@@ -86,6 +98,8 @@ export type ChangeSetPlan =
   | CheckpointRestorePlan
   | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
+  | PreparedCheckpointCommitPlan
+  | PreparedCheckpointAbandonPlan
   | PreparedCheckpointDiscardPlan;
 
 type ChangeSetOperationResult =
@@ -94,6 +108,8 @@ type ChangeSetOperationResult =
     })
   | CheckpointPruneResult
   | CheckpointPruneBatchResult
+  | PreparedCheckpointCommitResult
+  | PreparedCheckpointAbandonResult
   | PreparedCheckpointDiscardResult;
 
 export type ChangeSetApplyResult =
@@ -104,6 +120,12 @@ export type ChangeSetApplyResult =
       changeSetId: string;
     })
   | (CheckpointPruneBatchResult & {
+      changeSetId: string;
+    })
+  | (PreparedCheckpointCommitResult & {
+      changeSetId: string;
+    })
+  | (PreparedCheckpointAbandonResult & {
       changeSetId: string;
     })
   | (PreparedCheckpointDiscardResult & {
@@ -259,11 +281,80 @@ export interface PreparedCheckpointDiscardChangeSetPreview
   summary: PreparedCheckpointDiscardSummary;
 }
 
+interface PreparedCheckpointAdjudicationPreviewCheckpoint {
+  id: string;
+  version: 1 | 2;
+  status: "prepared";
+  label?: string;
+  createdAt: string;
+  path: string;
+  before:
+    | { existed: false }
+    | {
+        existed: true;
+        revision: string;
+        objectHash: string;
+        size: number;
+      };
+  afterRevision: string;
+  retention?:
+    | {
+        class: "protected";
+      }
+    | {
+        class: "rolling";
+        ordinal: number;
+      };
+}
+
+interface PreparedCheckpointAdjudicationPreviewEvidence {
+  targetPath: string;
+  checkpoint: PreparedCheckpointAdjudicationPreviewCheckpoint;
+  manifest: {
+    revision: string;
+    size: number;
+  };
+  target:
+    | { existed: false }
+    | {
+        existed: true;
+        revision: string;
+        size: number;
+      };
+  conflict:
+    | "create-target-matches-after"
+    | "create-target-unrelated"
+    | "existing-target-missing"
+    | "existing-target-unrelated";
+}
+
+export interface PreparedCheckpointCommitChangeSetPreview
+  extends ChangeSetPreviewCommon,
+    PreparedCheckpointAdjudicationPreviewEvidence {
+  kind: "preparedCheckpointCommit";
+  operations: [
+    PreparedCheckpointCommitOperationPreview,
+  ];
+  summary: PreparedCheckpointCommitSummary;
+}
+
+export interface PreparedCheckpointAbandonChangeSetPreview
+  extends ChangeSetPreviewCommon,
+    PreparedCheckpointAdjudicationPreviewEvidence {
+  kind: "preparedCheckpointAbandon";
+  operations: [
+    PreparedCheckpointAbandonOperationPreview,
+  ];
+  summary: PreparedCheckpointAbandonSummary;
+}
+
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
+  | PreparedCheckpointCommitChangeSetPreview
+  | PreparedCheckpointAbandonChangeSetPreview
   | PreparedCheckpointDiscardChangeSetPreview;
 
 type OperationPreview =
@@ -578,6 +669,8 @@ type OperationPreview =
   | CheckpointRestoreOperationPreview
   | CheckpointPruneOperationPreview
   | CheckpointPruneBatchOperationPreview
+  | PreparedCheckpointCommitOperationPreview
+  | PreparedCheckpointAbandonOperationPreview
   | PreparedCheckpointDiscardOperationPreview;
 
 export class ChangeSetRegistry {
@@ -700,6 +793,88 @@ export class ChangeSetRegistry {
 }
 
 function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
+  if (
+    entry.plan.kind ===
+      "preparedCheckpointCommit" ||
+    entry.plan.kind ===
+      "preparedCheckpointAbandon"
+  ) {
+    const plan = entry.plan;
+    const common = {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      targetPath: plan.checkpoint.path,
+      expectedRevision: plan.baseRevision,
+      checkpoint: {
+        id: plan.checkpoint.id,
+        version: plan.checkpoint.version,
+        status: plan.checkpoint.status,
+        ...(plan.checkpoint.label === undefined
+          ? {}
+          : {
+              label: plan.checkpoint.label,
+            }),
+        createdAt: plan.checkpoint.createdAt,
+        path: plan.checkpoint.path,
+        before: structuredClone(
+          plan.checkpoint.before,
+        ),
+        afterRevision:
+          plan.checkpoint.afterRevision,
+        ...(plan.checkpoint.retention ===
+        undefined
+          ? {}
+          : {
+              retention: structuredClone(
+                plan.checkpoint.retention,
+              ),
+            }),
+      },
+      manifest: {
+        revision:
+          plan.checkpoint.manifestRevision,
+        size: plan.checkpoint.manifestSize,
+      },
+      target: structuredClone(
+        plan.checkpoint.target,
+      ),
+      conflict: plan.checkpoint.conflict,
+      snapshotConsistency:
+        "non-atomic-read-set" as const,
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+    if (
+      plan.kind ===
+      "preparedCheckpointCommit"
+    ) {
+      return {
+        ...common,
+        kind: plan.kind,
+        operations: [
+          preparedCheckpointCommitOperationPreview(
+            plan,
+          ),
+        ],
+        summary: structuredClone(
+          plan.summary,
+        ),
+      };
+    }
+    return {
+      ...common,
+      kind: plan.kind,
+      operations: [
+        preparedCheckpointAbandonOperationPreview(
+          plan,
+        ),
+      ],
+      summary: structuredClone(plan.summary),
+    };
+  }
   if (
     entry.plan.kind ===
     "checkpointPruneBatch"

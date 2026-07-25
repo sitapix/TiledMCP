@@ -15,16 +15,17 @@
 2. 读取 capability 中的 `editProfiles`、`serverVersion`、`cli` 探测结果、
    `registeredTools`、`applicationErrorContract` 和
    `filesystemThreatModelContract`，以及
-   `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界；不要从旧会话或文档
+   `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
+   `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 21 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 22，不能把它当成必备工具。
+3. 核心 profile 当前包含 23 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 24，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 21 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 23 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -67,7 +68,8 @@ discard。长期
 `TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N`，显式批准默认关闭的 v2 rolling retention；
 `N` 至少为 2。它只在新 checkpoint 成功 committed 后按 durable ordinal 每次至多删除一个
 旧 rolling checkpoint；legacy、protected/create 与 prepared 永不自动删除，也不会在
-quota failure 前预删恢复点。含混状态的强制裁决仍不受支持。
+quota failure 前预删恢复点。含混 prepared 状态只允许使用动作分离、证据绑定的
+commit/abandon preview；通用 force 仍不受支持。
 
 ## 把 revision 与依赖当成同一个快照传递
 
@@ -139,6 +141,8 @@ revision。只有收到针对该 proposal 的明确批准后，才调用
 - `tiled_add_tileset_to_map`
 - `tiled_create_layer`
 - `tiled_preview_prepared_checkpoint_discard`
+- `tiled_preview_prepared_checkpoint_commit`
+- `tiled_preview_prepared_checkpoint_abandon`
 - `tiled_preview_checkpoint_prune`
 - `tiled_preview_checkpoint_prune_batch`
 - `tiled_preview_checkpoint_restore`
@@ -152,7 +156,7 @@ revision 和 size 同时匹配 `before`，create 目标必须严格缺失。目�
 existing-file 目标缺失、create 目标存在、symlink/非普通文件和
 `before.revision === afterRevision` 都是稳定 conflict，不允许强制跳过。discard preview
 不读取 stored-before blob，但会绑定 raw manifest revision/size、完整 metadata 和目标
-状态证据。这三条经批准的显式删除路径都只永久删除 manifest，不会修改目标项目资产；
+状态证据。经批准的显式删除路径都只永久删除 manifest，不会修改目标项目资产；
 单项 prune/discard 随后运行 fail-closed orphan GC，batch 则仅在全部成员逐项持久删除后
 运行一次，partial 明确不运行 GC。
 
@@ -161,9 +165,59 @@ existing-file 目标缺失、create 目标存在、symlink/非普通文件和
 目标 map revision，并在适用时绑定完整 dependency pins，checkpoint restore 绑定其单个
 目标文档的 revision，单项 checkpoint prune/discard 绑定 raw manifest revision，batch
 prune 则绑定有序 `{id,manifestRevision,manifestSize}` pins 的聚合 revision；discard
-另外固定目标状态 CAS。任一种
-proposal 过期或冲突后都必须重新预览和批准；prune/discard 成功后均不留 tombstone，不要
+另外固定目标状态 CAS，prepared commit/abandon 则使用动作域隔离的完整 manifest + target
+evidence digest。任一种
+proposal 过期或冲突后都必须重新预览和批准；prune/discard/abandon 成功后均不留
+tombstone，不要
 把 not-found 当成可重试信号。
+
+## 裁决含混的 prepared checkpoint
+
+先让启动对账运行，并重新调用 `tiled_list_checkpoints`。只有仍为 `prepared` 且机器路径
+无法收口的条目才需要人判断；不要对每个 prepared checkpoint 都弹出 force 按钮。
+
+| 权威目标观察 | 应调用的 preview |
+|---|---|
+| create + missing | `tiled_preview_prepared_checkpoint_discard` |
+| existing + exact-before | `tiled_preview_prepared_checkpoint_discard` |
+| existing + exact-after | 不做人工裁决；重启服务，由启动 reconcile 推进 |
+| create + exact-after | 由人选择 `tiled_preview_prepared_checkpoint_commit` 或 `tiled_preview_prepared_checkpoint_abandon` |
+| create + unrelated | 只能 `tiled_preview_prepared_checkpoint_abandon` |
+| existing + missing/unrelated | 只能 `tiled_preview_prepared_checkpoint_abandon` |
+| unsafe / unreadable / racy | 不调用 apply；先排除安全问题并重新 preview |
+
+commit 的含义只是“操作者确认当前 exact-after create 应保留为一条已提交的内部审计
+checkpoint 记录”，不会触碰项目文件；由于它的 before 是目标不存在，当前 restore 也不能
+把它还原成删除操作。abandon 的含义是“保留当前项目文件，但永久失去这个 prepared
+recovery point”。批准 UI 必须展示 checkpoint ID、path、version/retention、before/after、
+raw manifest hash/size、目标 missing 或 revision/size、`conflict`、警告与 expiry；不能只
+显示动作名称。
+
+伪代码：
+
+```text
+proposalWire = tiled_preview_prepared_checkpoint_commit({ checkpointId })
+# 或：tiled_preview_prepared_checkpoint_abandon({ checkpointId })
+assert_not_error(proposalWire)
+proposal = proposalWire.structuredContent.result
+
+show_complete_checkpoint_evidence_to_human(proposal)
+wait_for_action_specific_approval()
+
+resultWire = tiled_apply_change_set({
+  changeSetId: proposal.changeSetId,
+  expectedRevision: proposal.expectedRevision
+})
+assert_not_error(resultWire)
+result = resultWire.structuredContent.result
+```
+
+apply 会在 target/store 锁内重新验证全部证据。preview 后的任一 manifest 或目标漂移都
+要求重新 list/preview/批准，不能把 commit proposal 的 ID 或 digest 用于 abandon。commit
+成功时检查 `manifestCommitted` 与 `durability`；`unconfirmed` 表示 rename 已发生但目录
+durability/锁释放无法确认，不能当作未执行重试。abandon 成功时检查
+`manifestDeleted:true` 和 GC outcome；unlink 后故障同样不是 retry-safe failure。同一
+change set replay 只返回首次缓存结果，不会续跑或重新观察磁盘。
 
 ## 用 batch prune 显式清理 retention backlog
 
@@ -218,7 +272,8 @@ checkpoint 目录，遇到首个故障就停止。客户端必须这样解释结
 其自动 checkpoint 记录 `before.existed:false`，当前恢复工具不会把它解释成删除；进程若在
 落盘后、标记 committed 前崩溃，启动对账也不会仅凭相同 hash 猜测文件来源，prepared
 discard 同样会因 create 目标已存在而拒绝。只有目标当前严格缺失、与
-`before.existed:false` 一致时才可走 prepared discard。
+`before.existed:false` 一致时才可走 prepared discard；目标精确等于 after 时，必须由
+操作者在独立 commit/abandon proposal 的完整证据上作出决定。
 
 ## Raster 预览是可选能力
 

@@ -125,6 +125,8 @@ import {
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
+  preparedCheckpointAbandonPreviewToolOutputSchema,
+  preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
@@ -189,6 +191,12 @@ import {
   applyPreparedCheckpointDiscard,
   planPreparedCheckpointDiscard,
 } from "./storage/preparedCheckpointDiscard.js";
+import {
+  applyPreparedCheckpointAbandon,
+  applyPreparedCheckpointCommit,
+  planPreparedCheckpointAbandon,
+  planPreparedCheckpointCommit,
+} from "./storage/preparedCheckpointAdjudication.js";
 import {
   CHECKPOINT_ID_PATTERN,
   CHECKPOINT_ID_INPUT_PATTERN,
@@ -930,6 +938,8 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_list_files",
     "tiled_list_checkpoints",
     "tiled_preview_prepared_checkpoint_discard",
+    "tiled_preview_prepared_checkpoint_commit",
+    "tiled_preview_prepared_checkpoint_abandon",
     "tiled_preview_checkpoint_prune",
     "tiled_preview_checkpoint_prune_batch",
     "tiled_preview_checkpoint_restore",
@@ -1082,6 +1092,26 @@ const PREPARED_CHECKPOINT_DISCARD_PREVIEW: ToolAnnotations =
   {
     title:
       "Preview discarding a prepared recovery checkpoint",
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  };
+
+const PREPARED_CHECKPOINT_COMMIT_PREVIEW: ToolAnnotations =
+  {
+    title:
+      "Preview committing an ambiguous prepared recovery checkpoint",
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  };
+
+const PREPARED_CHECKPOINT_ABANDON_PREVIEW: ToolAnnotations =
+  {
+    title:
+      "Preview abandoning an ambiguous prepared recovery checkpoint",
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: false,
@@ -1363,10 +1393,54 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
             storedBeforeValidation:
               "not-read-for-discard",
-            operatorForcedCommit: "unsupported",
-            forceAbandon: "unsupported",
+            operatorForcedCommit:
+              "dedicated-prepared-adjudication-workflow",
+            forceAbandon:
+              "dedicated-prepared-adjudication-workflow",
             automaticDeletion: "never",
             projectAssetMutation: false,
+            tombstones: false,
+          },
+          preparedAdjudication: {
+            scope:
+              "single-explicit-ambiguous-prepared-checkpoint",
+            workflow:
+              "separate-commit-or-abandon-preview-then-apply",
+            genericForceBoolean: "unsupported",
+            supportedConflicts: [
+              "create-target-matches-after",
+              "create-target-unrelated",
+              "existing-target-missing",
+              "existing-target-unrelated",
+            ],
+            commitEligibility:
+              "create-target-matches-after-only",
+            abandonEligibility:
+              "ambiguous-conflict-only-machine-reconcilable-states-rejected",
+            expectedRevision:
+              "action-domain-separated-sha256-of-full-manifest-and-target-evidence",
+            targetObservationCas:
+              "required-at-apply",
+            manifestCas:
+              "raw-bytes-and-full-semantic-metadata",
+            lockOrder:
+              "target-then-checkpoint-store",
+            commitPoint:
+              "prepared-to-committed-atomic-manifest-rename",
+            commitDurability:
+              "checkpoint-directory-fsync-after-rename",
+            commitPostPointFailure:
+              "bounded-success-durability-unconfirmed-without-garbage-collection",
+            abandonPoint:
+              "prepared-manifest-unlink",
+            abandonDurability:
+              "checkpoint-directory-fsync-after-unlink",
+            abandonPostPointFailure:
+              "bounded-success-manifest-deleted-with-fail-closed-garbage-collection",
+            abandonGarbageCollection:
+              "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+            projectAssetMutation: false,
+            standingApproval: false,
             tombstones: false,
           },
           prune: {
@@ -1464,7 +1538,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             maxEntries:
               store.checkpoints.maxEntries,
             garbageCollectionTrigger:
-              "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
+              "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-approved-prepared-abandon-automatic-rolling-post-commit-or-explicit-internal-call",
             quotaFailureCode:
               "CHECKPOINT_QUOTA_EXCEEDED",
           },
@@ -1934,6 +2008,70 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       executeTool(async () =>
         changeSets.put(
           await planPreparedCheckpointDiscard(
+            store,
+            checkpointId,
+          ),
+        ),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_prepared_checkpoint_commit",
+    {
+      title:
+        "Preview committing an ambiguous prepared recovery checkpoint",
+      description:
+        "For an ambiguous create checkpoint only, pins the full prepared manifest and current target evidence and requires the target to exactly match the after revision. It returns an explicit operator-decision proposal without changing either the manifest or project asset. Applying the proposal commits only the internal audit checkpoint record; because its before state is target absence, it still cannot be restored as deletion. It does not run garbage collection, and there is no generic force flag.",
+      inputSchema: z
+        .object({
+          checkpointId: z
+            .string()
+            .regex(CHECKPOINT_ID_PATTERN),
+        })
+        .strict(),
+      outputSchema:
+        preparedCheckpointCommitPreviewToolOutputSchema,
+      annotations:
+        PREPARED_CHECKPOINT_COMMIT_PREVIEW,
+    },
+    async ({ checkpointId }) =>
+      executeTool(async () =>
+        changeSets.put(
+          await planPreparedCheckpointCommit(
+            store,
+            checkpointId,
+          ),
+        ),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_prepared_checkpoint_abandon",
+    {
+      title:
+        "Preview abandoning an ambiguous prepared recovery checkpoint",
+      description:
+        "Pins the full manifest, target observation, and one of four machine-classified ambiguous prepared-checkpoint conflicts. It returns an explicit destructive operator-decision proposal without changing the project asset. Applying it permanently deletes only the recovery manifest and then runs fail-closed garbage collection; safe-discard states and machine-reconcilable existing-file exact-after states are rejected. A create exact-after conflict remains eligible because its provenance is ambiguous. There is no generic force flag.",
+      inputSchema: z
+        .object({
+          checkpointId: z
+            .string()
+            .regex(CHECKPOINT_ID_PATTERN),
+        })
+        .strict(),
+      outputSchema:
+        preparedCheckpointAbandonPreviewToolOutputSchema,
+      annotations:
+        PREPARED_CHECKPOINT_ABANDON_PREVIEW,
+    },
+    async ({ checkpointId }) =>
+      executeTool(async () =>
+        changeSets.put(
+          await planPreparedCheckpointAbandon(
             store,
             checkpointId,
           ),
@@ -2587,7 +2725,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific dependency pins.",
+        "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -2619,18 +2757,31 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                     store,
                     plan,
                   )
-                : plan.kind === "checkpointPrune"
-                  ? applyCheckpointPrune(
+                : plan.kind ===
+                    "preparedCheckpointCommit"
+                  ? applyPreparedCheckpointCommit(
                       store,
                       plan,
                     )
                   : plan.kind ===
-                      "checkpointPruneBatch"
-                    ? applyCheckpointPruneBatch(
+                      "preparedCheckpointAbandon"
+                    ? applyPreparedCheckpointAbandon(
                         store,
                         plan,
                       )
-                  : maps.applyEdits(plan),
+                    : plan.kind ===
+                        "checkpointPrune"
+                      ? applyCheckpointPrune(
+                          store,
+                          plan,
+                        )
+                      : plan.kind ===
+                          "checkpointPruneBatch"
+                        ? applyCheckpointPruneBatch(
+                            store,
+                            plan,
+                          )
+                        : maps.applyEdits(plan),
         ),
       ),
   );

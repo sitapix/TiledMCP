@@ -73,6 +73,8 @@ const CORE_TOOLS = [
   "tiled_list_files",
   "tiled_list_checkpoints",
   "tiled_preview_prepared_checkpoint_discard",
+  "tiled_preview_prepared_checkpoint_commit",
+  "tiled_preview_prepared_checkpoint_abandon",
   "tiled_preview_checkpoint_prune",
   "tiled_preview_checkpoint_prune_batch",
   "tiled_preview_checkpoint_restore",
@@ -187,7 +189,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the twenty-one core tools with safety annotations", async () => {
+  it("advertises exactly the twenty-three core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -215,6 +217,8 @@ describe("createTiledMcpServer", () => {
     }
     for (const name of [
       "tiled_preview_prepared_checkpoint_discard",
+      "tiled_preview_prepared_checkpoint_commit",
+      "tiled_preview_prepared_checkpoint_abandon",
       "tiled_preview_checkpoint_prune",
       "tiled_preview_checkpoint_prune_batch",
       "tiled_preview_checkpoint_restore",
@@ -261,6 +265,21 @@ describe("createTiledMcpServer", () => {
       required: ["checkpointId"],
       additionalProperties: false,
     });
+    for (const name of [
+      "tiled_preview_prepared_checkpoint_commit",
+      "tiled_preview_prepared_checkpoint_abandon",
+    ]) {
+      expect(
+        byName.get(name)?.inputSchema,
+      ).toMatchObject({
+        type: "object",
+        properties: {
+          checkpointId: { type: "string" },
+        },
+        required: ["checkpointId"],
+        additionalProperties: false,
+      });
+    }
     expect(
       byName.get("tiled_preview_checkpoint_prune")?.inputSchema,
     ).toMatchObject({
@@ -2926,10 +2945,54 @@ describe("createTiledMcpServer", () => {
             "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
           storedBeforeValidation:
             "not-read-for-discard",
-          operatorForcedCommit: "unsupported",
-          forceAbandon: "unsupported",
+          operatorForcedCommit:
+            "dedicated-prepared-adjudication-workflow",
+          forceAbandon:
+            "dedicated-prepared-adjudication-workflow",
           automaticDeletion: "never",
           projectAssetMutation: false,
+          tombstones: false,
+        },
+        preparedAdjudication: {
+          scope:
+            "single-explicit-ambiguous-prepared-checkpoint",
+          workflow:
+            "separate-commit-or-abandon-preview-then-apply",
+          genericForceBoolean: "unsupported",
+          supportedConflicts: [
+            "create-target-matches-after",
+            "create-target-unrelated",
+            "existing-target-missing",
+            "existing-target-unrelated",
+          ],
+          commitEligibility:
+            "create-target-matches-after-only",
+          abandonEligibility:
+            "ambiguous-conflict-only-machine-reconcilable-states-rejected",
+          expectedRevision:
+            "action-domain-separated-sha256-of-full-manifest-and-target-evidence",
+          targetObservationCas:
+            "required-at-apply",
+          manifestCas:
+            "raw-bytes-and-full-semantic-metadata",
+          lockOrder:
+            "target-then-checkpoint-store",
+          commitPoint:
+            "prepared-to-committed-atomic-manifest-rename",
+          commitDurability:
+            "checkpoint-directory-fsync-after-rename",
+          commitPostPointFailure:
+            "bounded-success-durability-unconfirmed-without-garbage-collection",
+          abandonPoint:
+            "prepared-manifest-unlink",
+          abandonDurability:
+            "checkpoint-directory-fsync-after-unlink",
+          abandonPostPointFailure:
+            "bounded-success-manifest-deleted-with-fail-closed-garbage-collection",
+          abandonGarbageCollection:
+            "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+          projectAssetMutation: false,
+          standingApproval: false,
           tombstones: false,
         },
         prune: {
@@ -3021,7 +3084,7 @@ describe("createTiledMcpServer", () => {
           maxEntries:
             MAX_CHECKPOINT_OBSERVED_ENTRIES,
           garbageCollectionTrigger:
-            "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
+            "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-approved-prepared-abandon-automatic-rolling-post-commit-or-explicit-internal-call",
           quotaFailureCode:
             "CHECKPOINT_QUOTA_EXCEEDED",
         },
@@ -7623,6 +7686,353 @@ describe("createTiledMcpServer", () => {
         },
       });
     expect(secondApply).toEqual(firstApply);
+  });
+
+  it("previews and applies explicit prepared-checkpoint commit and abandon adjudications", async () => {
+    const commitPath =
+      "maps/ambiguous-create-commit.tmj";
+    const commitAbsolute = join(
+      harness.root,
+      commitPath,
+    );
+    const committedTarget = Buffer.from(
+      '{"type":"map","adjudication":"commit"}\n',
+      "utf8",
+    );
+    const preparedCommit =
+      await harness.store.checkpoints.prepare(
+        commitPath,
+        undefined,
+        revisionOf(committedTarget),
+        "server ambiguous commit",
+      );
+    await writeFile(
+      commitAbsolute,
+      committedTarget,
+    );
+
+    const commitPreview = resultOf<{
+      kind: string;
+      changeSetId: string;
+      planDigest: string;
+      targetPath: string;
+      expectedRevision: string;
+      checkpoint: {
+        id: string;
+        version: number;
+        status: string;
+        path: string;
+        before: { existed: boolean };
+        afterRevision: string;
+      };
+      manifest: {
+        revision: string;
+        size: number;
+      };
+      target: {
+        existed: boolean;
+        revision: string;
+        size: number;
+      };
+      conflict: string;
+      operations: Array<Record<string, unknown>>;
+      summary: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_prepared_checkpoint_commit",
+        arguments: {
+          checkpointId: preparedCommit.id,
+        },
+      }),
+    );
+    expect(commitPreview).toMatchObject({
+      kind: "preparedCheckpointCommit",
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      planDigest: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      targetPath: commitPath,
+      expectedRevision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+      checkpoint: {
+        id: preparedCommit.id,
+        version: 1,
+        status: "prepared",
+        path: commitPath,
+        before: { existed: false },
+        afterRevision:
+          revisionOf(committedTarget),
+      },
+      manifest: {
+        revision: expect.stringMatching(
+          /^sha256:[0-9a-f]{64}$/u,
+        ),
+        size: expect.any(Number),
+      },
+      target: {
+        existed: true,
+        revision:
+          revisionOf(committedTarget),
+        size: committedTarget.byteLength,
+      },
+      conflict:
+        "create-target-matches-after",
+      operations: [
+        {
+          type: "commitPreparedCheckpoint",
+          destructive: false,
+          checkpointId: preparedCommit.id,
+          targetPath: commitPath,
+          status: "prepared",
+          operatorDecisionRequired: true,
+          commitsCheckpointRecord: true,
+          projectAssetModified: false,
+          garbageCollection: "not-run",
+          warning: expect.stringContaining(
+            "Operator decision required",
+          ),
+        },
+      ],
+      summary: {
+        operationCount: 1,
+        destructive: false,
+        checkpointId: preparedCommit.id,
+        targetPath: commitPath,
+        status: "prepared",
+        operatorDecisionRequired: true,
+        commitsCheckpointRecord: true,
+        projectAssetModified: false,
+        garbageCollection: "not-run",
+      },
+    });
+    expect(
+      commitPreview.expectedRevision,
+    ).not.toBe(
+      commitPreview.manifest.revision,
+    );
+    expect(
+      commitPreview.operations[0],
+    ).toMatchObject({
+      manifestRevision:
+        commitPreview.manifest.revision,
+      manifestBytes:
+        commitPreview.manifest.size,
+    });
+
+    const committed = resultOf<{
+      kind: string;
+      changeSetId: string;
+      checkpoint: {
+        id: string;
+        version: number;
+        status: string;
+      };
+      previousStatus: string;
+      target: {
+        existed: boolean;
+        revision: string;
+        size: number;
+      };
+      conflict: string;
+      manifestCommitted: boolean;
+      projectAssetModified: boolean;
+      durability: string;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId:
+            commitPreview.changeSetId,
+          expectedRevision:
+            commitPreview.expectedRevision,
+        },
+      }),
+    );
+    expect(committed).toMatchObject({
+      kind: "preparedCheckpointCommit",
+      changeSetId:
+        commitPreview.changeSetId,
+      checkpoint: {
+        id: preparedCommit.id,
+        version: 1,
+        status: "committed",
+      },
+      previousStatus: "prepared",
+      target: {
+        existed: true,
+        revision:
+          revisionOf(committedTarget),
+        size: committedTarget.byteLength,
+      },
+      conflict:
+        "create-target-matches-after",
+      manifestCommitted: true,
+      projectAssetModified: false,
+      durability: "confirmed",
+    });
+    expect(
+      await readFile(commitAbsolute),
+    ).toEqual(committedTarget);
+
+    const abandonPath =
+      "maps/ambiguous-create-abandon.tmj";
+    const abandonAbsolute = join(
+      harness.root,
+      abandonPath,
+    );
+    const intended = Buffer.from(
+      '{"type":"map","intended":true}\n',
+      "utf8",
+    );
+    const unrelated = Buffer.from(
+      '{"type":"map","external":true}\n',
+      "utf8",
+    );
+    const preparedAbandon =
+      await harness.store.checkpoints.prepare(
+        abandonPath,
+        undefined,
+        revisionOf(intended),
+        "server ambiguous abandon",
+      );
+    await writeFile(
+      abandonAbsolute,
+      unrelated,
+    );
+
+    const abandonPreview = resultOf<{
+      kind: string;
+      changeSetId: string;
+      expectedRevision: string;
+      checkpoint: {
+        id: string;
+        version: number;
+        status: string;
+        before: { existed: boolean };
+        afterRevision: string;
+      };
+      manifest: {
+        revision: string;
+        size: number;
+      };
+      target: {
+        existed: boolean;
+        revision: string;
+        size: number;
+      };
+      conflict: string;
+      operations: Array<Record<string, unknown>>;
+      summary: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_prepared_checkpoint_abandon",
+        arguments: {
+          checkpointId: preparedAbandon.id,
+        },
+      }),
+    );
+    expect(abandonPreview).toMatchObject({
+      kind: "preparedCheckpointAbandon",
+      checkpoint: {
+        id: preparedAbandon.id,
+        version: 1,
+        status: "prepared",
+        before: { existed: false },
+        afterRevision: revisionOf(intended),
+      },
+      target: {
+        existed: true,
+        revision: revisionOf(unrelated),
+        size: unrelated.byteLength,
+      },
+      conflict: "create-target-unrelated",
+      operations: [
+        {
+          type: "abandonPreparedCheckpoint",
+          destructive: true,
+          operatorDecisionRequired: true,
+          removesRecoveryPoint: true,
+          projectAssetModified: false,
+          garbageCollection:
+            "fail-closed-after-prepared-manifest-abandon",
+          warning: expect.stringContaining(
+            "permanently deletes",
+          ),
+        },
+      ],
+      summary: {
+        operationCount: 1,
+        destructive: true,
+        operatorDecisionRequired: true,
+        removesRecoveryPoint: true,
+        projectAssetModified: false,
+        garbageCollection:
+          "fail-closed-after-prepared-manifest-abandon",
+      },
+    });
+    expect(
+      abandonPreview.expectedRevision,
+    ).not.toBe(
+      abandonPreview.manifest.revision,
+    );
+    expect(
+      abandonPreview.expectedRevision,
+    ).not.toBe(
+      commitPreview.expectedRevision,
+    );
+
+    const abandoned = resultOf<{
+      kind: string;
+      changeSetId: string;
+      checkpoint: {
+        id: string;
+        status: string;
+      };
+      conflict: string;
+      manifestDeleted: boolean;
+      projectAssetModified: boolean;
+      garbageCollection: {
+        status: string;
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId:
+            abandonPreview.changeSetId,
+          expectedRevision:
+            abandonPreview.expectedRevision,
+        },
+      }),
+    );
+    expect(abandoned).toMatchObject({
+      kind: "preparedCheckpointAbandon",
+      changeSetId:
+        abandonPreview.changeSetId,
+      checkpoint: {
+        id: preparedAbandon.id,
+        status: "prepared",
+      },
+      conflict: "create-target-unrelated",
+      manifestDeleted: true,
+      projectAssetModified: false,
+      garbageCollection: {
+        status: "completed",
+      },
+    });
+    expect(
+      await readFile(abandonAbsolute),
+    ).toEqual(unrelated);
+    await expect(
+      harness.store.checkpoints.read(
+        preparedAbandon.id,
+      ),
+    ).rejects.toMatchObject({
+      code: "CHECKPOINT_NOT_FOUND",
+    });
   });
 
   it("previews, applies and idempotently replays an exact checkpoint restore", async () => {

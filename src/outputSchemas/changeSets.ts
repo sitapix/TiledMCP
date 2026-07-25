@@ -854,6 +854,60 @@ const discardPreparedCheckpointOperationPreviewOutputSchema =
     })
     .strict();
 
+const commitPreparedCheckpointOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal(
+        "commitPreparedCheckpoint",
+      ),
+      destructive: z.literal(false),
+      warning: z.string(),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      operatorDecisionRequired:
+        z.literal(true),
+      commitsCheckpointRecord: z.literal(true),
+      projectAssetModified: z.literal(false),
+      garbageCollection: z.literal(
+        "not-run",
+      ),
+    })
+    .strict();
+
+const abandonPreparedCheckpointOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal(
+        "abandonPreparedCheckpoint",
+      ),
+      destructive: z.literal(true),
+      warning: z.string(),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      operatorDecisionRequired:
+        z.literal(true),
+      removesRecoveryPoint: z.literal(true),
+      projectAssetModified: z.literal(false),
+      garbageCollection: z.literal(
+        "fail-closed-after-prepared-manifest-abandon",
+      ),
+    })
+    .strict();
+
 const genericOperationPreviewOutputSchema =
   z.discriminatedUnion("type", [
     updateMapOperationPreviewOutputSchema,
@@ -1420,7 +1474,20 @@ const checkpointPruneBeforeOutputSchema = z.union([
         Number.MAX_SAFE_INTEGER,
       ),
     })
-    .strict(),
+    .strict()
+    .superRefine((before, context) => {
+      if (
+        before.revision !==
+        `sha256:${before.objectHash}`
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["revision"],
+          message:
+            "A checkpoint before revision must match its content-addressed object hash.",
+        });
+      }
+    }),
 ]);
 
 const checkpointPruneSummaryOutputSchema = z
@@ -1776,6 +1843,314 @@ function sameCheckpointPruneBatchStrings(
   );
 }
 
+const preparedCheckpointAdjudicationConflictOutputSchema =
+  z.enum([
+    "create-target-matches-after",
+    "create-target-unrelated",
+    "existing-target-missing",
+    "existing-target-unrelated",
+  ]);
+
+const preparedCheckpointAdjudicationTargetOutputSchema =
+  z.union([
+    z
+      .object({
+        existed: z.literal(false),
+      })
+      .strict(),
+    z
+      .object({
+        existed: z.literal(true),
+        revision: revisionOutputSchema,
+        size: nonnegativeIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+  ]);
+
+const preparedCheckpointAdjudicationCheckpointBaseOutputShape =
+  {
+    id: checkpointIdOutputSchema,
+    status: z.literal("prepared"),
+    label: z
+      .string()
+      .max(1_024)
+      .optional(),
+    createdAt:
+      checkpointTimestampOutputSchema,
+    path: projectPathOutputSchema,
+    before: checkpointPruneBeforeOutputSchema,
+    afterRevision: revisionOutputSchema,
+  };
+
+const preparedCheckpointAdjudicationCheckpointOutputSchema =
+  z.union([
+    z
+      .object({
+        ...preparedCheckpointAdjudicationCheckpointBaseOutputShape,
+        version: z.literal(1),
+      })
+      .strict(),
+    z
+      .object({
+        ...preparedCheckpointAdjudicationCheckpointBaseOutputShape,
+        version: z.literal(2),
+        retention: z.union([
+          z
+            .object({
+              class: z.literal(
+                "protected",
+              ),
+            })
+            .strict(),
+          z
+            .object({
+              class: z.literal("rolling"),
+              ordinal:
+                positiveIntegerOutputSchema.max(
+                  Number.MAX_SAFE_INTEGER,
+                ),
+            })
+            .strict(),
+        ]),
+      })
+      .strict(),
+  ]);
+
+const preparedCheckpointCommitSummaryOutputSchema =
+  z
+    .object({
+      operationCount: z.literal(1),
+      destructive: z.literal(false),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      operatorDecisionRequired:
+        z.literal(true),
+      commitsCheckpointRecord: z.literal(true),
+      projectAssetModified: z.literal(false),
+      garbageCollection: z.literal(
+        "not-run",
+      ),
+      warning: z.string(),
+    })
+    .strict();
+
+const preparedCheckpointAbandonSummaryOutputSchema =
+  z
+    .object({
+      operationCount: z.literal(1),
+      destructive: z.literal(true),
+      checkpointId: checkpointIdOutputSchema,
+      targetPath: projectPathOutputSchema,
+      status: z.literal("prepared"),
+      manifestRevision:
+        revisionOutputSchema,
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      operatorDecisionRequired:
+        z.literal(true),
+      removesRecoveryPoint: z.literal(true),
+      projectAssetModified: z.literal(false),
+      garbageCollection: z.literal(
+        "fail-closed-after-prepared-manifest-abandon",
+      ),
+      warning: z.string(),
+    })
+    .strict();
+
+const preparedCheckpointAdjudicationPreviewCommonShape =
+  {
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    targetPath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    checkpoint:
+      preparedCheckpointAdjudicationCheckpointOutputSchema,
+    manifest: z
+      .object({
+        revision: revisionOutputSchema,
+        size: positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+    target:
+      preparedCheckpointAdjudicationTargetOutputSchema,
+    conflict:
+      preparedCheckpointAdjudicationConflictOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  };
+
+const preparedCheckpointCommitPreviewOutputSchema =
+  z
+    .object({
+      ...preparedCheckpointAdjudicationPreviewCommonShape,
+      kind: z.literal(
+        "preparedCheckpointCommit",
+      ),
+      conflict: z.literal(
+        "create-target-matches-after",
+      ),
+      target: z
+        .object({
+          existed: z.literal(true),
+          revision: revisionOutputSchema,
+          size: nonnegativeIntegerOutputSchema.max(
+            Number.MAX_SAFE_INTEGER,
+          ),
+        })
+        .strict(),
+      operations: z.tuple([
+        commitPreparedCheckpointOperationPreviewOutputSchema,
+      ]),
+      summary:
+        preparedCheckpointCommitSummaryOutputSchema,
+    })
+    .strict()
+    .superRefine((preview, context) => {
+      const operation = preview.operations[0];
+      if (
+        preview.checkpoint.before.existed !==
+          false ||
+        preview.target.revision !==
+          preview.checkpoint.afterRevision ||
+        !preparedCheckpointAdjudicationPreviewFieldsAgree(
+          preview,
+          operation,
+          preview.summary,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Prepared checkpoint commit evidence, summary, and operation must agree.",
+        });
+      }
+    });
+
+const preparedCheckpointAbandonPreviewOutputSchema =
+  z
+    .object({
+      ...preparedCheckpointAdjudicationPreviewCommonShape,
+      kind: z.literal(
+        "preparedCheckpointAbandon",
+      ),
+      operations: z.tuple([
+        abandonPreparedCheckpointOperationPreviewOutputSchema,
+      ]),
+      summary:
+        preparedCheckpointAbandonSummaryOutputSchema,
+    })
+    .strict()
+    .superRefine((preview, context) => {
+      const { checkpoint, target } = preview;
+      const conflictMatches =
+        preview.conflict ===
+        "create-target-matches-after"
+          ? checkpoint.before.existed ===
+              false &&
+            target.existed === true &&
+            target.revision ===
+              checkpoint.afterRevision
+          : preview.conflict ===
+              "create-target-unrelated"
+            ? checkpoint.before.existed ===
+                false &&
+              target.existed === true &&
+              target.revision !==
+                checkpoint.afterRevision
+            : preview.conflict ===
+                "existing-target-missing"
+              ? checkpoint.before.existed ===
+                  true &&
+                target.existed === false
+              : checkpoint.before.existed ===
+                  true &&
+                target.existed === true &&
+                target.revision !==
+                  checkpoint.before.revision &&
+                target.revision !==
+                  checkpoint.afterRevision;
+      if (
+        !conflictMatches ||
+        !preparedCheckpointAdjudicationPreviewFieldsAgree(
+          preview,
+          preview.operations[0],
+          preview.summary,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Prepared checkpoint abandon evidence, summary, and operation must agree.",
+        });
+      }
+    });
+
+function preparedCheckpointAdjudicationPreviewFieldsAgree(
+  preview: {
+    targetPath: string;
+    checkpoint: {
+      id: string;
+      path: string;
+    };
+    manifest: {
+      revision: string;
+      size: number;
+    };
+  },
+  operation: {
+    checkpointId: string;
+    targetPath: string;
+    manifestRevision: string;
+    manifestBytes: number;
+    warning: string;
+  },
+  summary: {
+    checkpointId: string;
+    targetPath: string;
+    manifestRevision: string;
+    manifestBytes: number;
+    warning: string;
+  },
+): boolean {
+  return (
+    preview.targetPath ===
+      preview.checkpoint.path &&
+    operation.checkpointId ===
+      preview.checkpoint.id &&
+    summary.checkpointId ===
+      preview.checkpoint.id &&
+    operation.targetPath ===
+      preview.targetPath &&
+    summary.targetPath ===
+      preview.targetPath &&
+    operation.manifestRevision ===
+      preview.manifest.revision &&
+    summary.manifestRevision ===
+      preview.manifest.revision &&
+    operation.manifestBytes ===
+      preview.manifest.size &&
+    summary.manifestBytes ===
+      preview.manifest.size &&
+    operation.warning === summary.warning
+  );
+}
+
 const preparedCheckpointDiscardTargetOutputSchema =
   z.union([
     z
@@ -1890,6 +2265,16 @@ export const checkpointPruneBatchPreviewToolOutputSchema =
 export const preparedCheckpointDiscardPreviewToolOutputSchema =
   toolOutputSchema(
     preparedCheckpointDiscardPreviewOutputSchema,
+  );
+
+export const preparedCheckpointCommitPreviewToolOutputSchema =
+  toolOutputSchema(
+    preparedCheckpointCommitPreviewOutputSchema,
+  );
+
+export const preparedCheckpointAbandonPreviewToolOutputSchema =
+  toolOutputSchema(
+    preparedCheckpointAbandonPreviewOutputSchema,
   );
 
 export const addTilesetPreviewToolOutputSchema =

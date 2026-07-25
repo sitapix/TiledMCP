@@ -146,7 +146,8 @@ wall clock、mtime、UUID 或 label 推导。
 retention 不在 quota-pressure 或 `ensureCapacity()` 中运行。新 checkpoint 必须先完整
 发布且 durable 标记 committed；目标 promotion 有 durability warning 时跳过本轮。这样，
 新写入或配额检查失败不会先删除旧恢复点，也不会引入 `store → target` 反向锁序。manifest
-unlink + checkpoint 目录 fsync 是独立 destructive commit point；其后的 GC/锁故障在成功
+manifest unlink 是独立 destructive commit point，随后 checkpoint 目录 fsync 确认
+耐久性；其后的 GC/锁故障在成功
 document mutation 的有界结果中报告，不能解释为目标写入可以安全重试。
 
 ## 9. 显式 committed checkpoint batch prune
@@ -188,3 +189,44 @@ fsync checkpoint 目录，并在首个成员 CAS/unlink/fsync/post-delete 故障
 事实并为仍存在的 IDs 建立新 proposal，不能把 missing 当作本批已删除的证明。真正的
 all-or-nothing 跨 manifest 事务需要持久 WAL/tombstone/staging 及对应 GC-root 规则，当前
 接口没有做出该承诺。
+
+## 10. 含混 prepared checkpoint 的人工裁决
+
+人工裁决只改变 `.tiledmcp` internal state，不扩大第 2 节对项目资产 promotion 的保证。
+接口刻意拆成 `tiled_preview_prepared_checkpoint_commit` 与
+`tiled_preview_prepared_checkpoint_abandon`；不存在可附加到其他工具的通用
+`force:true`。两者都要求客户端把当前 bounded proposal、冲突分类、永久性影响与 expiry
+展示给操作者，再用 proposal 返回的 `changeSetId` 和动作专属 `expectedRevision` 调用
+统一 apply。
+
+安全状态矩阵为：
+
+- create target missing 和 existing target exact-before 由机器证明为 write-did-not-land，
+  只能走现有 safe discard；
+- existing target exact-after 在服务重启后由启动 reconcile 自动推进；
+- create target exact-after 才可由操作者选择 commit 或 abandon；
+- create target unrelated、existing target missing、existing target unrelated 只能
+  abandon；
+- symlink、非普通文件、越界/内部路径、超限、不可读或读取竞态全部拒绝。
+
+preview 固定 manifest 的 raw SHA-256/size、version/retention 在内的完整 metadata、目标
+严格缺失或安全 nofollow regular bounded read 的 raw revision/size，以及 conflict 分类。
+commit 与 abandon 使用不同 hash domain，不能把一种批准改写成另一种。apply 按
+`target mutex → target file lock → checkpoint-store lock` 重验全部 pins；任何 manifest
+或目标漂移都在首次 mutation 前失败。该 CAS 仍是 bytes identity，不是 inode/generation
+lease；不合作写者和 ABA 边界继续受第 1、3 节约束。
+
+commit 仅接受 prepared create 且目标 revision 精确等于 `afterRevision`，并固定当前
+size 作为 apply CAS。它不修改
+项目文件、不删除 checkpoint object、不运行 GC，只把 manifest 原子替换为 committed；
+这个 committed manifest 只保留内部审计记录，当前 restore 不会把
+`before.existed:false` 解释为删除目标。rename 是提交点，随后 fsync checkpoint 目录。rename 后的 fsync、observer 或锁释放故障
+必须报告 `manifestCommitted:true,durability:"unconfirmed"` 的有界成功。客户端不能把
+它当作“未发生”而重放新批准。
+
+abandon 保留当前项目文件，却永久 unlink prepared recovery point；目录 fsync 后才运行
+fail-closed orphan GC。它不读取 stored-before object，因此该 object 缺失或损坏不阻止
+明确放弃；global inventory blocker 仍会让 GC 零删除。unlink 后任何 sync、observer、
+GC 或锁释放故障都继续报告 `manifestDeleted:true`。同一 change set 只精确重放首个缓存
+结果，不续跑；重启或 expiry 后必须重新列举。更宽来源认领、目标项目资产删除、持久授权
+和通用 force 均不在该权限模型内。

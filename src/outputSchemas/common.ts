@@ -232,7 +232,20 @@ const checkpointPruneBeforeOutputSchema = z.union([
         Number.MAX_SAFE_INTEGER,
       ),
     })
-    .strict(),
+    .strict()
+    .superRefine((before, context) => {
+      if (
+        before.revision !==
+        `sha256:${before.objectHash}`
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["revision"],
+          message:
+            "A checkpoint before revision must match its content-addressed object hash.",
+        });
+      }
+    }),
 ]);
 
 export const checkpointGarbageCollectionOutputSchema =
@@ -674,6 +687,216 @@ const preparedCheckpointTargetOutputSchema =
       .strict(),
   ]);
 
+const checkpointManifestRetentionMetadataOutputSchema =
+  z.union([
+    z
+      .object({
+        class: z.literal("protected"),
+      })
+      .strict(),
+    z
+      .object({
+        class: z.literal("rolling"),
+        ordinal: positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+  ]);
+
+function preparedCheckpointAdjudicationCheckpointOutputSchema<
+  TStatus extends "prepared" | "committed",
+>(status: TStatus) {
+  const common = {
+    id: checkpointIdOutputSchema,
+    createdAt: checkpointTimestampOutputSchema,
+    label: z
+      .string()
+      .max(1_024)
+      .optional(),
+    path: projectPathOutputSchema,
+    status: z.literal(status),
+    before: checkpointPruneBeforeOutputSchema,
+    afterRevision: revisionOutputSchema,
+  };
+  return z.union([
+    z
+      .object({
+        ...common,
+        version: z.literal(1),
+      })
+      .strict(),
+    z
+      .object({
+        ...common,
+        version: z.literal(2),
+        retention:
+          checkpointManifestRetentionMetadataOutputSchema,
+      })
+      .strict(),
+  ]);
+}
+
+const preparedCheckpointAdjudicationConflictOutputSchema =
+  z.enum([
+    "create-target-matches-after",
+    "create-target-unrelated",
+    "existing-target-missing",
+    "existing-target-unrelated",
+  ]);
+
+export const preparedCheckpointCommitApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal(
+        "preparedCheckpointCommit",
+      ),
+      changeSetId: changeSetIdOutputSchema,
+      checkpoint:
+        preparedCheckpointAdjudicationCheckpointOutputSchema(
+          "committed",
+        ),
+      previousStatus: z.literal("prepared"),
+      target: z
+        .object({
+          existed: z.literal(true),
+          revision: revisionOutputSchema,
+          size: nonnegativeIntegerOutputSchema.max(
+            Number.MAX_SAFE_INTEGER,
+          ),
+        })
+        .strict(),
+      conflict: z.literal(
+        "create-target-matches-after",
+      ),
+      manifestCommitted: z.literal(true),
+      projectAssetModified: z.literal(false),
+      durability: z.enum([
+        "confirmed",
+        "unconfirmed",
+      ]),
+      warnings: z
+        .array(z.string().max(4_096))
+        .min(1)
+        .max(32)
+        .optional(),
+    })
+    .strict()
+    .superRefine((result, context) => {
+      if (
+        result.checkpoint.before.existed !==
+          false ||
+        result.target.revision !==
+        result.checkpoint.afterRevision
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["target", "revision"],
+          message:
+            "A committed prepared checkpoint target must retain the approved after revision.",
+        });
+      }
+      if (
+        result.durability === "unconfirmed" &&
+        result.warnings === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["warnings"],
+          message:
+            "An unconfirmed prepared checkpoint commit must include at least one warning.",
+        });
+      }
+      if (
+        result.durability === "confirmed" &&
+        result.warnings !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["warnings"],
+          message:
+            "A confirmed prepared checkpoint commit must not include uncertainty warnings.",
+        });
+      }
+    });
+
+export const preparedCheckpointAbandonApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal(
+        "preparedCheckpointAbandon",
+      ),
+      changeSetId: changeSetIdOutputSchema,
+      checkpoint:
+        preparedCheckpointAdjudicationCheckpointOutputSchema(
+          "prepared",
+        ),
+      target:
+        preparedCheckpointTargetOutputSchema,
+      conflict:
+        preparedCheckpointAdjudicationConflictOutputSchema,
+      manifestDeleted: z.literal(true),
+      projectAssetModified: z.literal(false),
+      garbageCollection:
+        checkpointGarbageCollectionOutputSchema,
+      warnings: z
+        .array(z.string().max(4_096))
+        .min(1)
+        .max(32)
+        .optional(),
+    })
+    .strict()
+    .superRefine((result, context) => {
+      const { checkpoint, target } = result;
+      const conflictMatches =
+        result.conflict ===
+        "create-target-matches-after"
+          ? checkpoint.before.existed ===
+              false &&
+            target.existed === true &&
+            target.revision ===
+              checkpoint.afterRevision
+          : result.conflict ===
+              "create-target-unrelated"
+            ? checkpoint.before.existed ===
+                false &&
+              target.existed === true &&
+              target.revision !==
+                checkpoint.afterRevision
+            : result.conflict ===
+                "existing-target-missing"
+              ? checkpoint.before.existed ===
+                  true &&
+                target.existed === false
+              : checkpoint.before.existed ===
+                  true &&
+                target.existed === true &&
+                target.revision !==
+                  checkpoint.before.revision &&
+                target.revision !==
+                  checkpoint.afterRevision;
+      if (!conflictMatches) {
+        context.addIssue({
+          code: "custom",
+          path: ["conflict"],
+          message:
+            "Prepared checkpoint abandon conflict classification must match the returned target evidence.",
+        });
+      }
+      if (
+        result.garbageCollection.status !==
+          "completed" &&
+        result.warnings === undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["warnings"],
+          message:
+            "A prepared checkpoint abandon with blocked or failed garbage collection must include at least one warning.",
+        });
+      }
+    });
+
 export const preparedCheckpointDiscardApplyResultOutputSchema =
   z
     .object({
@@ -712,13 +935,16 @@ export const preparedCheckpointDiscardApplyResultOutputSchema =
 
 /*
  * Preserve the existing document-commit wire shape exactly. Checkpoint prune
- * and prepared-checkpoint discard mutate recovery metadata rather than a
- * project document, so they have explicitly discriminated success branches.
+ * and prepared-checkpoint discard/adjudication mutate recovery metadata
+ * rather than a project document, so they have explicitly discriminated
+ * success branches.
  */
 export const applyResultOutputSchema = z.union([
   documentApplyResultOutputSchema,
   checkpointPruneApplyResultOutputSchema,
   checkpointPruneBatchApplyResultOutputSchema,
+  preparedCheckpointCommitApplyResultOutputSchema,
+  preparedCheckpointAbandonApplyResultOutputSchema,
   preparedCheckpointDiscardApplyResultOutputSchema,
 ]);
 

@@ -15,7 +15,8 @@
 - 原始 bytes 的 SHA-256 revision、合作写者 CAS、进程内互斥和跨进程文件锁；
 - 同目录单路径原子可见替换、写前内容寻址 checkpoint、只读索引、启动对账，以及经
   preview/批准后按原始 bytes 恢复单个既有 JSON 文档、显式删除一个或有界批次的已提交恢复点，
-  或在当前目标仍精确等于写前状态时安全丢弃一个 prepared 恢复点；
+  在当前目标仍精确等于写前状态时安全丢弃一个 prepared 恢复点，或对机器无法判定的
+  prepared 冲突做显式、证据绑定的 commit/abandon 人工裁决；
 - 有限正交 TMJ + 外部 atlas TSJ 的摘要、矩形 region 读取和只读校验；
 - 按 map + tileset `assetId` 定位的有界 TSJ 详情，覆盖 atlas geometry、稀疏
   tile class（Tiled 1.12 的 `tiles[].type`）/动画/碰撞计数和 Wang-set 概览；
@@ -92,12 +93,13 @@ parent swap 明确属于 unsupported，并附带可机读运维条件；其 scop
 checkpoint store 现有 1 GiB 默认总量配额、10,000 observed-entry quota、项目级协调锁和
 fail-closed orphan GC；已支持经 preview/批准显式 prune 单个 committed manifest，或按
 canonical checkpoint ID 顺序批量 prune 2..32 个显式选择的 committed manifests，也能
-在机器验证当前目标仍等于写前状态时显式 discard 单个 prepared manifest。自动 retention
+在机器验证当前目标仍等于写前状态时显式 discard 单个 prepared manifest；对于其余含混
+状态，还提供职责分离的 commit/abandon preview，不接受通用 `force:true`。自动 retention
 是默认关闭的进程启动 opt-in：只对启用后产生、带持久单调 ordinal 的 v2
 `rolling` existing-file committed checkpoint 生效；每次成功提交至多删除该目标最老的
 一个 rolling manifest，并至少保留两个。legacy v1、`protected`、create 与 `prepared`
-manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；剩余高风险运维缺口主要是
-含混 prepared 状态的强制人工裁决。
+manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；更宽的来源证明、
+修改/删除项目资产的“强制恢复”以及通用 force 入口仍明确不受支持。
 当前运行能力仍应以
 `tiled_get_capabilities`、`tools/list` 和 resource discovery 为准。
 
@@ -111,7 +113,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
 | [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 98 个 v1 application code 及其兼容性、fallback 和排除边界 |
-| [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 22 工具 schema、annotations 与调用参考 |
+| [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 24 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
 
@@ -169,8 +171,8 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 }
 ```
 
-当前注册 21 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
-22 个可选工具：
+当前注册 23 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
+24 个可选工具：
 
 | 工具 | 作用 |
 |---|---|
@@ -178,6 +180,8 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_list_files` | 列出项目内 Tiled 资产 |
 | `tiled_list_checkpoints` | 有界列出恢复 checkpoint，并隔离报告损坏 manifest |
 | `tiled_preview_prepared_checkpoint_discard` | 仅在目标仍精确等于写前状态时，固定 prepared manifest 与目标证据并生成 destructive discard change set |
+| `tiled_preview_prepared_checkpoint_commit` | 仅对 prepared create 的 exact-after 来源含混状态，固定完整 manifest/目标证据并生成内部状态 commit change set |
+| `tiled_preview_prepared_checkpoint_abandon` | 对机器无法自动处理的 prepared 冲突固定完整证据并生成永久删除恢复点、但不修改项目资产的 abandon change set |
 | `tiled_preview_checkpoint_prune` | 固定 committed manifest revision 并生成 destructive prune change set；不直接删除 |
 | `tiled_preview_checkpoint_prune_batch` | 固定 2..32 个显式 committed checkpoint 的完整 manifest pins，按 canonical ID 顺序生成可部分提交的 destructive batch prune change set；不直接删除 |
 | `tiled_preview_checkpoint_restore` | 校验单文件 checkpoint 并生成 destructive 恢复 change set；不直接写盘 |
@@ -194,7 +198,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
-| `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、checkpoint restore、prepared-checkpoint discard、单项或 batch committed-checkpoint prune |
+| `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回带 map/TSJ/output/renderer 可追溯元数据的 PNG |
 
 `tiled_render_map` 的成功结果使用 pre-Frozen clean break，不再返回 `mapPath`、`bytes`、
@@ -303,7 +307,7 @@ operation 合计最多写
 
 对象编辑继续通过通用 `tiled_preview_edits` 的 `createObject`、`updateObject` 和
 `deleteObjects` operations 提供，不新增 standalone tool，所以 registry 仍为
-21 core / 22 with rasterizer。`createObject.object` 是按 `shape` 判别且拒绝额外 key
+23 core / 24 with rasterizer。`createObject.object` 是按 `shape` 判别且拒绝额外 key
 的 strict union：
 
 - `rectangle` 保持现有可选 `width` / `height` 契约；
@@ -340,7 +344,7 @@ layer update 会回显 `requestedFields`、`changedFields`、`wouldChange` 与
 `#AARRGGBB` 或 `null`。blend mode 是 13 项封闭枚举：`normal`、`add`、
 `multiply`、`screen`、`overlay`、`darken`、`lighten`、`color-dodge`、
 `color-burn`、`hard-light`、`soft-light`、`difference`、`exclusion`。
-它不是新的 standalone MCP tool，所以仍是 21 个 core / 22 个含 rasterizer 的工具。
+它不是新的 standalone MCP tool，所以仍是 23 个 core / 24 个含 rasterizer 的工具。
 
 删除已有图层使用 generic union 的第 8 种 operation：
 `{type:"deleteLayer", layerId, deleteDescendants?}`。它必须是 change set 中唯一的
@@ -361,7 +365,7 @@ destructive preview 回显选中 layer 的类型/名称/父 Group/index，以及
 `nextlayerid` 或 `nextobjectid`，不会复用历史 ID；写回只从直接父层的 `layers` 数组删除
 一个 element，保留所有未触及 sibling、祖先和其他 source bytes。它仍通过正常的
 revision-pinned preview/批准/apply 流程，不新增 standalone tool，工具数保持
-21 core / 22 optional。
+23 core / 24 optional。
 
 移动已有图层使用 generic union 的第 9 种 operation：
 `{type:"moveLayer", layerId, parentGroupId?, index}`。它必须独占 change set，不能与
@@ -391,12 +395,12 @@ BOM、CRLF、缩进、键序、数字/字符串词法与未知字段均保持原
 move 仍走 revision-pinned preview → 客户端批准 → apply：change set 固定 operation、
 map revision 与完整 dependency revisions，apply 重验摘要并在锁内执行 revision guard
 （对合作写者构成 CAS）；实际写入前照常创建内容寻址 checkpoint。它没有
-`tiled_move_layer` standalone tool，所以注册数量仍是 21 个 core / 22 个含 rasterizer
+`tiled_move_layer` standalone tool，所以注册数量仍是 23 个 core / 24 个含 rasterizer
 的工具。
 
 复制已有图层使用 generic union 的第 10 种 operation：
 `{type:"duplicateLayer", layerId, destination?, name?}`。它也必须独占 change set，且
-没有 `tiled_duplicate_layer` standalone tool，所以工具数仍为 21 core / 22 with
+没有 `tiled_duplicate_layer` standalone tool，所以工具数仍为 23 core / 24 with
 rasterizer。`destination` 是以下三个 strict 分支之一：
 
 - `{kind:"sameParent", index?}`：目标为原直接父；省略 `index` 时插在原
@@ -443,7 +447,7 @@ apply 会重算目标、分配、引用和摘要，校验 change-set digest 与 
 
 盖章写入使用 generic union 的第 11 种 operation：
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有
-`tiled_stamp_pattern` standalone tool，所以 registry 仍为 21 core / 22 with
+`tiled_stamp_pattern` standalone tool，所以 registry 仍为 23 core / 24 with
 rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维数组：每行非空且等宽，
 不能有 sparse hole/`undefined`。每条边最多 256 格，总格数最多 16,384。
 
@@ -463,7 +467,7 @@ rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维�
 
 油漆桶填充使用 generic union 的第 12 种 operation：
 `{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它没有
-`tiled_flood_fill` standalone tool，所以 registry 仍为 21 core / 22 with rasterizer。
+`tiled_flood_fill` standalone tool，所以 registry 仍为 23 core / 24 with rasterizer。
 `x/y` 是目标有限 tile layer 中的绝对 seed 坐标；连通性固定为四向，不接受对角连接或
 connectivity 参数。
 
@@ -488,7 +492,7 @@ revision 与文件 bytes 完全不变。
 
 修改 map 根级显示/元数据字段时，使用 generic union 的第 13 种 operation：
 `{type:"updateMap", patch}`。它不注册 `tiled_update_map` standalone tool，所以 registry
-仍为 21 core / 22 with rasterizer。operation 与 patch 都拒绝额外 key，patch 必须非空，
+仍为 23 core / 24 with rasterizer。operation 与 patch 都拒绝额外 key，patch 必须非空，
 且只能包含：
 
 - `renderOrder`：`right-down`、`right-up`、`left-down`、`left-up` 之一，写入
@@ -518,7 +522,7 @@ apply 只对实际变化的根对象 member 做 insertion/replacement/deletion�
 移除 map 中一个当前 external atlas binding 时，使用 generic union 的第 14 种 operation：
 `{type:"removeTilesetFromMap", tilesetAssetId}`。operation 是拒绝额外 key 的 strict
 object，并且必须独占 change set；它不注册 standalone tool，所以 registry 仍为
-21 core / 22 with rasterizer。`tilesetAssetId` 必须精确匹配当前 map summary 返回的
+23 core / 24 with rasterizer。`tilesetAssetId` 必须精确匹配当前 map summary 返回的
 opaque asset ID，不能用路径、名称或自行推导的 ID 代替。
 
 planner 会递归扫描全图每个有限 tile layer cell 和每个 object layer object，包括隐藏、
@@ -591,7 +595,7 @@ copy intent 仍计入 scan/write budget，但 `changedCellCount:0`、
 快照、GID 校验、预算和摘要；copy 执行时实际发生变化的 destination tile layer 才进入
 `data`-member-local source patch 候选。若后序 operation 恢复原值，最终 source diff
 仍折叠为 exact-byte no-op。该 operation 不注册 standalone tool，因此工具数仍为
-21 core / 22 with rasterizer。
+23 core / 24 with rasterizer。
 
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
@@ -632,9 +636,35 @@ preview 会验证 manifest、内容寻址 blob、原始 JSON bytes 和当前目�
 只固定 raw manifest SHA-256/size、完整 metadata 与目标状态证据；因此该 checkpoint
 自己的 blob 已缺失或损坏不会阻止安全 discard。批准后仍通过
 `tiled_apply_change_set` 提交；apply 按 `target → checkpoint-store` 锁序重验目标证据和
-raw manifest CAS，再以“unlink manifest + fsync checkpoint 目录”为提交点并运行同一套
-fail-closed orphan GC。它永久删除恢复点但不修改项目资产，不提供 operator-forced
-commit、force-abandon 或自动删除。
+raw manifest CAS，再以 manifest unlink 为不可逆提交点，随后 fsync checkpoint 目录确认
+耐久性并运行同一套 fail-closed orphan GC。它永久删除恢复点但不修改项目资产，不提供 operator-forced
+commit、force-abandon 参数或自动删除；含混状态必须改走下面两个职责分离的裁决工具。
+
+含混 `prepared` checkpoint 的人工裁决没有通用 `force` 开关。客户端必须先按当前
+`conflict` 选择一个独立 preview，再展示完整证据并取得针对该 proposal 的批准：
+
+| 当前 prepared 状态 | 允许的路径 |
+|---|---|
+| create 目标缺失 | 机器可证明写入未落地；使用现有 `tiled_preview_prepared_checkpoint_discard` |
+| existing 目标精确等于 before | 机器可证明写入未落地；使用现有 discard |
+| existing 目标精确等于 after | 重启服务触发启动对账并自动推进为 committed |
+| create 目标精确等于 after | `tiled_preview_prepared_checkpoint_commit` 或 `tiled_preview_prepared_checkpoint_abandon`，由操作者判断来源 |
+| create 目标存在但内容无关 | 仅 `tiled_preview_prepared_checkpoint_abandon` |
+| existing 目标缺失或内容无关 | 仅 `tiled_preview_prepared_checkpoint_abandon` |
+| symlink、非普通文件、越界/内部路径、超限、不可读或读取竞态 | 全部拒绝，先修复不安全状态 |
+
+两个裁决 preview 都固定 manifest 的 version/retention 等完整 metadata、raw SHA-256/size、
+目标的严格缺失证据或 raw revision/size，以及冲突分类；各自动作域隔离的
+`expectedRevision` 防止把 commit 批准重用于 abandon。apply 按
+`target mutex → target file lock → checkpoint-store lock` 重验全部 pins，任一漂移都在
+内部状态 mutation 前返回冲突。commit 只接受 `before.existed:false` 且当前安全普通目标
+精确等于 `afterRevision`，提交点是 prepared manifest 原子替换为 committed；它不修改
+项目资产、不运行 GC。该 committed manifest 只是保留内部审计记录；由于 before 表示目标
+原本不存在，现有 restore 工具不能把它恢复成“删除目标”。rename 后的目录 fsync 或锁释放故障返回
+`manifestCommitted:true`、`durability:"unconfirmed"` 的有界成功，不能盲目重试。
+abandon 永久 unlink prepared manifest、保留当前项目文件，并在目录 fsync 后运行
+fail-closed GC；unlink 后的故障同样仍返回 `manifestDeleted:true`。成功结果只在原
+change set 内精确缓存重放，不会续跑，也不是长期授权。
 
 显式删除恢复点时，调用
 `tiled_preview_checkpoint_prune(checkpointId)`；它只接受 `committed` checkpoint，
@@ -645,8 +675,8 @@ set。客户端展示永久删除恢复点的 destructive 警告并批准后，�
 manifest + fsync checkpoint 目录”为提交点。提交后运行 fail-closed 全局 orphan GC：
 完整 inventory 时只清理无引用 checkpoint objects 和私有 crash temp；存在 blocker
 时零删除并在成功 prune 结果中报告。提交点后的 GC/fsync 诊断不会把已经删除 manifest
-伪装成可重试失败。`prepared` checkpoint 只能先对账，或在满足上述 exact-before
-条件时走独立 discard。
+伪装成可重试失败。`prepared` checkpoint 必须先对账；满足 exact-before 条件时走
+独立 discard，只有上述含混分类才能走明确的 commit/abandon 裁决。
 
 显式清理 retention backlog 时，可调用
 `tiled_preview_checkpoint_prune_batch({checkpointIds})`。调用方必须先从当前 checkpoint
@@ -666,7 +696,7 @@ change set 的最终结果；重放只返回同一结果，绝不继续删除 `n
 manifest 都删除且逐项目录 durability 已确认后才运行一次 fail-closed GC；若中途停止则不
 运行 GC，留下的孤儿对象可由
 后续安全 GC 回收。要继续清理剩余项必须重新列举、重新 preview 并再次批准。
-prune/discard 都不留 tombstone，之后查询与从未存在的 ID 一样返回 not found。
+prune/discard/abandon 都不留 tombstone，之后查询与从未存在的 ID 一样返回 not found。
 
 长期编辑可在启动时显式设置
 `--checkpoint-retain-per-target N` 或
@@ -683,7 +713,8 @@ root 的 content object、确认当前目标等于最新 rolling checkpoint 的 
 
 任一 prepared、损坏/未知/symlink/非普通 entry、缺失或 hash/size 不匹配的 object、
 sequence 重复、低于 live ordinal 的可观测回退、目标漂移或 inventory 截断都会在首次 manifest unlink 前令本次
-retention 零删除。manifest unlink 与 checkpoint 目录 fsync 是删除提交点；之后的 GC 或
+retention 零删除。manifest unlink 是删除提交点，随后 checkpoint 目录 fsync 确认
+耐久性；之后的 GC 或
 checkpoint-store lock-release 故障通过成功 mutation 的 `checkpointRetention` 结果和固定 warning 报告，
 不会把已经完成的项目写入伪装成可安全重试的失败。retention 不在 `ensureCapacity` 中
 运行，也不会在 quota pressure 下先删恢复点：系统必须先容纳新 checkpoint，容量不足仍在
@@ -705,7 +736,7 @@ pnpm build
 `resources/list`、`resources/templates/list` 和 `resources/read` 响应重建两份 machine
 contracts（discovery 与 application errors）和 reference；它不会探测 PATH 或启动本机
 Tiled。`pnpm contract:check` 比较这两份 contract 与 reference 的生成结果和已提交
-artifact，并重新用公开 input schema 校验全部 22 个示例。`pnpm test` 会先执行该 drift
+artifact，并重新用公开 input schema 校验全部 24 个示例。`pnpm test` 会先执行该 drift
 gate、构建 `dist/`，并包含真实 production stdio smoke；
 `pnpm test:watch` 为避免使用 stale build 而排除该单项，可随时用
 `pnpm test:stdio` 单独重建并复跑；`pnpm verify` 串联 typecheck、build、契约检查和完整
@@ -788,7 +819,7 @@ checkpoint restore。架构与 roadmap
   尚不支持在同一 preview 中继续给新 Group 添加子层；已有图层的移动与删除分别使用
   独占的 `moveLayer` / `deleteLayer` operation，不能和 create-layer proposal 混批。
 - `replaceTiles` 是通用 `tiled_preview_edits` 的 operation，不新增注册工具，因此仍为
-  21 个 core / 22 个含 rasterizer 的工具。它只接受非空 `from`，按包含
+  23 个 core / 24 个含 rasterizer 的工具。它只接受非空 `from`，按包含
   transform/raw flags 的完整 encoded GID 精确匹配；
   `to:null` 才表示清空。一个 operation 的多组 mapping 同时、single-pass 求值，可选
   region 使用绝对 tile 坐标，省略时覆盖 layer bounds。每个 operation 最多 128 组映射，
@@ -900,7 +931,9 @@ checkpoint restore。架构与 roadmap
   committed checkpoint，或显式选择 2..32 个 committed IDs 用 batch prune 清理 backlog；
   batch 不替操作者选择 retention victim，也不把部分提交后的重放解释为继续执行。目标仍
   精确等于 before 状态的 prepared checkpoint 可走独立 discard；默认关闭的 rolling
-  retention 可由上述启动配置显式启用，但含混 prepared 状态的强制裁决仍未实现。
+  retention 可由上述启动配置显式启用。含混 prepared 状态只允许通过动作分离、
+  证据绑定的 commit/abandon preview 裁决；通用 force、缺少目标证据的来源认领，以及
+  任何项目资产删除都仍不受支持。
   恢复当前严格限于一个已存在的安全 JSON 文档；
   checkpoint 的 manifest 意图与 blob hash/revision/size 在 apply 时都会复核，唯一允许
   的 manifest 状态变化是 preview 后由 `prepared` 前进到 `committed`。恢复不包含依赖
