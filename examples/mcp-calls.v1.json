@@ -339,7 +339,19 @@
                   "x": 20,
                   "y": 28
                 }
-              ]
+              ],
+              "properties": {
+                "set": [
+                  {
+                    "name": "patrolSpeed",
+                    "type": "float",
+                    "value": 1.25
+                  }
+                ],
+                "remove": [
+                  "legacyFlag"
+                ]
+              }
             }
           },
           {

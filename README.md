@@ -351,7 +351,14 @@ object-update preview 的 `changedFields` 是 patch key 的去重字典序精确
 字段而非语义 diff；即使 points 与现值相同，仍会列出 `points`，最终 apply 才折叠为
 exact-byte no-op；若同一 change set 没有其他实际变化，则返回 `changed:false`。
 text 可局部更新内容、样式和尺寸，text-specific patch 命中其他形状会拒绝。ellipse/capsule
-的尺寸更新继续接受 0，但拒绝负数、非有限数和超限值。preview/apply
+的尺寸更新继续接受 0，但拒绝负数、非有限数和超限值。
+`updateObject.patch.properties` 对对象自定义属性做有界标量 set/remove，与
+`tiled_update_tile` 共享同一写入 profile：每次最多 32 set + 32 remove、可写
+string/int/float/bool/color/file、编辑后单对象最多 128 条、按 name 字典序插入
+（存量非升序则插入 fail closed）；class/enum/list/object 目标 fail closed，
+未触碰的复杂条目逐字保留，清空后的 `properties` 成员整体删除；单 change set
+的属性写入合计 ≤256 KiB canonical JSON UTF-8（`objectPropertyUpdateCapabilities`
+公布全部策略）。preview/apply
 继续固定 map 与完整 dependency revisions，只重写目标 object layer 的 `objects`
 member；创建时另推进 `nextobjectid`。
 `tiled_get_capabilities.objectShapeCapabilities` 明确公布可创建形状、path 点数/

@@ -1,4 +1,5 @@
 import type { TileTransform } from "./gid.js";
+import type { PropertiesPatch } from "./propertyEdits.js";
 import type {
   TextObjectHorizontalAlignment,
   TextObjectVerticalAlignment,
@@ -232,6 +233,13 @@ export interface UpdateObjectOperation {
     rotation?: number;
     visible?: boolean;
     opacity?: number;
+    /**
+     * Bounded scalar-only set/remove operations on the object's `properties`
+     * array, sharing the tiled_update_tile write profile. Targeting a class,
+     * enum, list, or object property fails closed; untouched complex entries
+     * are preserved.
+     */
+    properties?: PropertiesPatch;
   } & Partial<ObjectTextFieldsInput>;
 }
 

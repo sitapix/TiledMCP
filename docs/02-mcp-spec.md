@@ -1153,8 +1153,23 @@ object-update preview 的 `changedFields` 必须精确等于 patch keys 的去�
 它表达请求字段而非语义 diff，所以相同 points no-op 仍列出 `points`，apply 最终返回
 exact-byte no-op；若同一 change set 没有其他实际变化，则返回 `changed:false` 并保持
 原始 bytes/revision。
-text-specific patch 命中非 text 对象时返回 `OBJECT_SHAPE_MISMATCH`。对
-ellipse/capsule 更新任意基础字段时，
+text-specific patch 命中非 text 对象时返回 `OBJECT_SHAPE_MISMATCH`。
+
+`updateObject.patch.properties` 对 map object 的自定义属性做有界标量
+set/remove，与 `tiled_update_tile` 的 per-tile `properties` 共享同一实现与
+写入 profile：每次 update 最多 32 set + 32 remove，可写类型
+`string/int/float/bool/color/file`，name ≤256 code points、字符串值 ≤1,024
+code points，编辑后单对象最多 128 条属性，每条都携带显式 `type` member。
+新名字按 Tiled 的 name 排序位置插入，存量数组非升序时插入 fail closed
+（`UNSUPPORTED_PROPERTY_WRITE`）；set/remove 命中 class、enum
+（`propertytype`）、list 或 object 属性同样 fail closed，未触及的复杂条目
+逐字保留（含未知成员）；remove 不存在的名字是 no-op；清空后的
+`properties` member 整体删除，与 Tiled writer 的空省略一致。一个 change set
+内全部 `updateObject` 属性写入合计不超过 262,144 canonical JSON UTF-8 字节
+（zod 层与 planner 双重执行）。tile object（`gid`）与 template 实例仍在
+bounded object editing 之外，属性不可写。
+
+对 ellipse/capsule 更新任意基础字段时，
 planner 继续验证最终 width/height 为有限非负数；存量对象缺失的尺寸按 Tiled 语义解释
 为 0，显式 0 合法，null、负数或超限值会拒绝整个 proposal。对象 patch 继续只替换目标
 object layer 的 `objects` member，create 另以
@@ -1245,6 +1260,31 @@ key、错误类型/enum、超限 Unicode 或冲突 shape marker 都 fail closed�
 }
 ```
 
+`tiled_get_capabilities.objectPropertyUpdateCapabilities` 精确为：
+
+```json
+{
+  "operation": "updateObject-patch-properties",
+  "writeTypes": ["string", "int", "float", "bool", "color", "file"],
+  "sharedProfile": "identical-to-tileMetadataUpdateCapabilities-property-semantics",
+  "propertyOrdering": "tiled-name-sorted-insert-fail-closed-on-unsorted",
+  "complexPropertyTargets": "fail-closed",
+  "untouchedComplexProperties": "preserved",
+  "propertyTypeMember": "always-written",
+  "propertyColorInput": "rrggbb-or-aarrggbb-stored-verbatim",
+  "emptiedPropertiesMember": "removed",
+  "templateAndTileObjects": "fail-closed",
+  "maxSetsPerUpdate": 32,
+  "maxRemovesPerUpdate": 32,
+  "maxPropertiesPerObject": 128,
+  "payloadBudget": {
+    "measure": "canonical-json-utf8-bytes",
+    "scope": "all-updateObject-property-writes-per-change-set-summed",
+    "maximumPerChangeSet": 262144
+  }
+}
+```
+
 pending canonical payload 总量通过
 `limits.maxPendingTextObjectPayloadBytes:2097152` 公布。计费按每个 create/update
 operation 实际出现的 text-specific 字段分别计算，不因后序覆盖或删除而折叠。
@@ -1255,7 +1295,7 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 |---|---|---|
 | `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞/属性计数和 Wang-set 概览；不把 `tiles.length` 冒充 `tilecount`，不读取 property values/碰撞 geometry/完整 wang assignments | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
 | `tiled_create_tileset` | 从图集图片创建 `.tsj`（自动读取图片尺寸算 tilecount/columns） | `tilesetPath`, `image`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?` |
-| `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，不修改项目资产，但可能更新项目内部 safety metadata | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
+| `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，完全不写盘（asset identity contract v2：读/预览路径无锁且零副作用） | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
 | `tiled_update_tile` | **已实现专用 preview 工具（第 26 个 core tool）**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性元数据，走独立 `tilesetEdit` change set；碰撞形状编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
@@ -1409,6 +1449,10 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 地形笔刷的产品价值是把 Tiled Terrain Brush 暴露为安全、可预览的高层操作；自研 Wang 匹配器不是 M1 的前置条件。
 
 ### 3.9 属性系统
+
+已实现子集：per-tile 标量属性经 `tiled_update_tile` 的 `patch.properties`，
+map object 标量属性经 `updateObject.patch.properties`（见 3.6/3.7），二者共享
+同一 fail-closed 写入 profile。下表为尚未实现的通用属性系统候选：
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|

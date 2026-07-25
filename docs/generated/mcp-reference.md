@@ -188,9 +188,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:0fca2023bc234996e15336c76fa668442085ae1a078df050fbe677e68a2a1364",
+    "revision": "sha256:6d945bd8dee463c7e20c67acbefd2b5cd85bc2d147d1db3d8ce7adad775a54c5",
     "serverVersion": "0.0.1",
-    "size": 67171
+    "size": 68259
   },
   "annotations": {
     "audience": [
@@ -202,7 +202,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 67171,
+  "size": 68259,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -210,7 +210,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3875 UTF-8 bytes, revision `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`.
 
-Content contract: `text`, 67171 UTF-8 bytes, revision `sha256:0fca2023bc234996e15336c76fa668442085ae1a078df050fbe677e68a2a1364`.
+Content contract: `text`, 68259 UTF-8 bytes, revision `sha256:6d945bd8dee463c7e20c67acbefd2b5cd85bc2d147d1db3d8ce7adad775a54c5`.
 
 Resource templates: none.
 
@@ -9886,6 +9886,128 @@ Output schema:
               ],
               "type": "array"
             },
+            "objectPropertyUpdateCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "complexPropertyTargets": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "emptiedPropertiesMember": {
+                  "const": "removed",
+                  "type": "string"
+                },
+                "maxPropertiesPerObject": {
+                  "const": 128,
+                  "type": "number"
+                },
+                "maxRemovesPerUpdate": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "maxSetsPerUpdate": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "operation": {
+                  "const": "updateObject-patch-properties",
+                  "type": "string"
+                },
+                "payloadBudget": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maximumPerChangeSet": {
+                      "const": 262144,
+                      "type": "number"
+                    },
+                    "measure": {
+                      "const": "canonical-json-utf8-bytes",
+                      "type": "string"
+                    },
+                    "scope": {
+                      "const": "all-updateObject-property-writes-per-change-set-summed",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "measure",
+                    "scope",
+                    "maximumPerChangeSet"
+                  ],
+                  "type": "object"
+                },
+                "propertyColorInput": {
+                  "const": "rrggbb-or-aarrggbb-stored-verbatim",
+                  "type": "string"
+                },
+                "propertyOrdering": {
+                  "const": "tiled-name-sorted-insert-fail-closed-on-unsorted",
+                  "type": "string"
+                },
+                "propertyTypeMember": {
+                  "const": "always-written",
+                  "type": "string"
+                },
+                "sharedProfile": {
+                  "const": "identical-to-tileMetadataUpdateCapabilities-property-semantics",
+                  "type": "string"
+                },
+                "templateAndTileObjects": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "untouchedComplexProperties": {
+                  "const": "preserved",
+                  "type": "string"
+                },
+                "writeTypes": {
+                  "items": [
+                    {
+                      "const": "string",
+                      "type": "string"
+                    },
+                    {
+                      "const": "int",
+                      "type": "string"
+                    },
+                    {
+                      "const": "float",
+                      "type": "string"
+                    },
+                    {
+                      "const": "bool",
+                      "type": "string"
+                    },
+                    {
+                      "const": "color",
+                      "type": "string"
+                    },
+                    {
+                      "const": "file",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                }
+              },
+              "required": [
+                "operation",
+                "writeTypes",
+                "sharedProfile",
+                "propertyOrdering",
+                "complexPropertyTargets",
+                "untouchedComplexProperties",
+                "propertyTypeMember",
+                "propertyColorInput",
+                "emptiedPropertiesMember",
+                "templateAndTileObjects",
+                "maxSetsPerUpdate",
+                "maxRemovesPerUpdate",
+                "maxPropertiesPerObject",
+                "payloadBudget"
+              ],
+              "type": "object"
+            },
             "objectShapeCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -11610,6 +11732,7 @@ Output schema:
             "tileReplacementCapabilities",
             "objectOperations",
             "objectShapeCapabilities",
+            "objectPropertyUpdateCapabilities",
             "layerOperations",
             "layerUpdateCapabilities",
             "layerDeletionCapabilities",
@@ -17758,7 +17881,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
+Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
 
 Annotations:
 
@@ -17806,7 +17929,19 @@ Example purpose: 在同一待批准 change set 中预览严格 map 根属性编�
               "x": 20,
               "y": 28
             }
-          ]
+          ],
+          "properties": {
+            "remove": [
+              "legacyFlag"
+            ],
+            "set": [
+              {
+                "name": "patrolSpeed",
+                "type": "float",
+                "value": 1.25
+              }
+            ]
+          }
         },
         "type": "updateObject"
       },
@@ -19283,6 +19418,153 @@ Input schema:
                     "maxItems": 256,
                     "minItems": 2,
                     "type": "array"
+                  },
+                  "properties": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "remove": {
+                        "items": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "set": {
+                        "items": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "enum": [
+                                    "string",
+                                    "file"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "maxLength": 2048,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "int",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": -9007199254740991,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "float",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "bool",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "color",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
                   },
                   "rotation": {
                     "maximum": 1000000000,
@@ -21301,7 +21583,8 @@ Output schema:
                             "strikeout",
                             "kerning",
                             "horizontalAlignment",
-                            "verticalAlignment"
+                            "verticalAlignment",
+                            "properties"
                           ],
                           "type": "string"
                         },
@@ -21385,6 +21668,153 @@ Output schema:
                             "maxItems": 256,
                             "minItems": 2,
                             "type": "array"
+                          },
+                          "properties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "remove": {
+                                "items": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "set": {
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "enum": [
+                                            "string",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 2048,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "int",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": -9007199254740991,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "float",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "bool",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "color",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              }
+                            },
+                            "type": "object"
                           },
                           "rotation": {
                             "allOf": [

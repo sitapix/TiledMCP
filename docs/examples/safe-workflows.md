@@ -256,6 +256,32 @@ path create wire 不能携带 `width` / `height`；落盘 TMJ 会规范化为
 }
 ```
 
+对象自定义属性走 `updateObject.patch.properties` 的有界标量 set/remove，与
+`tiled_update_tile` 共享同一 profile：
+
+```json
+{
+  "type": "updateObject",
+  "objectId": 17,
+  "patch": {
+    "properties": {
+      "set": [
+        { "name": "patrolSpeed", "type": "float", "value": 1.25 },
+        { "name": "hostile", "type": "bool", "value": true }
+      ],
+      "remove": ["legacyFlag"]
+    }
+  }
+}
+```
+
+新名字按 Tiled 的 name 字典序插入（存量数组乱序时插入 fail closed）；命中
+class/enum/list/object 属性会以 `UNSUPPORTED_PROPERTY_WRITE` 拒绝，未触碰的复杂
+条目原样保留；remove 不存在的名字是 no-op。每次 update 最多 32 set + 32 remove，
+编辑后单对象最多 128 条属性，单 change set 全部属性写入合计 ≤256 KiB canonical
+JSON UTF-8。`tiled_get_object` 目前不回读自定义属性，盲写由上述 fail-closed 校验
+兜底。
+
 这不是 append、splice 或 index patch；数组会整体替换并保序，polygon 仍需至少 3 点，
 polyline 至少 2 点。`points` 可与 common fields 同批出现，但不能用于非 path 对象，
 也不能与 path dimensions 混用。单个 change set 的每次 create/replacement payload

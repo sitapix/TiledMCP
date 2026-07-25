@@ -1351,6 +1351,22 @@ closed）、既有条目原位更新保留未知成员，class/enum/list/object 
 tiles 条目的单个 `properties` member patch，清空后移除该成员并联动 only-id 条目
 删除。碰撞形状与 image-collection tileset 编辑仍是后续候选。
 
+### 6.18 Map object 标量属性编辑（共享 property 核心）
+
+`updateObject.patch.properties` 把同一标量属性写入 profile 带到 map object 上。
+实现层面，属性核心从 `tilesetEdits.ts` 抽取为共享模块
+`src/maps/propertyEdits.ts`（校验、排序插入、原位更新、复杂类型 fail closed、
+canonical 字节测量），tilesetEdits 以别名 re-export 保持既有导出面不变，两个调
+用方仅注入各自的错误上下文（`{path, tileId}` vs `{path, objectId}`）。序列化语
+义直接沿用 Tiled 1.12.2 的共享 `addProperties` writer（`maptovariantconverter.cpp`
+对 object 与 tile 调用同一函数），因此排序、显式 `type` 成员与空省略结论无需重
+新核实。与 tileset 侧的关键差异是 source patch 形态：map object 编辑本就整体重
+写所属 object layer 的 `objects` member（value-local replace），无需逐 member
+patch，属性变更只是工作副本上的常规变换；`template`/`gid` 对象依旧被
+`assertBasicEditableObject` 拒绝，属性因此天然不可写。预算三层执行：单次 patch
+的 32/32/128 与值长度界、zod 输入层的 change-set 级 262,144 canonical UTF-8 字
+节早拒，以及 planner/apply 重放中的同额权威预算（`RESULT_LIMIT_EXCEEDED`）。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才

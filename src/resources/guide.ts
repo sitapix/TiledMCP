@@ -500,7 +500,26 @@ non-empty subset of the flat text fields; text-specific fields reject a
 non-text target. Every ellipse or capsule update preserves the marker and
 continues to accept zero dimensions while interpreting omitted stored
 dimensions as zero and rejecting null, negative, non-finite, or oversized
-values. Object edits remain local to the owning object layer's \`objects\`
+values.
+
+\`updateObject.patch.properties\` applies the same bounded scalar
+custom-property profile as \`tiled_update_tile\`: at most 32 sets and 32
+removals per update, writable types \`string\`, \`int\`, \`float\`, \`bool\`,
+\`color\`, and \`file\`, values of at most 1,024 code points, and at most 128
+resulting properties per object, each written with an explicit \`type\`
+member. New names insert at Tiled's name-sorted position and inserting into
+an unsorted stored array fails closed. Setting or removing a class, enum
+(\`propertytype\`), list, or object property fails closed while untouched
+complex entries are preserved verbatim; removing an absent name is a no-op,
+and an emptied \`properties\` member is deleted, matching the Tiled writer.
+All \`updateObject\` property writes in one change set are additionally
+capped at 256 KiB of canonical JSON UTF-8. Inspect
+\`objectPropertyUpdateCapabilities\` for the frozen policy strings. Tile
+objects and templates stay outside bounded object editing, so their
+properties remain unwritable, and \`tiled_get_object\` still omits custom
+properties from its read surface.
+
+Object edits remain local to the owning object layer's \`objects\`
 member; creation separately advances \`nextobjectid\`. Inspect
 \`objectShapeCapabilities\` for the exact create union, shape-mutation policy,
 dimension/path rules, and source-patch scope; inspect

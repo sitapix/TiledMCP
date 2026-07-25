@@ -111,6 +111,11 @@ import {
   textObjectFieldsFromFlatInput,
   type EffectiveTextObjectFields,
 } from "./textObjects.js";
+import {
+  applyPropertiesPatch,
+  measurePropertiesPatchBytes,
+  validatePropertiesPatch,
+} from "./propertyEdits.js";
 import type {
   CreatableLayerType,
   Diagnostic,
@@ -145,6 +150,7 @@ export const MIN_POLYGON_OBJECT_POINTS = 3;
 export const MIN_POLYLINE_OBJECT_POINTS = 2;
 export const MAX_OBJECT_SHAPE_POINTS = 256;
 export const MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET = 8_192;
+export const MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET = 262_144;
 const MAX_TILED_SIGNED_ID = 0x7fffffff;
 const MAX_EDITABLE_DOCUMENT_BYTES = 64 * 1024 * 1024;
 export const MAX_DUPLICATE_LAYER_BYTES = 16 * 1024 * 1024;
@@ -4229,6 +4235,7 @@ function validateAndSummarizeOperations(
   let objectMutations = 0;
   let objectShapePoints = 0;
   let textObjectPayloadBytes = 0;
+  let objectPropertyPatchBytes = 0;
   const affectedLayerIds = new Set<number>();
   const affectedTileLayerIds = new Set<number>();
   const affectedObjectLayerIds = new Set<number>();
@@ -5605,6 +5612,15 @@ function validateAndSummarizeOperations(
       ) {
         objectShapePoints += operation.patch.points?.length ?? 0;
         assertObjectShapePointBudget(objectShapePoints);
+      }
+      if (operation.patch.properties !== undefined) {
+        objectPropertyPatchBytes +=
+          measurePropertiesPatchBytes(
+            operation.patch.properties,
+          );
+        assertObjectPropertyPatchBudget(
+          objectPropertyPatchBytes,
+        );
       }
       affectedLayerIds.add(updated.layer.id);
       affectedObjectLayerIds.add(updated.layer.id);
@@ -10205,6 +10221,7 @@ function updateBasicObject(
     "visible",
     "opacity",
     "points",
+    "properties",
     ...TEXT_OBJECT_FIELDS,
   ]);
   if (keys.length === 0) {
@@ -10280,6 +10297,14 @@ function updateBasicObject(
       "INVALID_ARGUMENT",
     );
   }
+  const hasPropertiesPatch =
+    patch.properties !== undefined;
+  if (hasPropertiesPatch) {
+    validatePropertiesPatch(
+      patch.properties!,
+      `${context}.properties`,
+    );
+  }
 
   if (hasTextPatch) {
     location.object.text =
@@ -10297,9 +10322,21 @@ function updateBasicObject(
       y: point.y,
     }));
   }
+  if (hasPropertiesPatch) {
+    applyPropertiesPatch(
+      location.object,
+      patch.properties!,
+      `${mapPath} object ${objectId}.properties`,
+      { path: mapPath, objectId },
+    );
+  }
   for (const key of keys) {
     const value = patch[key as keyof typeof patch];
-    if (key === "points" || textObjectFields.has(key)) {
+    if (
+      key === "points" ||
+      key === "properties" ||
+      textObjectFields.has(key)
+    ) {
       continue;
     } else if (key === "className") {
       location.object.type = value as string;
@@ -10844,6 +10881,25 @@ function assertTextObjectPayloadBudget(
         actual,
         limit:
           MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+      },
+    );
+  }
+}
+
+function assertObjectPropertyPatchBudget(
+  actual: number,
+): void {
+  if (
+    actual >
+    MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A change set may contain at most ${MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET} canonical UTF-8 bytes of object property writes.`,
+      {
+        actual,
+        limit:
+          MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET,
       },
     );
   }

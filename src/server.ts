@@ -97,6 +97,7 @@ import {
   MAX_FLOOD_FILL_SCANS,
   MAX_LAYER_NAME_LENGTH,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
+  MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET,
   MAX_OBJECT_SHAPE_POINTS,
   MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
   MAX_REMOVE_TILESET_GID_SCANS,
@@ -200,6 +201,7 @@ import {
   MAX_TILE_UPDATES_PER_CHANGE_SET,
   TILE_PROPERTY_WRITE_TYPES,
 } from "./maps/tilesetEdits.js";
+import { measurePropertiesPatchBytes } from "./maps/propertyEdits.js";
 import {
   checkpointListToolOutputSchema,
   listFilesToolOutputSchema,
@@ -965,6 +967,84 @@ const createObjectSchema = z
   })
   .strict();
 
+const tilePropertyNameSchema = z
+  .string()
+  .min(1)
+  .max(MAX_TILE_PROPERTY_NAME_CODE_POINTS * 2);
+
+const tilePropertyWriteSchema = z
+  .discriminatedUnion("type", [
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.enum(["string", "file"]),
+        value: z
+          .string()
+          .max(
+            MAX_TILE_PROPERTY_VALUE_CODE_POINTS * 2,
+          ),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("int"),
+        value: z
+          .number()
+          .int()
+          .min(Number.MIN_SAFE_INTEGER)
+          .max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("float"),
+        value: z.number().finite(),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("bool"),
+        value: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("color"),
+        value: z
+          .string()
+          .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu),
+      })
+      .strict(),
+  ]);
+
+const tilePropertiesPatchSchema = z
+  .object({
+    set: z
+      .array(tilePropertyWriteSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_SETS_PER_TILE)
+      .optional(),
+    remove: z
+      .array(tilePropertyNameSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.set !== undefined ||
+      patch.remove !== undefined,
+    {
+      message:
+        "Tile properties patch must contain set or remove entries",
+    },
+  );
+
 const objectPatchSchema = z
   .object({
     x: objectCoordinateSchema.optional(),
@@ -997,6 +1077,8 @@ const objectPatchSchema = z
       textObjectHorizontalAlignmentSchema.optional(),
     verticalAlignment:
       textObjectVerticalAlignmentSchema.optional(),
+    properties:
+      tilePropertiesPatchSchema.optional(),
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
@@ -1184,11 +1266,6 @@ const removeTilesetFromMapSchema = z
   })
   .strict();
 
-const tilePropertyNameSchema = z
-  .string()
-  .min(1)
-  .max(MAX_TILE_PROPERTY_NAME_CODE_POINTS * 2);
-
 const tileAnimationFrameSchema = z
   .object({
     tileId: z
@@ -1203,79 +1280,6 @@ const tileAnimationFrameSchema = z
       .max(MAX_TILE_ANIMATION_FRAME_DURATION_MS),
   })
   .strict();
-
-const tilePropertyWriteSchema = z
-  .discriminatedUnion("type", [
-    z
-      .object({
-        name: tilePropertyNameSchema,
-        type: z.enum(["string", "file"]),
-        value: z
-          .string()
-          .max(
-            MAX_TILE_PROPERTY_VALUE_CODE_POINTS * 2,
-          ),
-      })
-      .strict(),
-    z
-      .object({
-        name: tilePropertyNameSchema,
-        type: z.literal("int"),
-        value: z
-          .number()
-          .int()
-          .min(Number.MIN_SAFE_INTEGER)
-          .max(Number.MAX_SAFE_INTEGER),
-      })
-      .strict(),
-    z
-      .object({
-        name: tilePropertyNameSchema,
-        type: z.literal("float"),
-        value: z.number().finite(),
-      })
-      .strict(),
-    z
-      .object({
-        name: tilePropertyNameSchema,
-        type: z.literal("bool"),
-        value: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        name: tilePropertyNameSchema,
-        type: z.literal("color"),
-        value: z
-          .string()
-          .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu),
-      })
-      .strict(),
-  ]);
-
-const tilePropertiesPatchSchema = z
-  .object({
-    set: z
-      .array(tilePropertyWriteSchema)
-      .min(1)
-      .max(MAX_TILE_PROPERTY_SETS_PER_TILE)
-      .optional(),
-    remove: z
-      .array(tilePropertyNameSchema)
-      .min(1)
-      .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
-      .optional(),
-  })
-  .strict()
-  .refine(
-    (patch) =>
-      patch.set !== undefined ||
-      patch.remove !== undefined,
-    {
-      message:
-        "Tile properties patch must contain set or remove entries",
-    },
-  );
 
 const tileMetadataPatchSchema = z
   .object({
@@ -1868,6 +1872,36 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           },
           sourcePatch:
             "object-layer-objects-member-local",
+        },
+        objectPropertyUpdateCapabilities: {
+          operation: "updateObject-patch-properties",
+          writeTypes: [
+            ...TILE_PROPERTY_WRITE_TYPES,
+          ],
+          sharedProfile:
+            "identical-to-tileMetadataUpdateCapabilities-property-semantics",
+          propertyOrdering:
+            "tiled-name-sorted-insert-fail-closed-on-unsorted",
+          complexPropertyTargets: "fail-closed",
+          untouchedComplexProperties: "preserved",
+          propertyTypeMember: "always-written",
+          propertyColorInput:
+            "rrggbb-or-aarrggbb-stored-verbatim",
+          emptiedPropertiesMember: "removed",
+          templateAndTileObjects: "fail-closed",
+          maxSetsPerUpdate:
+            MAX_TILE_PROPERTY_SETS_PER_TILE,
+          maxRemovesPerUpdate:
+            MAX_TILE_PROPERTY_REMOVES_PER_TILE,
+          maxPropertiesPerObject:
+            MAX_TILE_PROPERTIES_PER_TILE,
+          payloadBudget: {
+            measure: "canonical-json-utf8-bytes",
+            scope:
+              "all-updateObject-property-writes-per-change-set-summed",
+            maximumPerChangeSet:
+              MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET,
+          },
         },
         layerOperations: [
           "updateLayer",
@@ -3693,7 +3727,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -3706,6 +3740,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .superRefine((operations, context) => {
               let pathPointCount = 0;
               let textObjectPayloadBytes = 0;
+              let propertyPatchBytes = 0;
               for (const operation of operations) {
                 if (
                   operation.type ===
@@ -3750,6 +3785,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   } catch {
                     // Nested schemas report invalid text fields.
                   }
+                  if (
+                    operation.patch.properties !==
+                    undefined
+                  ) {
+                    propertyPatchBytes +=
+                      measurePropertiesPatchBytes(
+                        operation.patch.properties,
+                      );
+                  }
                 }
               }
               if (
@@ -3770,6 +3814,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   code: "custom",
                   message:
                     `Text object fields may contain at most ${MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET} canonical JSON UTF-8 bytes per change set`,
+                });
+              }
+              if (
+                propertyPatchBytes >
+                MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET
+              ) {
+                context.addIssue({
+                  code: "custom",
+                  message:
+                    `Object property writes may contain at most ${MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET} canonical JSON UTF-8 bytes per change set`,
                 });
               }
             }),

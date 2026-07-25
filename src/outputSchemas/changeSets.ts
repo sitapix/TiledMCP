@@ -31,6 +31,10 @@ import {
   MAX_TILE_UPDATES_PER_CHANGE_SET,
 } from "../maps/tilesetEdits.js";
 import {
+  MAX_PROPERTY_NAME_CODE_POINTS,
+  MAX_PROPERTY_VALUE_CODE_POINTS,
+} from "../maps/propertyEdits.js";
+import {
   assetIdOutputSchema,
   changeSetIdOutputSchema,
   checkpointIdOutputSchema,
@@ -330,6 +334,84 @@ const textObjectDraftOutputSchema = z
       textObjectVerticalAlignmentOutputSchema.optional(),
   })
   .strict();
+const propertyNameOutputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_PROPERTY_NAME_CODE_POINTS * 2);
+
+const propertyWriteOutputSchema = z
+  .discriminatedUnion("type", [
+    z
+      .object({
+        name: propertyNameOutputSchema,
+        type: z.enum(["string", "file"]),
+        value: z
+          .string()
+          .max(
+            MAX_PROPERTY_VALUE_CODE_POINTS * 2,
+          ),
+      })
+      .strict(),
+    z
+      .object({
+        name: propertyNameOutputSchema,
+        type: z.literal("int"),
+        value: z
+          .number()
+          .int()
+          .min(Number.MIN_SAFE_INTEGER)
+          .max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    z
+      .object({
+        name: propertyNameOutputSchema,
+        type: z.literal("float"),
+        value: z.number().finite(),
+      })
+      .strict(),
+    z
+      .object({
+        name: propertyNameOutputSchema,
+        type: z.literal("bool"),
+        value: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        name: propertyNameOutputSchema,
+        type: z.literal("color"),
+        value: z
+          .string()
+          .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu),
+      })
+      .strict(),
+  ]);
+
+const propertiesPatchOutputSchema = z
+  .object({
+    set: z
+      .array(propertyWriteOutputSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_SETS_PER_TILE)
+      .optional(),
+    remove: z
+      .array(propertyNameOutputSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.set !== undefined ||
+      patch.remove !== undefined,
+    {
+      message:
+        "Properties patch must contain set or remove entries",
+    },
+  );
+
 const objectPatchOutputSchema = z
   .object({
     x: objectCoordinateOutputSchema.optional(),
@@ -362,6 +444,8 @@ const objectPatchOutputSchema = z
       textObjectHorizontalAlignmentOutputSchema.optional(),
     verticalAlignment:
       textObjectVerticalAlignmentOutputSchema.optional(),
+    properties:
+      propertiesPatchOutputSchema.optional(),
   })
   .strict()
   .refine(
@@ -724,6 +808,7 @@ const updateObjectOperationPreviewOutputSchema = z
         "kerning",
         "horizontalAlignment",
         "verticalAlignment",
+        "properties",
       ]),
     ),
     patch: objectPatchOutputSchema,
