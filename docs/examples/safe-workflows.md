@@ -334,7 +334,9 @@ error 自适应细分，单对象最多 4096 段、全选集合计最多 65536 �
 单零尺寸曲线显示为 bounds line，双零尺寸显示为以 anchor 为圆心的 20 map-pixel 圆；
 tile object 以 `tile-frame-only` 绘制 Tiled 1.12.2 对齐的 outline 矩形与锚点十字
 （alignment/tileoffset/缺省尺寸按 tileset 解析，flip 位不改变轮廓，不渲染 tile
-图像或 collision）；完全离区的对象仍在结果中返回 `rendered:false, clipped:true`。
+图像）；再传 `overlays.tileObjectCollision:true` 可按 tile 图像的同一 fragment
+变换叠加该 tile 的碰撞形状轮廓，entry 变为 `tile-frame-and-collision` 并回显
+`collisionObjectCount`；完全离区的对象仍在结果中返回 `rendered:false, clipped:true`。
 显式调试忽略 visibility/opacity，但拒绝 template 和带非默认定位变换的所选
 layer/Group。客户端应逐项核对保序 entry、`curveTessellation` 与
 `tileObjectFrames`，不能把 geometry-only profile 当成完整 object-layer 渲染。

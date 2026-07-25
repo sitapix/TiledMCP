@@ -42,7 +42,7 @@ export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
 export const NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE = "source-over";
 export const NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE = "tile-union";
 export const NATIVE_PREVIEW_OBJECT_PROFILE =
-  "explicit-basic-object-geometry-v3";
+  "explicit-basic-object-geometry-v4";
 export const NATIVE_PREVIEW_TILE_OBJECT_FRAMES =
   Object.freeze({
     source:
@@ -58,8 +58,34 @@ export const NATIVE_PREVIEW_TILE_OBJECT_FRAMES =
     rotationCenter: "object-anchor",
     danglingGidPolicy: "fail-closed",
     imageRendering: false,
-    collisionShapes: false,
+    collisionShapes: "explicit-opt-in",
   } as const);
+export const NATIVE_PREVIEW_TILE_OBJECT_COLLISION =
+  Object.freeze({
+    source:
+      "tiled-1.12-show-tile-collision-shapes",
+    selection:
+      "explicit-tile-object-selection-opt-in",
+    transform:
+      "tile-image-fragment-affine-with-inner-shape-rotation",
+    flipFlags: "applied-like-tile-image",
+    groupMetadata:
+      "position-draworder-color-visibility-ignored",
+    hiddenCollisionObjects: "drawn",
+    markerPrecedence:
+      "single-shape-marker-only-fail-closed-on-conflict",
+    pointObjects:
+      "fixed-5px-output-crosshair",
+    curveSegmentPlanning:
+      "affine-spectral-norm-output-radius",
+    offscreenPolicy: "clip-after-tessellation",
+    nestedTileOrTemplateObjects: "fail-closed",
+    fillMode: "stretch-only-fail-closed",
+    styling:
+      "shared-geometry-cyan-outline-no-fill",
+  } as const);
+export const MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES = 128;
+export const MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE = 1_024;
 export const NATIVE_PREVIEW_OBJECT_STYLE =
   "geometry-cyan-v1";
 export const NATIVE_PREVIEW_OBJECT_COLOR =
@@ -170,7 +196,38 @@ export type NativePreviewObjectShape =
 export type NativePreviewObjectRepresentation =
   | "geometry-outline"
   | "text-box-only"
-  | "tile-frame-only";
+  | "tile-frame-only"
+  | "tile-frame-and-collision";
+
+export type NativePreviewCollisionShapeKind =
+  | "rectangle"
+  | "ellipse"
+  | "capsule"
+  | "polygon"
+  | "polyline"
+  | "point";
+
+export interface NativePreviewCollisionShapeInput {
+  kind: NativePreviewCollisionShapeKind;
+  /**
+   * Row-major 2x3 affine [a,b,c,d,e,f] mapping collision-local pixels to
+   * anchor-relative map pixels: (x,y) -> (a*x + c*y + e, b*x + d*y + f).
+   * It already composes the collision object's own rotation with the tile
+   * image fragment transform, so flips and 90-degree anti-diagonal
+   * rotations behave exactly like the tile image.
+   */
+  transform: readonly [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  width?: number;
+  height?: number;
+  points?: readonly NativePreviewObjectPoint[];
+}
 
 export interface NativePreviewObjectPoint {
   x: number;
@@ -195,6 +252,7 @@ export interface NativePreviewObjectInput {
    */
   boxOffsetX?: number;
   boxOffsetY?: number;
+  collisionShapes?: readonly NativePreviewCollisionShapeInput[];
 }
 
 export interface NativePreviewObjectRenderEntry {
@@ -205,6 +263,7 @@ export interface NativePreviewObjectRenderEntry {
   representation: NativePreviewObjectRepresentation;
   rendered: boolean;
   clipped: boolean;
+  collisionObjectCount?: number;
 }
 
 export interface NativePreviewObjectRenderMetadata {
@@ -241,6 +300,7 @@ export interface NativePreviewObjectRenderMetadata {
       "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle";
   };
   tileObjectFrames: typeof NATIVE_PREVIEW_TILE_OBJECT_FRAMES;
+  tileObjectCollision: typeof NATIVE_PREVIEW_TILE_OBJECT_COLLISION;
   selectedObjectCount: number;
   renderedObjectCount: number;
   entries: readonly NativePreviewObjectRenderEntry[];
@@ -319,6 +379,11 @@ interface PreparedObjectGeometry {
   points: readonly OutputPoint[];
   closed: boolean;
   initiallyClipped: boolean;
+  collisionLoops: ReadonlyArray<{
+    points: readonly OutputPoint[];
+    closed: boolean;
+  }>;
+  collisionMarkers: readonly OutputPoint[];
 }
 
 export async function renderNativePreview(
@@ -774,6 +839,7 @@ function validateNativePreviewObjectInputs(
 
   const seenObjectIds = new Set<number>();
   let pointCount = 0;
+  let collisionShapeCount = 0;
   for (const [index, object] of objects.entries()) {
     validateNativePreviewObjectInput(object, index);
     if (seenObjectIds.has(object.objectId)) {
@@ -785,6 +851,11 @@ function validateNativePreviewObjectInputs(
     }
     seenObjectIds.add(object.objectId);
     pointCount += object.points?.length ?? 0;
+    collisionShapeCount +=
+      object.collisionShapes?.length ?? 0;
+    for (const shape of object.collisionShapes ?? []) {
+      pointCount += shape.points?.length ?? 0;
+    }
     if (pointCount > MAX_NATIVE_PREVIEW_OBJECT_POINTS) {
       throw new TiledMcpError(
         "RESULT_LIMIT_EXCEEDED",
@@ -792,6 +863,20 @@ function validateNativePreviewObjectInputs(
         {
           actual: pointCount,
           limit: MAX_NATIVE_PREVIEW_OBJECT_POINTS,
+        },
+      );
+    }
+    if (
+      collisionShapeCount >
+      MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Object debug may contain at most ${MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE} collision shapes across the selection.`,
+        {
+          actual: collisionShapeCount,
+          limit:
+            MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE,
         },
       );
     }
@@ -851,6 +936,12 @@ function validateNativePreviewObjectInput(
             "boxOffsetY",
             "height",
             "width",
+            ...(Object.prototype.hasOwnProperty.call(
+              object,
+              "collisionShapes",
+            )
+              ? ["collisionShapes"]
+              : []),
           ]
         : object.shape === "polygon" ||
             object.shape === "polyline"
@@ -888,7 +979,9 @@ function validateNativePreviewObjectInput(
     object.shape === "text"
       ? "text-box-only"
       : object.shape === "tile"
-        ? "tile-frame-only"
+        ? object.collisionShapes === undefined
+          ? "tile-frame-only"
+          : "tile-frame-and-collision"
         : "geometry-outline";
   if (object.representation !== expectedRepresentation) {
     throw invalidObjectDebug(
@@ -930,6 +1023,29 @@ function validateNativePreviewObjectInput(
         "boxOffsetY",
         false,
       );
+      if (object.collisionShapes !== undefined) {
+        if (
+          !Array.isArray(object.collisionShapes) ||
+          object.collisionShapes.length >
+            MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES
+        ) {
+          throw invalidObjectDebug(
+            index,
+            "collisionShapes",
+            Array.isArray(object.collisionShapes)
+              ? object.collisionShapes.length
+              : object.collisionShapes,
+          );
+        }
+        for (const [shapeIndex, shape] of
+          object.collisionShapes.entries()) {
+          validateCollisionShapeInput(
+            shape,
+            index,
+            shapeIndex,
+          );
+        }
+      }
     }
     return;
   }
@@ -1363,23 +1479,85 @@ function renderObjectDebugOverlay(
             object,
             input.scale,
           );
+      let objectCurveSegments =
+        geometry.curveSegments;
       aggregateCurveSegments +=
         geometry.curveSegments;
-      if (
-        aggregateCurveSegments >
-        MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE
-      ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `Object debug curves may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE} generated segments.`,
-          {
-            actual: aggregateCurveSegments,
-            limit:
-              MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
-            sourceIndex: object.sourceIndex,
-            objectId: object.objectId,
-          },
+      const assertCurveBudgets = (): void => {
+        if (
+          objectCurveSegments >
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `Object ${object.objectId} curves may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS} generated segments.`,
+            {
+              actual: objectCurveSegments,
+              limit:
+                MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+              sourceIndex: object.sourceIndex,
+              objectId: object.objectId,
+            },
+          );
+        }
+        if (
+          aggregateCurveSegments >
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `Object debug curves may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE} generated segments.`,
+            {
+              actual: aggregateCurveSegments,
+              limit:
+                MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+              sourceIndex: object.sourceIndex,
+              objectId: object.objectId,
+            },
+          );
+        }
+      };
+      assertCurveBudgets();
+      const collisionLoops: Array<{
+        points: readonly OutputPoint[];
+        closed: boolean;
+      }> = [];
+      const collisionMarkers: OutputPoint[] = [];
+      for (const shape of
+        object.collisionShapes ?? []) {
+        const collision = collisionShapeGeometry(
+          object,
+          shape,
+          input.scale,
         );
+        objectCurveSegments +=
+          collision.curveSegments;
+        aggregateCurveSegments +=
+          collision.curveSegments;
+        assertCurveBudgets();
+        for (const loop of collision.loops) {
+          collisionLoops.push({
+            points: loop.points.map((point) =>
+              mapObjectPointToOutput(
+                object,
+                point,
+                input,
+                layout,
+              ),
+            ),
+            closed: loop.closed,
+          });
+        }
+        for (const marker of collision.markers) {
+          collisionMarkers.push(
+            mapObjectPointToOutput(
+              object,
+              marker,
+              input,
+              layout,
+            ),
+          );
+        }
       }
       return {
         object,
@@ -1395,6 +1573,8 @@ function renderObjectDebugOverlay(
         closed: geometry.closed,
         initiallyClipped:
           geometryIsOffscreen,
+        collisionLoops,
+        collisionMarkers,
       };
     });
 
@@ -1478,6 +1658,49 @@ function renderObjectDebugOverlay(
         writePixel,
       );
     }
+    for (const loop of prepared.collisionLoops) {
+      const loopSegmentCount = loop.closed
+        ? loop.points.length
+        : Math.max(0, loop.points.length - 1);
+      for (
+        let segmentIndex = 0;
+        segmentIndex < loopSegmentCount;
+        segmentIndex += 1
+      ) {
+        const start = loop.points[segmentIndex];
+        const end =
+          loop.points[
+            (segmentIndex + 1) % loop.points.length
+          ];
+        if (
+          start === undefined ||
+          end === undefined
+        ) {
+          throw new TiledMcpError(
+            "INTERNAL_ERROR",
+            "Collision debug geometry lost a line endpoint.",
+            {
+              objectId: object.objectId,
+              segmentIndex,
+            },
+          );
+        }
+        drawClippedObjectLine(
+          start,
+          end,
+          layout,
+          state,
+          writePixel,
+        );
+      }
+    }
+    for (const marker of prepared.collisionMarkers) {
+      drawObjectOriginMarker(
+        marker,
+        state,
+        writePixel,
+      );
+    }
     drawObjectOriginMarker(
       prepared.anchor,
       state,
@@ -1491,6 +1714,12 @@ function renderObjectDebugOverlay(
       representation: object.representation,
       rendered: state.rendered,
       clipped: state.clipped,
+      ...(object.collisionShapes === undefined
+        ? {}
+        : {
+            collisionObjectCount:
+              object.collisionShapes.length,
+          }),
     });
   }
 
@@ -1552,6 +1781,8 @@ function objectDebugMetadataBase(): Omit<
     },
     tileObjectFrames:
       NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
+    tileObjectCollision:
+      NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
   };
 }
 
@@ -1752,6 +1983,314 @@ function rectangleGeometryPoints(
     { x: width, y: height },
     { x: 0, y: height },
   ];
+}
+
+function affineSpectralNorm(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+): number {
+  const quadratic = a * a + b * b + c * c + d * d;
+  const determinant = a * d - b * c;
+  const discriminant = Math.max(
+    0,
+    quadratic * quadratic -
+      4 * determinant * determinant,
+  );
+  return Math.sqrt(
+    Math.max(
+      0,
+      (quadratic + Math.sqrt(discriminant)) / 2,
+    ),
+  );
+}
+
+function applyCollisionTransform(
+  shape: NativePreviewCollisionShapeInput,
+  point: NativePreviewObjectPoint,
+): NativePreviewObjectPoint {
+  const [a, b, c, d, e, f] = shape.transform;
+  return {
+    x: a * point.x + c * point.y + e,
+    y: b * point.x + d * point.y + f,
+  };
+}
+
+function collisionShapeGeometry(
+  object: NativePreviewObjectInput,
+  shape: NativePreviewCollisionShapeInput,
+  scale: number,
+): {
+  loops: Array<{
+    points: readonly NativePreviewObjectPoint[];
+    closed: boolean;
+  }>;
+  markers: NativePreviewObjectPoint[];
+  curveSegments: number;
+} {
+  if (shape.kind === "point") {
+    return {
+      loops: [],
+      markers: [
+        applyCollisionTransform(shape, {
+          x: 0,
+          y: 0,
+        }),
+      ],
+      curveSegments: 0,
+    };
+  }
+  if (
+    shape.kind === "polygon" ||
+    shape.kind === "polyline"
+  ) {
+    return {
+      loops: [
+        {
+          points: (shape.points ?? []).map(
+            (point) =>
+              applyCollisionTransform(
+                shape,
+                point,
+              ),
+          ),
+          closed: shape.kind === "polygon",
+        },
+      ],
+      markers: [],
+      curveSegments: 0,
+    };
+  }
+  const width = shape.width ?? 0;
+  const height = shape.height ?? 0;
+  const nullBounds = width === 0 && height === 0;
+  if (shape.kind === "rectangle") {
+    // Tiled's collision shape path turns a null rectangle into a 20x20 box
+    // centered on the shape position.
+    const local = nullBounds
+      ? rectangleGeometryPoints(20, 20).map(
+          (point) => ({
+            x: point.x - 10,
+            y: point.y - 10,
+          }),
+        )
+      : rectangleGeometryPoints(width, height);
+    return {
+      loops: [
+        {
+          points: local.map((point) =>
+            applyCollisionTransform(shape, point),
+          ),
+          closed: true,
+        },
+      ],
+      markers: [],
+      curveSegments: 0,
+    };
+  }
+  if (
+    shape.kind === "capsule" &&
+    Math.min(width, height) === 0
+  ) {
+    // A zero corner radius degrades the rounded rectangle to the plain
+    // rectangle; a null one adds nothing.
+    return {
+      loops: nullBounds
+        ? []
+        : [
+            {
+              points: rectangleGeometryPoints(
+                width,
+                height,
+              ).map((point) =>
+                applyCollisionTransform(
+                  shape,
+                  point,
+                ),
+              ),
+              closed: true,
+            },
+          ],
+      markers: [],
+      curveSegments: 0,
+    };
+  }
+  const [a, b, c, d] = shape.transform;
+  const localRadius =
+    shape.kind === "ellipse"
+      ? nullBounds
+        ? 10
+        : Math.max(width, height) / 2
+      : Math.min(width, height) / 2;
+  const curveSegments = objectCurveSegmentCount(
+    localRadius *
+      affineSpectralNorm(a, b, c, d) *
+      scale,
+    object,
+  );
+  const local =
+    shape.kind === "ellipse"
+      ? nullBounds
+        ? ellipseGeometryPoints(
+            20,
+            20,
+            curveSegments,
+            -10,
+            -10,
+          )
+        : ellipseGeometryPoints(
+            width,
+            height,
+            curveSegments,
+          )
+      : capsuleGeometryPoints(
+          width,
+          height,
+          curveSegments,
+        );
+  return {
+    loops: [
+      {
+        points: local.map((point) =>
+          applyCollisionTransform(shape, point),
+        ),
+        closed: true,
+      },
+    ],
+    markers: [],
+    curveSegments,
+  };
+}
+
+function validateCollisionShapeInput(
+  shape: NativePreviewCollisionShapeInput,
+  index: number,
+  shapeIndex: number,
+): void {
+  const context = `collisionShapes[${shapeIndex}]`;
+  if (
+    typeof shape !== "object" ||
+    shape === null ||
+    Array.isArray(shape)
+  ) {
+    throw invalidObjectDebug(index, context, shape);
+  }
+  const kinds = [
+    "rectangle",
+    "ellipse",
+    "capsule",
+    "polygon",
+    "polyline",
+    "point",
+  ] as const;
+  if (
+    typeof shape.kind !== "string" ||
+    !kinds.includes(
+      shape.kind as (typeof kinds)[number],
+    )
+  ) {
+    throw invalidObjectDebug(
+      index,
+      `${context}.kind`,
+      shape.kind,
+    );
+  }
+  const expectedKeys =
+    shape.kind === "polygon" ||
+    shape.kind === "polyline"
+      ? ["kind", "points", "transform"]
+      : shape.kind === "point"
+        ? ["kind", "transform"]
+        : ["height", "kind", "transform", "width"];
+  if (
+    Object.keys(shape).sort().join(",") !==
+    expectedKeys.join(",")
+  ) {
+    throw invalidObjectDebug(index, context, shape);
+  }
+  if (
+    !Array.isArray(shape.transform) ||
+    shape.transform.length !== 6 ||
+    shape.transform.some(
+      (value) =>
+        typeof value !== "number" ||
+        !Number.isFinite(value) ||
+        Math.abs(value) >
+          MAX_ABSOLUTE_NATIVE_PREVIEW_OBJECT_NUMBER,
+    )
+  ) {
+    throw invalidObjectDebug(
+      index,
+      `${context}.transform`,
+      shape.transform,
+    );
+  }
+  if (
+    shape.kind === "rectangle" ||
+    shape.kind === "ellipse" ||
+    shape.kind === "capsule"
+  ) {
+    validateObjectDebugNumber(
+      shape.width,
+      index,
+      `${context}.width`,
+      true,
+    );
+    validateObjectDebugNumber(
+      shape.height,
+      index,
+      `${context}.height`,
+      true,
+    );
+    return;
+  }
+  if (shape.kind === "point") {
+    return;
+  }
+  const minimum =
+    shape.kind === "polygon" ? 3 : 2;
+  if (
+    !Array.isArray(shape.points) ||
+    shape.points.length < minimum ||
+    shape.points.length >
+      MAX_NATIVE_PREVIEW_OBJECT_POINTS
+  ) {
+    throw invalidObjectDebug(
+      index,
+      `${context}.points`,
+      Array.isArray(shape.points)
+        ? shape.points.length
+        : shape.points,
+    );
+  }
+  for (const [pointIndex, point] of
+    shape.points.entries()) {
+    if (
+      typeof point !== "object" ||
+      point === null ||
+      Array.isArray(point) ||
+      Object.keys(point).sort().join(",") !== "x,y"
+    ) {
+      throw invalidObjectDebug(
+        index,
+        `${context}.points[${pointIndex}]`,
+        point,
+      );
+    }
+    validateObjectDebugNumber(
+      point.x,
+      index,
+      `${context}.points[${pointIndex}].x`,
+      false,
+    );
+    validateObjectDebugNumber(
+      point.y,
+      index,
+      `${context}.points[${pointIndex}].y`,
+      false,
+    );
+  }
 }
 
 function objectCurveSegmentCount(

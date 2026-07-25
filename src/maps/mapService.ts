@@ -41,10 +41,13 @@ import {
   MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
   MAX_NATIVE_PREVIEW_OBJECT_POINTS,
   MAX_NATIVE_PREVIEW_OBJECTS,
+  MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
   DEFAULT_NATIVE_PREVIEW_SCALE,
   prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
+  type NativePreviewCollisionShapeInput,
+  type NativePreviewCollisionShapeKind,
   type NativePreviewHighlightInput,
   type NativePreviewObjectInput,
 } from "../images/mapPreview.js";
@@ -519,6 +522,7 @@ export interface RenderPreviewInput {
     coordinates?: boolean;
     highlights?: NativePreviewHighlightInput[];
     objectIds?: number[];
+    tileObjectCollision?: boolean;
   };
 }
 
@@ -1353,6 +1357,7 @@ export class MapService {
         context.loaded.path,
         input.overlays?.objectIds,
         context.bindings,
+        input.overlays?.tileObjectCollision === true,
       );
     if (
       preparedObjectDebug !== undefined &&
@@ -1556,14 +1561,27 @@ export class MapService {
   ): Promise<void> {
     const frames = new Map<
       string,
-      {
-        tileWidth: number;
-        tileHeight: number;
-        objectAlignment: string;
-        tileOffsetX: number;
-        tileOffsetY: number;
-      }
+      TileObjectFrameTileset
     >();
+    const collisionLocalIds = new Map<
+      string,
+      Set<number>
+    >();
+    if (prepared.tileObjectCollision) {
+      for (const pending of prepared.pendingTileFrames) {
+        let ids = collisionLocalIds.get(
+          pending.assetId,
+        );
+        if (ids === undefined) {
+          ids = new Set<number>();
+          collisionLocalIds.set(
+            pending.assetId,
+            ids,
+          );
+        }
+        ids.add(pending.localId);
+      }
+    }
     for (const pending of prepared.pendingTileFrames) {
       let frame = frames.get(pending.assetId);
       if (frame === undefined) {
@@ -1581,6 +1599,7 @@ export class MapService {
         frame =
           await this.loadTileObjectFrameTileset(
             binding,
+            collisionLocalIds.get(pending.assetId),
           );
         frames.set(pending.assetId, frame);
       }
@@ -1644,18 +1663,28 @@ export class MapService {
       entry.height = height;
       entry.boxOffsetX = boxOffsetX;
       entry.boxOffsetY = boxOffsetY;
+      if (prepared.tileObjectCollision) {
+        entry.representation =
+          "tile-frame-and-collision";
+        entry.collisionShapes =
+          buildTileCollisionShapeInputs(
+            pending,
+            frame,
+            {
+              width,
+              height,
+              alignmentOffsetX: alignmentOffset.x,
+              alignmentOffsetY: alignmentOffset.y,
+            },
+          );
+      }
     }
   }
 
   private async loadTileObjectFrameTileset(
     binding: TilesetBinding,
-  ): Promise<{
-    tileWidth: number;
-    tileHeight: number;
-    objectAlignment: string;
-    tileOffsetX: number;
-    tileOffsetY: number;
-  }> {
+    collisionLocalIds?: ReadonlySet<number>,
+  ): Promise<TileObjectFrameTileset> {
     const snapshot = await this.store.readSnapshot(
       binding.path,
     );
@@ -1701,6 +1730,14 @@ export class MapService {
       ),
       tileOffsetX: tileOffset.x,
       tileOffsetY: tileOffset.y,
+      collision:
+        collisionLocalIds === undefined
+          ? new Map()
+          : readTilesetCollisionSources(
+              document,
+              binding.path,
+              collisionLocalIds,
+            ),
     };
   }
 
@@ -10596,6 +10633,10 @@ interface PendingTileObjectFrame {
   entryIndex: number;
   objectId: number;
   assetId: string;
+  localId: number;
+  flipH: boolean;
+  flipV: boolean;
+  flipD: boolean;
   rawWidth: number;
   rawHeight: number;
 }
@@ -10603,6 +10644,7 @@ interface PendingTileObjectFrame {
 interface PreparedNativePreviewObjectDebug {
   objects: NativePreviewObjectInput[];
   pendingTileFrames: PendingTileObjectFrame[];
+  tileObjectCollision: boolean;
 }
 
 function prepareNativePreviewObjectDebug(
@@ -10610,8 +10652,15 @@ function prepareNativePreviewObjectDebug(
   mapPath: string,
   objectIds: readonly number[] | undefined,
   bindings: readonly TilesetBinding[],
+  tileObjectCollision: boolean,
 ): PreparedNativePreviewObjectDebug | undefined {
   if (objectIds === undefined) {
+    if (tileObjectCollision) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "overlays.tileObjectCollision requires overlays.objectIds.",
+      );
+    }
     return undefined;
   }
   if (
@@ -10779,7 +10828,11 @@ function prepareNativePreviewObjectDebug(
       points,
     });
   }
-  return { objects: selected, pendingTileFrames };
+  return {
+    objects: selected,
+    pendingTileFrames,
+    tileObjectCollision,
+  };
 }
 
 const TILESET_OBJECT_ALIGNMENTS = new Set([
@@ -10870,10 +10923,21 @@ function prepareTileObjectFrameEntry(
     "height",
     mapPath,
   );
+  const transform = tileRef.transform as
+    | {
+        flipH?: boolean;
+        flipV?: boolean;
+        flipD?: boolean;
+      }
+    | undefined;
   const pending: PendingTileObjectFrame = {
     entryIndex: selected.length,
     objectId,
     assetId: tileRef.tileset.assetId,
+    localId: tileRef.localId,
+    flipH: transform?.flipH === true,
+    flipV: transform?.flipV === true,
+    flipD: transform?.flipD === true,
     rawWidth,
     rawHeight,
   };
@@ -10983,6 +11047,430 @@ function readTilesetTileOffset(
     x: record.x as number,
     y: record.y as number,
   };
+}
+
+interface TileObjectFrameTileset {
+  tileWidth: number;
+  tileHeight: number;
+  objectAlignment: string;
+  tileOffsetX: number;
+  tileOffsetY: number;
+  collision: ReadonlyMap<
+    number,
+    readonly TileCollisionSource[]
+  >;
+}
+
+interface TileCollisionSource {
+  kind: NativePreviewCollisionShapeKind;
+  x: number;
+  y: number;
+  rotation: number;
+  width: number;
+  height: number;
+  points?: ObjectPathPoint[];
+}
+
+const MAX_TILESET_COLLISION_TILE_SCAN = 100_000;
+const COLLISION_GROUP_ALLOWED_KEYS = new Set([
+  "class",
+  "color",
+  "draworder",
+  "id",
+  "locked",
+  "mode",
+  "name",
+  "objects",
+  "offsetx",
+  "offsety",
+  "opacity",
+  "parallaxx",
+  "parallaxy",
+  "properties",
+  "tintcolor",
+  "type",
+  "visible",
+  "x",
+  "y",
+]);
+const COLLISION_OBJECT_ALLOWED_KEYS = new Set([
+  "capsule",
+  "class",
+  "ellipse",
+  "height",
+  "id",
+  "name",
+  "opacity",
+  "point",
+  "polygon",
+  "polyline",
+  "properties",
+  "rotation",
+  "text",
+  "type",
+  "visible",
+  "width",
+  "x",
+  "y",
+]);
+
+function readTilesetCollisionSources(
+  document: JsonObject,
+  tilesetPath: string,
+  localIds: ReadonlySet<number>,
+): Map<number, readonly TileCollisionSource[]> {
+  const fillMode = document.fillmode;
+  if (
+    fillMode !== undefined &&
+    fillMode !== "stretch"
+  ) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_RENDER_FEATURE",
+      `${tilesetPath} uses a non-default fillmode, whose collision scaling is not supported.`,
+      { path: tilesetPath, feature: "fillmode" },
+    );
+  }
+  const collision = new Map<
+    number,
+    readonly TileCollisionSource[]
+  >();
+  if (document.tiles === undefined) {
+    return collision;
+  }
+  const tiles = expectArray(
+    document.tiles,
+    `${tilesetPath}.tiles`,
+  );
+  if (tiles.length > MAX_TILESET_COLLISION_TILE_SCAN) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `${tilesetPath}.tiles exceeds the ${MAX_TILESET_COLLISION_TILE_SCAN}-entry collision scan limit.`,
+      {
+        limit: MAX_TILESET_COLLISION_TILE_SCAN,
+        actual: tiles.length,
+      },
+    );
+  }
+  for (const [tileIndex, value] of tiles.entries()) {
+    const tile = expectObject(
+      value,
+      `${tilesetPath}.tiles[${tileIndex}]`,
+    );
+    const localId = expectInteger(
+      tile.id,
+      `${tilesetPath}.tiles[${tileIndex}].id`,
+    );
+    if (
+      !localIds.has(localId) ||
+      tile.objectgroup === undefined
+    ) {
+      continue;
+    }
+    collision.set(
+      localId,
+      readTileCollisionObjects(
+        tile.objectgroup,
+        `${tilesetPath}.tiles[${tileIndex}].objectgroup`,
+        tilesetPath,
+      ),
+    );
+  }
+  return collision;
+}
+
+function readTileCollisionObjects(
+  value: JsonValue,
+  context: string,
+  tilesetPath: string,
+): readonly TileCollisionSource[] {
+  const group = expectObject(value, context);
+  if (group.type !== "objectgroup") {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context}.type must be "objectgroup".`,
+      { path: tilesetPath },
+    );
+  }
+  const unknownGroupKey = Object.keys(group).find(
+    (key) => !COLLISION_GROUP_ALLOWED_KEYS.has(key),
+  );
+  if (unknownGroupKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} contains unsupported member ${unknownGroupKey}.`,
+      { path: tilesetPath, member: unknownGroupKey },
+    );
+  }
+  const objects = expectArray(
+    group.objects,
+    `${context}.objects`,
+  );
+  if (
+    objects.length >
+    MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `${context}.objects exceeds the ${MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES}-shape collision limit.`,
+      {
+        limit:
+          MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
+        actual: objects.length,
+      },
+    );
+  }
+  return objects.map((objectValue, objectIndex) =>
+    readTileCollisionObject(
+      objectValue,
+      `${context}.objects[${objectIndex}]`,
+      tilesetPath,
+    ),
+  );
+}
+
+function readTileCollisionObject(
+  value: JsonValue,
+  context: string,
+  tilesetPath: string,
+): TileCollisionSource {
+  const object = expectObject(value, context);
+  for (const feature of [
+    "gid",
+    "template",
+  ] as const) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        object,
+        feature,
+      )
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_OBJECT_PROFILE",
+        `${context} uses ${feature}, which is outside supported tile collision shapes.`,
+        { path: tilesetPath, feature },
+      );
+    }
+  }
+  const unknownKey = Object.keys(object).find(
+    (key) => !COLLISION_OBJECT_ALLOWED_KEYS.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} contains unsupported member ${unknownKey}.`,
+      { path: tilesetPath, member: unknownKey },
+    );
+  }
+  const markers = [
+    "polygon",
+    "polyline",
+    "ellipse",
+    "capsule",
+    "point",
+    "text",
+  ].filter((marker) =>
+    Object.prototype.hasOwnProperty.call(
+      object,
+      marker,
+    ),
+  );
+  if (markers.length > 1) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} contains conflicting shape markers.`,
+      { path: tilesetPath },
+    );
+  }
+  const marker = markers[0];
+  const readCoordinate = (
+    field: "x" | "y" | "rotation",
+  ): number => {
+    const raw = object[field];
+    if (raw === undefined) {
+      return 0;
+    }
+    if (
+      typeof raw !== "number" ||
+      !Number.isFinite(raw) ||
+      Math.abs(raw) > MAX_ABSOLUTE_OBJECT_NUMBER
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${field} must be a bounded finite number.`,
+        { path: tilesetPath, field },
+      );
+    }
+    return raw;
+  };
+  const readExtent = (
+    field: "width" | "height",
+  ): number => {
+    const raw = object[field];
+    if (raw === undefined) {
+      return 0;
+    }
+    if (
+      typeof raw !== "number" ||
+      !Number.isFinite(raw) ||
+      raw < 0 ||
+      raw > MAX_ABSOLUTE_OBJECT_NUMBER
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${field} must be a bounded nonnegative number.`,
+        { path: tilesetPath, field },
+      );
+    }
+    return raw;
+  };
+  const common = {
+    x: readCoordinate("x"),
+    y: readCoordinate("y"),
+    rotation: readCoordinate("rotation"),
+    width: readExtent("width"),
+    height: readExtent("height"),
+  };
+  if (
+    marker === "polygon" ||
+    marker === "polyline"
+  ) {
+    assertObjectPathPoints(
+      object[marker],
+      marker,
+      `${context}.${marker}`,
+      "INVALID_DOCUMENT",
+    );
+    return {
+      kind: marker,
+      ...common,
+      points: (
+        object[marker] as unknown as ObjectPathPoint[]
+      ).map((point) => ({
+        x: point.x,
+        y: point.y,
+      })),
+    };
+  }
+  if (
+    marker === "ellipse" ||
+    marker === "capsule" ||
+    marker === "point"
+  ) {
+    if (object[marker] !== true) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${marker} must be true when present.`,
+        { path: tilesetPath, feature: marker },
+      );
+    }
+    return { kind: marker, ...common };
+  }
+  if (marker === "text") {
+    // Tiled's collision shape path draws a text object as its plain bounds
+    // rectangle.
+    expectObject(object.text, `${context}.text`);
+    return { kind: "rectangle", ...common };
+  }
+  return { kind: "rectangle", ...common };
+}
+
+function buildTileCollisionShapeInputs(
+  pending: PendingTileObjectFrame,
+  frame: TileObjectFrameTileset,
+  effective: {
+    width: number;
+    height: number;
+    alignmentOffsetX: number;
+    alignmentOffsetY: number;
+  },
+): NativePreviewCollisionShapeInput[] {
+  const sources =
+    frame.collision.get(pending.localId) ?? [];
+  const scaleX = effective.width / frame.tileWidth;
+  const scaleY =
+    effective.height / frame.tileHeight;
+  let rotated = false;
+  let flipH = pending.flipH;
+  let flipV = pending.flipV;
+  let fragmentX =
+    effective.width / 2 +
+    frame.tileOffsetX * scaleX;
+  let fragmentY =
+    effective.height / 2 +
+    frame.tileOffsetY * scaleY;
+  if (pending.flipD) {
+    rotated = true;
+    const wasFlippedH = pending.flipH;
+    flipH = pending.flipV;
+    flipV = !wasFlippedH;
+    const halfDiff =
+      effective.height / 2 - effective.width / 2;
+    fragmentX += halfDiff;
+    fragmentY += halfDiff;
+  }
+  const signedScaleX = (flipH ? -1 : 1) * scaleX;
+  const signedScaleY = (flipV ? -1 : 1) * scaleY;
+  const linearA = rotated ? 0 : signedScaleX;
+  const linearB = rotated ? signedScaleX : 0;
+  const linearC = rotated ? -signedScaleY : 0;
+  const linearD = rotated ? 0 : signedScaleY;
+  return sources.map((source) => {
+    const radians =
+      (((source.rotation % 360) + 360) % 360) *
+      (Math.PI / 180);
+    const cosine = Math.cos(radians);
+    const sine = Math.sin(radians);
+    const localX = source.x - frame.tileWidth / 2;
+    const localY = source.y - frame.tileHeight / 2;
+    const transform = [
+      linearA * cosine + linearC * sine,
+      linearB * cosine + linearD * sine,
+      linearA * -sine + linearC * cosine,
+      linearB * -sine + linearD * cosine,
+      fragmentX -
+        effective.alignmentOffsetX +
+        linearA * localX +
+        linearC * localY,
+      fragmentY -
+        effective.alignmentOffsetY +
+        linearB * localX +
+        linearD * localY,
+    ] as const;
+    for (const value of transform) {
+      if (
+        !Number.isFinite(value) ||
+        Math.abs(value) >
+          MAX_ABSOLUTE_OBJECT_NUMBER
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `Object ${pending.objectId} collision transform is outside the supported numeric range.`,
+          { objectId: pending.objectId },
+        );
+      }
+    }
+    if (
+      source.kind === "polygon" ||
+      source.kind === "polyline"
+    ) {
+      return {
+        kind: source.kind,
+        transform,
+        points: (source.points ?? []).map(
+          (point) => ({ x: point.x, y: point.y }),
+        ),
+      };
+    }
+    if (source.kind === "point") {
+      return { kind: source.kind, transform };
+    }
+    return {
+      kind: source.kind,
+      transform,
+      width: source.width,
+      height: source.height,
+    };
+  });
 }
 
 /**

@@ -3631,6 +3631,7 @@ describe("createTiledMcpServer", () => {
           "coordinates",
           "highlights",
           "objectIds",
+          "tileObjectCollision",
         ],
         regionCoordinates: "absolute-map-tiles",
         highlightRectangles: {

@@ -78,7 +78,7 @@ function validResult(): Record<string, unknown> {
       },
       objectDebug: {
         profile:
-          "explicit-basic-object-geometry-v3",
+          "explicit-basic-object-geometry-v4",
         style: "geometry-cyan-v1",
         color: {
           r: 34,
@@ -127,7 +127,30 @@ function validResult(): Record<string, unknown> {
           rotationCenter: "object-anchor",
           danglingGidPolicy: "fail-closed",
           imageRendering: false,
-          collisionShapes: false,
+          collisionShapes: "explicit-opt-in",
+        },
+        tileObjectCollision: {
+          source:
+            "tiled-1.12-show-tile-collision-shapes",
+          selection:
+            "explicit-tile-object-selection-opt-in",
+          transform:
+            "tile-image-fragment-affine-with-inner-shape-rotation",
+          flipFlags: "applied-like-tile-image",
+          groupMetadata:
+            "position-draworder-color-visibility-ignored",
+          hiddenCollisionObjects: "drawn",
+          markerPrecedence:
+            "single-shape-marker-only-fail-closed-on-conflict",
+          pointObjects:
+            "fixed-5px-output-crosshair",
+          curveSegmentPlanning:
+            "affine-spectral-norm-output-radius",
+          offscreenPolicy: "clip-after-tessellation",
+          nestedTileOrTemplateObjects: "fail-closed",
+          fillMode: "stretch-only-fail-closed",
+          styling:
+            "shared-geometry-cyan-outline-no-fill",
         },
         selectedObjectCount: 2,
         renderedObjectCount: 1,
@@ -511,9 +534,10 @@ describe("native preview object debug server contract", () => {
         "geometry-outline",
         "text-box-only",
         "tile-frame-only",
+        "tile-frame-and-collision",
       ],
       profile:
-        "explicit-basic-object-geometry-v3",
+        "explicit-basic-object-geometry-v4",
       style: "geometry-cyan-v1",
       color: {
         r: 34,
@@ -562,7 +586,30 @@ describe("native preview object debug server contract", () => {
         rotationCenter: "object-anchor",
         danglingGidPolicy: "fail-closed",
         imageRendering: false,
-        collisionShapes: false,
+        collisionShapes: "explicit-opt-in",
+      },
+      tileObjectCollision: {
+        source:
+          "tiled-1.12-show-tile-collision-shapes",
+        selection:
+          "explicit-tile-object-selection-opt-in",
+        transform:
+          "tile-image-fragment-affine-with-inner-shape-rotation",
+        flipFlags: "applied-like-tile-image",
+        groupMetadata:
+          "position-draworder-color-visibility-ignored",
+        hiddenCollisionObjects: "drawn",
+        markerPrecedence:
+          "single-shape-marker-only-fail-closed-on-conflict",
+        pointObjects:
+          "fixed-5px-output-crosshair",
+        curveSegmentPlanning:
+          "affine-spectral-norm-output-radius",
+        offscreenPolicy: "clip-after-tessellation",
+        nestedTileOrTemplateObjects: "fail-closed",
+        fillMode: "stretch-only-fail-closed",
+        styling:
+          "shared-geometry-cyan-outline-no-fill",
       },
       workBudget:
         "included-in-native-preview-pixel-blend-limit",

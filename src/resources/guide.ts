@@ -86,7 +86,7 @@ application-level summary envelope.
 
 ## Handle application errors
 
-The current v1 application-error registry contains 98 codes. Its committed
+The current v1 application-error registry contains 100 codes. Its committed
 machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
 is available at the direct resource \`tiled://application-errors\`.
 \`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
@@ -236,7 +236,7 @@ and zero. Highlight work shares the native preview pixel-blend limit.
 
 \`overlays.objectIds\` is strict, ordered, unique, all-or-error, and limited to
 64 positive safe IDs. The fixed
-\`explicit-basic-object-geometry-v3\` overlay draws rectangle, point, ellipse,
+\`explicit-basic-object-geometry-v4\` overlay draws rectangle, point, ellipse,
 Tiled 1.12 capsule, polygon, and open polyline geometry in opaque cyan with a
 one-pixel stroke and 5-pixel origin crosshair. Text objects render only their
 rotated layout box, never glyphs. Ellipses use their bounds. Capsules use
@@ -257,6 +257,23 @@ empty GIDs, a \`gid\` combined with a shape marker, unknown \`objectalignment\`
 values, and malformed \`tileoffset\` members fail closed instead of drawing a
 placeholder. Frame resolution re-reads the selected tilesets under their
 pinned dependency revisions and rejects drift.
+
+Pass \`overlays.tileObjectCollision: true\` together with \`objectIds\` to also
+draw each selected tile's collision shapes, following Tiled 1.12.2's
+"Show Tile Collision Shapes" exactly: collision shapes reuse the tile image's
+fragment transform, so object-over-tile scaling, H/V/D flips, the 90-degree
+anti-diagonal rotation, and the scaled tile offset all apply identically,
+while each collision object's own x/y and rotation apply first in tile space.
+Hidden collision objects are still drawn and the collision group's position,
+draw order, and color are ignored, as in Tiled. Point collision objects use
+the fixed 5-pixel crosshair instead of Tiled's pin marker. Selected tile
+entries then report \`representation:"tile-frame-and-collision"\` with an
+exact \`collisionObjectCount\`. Collision ellipses and capsules share the
+curve-segment budgets via a conservative affine-scaled radius, polygon and
+polyline points share the 8192-point budget, and each tile is limited to 128
+collision shapes with 1024 across the selection. Collision objects carrying
+\`gid\` or \`template\`, conflicting shape markers, unknown members, negative
+extents, and tilesets with a non-default \`fillmode\` fail closed.
 
 Curve tessellation uses uniform angles in continuous output space with at most
 0.25 pixels of chord error, at least 12 segments rounded to a multiple of four,

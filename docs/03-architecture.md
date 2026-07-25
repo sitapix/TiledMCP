@@ -1786,6 +1786,21 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
   limitations 将 `tile-objects-unsupported` 替换为
   `tile-frame-only-no-image-or-collision-rendering`。同为 pre-Frozen clean break，
   其余语义与预算不变。
+- profile 再升为 v4：新增 opt-in `overlays.tileObjectCollision`（必须与
+  `objectIds` 同用），按 Tiled 1.12.2 "Show Tile Collision Shapes" 的同一
+  fragment 变换叠加所选 tile 的碰撞形状——投影层把碰撞对象自身 x/y/rotation 与
+  tile 图像仿射（缩放、H/V/D、90° 旋转、缩放后 tileoffset）合成为每形状的
+  "碰撞局部 → 锚点相对 map 像素" 仿射系数交给 renderer；renderer 在局部空间按
+  仿射谱范数换算的保守 output 半径细分曲线（0.25px chord error 上界仍成立）再过
+  仿射与共用的旋转/裁剪/raster 管线。point 碰撞对象画固定 5px 十字；双零
+  rect/ellipse 分别退化为 20×20 框与 20px 圆、双零 capsule 不绘制；
+  `visible:false` 照画、group x/y/draworder/color 忽略，均与 Tiled 一致。开启时
+  tile entry 变为 `tile-frame-and-collision` 并回显 `collisionObjectCount`；
+  成功结果与 capabilities 固定新增 closed `tileObjectCollision` 契约块，limits
+  新增 per-tile 128/全选集 1024 collision shape 上限，曲线与点数计入共享
+  4096/65536/8192 预算。碰撞对象含 `gid`/`template`、marker 冲突、未知成员、负
+  尺寸或 tileset 非默认 `fillmode` 一律 fail closed。TSJ 读取沿用 binding
+  revision CAS。
 - native renderer v1 只保证 finite orthogonal、numeric-array tile layer、静态 external
   atlas、map-grid 等尺寸 tile、透明色、layer opacity 和 orthogonal H/V/D。它明确拒绝
   blend/tint、parallax、非零 pixel/group offset、非默认 group opacity、动画、
@@ -1873,8 +1888,9 @@ M0 不追求完整地图 CRUD。验收标准：
 - 已实现 tileset contact sheet，以及正交 tile-layer region preview、图层筛选、
   H/V/D、opacity、网格、绝对坐标 gutter、固定样式的有界绝对 tile 矩形高亮和显式
   basic-object geometry/text-box debug（含 ellipse/Tiled 1.12 capsule 的有界确定性
-  曲线）与 tile object 的 Tiled 对齐 frame 轮廓 debug（不渲染 tile 图像）；
-  完整 object-layer 与碰撞 overlay 仍待实现。
+  曲线）、tile object 的 Tiled 对齐 frame 轮廓 debug 与 opt-in 的 per-tile
+  碰撞形状轮廓叠加（均不渲染 tile 图像）；
+  完整 object-layer 渲染与 tile-layer 区域级碰撞 overlay 仍待实现。
 - 通过 `tmxrasterizer` 或 one-shot Tiled 做可选兼容性/视觉复核。
 
 M1 明确拒绝：

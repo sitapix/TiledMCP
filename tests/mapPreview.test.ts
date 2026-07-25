@@ -25,6 +25,7 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
   NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
   prepareNativePreviewHighlightOverlay,
   renderNativePreview,
@@ -643,6 +644,8 @@ describe("renderNativePreview", () => {
       },
       tileObjectFrames:
         NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
+      tileObjectCollision:
+        NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
       selectedObjectCount: 4,
       renderedObjectCount: 3,
       entries: [
@@ -788,6 +791,30 @@ describe("renderNativePreview", () => {
       name: "path points",
       mutate(object: Record<string, unknown>) {
         object.points = [{ x: 0, y: 0 }];
+      },
+    },
+    {
+      name: "collision shapes on a frame-only representation",
+      mutate(object: Record<string, unknown>) {
+        object.collisionShapes = [
+          {
+            kind: "point",
+            transform: [1, 0, 0, 1, 0, 0],
+          },
+        ];
+      },
+    },
+    {
+      name: "collision transform of the wrong arity",
+      mutate(object: Record<string, unknown>) {
+        object.representation =
+          "tile-frame-and-collision";
+        object.collisionShapes = [
+          {
+            kind: "point",
+            transform: [1, 0, 0, 1, 0],
+          },
+        ];
       },
     },
   ])(

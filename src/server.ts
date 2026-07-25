@@ -81,7 +81,10 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
   NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
+  MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
+  MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE,
 } from "./images/mapPreview.js";
 import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
@@ -2091,6 +2094,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "coordinates",
             "highlights",
             "objectIds",
+            "tileObjectCollision",
           ],
           regionCoordinates: "absolute-map-tiles",
           highlightRectangles: {
@@ -2132,6 +2136,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "geometry-outline",
               "text-box-only",
               "tile-frame-only",
+              "tile-frame-and-collision",
             ],
             profile: NATIVE_PREVIEW_OBJECT_PROFILE,
             style: NATIVE_PREVIEW_OBJECT_STYLE,
@@ -2172,6 +2177,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             },
             tileObjectFrames:
               NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
+            tileObjectCollision:
+              NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
             workBudget:
               "included-in-native-preview-pixel-blend-limit",
             limitations: [
@@ -2321,6 +2328,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
           maxNativePreviewObjectCurveSegmentsAggregate:
             MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+          maxNativePreviewTileCollisionShapes:
+            MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
+          maxNativePreviewTileCollisionShapesAggregate:
+            MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES_AGGREGATE,
           maxNativePreviewRegionCells: MAX_PREVIEW_REGION_CELLS,
           maxNativePreviewLayers: MAX_PREVIEW_LAYERS,
           maxNativePreviewTileDraws: MAX_PREVIEW_TILE_DRAWS,
@@ -3100,8 +3111,24 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 .optional(),
               objectIds:
                 nativePreviewObjectIdsInputSchema.optional(),
+              tileObjectCollision: z
+                .boolean()
+                .optional(),
             })
             .strict()
+            .superRefine((value, context) => {
+              if (
+                value.tileObjectCollision === true &&
+                value.objectIds === undefined
+              ) {
+                context.addIssue({
+                  code: "custom",
+                  message:
+                    "overlays.tileObjectCollision requires overlays.objectIds",
+                  path: ["tileObjectCollision"],
+                });
+              }
+            })
             .optional(),
         })
         .strict(),
@@ -3128,6 +3155,13 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   ...(overlays.objectIds === undefined
                     ? {}
                     : { objectIds: overlays.objectIds }),
+                  ...(overlays.tileObjectCollision ===
+                  undefined
+                    ? {}
+                    : {
+                        tileObjectCollision:
+                          overlays.tileObjectCollision,
+                      }),
                 };
           const rendered = await maps.renderPreview({
             mapPath,

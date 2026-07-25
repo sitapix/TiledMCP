@@ -187,9 +187,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:d5291060a89a3dd93693b596cf57d019bba1ad9039acf699f52aeef05a8702dd",
+    "revision": "sha256:f3f2d3f61176e4172dc9cb84c5d374e511b6ddaaa48ab12836f82f6ad2592817",
     "serverVersion": "0.0.1",
-    "size": 63244
+    "size": 64434
   },
   "annotations": {
     "audience": [
@@ -201,7 +201,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 63244,
+  "size": 64434,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -209,7 +209,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3841 UTF-8 bytes, revision `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`.
 
-Content contract: `text`, 63244 UTF-8 bytes, revision `sha256:d5291060a89a3dd93693b596cf57d019bba1ad9039acf699f52aeef05a8702dd`.
+Content contract: `text`, 64434 UTF-8 bytes, revision `sha256:f3f2d3f61176e4172dc9cb84c5d374e511b6ddaaa48ab12836f82f6ad2592817`.
 
 Resource templates: none.
 
@@ -8668,6 +8668,14 @@ Output schema:
                   "const": 4,
                   "type": "number"
                 },
+                "maxNativePreviewTileCollisionShapes": {
+                  "const": 128,
+                  "type": "number"
+                },
+                "maxNativePreviewTileCollisionShapesAggregate": {
+                  "const": 1024,
+                  "type": "number"
+                },
                 "maxNativePreviewTileDraws": {
                   "const": 250000,
                   "type": "number"
@@ -8999,6 +9007,8 @@ Output schema:
                 "maxNativePreviewObjects",
                 "maxNativePreviewObjectCurveSegments",
                 "maxNativePreviewObjectCurveSegmentsAggregate",
+                "maxNativePreviewTileCollisionShapes",
+                "maxNativePreviewTileCollisionShapesAggregate",
                 "maxNativePreviewRegionCells",
                 "maxNativePreviewLayers",
                 "maxNativePreviewTileDraws",
@@ -9488,7 +9498,7 @@ Output schema:
                       "type": "string"
                     },
                     "profile": {
-                      "const": "explicit-basic-object-geometry-v3",
+                      "const": "explicit-basic-object-geometry-v4",
                       "type": "string"
                     },
                     "quantization": {
@@ -9507,6 +9517,10 @@ Output schema:
                         },
                         {
                           "const": "tile-frame-only",
+                          "type": "string"
+                        },
+                        {
+                          "const": "tile-frame-and-collision",
                           "type": "string"
                         }
                       ],
@@ -9561,6 +9575,79 @@ Output schema:
                       ],
                       "type": "array"
                     },
+                    "tileObjectCollision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "curveSegmentPlanning": {
+                          "const": "affine-spectral-norm-output-radius",
+                          "type": "string"
+                        },
+                        "fillMode": {
+                          "const": "stretch-only-fail-closed",
+                          "type": "string"
+                        },
+                        "flipFlags": {
+                          "const": "applied-like-tile-image",
+                          "type": "string"
+                        },
+                        "groupMetadata": {
+                          "const": "position-draworder-color-visibility-ignored",
+                          "type": "string"
+                        },
+                        "hiddenCollisionObjects": {
+                          "const": "drawn",
+                          "type": "string"
+                        },
+                        "markerPrecedence": {
+                          "const": "single-shape-marker-only-fail-closed-on-conflict",
+                          "type": "string"
+                        },
+                        "nestedTileOrTemplateObjects": {
+                          "const": "fail-closed",
+                          "type": "string"
+                        },
+                        "offscreenPolicy": {
+                          "const": "clip-after-tessellation",
+                          "type": "string"
+                        },
+                        "pointObjects": {
+                          "const": "fixed-5px-output-crosshair",
+                          "type": "string"
+                        },
+                        "selection": {
+                          "const": "explicit-tile-object-selection-opt-in",
+                          "type": "string"
+                        },
+                        "source": {
+                          "const": "tiled-1.12-show-tile-collision-shapes",
+                          "type": "string"
+                        },
+                        "styling": {
+                          "const": "shared-geometry-cyan-outline-no-fill",
+                          "type": "string"
+                        },
+                        "transform": {
+                          "const": "tile-image-fragment-affine-with-inner-shape-rotation",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "selection",
+                        "transform",
+                        "flipFlags",
+                        "groupMetadata",
+                        "hiddenCollisionObjects",
+                        "markerPrecedence",
+                        "pointObjects",
+                        "curveSegmentPlanning",
+                        "offscreenPolicy",
+                        "nestedTileOrTemplateObjects",
+                        "fillMode",
+                        "styling"
+                      ],
+                      "type": "object"
+                    },
                     "tileObjectFrames": {
                       "additionalProperties": false,
                       "properties": {
@@ -9569,8 +9656,8 @@ Output schema:
                           "type": "string"
                         },
                         "collisionShapes": {
-                          "const": false,
-                          "type": "boolean"
+                          "const": "explicit-opt-in",
+                          "type": "string"
                         },
                         "danglingGidPolicy": {
                           "const": "fail-closed",
@@ -9642,6 +9729,7 @@ Output schema:
                     "quantization",
                     "curveTessellation",
                     "tileObjectFrames",
+                    "tileObjectCollision",
                     "workBudget",
                     "limitations"
                   ],
@@ -9663,6 +9751,10 @@ Output schema:
                     },
                     {
                       "const": "objectIds",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tileObjectCollision",
                       "type": "string"
                     }
                   ],
@@ -26801,6 +26893,9 @@ Input schema:
           "minItems": 1,
           "type": "array",
           "uniqueItems": true
+        },
+        "tileObjectCollision": {
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -27353,6 +27448,11 @@ Output schema:
                           "clipped": {
                             "type": "boolean"
                           },
+                          "collisionObjectCount": {
+                            "maximum": 128,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "layerId": {
                             "exclusiveMinimum": 0,
                             "maximum": 9007199254740991,
@@ -27370,7 +27470,8 @@ Output schema:
                             "enum": [
                               "geometry-outline",
                               "text-box-only",
-                              "tile-frame-only"
+                              "tile-frame-only",
+                              "tile-frame-and-collision"
                             ],
                             "type": "string"
                           },
@@ -27416,7 +27517,7 @@ Output schema:
                       "type": "string"
                     },
                     "profile": {
-                      "const": "explicit-basic-object-geometry-v3",
+                      "const": "explicit-basic-object-geometry-v4",
                       "type": "string"
                     },
                     "quantization": {
@@ -27441,6 +27542,79 @@ Output schema:
                       "const": "geometry-cyan-v1",
                       "type": "string"
                     },
+                    "tileObjectCollision": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "curveSegmentPlanning": {
+                          "const": "affine-spectral-norm-output-radius",
+                          "type": "string"
+                        },
+                        "fillMode": {
+                          "const": "stretch-only-fail-closed",
+                          "type": "string"
+                        },
+                        "flipFlags": {
+                          "const": "applied-like-tile-image",
+                          "type": "string"
+                        },
+                        "groupMetadata": {
+                          "const": "position-draworder-color-visibility-ignored",
+                          "type": "string"
+                        },
+                        "hiddenCollisionObjects": {
+                          "const": "drawn",
+                          "type": "string"
+                        },
+                        "markerPrecedence": {
+                          "const": "single-shape-marker-only-fail-closed-on-conflict",
+                          "type": "string"
+                        },
+                        "nestedTileOrTemplateObjects": {
+                          "const": "fail-closed",
+                          "type": "string"
+                        },
+                        "offscreenPolicy": {
+                          "const": "clip-after-tessellation",
+                          "type": "string"
+                        },
+                        "pointObjects": {
+                          "const": "fixed-5px-output-crosshair",
+                          "type": "string"
+                        },
+                        "selection": {
+                          "const": "explicit-tile-object-selection-opt-in",
+                          "type": "string"
+                        },
+                        "source": {
+                          "const": "tiled-1.12-show-tile-collision-shapes",
+                          "type": "string"
+                        },
+                        "styling": {
+                          "const": "shared-geometry-cyan-outline-no-fill",
+                          "type": "string"
+                        },
+                        "transform": {
+                          "const": "tile-image-fragment-affine-with-inner-shape-rotation",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "selection",
+                        "transform",
+                        "flipFlags",
+                        "groupMetadata",
+                        "hiddenCollisionObjects",
+                        "markerPrecedence",
+                        "pointObjects",
+                        "curveSegmentPlanning",
+                        "offscreenPolicy",
+                        "nestedTileOrTemplateObjects",
+                        "fillMode",
+                        "styling"
+                      ],
+                      "type": "object"
+                    },
                     "tileObjectFrames": {
                       "additionalProperties": false,
                       "properties": {
@@ -27449,8 +27623,8 @@ Output schema:
                           "type": "string"
                         },
                         "collisionShapes": {
-                          "const": false,
-                          "type": "boolean"
+                          "const": "explicit-opt-in",
+                          "type": "string"
                         },
                         "danglingGidPolicy": {
                           "const": "fail-closed",
@@ -27511,6 +27685,7 @@ Output schema:
                     "quantization",
                     "curveTessellation",
                     "tileObjectFrames",
+                    "tileObjectCollision",
                     "selectedObjectCount",
                     "renderedObjectCount",
                     "entries"

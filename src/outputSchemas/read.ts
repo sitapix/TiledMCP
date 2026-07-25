@@ -23,7 +23,9 @@ import {
   NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
   NATIVE_PREVIEW_OBJECT_STYLE,
   NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+  NATIVE_PREVIEW_TILE_OBJECT_COLLISION,
   NATIVE_PREVIEW_TILE_OBJECT_FRAMES,
+  MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
 } from "../images/mapPreview.js";
 import {
   DEFAULT_TILE_RENDER_COLUMNS,
@@ -1037,11 +1039,32 @@ const nativePreviewObjectDebugEntryOutputSchema = z
       "geometry-outline",
       "text-box-only",
       "tile-frame-only",
+      "tile-frame-and-collision",
     ]),
     rendered: z.boolean(),
     clipped: z.boolean(),
+    collisionObjectCount:
+      nonnegativeIntegerOutputSchema
+        .max(
+          MAX_NATIVE_PREVIEW_TILE_COLLISION_SHAPES,
+        )
+        .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((entry, context) => {
+    if (
+      (entry.collisionObjectCount !== undefined) !==
+      (entry.representation ===
+        "tile-frame-and-collision")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "collisionObjectCount must be present exactly for tile-frame-and-collision entries",
+        path: ["collisionObjectCount"],
+      });
+    }
+  });
 
 const nativePreviewObjectDebugOutputSchema = z
   .object({
@@ -1142,7 +1165,52 @@ const nativePreviewObjectDebugOutputSchema = z
           NATIVE_PREVIEW_TILE_OBJECT_FRAMES.danglingGidPolicy,
         ),
         imageRendering: z.literal(false),
-        collisionShapes: z.literal(false),
+        collisionShapes: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_FRAMES.collisionShapes,
+        ),
+      })
+      .strict(),
+    tileObjectCollision: z
+      .object({
+        source: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.source,
+        ),
+        selection: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.selection,
+        ),
+        transform: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.transform,
+        ),
+        flipFlags: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.flipFlags,
+        ),
+        groupMetadata: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.groupMetadata,
+        ),
+        hiddenCollisionObjects: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.hiddenCollisionObjects,
+        ),
+        markerPrecedence: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.markerPrecedence,
+        ),
+        pointObjects: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.pointObjects,
+        ),
+        curveSegmentPlanning: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.curveSegmentPlanning,
+        ),
+        offscreenPolicy: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.offscreenPolicy,
+        ),
+        nestedTileOrTemplateObjects: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.nestedTileOrTemplateObjects,
+        ),
+        fillMode: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.fillMode,
+        ),
+        styling: z.literal(
+          NATIVE_PREVIEW_TILE_OBJECT_COLLISION.styling,
+        ),
       })
       .strict(),
     selectedObjectCount:
@@ -1471,16 +1539,17 @@ const nativePreviewResultOutputSchema = z
       }
       objectIds.add(entry.objectId);
 
-      const expectedRepresentation =
+      const validRepresentation =
         entry.shape === "text"
-          ? "text-box-only"
+          ? entry.representation === "text-box-only"
           : entry.shape === "tile"
-            ? "tile-frame-only"
-            : "geometry-outline";
-      if (
-        entry.representation !==
-        expectedRepresentation
-      ) {
+            ? entry.representation ===
+                "tile-frame-only" ||
+              entry.representation ===
+                "tile-frame-and-collision"
+            : entry.representation ===
+              "geometry-outline";
+      if (!validRepresentation) {
         context.addIssue({
           code: "custom",
           message:

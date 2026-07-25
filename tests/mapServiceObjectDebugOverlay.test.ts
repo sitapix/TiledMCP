@@ -79,7 +79,7 @@ describe("MapService native object debug overlay", () => {
     const metadata = objectDebugOf(rendered.result);
 
     expect(metadata).toMatchObject({
-      profile: "explicit-basic-object-geometry-v3",
+      profile: "explicit-basic-object-geometry-v4",
       style: "geometry-cyan-v1",
       visibilityPolicy:
         "explicit-ignore-object-and-layer-visibility-opacity",
@@ -174,7 +174,7 @@ describe("MapService native object debug overlay", () => {
       scale: 1,
     });
     expect(objectDebugOf(rendered.result)).toMatchObject({
-      profile: "explicit-basic-object-geometry-v3",
+      profile: "explicit-basic-object-geometry-v4",
       selectedObjectCount: 0,
       renderedObjectCount: 0,
       entries: [],
@@ -369,7 +369,7 @@ describe("MapService native object debug overlay", () => {
       overlays: { objectIds: [12, 11, 13] },
     });
     expect(objectDebugOf(rendered.result)).toMatchObject({
-      profile: "explicit-basic-object-geometry-v3",
+      profile: "explicit-basic-object-geometry-v4",
       selectedObjectCount: 3,
       renderedObjectCount: 3,
       entries: [
@@ -565,6 +565,319 @@ describe("MapService native object debug overlay", () => {
     expect(pixel(decoded, 24, 24)).toEqual(cyan);
     expect(pixel(decoded, 40, 40)).toEqual(cyan);
   });
+
+  it("draws opt-in tile collision shapes through the tile image transform", async () => {
+    const map = supportedMap();
+    map.tilesets = [
+      { firstgid: 1, source: "../tiles/frame.tsj" },
+    ];
+    objectLayerOf(map).objects = [
+      {
+        gid: 1,
+        height: 16,
+        id: 11,
+        name: "Crate",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 16,
+        x: 16,
+        y: 32,
+      },
+      {
+        // Horizontally flipped and stretched to twice the tile width; the
+        // collision rectangle must mirror and scale with the image.
+        gid: 0x80000001,
+        height: 16,
+        id: 12,
+        name: "Wide",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 32,
+        x: 16,
+        y: 32,
+      },
+      pointObject(13, 60, 60),
+    ];
+    map.nextobjectid = 14;
+    await writeTileset(root, "frame.tsj", {
+      tiles: [
+        {
+          id: 0,
+          objectgroup: {
+            draworder: "index",
+            id: 2,
+            name: "",
+            objects: [
+              {
+                height: 8,
+                id: 1,
+                name: "",
+                rotation: 0,
+                type: "",
+                visible: true,
+                width: 8,
+                x: 4,
+                y: 4,
+              },
+              {
+                height: 0,
+                id: 2,
+                name: "",
+                point: true,
+                rotation: 0,
+                type: "",
+                visible: false,
+                width: 0,
+                x: 8,
+                y: 2,
+              },
+            ],
+            opacity: 1,
+            type: "objectgroup",
+            visible: true,
+            x: 0,
+            y: 0,
+          },
+        },
+      ],
+    });
+    await writeMap(root, map);
+
+    const rendered = await service.renderPreview({
+      mapPath: MAP_PATH,
+      scale: 1,
+      overlays: {
+        objectIds: [11, 12, 13],
+        tileObjectCollision: true,
+      },
+    });
+    const metadata = objectDebugOf(rendered.result);
+    expect(metadata).toMatchObject({
+      selectedObjectCount: 3,
+      entries: [
+        {
+          objectId: 11,
+          shape: "tile",
+          representation:
+            "tile-frame-and-collision",
+          collisionObjectCount: 2,
+        },
+        {
+          objectId: 12,
+          shape: "tile",
+          representation:
+            "tile-frame-and-collision",
+          collisionObjectCount: 2,
+        },
+        {
+          objectId: 13,
+          shape: "point",
+          representation: "geometry-outline",
+        },
+      ],
+    });
+    const entries = (
+      metadata as unknown as {
+        entries: Array<Record<string, unknown>>;
+      }
+    ).entries;
+    expect(entries[2]).not.toHaveProperty(
+      "collisionObjectCount",
+    );
+
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [34, 211, 238, 255] as const;
+    // Object 11: unflipped 16x16 frame at (16,16); the 8x8 collision
+    // rectangle at tile-local (4,4) lands at (20,20)-(28,28).
+    expect(pixel(decoded, 20, 20)).toEqual(cyan);
+    expect(pixel(decoded, 28, 28)).toEqual(cyan);
+    // The hidden point collision object is still drawn, as in Tiled.
+    expect(pixel(decoded, 24, 18)).toEqual(cyan);
+    expect(pixel(decoded, 26, 18)).toEqual(cyan);
+    // Object 12: the H-flip mirrors tile-local x 4..12 to 4..12 about the
+    // center and the 2x stretch doubles it: (16+8..16+24, 32-12..32-4).
+    expect(pixel(decoded, 24, 20)).toEqual(cyan);
+    expect(pixel(decoded, 40, 28)).toEqual(cyan);
+  });
+
+  it("reports zero collision shapes for a tile without an objectgroup", async () => {
+    const map = supportedMap();
+    map.tilesets = [
+      { firstgid: 1, source: "../tiles/frame.tsj" },
+    ];
+    objectLayerOf(map).objects = [
+      {
+        gid: 1,
+        height: 16,
+        id: 11,
+        name: "Plain",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 16,
+        x: 16,
+        y: 32,
+      },
+    ];
+    map.nextobjectid = 12;
+    await writeTileset(root, "frame.tsj", {});
+    await writeMap(root, map);
+
+    const rendered = await service.renderPreview({
+      mapPath: MAP_PATH,
+      scale: 1,
+      overlays: {
+        objectIds: [11],
+        tileObjectCollision: true,
+      },
+    });
+    expect(
+      objectDebugOf(rendered.result).entries[0],
+    ).toMatchObject({
+      representation: "tile-frame-and-collision",
+      collisionObjectCount: 0,
+      rendered: true,
+    });
+  });
+
+  it("rejects tile collision without an explicit object selection", async () => {
+    await expect(
+      service.renderPreview({
+        mapPath: MAP_PATH,
+        scale: 1,
+        overlays: { tileObjectCollision: true },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+
+  it.each([
+    {
+      name: "nested tile object",
+      collisionObject: {
+        gid: 1,
+        height: 8,
+        id: 1,
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+      tileset: {},
+      code: "UNSUPPORTED_OBJECT_PROFILE",
+    },
+    {
+      name: "unknown member",
+      collisionObject: {
+        height: 8,
+        id: 1,
+        vendorCollision: true,
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+      tileset: {},
+      code: "INVALID_DOCUMENT",
+    },
+    {
+      name: "conflicting markers",
+      collisionObject: {
+        ellipse: true,
+        height: 8,
+        id: 1,
+        point: true,
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+      tileset: {},
+      code: "INVALID_DOCUMENT",
+    },
+    {
+      name: "negative extent",
+      collisionObject: {
+        height: -4,
+        id: 1,
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+      tileset: {},
+      code: "INVALID_DOCUMENT",
+    },
+    {
+      name: "non-default fillmode",
+      collisionObject: {
+        height: 8,
+        id: 1,
+        width: 8,
+        x: 0,
+        y: 0,
+      },
+      tileset: {
+        fillmode: "preserve-aspect-fit",
+      },
+      code: "UNSUPPORTED_RENDER_FEATURE",
+    },
+  ])(
+    "fails closed on tile collision with a $name",
+    async ({ collisionObject, tileset, code }) => {
+      const map = supportedMap();
+      map.tilesets = [
+        {
+          firstgid: 1,
+          source: "../tiles/frame.tsj",
+        },
+      ];
+      objectLayerOf(map).objects = [
+        {
+          gid: 1,
+          height: 16,
+          id: 11,
+          name: "Crate",
+          rotation: 0,
+          type: "",
+          visible: true,
+          width: 16,
+          x: 16,
+          y: 32,
+        },
+      ];
+      map.nextobjectid = 12;
+      await writeTileset(root, "frame.tsj", {
+        ...tileset,
+        tiles: [
+          {
+            id: 0,
+            objectgroup: {
+              draworder: "index",
+              name: "",
+              objects: [collisionObject],
+              opacity: 1,
+              type: "objectgroup",
+              visible: true,
+              x: 0,
+              y: 0,
+            },
+          },
+        ],
+      });
+      await writeMap(root, map);
+
+      await expect(
+        service.renderPreview({
+          mapPath: MAP_PATH,
+          scale: 1,
+          overlays: {
+            objectIds: [11],
+            tileObjectCollision: true,
+          },
+        }),
+      ).rejects.toMatchObject({ code });
+    },
+  );
 
   it.each([
     {
