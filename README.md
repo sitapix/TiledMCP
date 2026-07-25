@@ -1116,8 +1116,9 @@ checkpoint restore。架构与 roadmap
   图片或既有图层内容。无限地图、压缩/chunk tile layer 和多图层批量创建仍不支持。
 - `tiled_get_tileset` 返回有界 semantic projection：per-tile 标量自定义属性逐字
   回读（复杂/enum/超长条目以 `valueOmitted` 标记，每 tile ≤128 条；tileset 级与
-  wang-set 属性仍只给数量），collision 只给对象数，Wang 只给 set 概览，不伪装成
-  完整 TSJ。tile metadata 默认
+  wang-set 属性仍只给数量），collision 回读有界形状几何（六类基础形状精确坐标，
+  gid/template 与超长路径以省略标记披露，另附 objectCount），Wang 只给 set 概览，
+  不伪装成完整 TSJ。tile metadata 默认
   64 项、最多 128 项并按 local ID 分页。响应中的依赖 revision 只包含所选 TSJ 的
   `source.assetId` / `source.revision`，不复制地图的完整 `dependencyRevisions`；
   准备编辑前应从 map summary/region 取得完整 revision 前提。外部 TSJ 的 `name`

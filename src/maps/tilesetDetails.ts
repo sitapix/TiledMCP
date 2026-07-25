@@ -67,6 +67,8 @@ interface TileMetadataSummary {
   propertiesTruncated?: true;
   collision?: {
     objectCount: number;
+    shapes: ProjectedCollisionShape[];
+    shapesTruncated?: true;
   };
   animation?: {
     frameCount: number;
@@ -88,6 +90,64 @@ export interface TilesetTileClass {
   source: "type" | "class";
   truncated: boolean;
 }
+
+export type ProjectedCollisionShape =
+  | {
+      index: number;
+      id?: number;
+      shape:
+        | "rectangle"
+        | "point"
+        | "ellipse"
+        | "capsule"
+        | "text";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      rotation: number;
+      name?: string;
+      nameTruncated?: true;
+      className?: string;
+      classNameTruncated?: true;
+      propertyCount?: number;
+      /**
+       * Text collision shapes only carry their layout bounds; Tiled itself
+       * draws them as plain rectangles in collision rendering.
+       */
+      textBoundsOnly?: true;
+    }
+  | {
+      index: number;
+      id?: number;
+      shape: "polygon" | "polyline";
+      x: number;
+      y: number;
+      rotation: number;
+      points?: Array<{ x: number; y: number }>;
+      pointCount: number;
+      /**
+       * Paths beyond the 256-point bound report their count without the
+       * coordinates rather than an approximated geometry.
+       */
+      pointsOmitted?: true;
+      name?: string;
+      nameTruncated?: true;
+      className?: string;
+      classNameTruncated?: true;
+      propertyCount?: number;
+    }
+  | {
+      index: number;
+      id?: number;
+      geometryOmitted: true;
+      reason: "tile-object" | "template";
+      name?: string;
+      nameTruncated?: true;
+      className?: string;
+      classNameTruncated?: true;
+      propertyCount?: number;
+    };
 
 export function readTilesetTileClass(
   tile: JsonObject,
@@ -329,7 +389,8 @@ export function summarizeTilesetDocument(
       tileClassField: "type-with-class-compatibility-fallback",
       properties:
         "tile-scalar-values-with-omission-markers-others-counts-only",
-      collision: "object-counts-only",
+      collision:
+        "bounded-shape-geometry-with-omission-markers",
       wangSets: "overview-only",
       sourceImage: "declared-metadata-only",
     },
@@ -512,7 +573,7 @@ function summarizeCollision(
   tileContext: string,
   path: string,
   budget: TilesetScanBudget,
-): { objectCount: number } {
+): NonNullable<TileMetadataSummary["collision"]> {
   const objectGroup = expectObject(
     value,
     `${tileContext}.objectgroup`,
@@ -535,7 +596,346 @@ function summarizeCollision(
     "collision objects",
     path,
   );
-  return { objectCount: objects.length };
+  const shapes: ProjectedCollisionShape[] = [];
+  let shapesTruncated = false;
+  for (const [
+    index,
+    objectValue,
+  ] of objects.entries()) {
+    if (
+      shapes.length >=
+      MAX_PROJECTED_COLLISION_SHAPES
+    ) {
+      shapesTruncated = true;
+      break;
+    }
+    shapes.push(
+      projectCollisionShape(
+        objectValue,
+        `${tileContext}.objectgroup.objects[${index}]`,
+        path,
+        index,
+      ),
+    );
+  }
+  return {
+    objectCount: objects.length,
+    shapes,
+    ...(shapesTruncated
+      ? { shapesTruncated: true as const }
+      : {}),
+  };
+}
+
+const MAX_PROJECTED_COLLISION_SHAPES = 128;
+const MAX_PROJECTED_COLLISION_PATH_POINTS = 256;
+const MAX_COLLISION_COORDINATE = 1_000_000_000;
+// Mirrors the native preview overlay's fail-closed collision profile; gid
+// and template become omission markers here instead of hard errors so the
+// read-back stays usable on files the overlay cannot render.
+const COLLISION_READBACK_ALLOWED_KEYS = new Set([
+  "capsule",
+  "class",
+  "ellipse",
+  "gid",
+  "height",
+  "id",
+  "name",
+  "opacity",
+  "point",
+  "polygon",
+  "polyline",
+  "properties",
+  "rotation",
+  "template",
+  "text",
+  "type",
+  "visible",
+  "width",
+  "x",
+  "y",
+]);
+
+function projectCollisionShape(
+  value: JsonValue,
+  context: string,
+  path: string,
+  index: number,
+): ProjectedCollisionShape {
+  const object = expectObject(value, context);
+  const unknownKey = Object.keys(object).find(
+    (key) =>
+      !COLLISION_READBACK_ALLOWED_KEYS.has(key),
+  );
+  if (unknownKey !== undefined) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} contains unsupported member ${unknownKey}.`,
+      { path, member: unknownKey },
+    );
+  }
+  const identity: {
+    id?: number;
+    name?: string;
+    nameTruncated?: true;
+    className?: string;
+    classNameTruncated?: true;
+    propertyCount?: number;
+  } = {};
+  if (object.id !== undefined) {
+    const id = expectInteger(
+      object.id,
+      `${context}.id`,
+    );
+    if (id < 0) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.id must be nonnegative.`,
+        { path, index },
+      );
+    }
+    identity.id = id;
+  }
+  if (
+    object.name !== undefined &&
+    object.name !== ""
+  ) {
+    const name = boundedRequiredString(
+      object.name,
+      `${context}.name`,
+    );
+    identity.name = name.value;
+    if (name.truncated) {
+      identity.nameTruncated = true;
+    }
+  }
+  const tileClass = readTilesetTileClass(
+    object,
+    context,
+  );
+  if (
+    tileClass !== undefined &&
+    tileClass.displayName !== ""
+  ) {
+    identity.className = tileClass.displayName;
+    if (tileClass.truncated) {
+      identity.classNameTruncated = true;
+    }
+  }
+  if (object.properties !== undefined) {
+    const properties = expectArray(
+      object.properties,
+      `${context}.properties`,
+    );
+    if (properties.length > 0) {
+      identity.propertyCount = properties.length;
+    }
+  }
+  for (const feature of [
+    "gid",
+    "template",
+  ] as const) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        object,
+        feature,
+      )
+    ) {
+      return {
+        index,
+        ...identity,
+        geometryOmitted: true,
+        reason:
+          feature === "gid"
+            ? "tile-object"
+            : "template",
+      };
+    }
+  }
+  const markers = [
+    "polygon",
+    "polyline",
+    "ellipse",
+    "capsule",
+    "point",
+    "text",
+  ].filter((marker) =>
+    Object.prototype.hasOwnProperty.call(
+      object,
+      marker,
+    ),
+  );
+  if (markers.length > 1) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} contains conflicting shape markers.`,
+      { path, index },
+    );
+  }
+  const marker = markers[0];
+  const readCoordinate = (
+    field: "x" | "y" | "rotation",
+  ): number => {
+    const raw = object[field];
+    if (raw === undefined) {
+      return 0;
+    }
+    if (
+      typeof raw !== "number" ||
+      !Number.isFinite(raw) ||
+      Math.abs(raw) > MAX_COLLISION_COORDINATE
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${field} must be a bounded finite number.`,
+        { path, field },
+      );
+    }
+    return raw;
+  };
+  const readExtent = (
+    field: "width" | "height",
+  ): number => {
+    const raw = object[field];
+    if (raw === undefined) {
+      return 0;
+    }
+    if (
+      typeof raw !== "number" ||
+      !Number.isFinite(raw) ||
+      raw < 0 ||
+      raw > MAX_COLLISION_COORDINATE
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${field} must be a bounded nonnegative number.`,
+        { path, field },
+      );
+    }
+    return raw;
+  };
+  const x = readCoordinate("x");
+  const y = readCoordinate("y");
+  const rotation = readCoordinate("rotation");
+  if (
+    marker === "polygon" ||
+    marker === "polyline"
+  ) {
+    const points = expectArray(
+      object[marker],
+      `${context}.${marker}`,
+    );
+    const minimum = marker === "polygon" ? 3 : 2;
+    if (points.length < minimum) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${marker} must contain at least ${minimum} points.`,
+        { path, index },
+      );
+    }
+    if (
+      points.length >
+      MAX_PROJECTED_COLLISION_PATH_POINTS
+    ) {
+      return {
+        index,
+        ...identity,
+        shape: marker,
+        x,
+        y,
+        rotation,
+        pointCount: points.length,
+        pointsOmitted: true,
+      };
+    }
+    return {
+      index,
+      ...identity,
+      shape: marker,
+      x,
+      y,
+      rotation,
+      pointCount: points.length,
+      points: points.map(
+        (pointValue, pointIndex) => {
+          const point = expectObject(
+            pointValue,
+            `${context}.${marker}[${pointIndex}]`,
+          );
+          const px = point.x;
+          const py = point.y;
+          if (
+            typeof px !== "number" ||
+            typeof py !== "number" ||
+            !Number.isFinite(px) ||
+            !Number.isFinite(py) ||
+            Math.abs(px) >
+              MAX_COLLISION_COORDINATE ||
+            Math.abs(py) >
+              MAX_COLLISION_COORDINATE
+          ) {
+            throw new TiledMcpError(
+              "INVALID_DOCUMENT",
+              `${context}.${marker}[${pointIndex}] must contain bounded finite x and y.`,
+              { path, index, pointIndex },
+            );
+          }
+          return { x: px, y: py };
+        },
+      ),
+    };
+  }
+  const width = readExtent("width");
+  const height = readExtent("height");
+  if (marker === "text") {
+    expectObject(
+      object.text,
+      `${context}.text`,
+    );
+    return {
+      index,
+      ...identity,
+      shape: "text",
+      x,
+      y,
+      width,
+      height,
+      rotation,
+      textBoundsOnly: true,
+    };
+  }
+  if (marker !== undefined) {
+    if (object[marker] !== true) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.${marker} must be true when present.`,
+        { path, feature: marker },
+      );
+    }
+    return {
+      index,
+      ...identity,
+      shape: marker as
+        | "point"
+        | "ellipse"
+        | "capsule",
+      x,
+      y,
+      width,
+      height,
+      rotation,
+    };
+  }
+  return {
+    index,
+    ...identity,
+    shape: "rectangle",
+    x,
+    y,
+    width,
+    height,
+    rotation,
+  };
 }
 
 function summarizeAnimation(

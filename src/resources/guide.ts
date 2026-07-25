@@ -406,8 +406,11 @@ collision dock: replacement object ids continue after the existing group's
 highest id, an existing container's other members are preserved verbatim,
 and a new container is written with canonical \`draworder:"index"\`
 members. Whole replacement discards the previous objects including any
-custom properties they carried; read the current shapes first via the
-native preview's \`overlays.tileObjectCollision\` outlines when in doubt.
+custom properties they carried; read the current shapes first —
+\`tiled_get_tileset\` projects each tile's collision geometry exactly
+(six basic shapes with coordinates; gid/template objects and paths beyond
+256 points appear as explicit omission markers), and the native preview's
+\`overlays.tileObjectCollision\` outlines confirm them visually.
 Tile geometry, the atlas image, and GID layout stay outside this tool.
 Before writing
 properties, read them back with \`tiled_get_tileset\`: each paged tile

@@ -127,6 +127,85 @@ const tilesetRenderingOutputSchema = z
   })
   .strict();
 
+const collisionShapeIdentityShape = {
+  index: nonnegativeIntegerOutputSchema,
+  id: nonnegativeIntegerOutputSchema.optional(),
+  name: z.string().optional(),
+  nameTruncated: z.literal(true).optional(),
+  className: z.string().optional(),
+  classNameTruncated: z
+    .literal(true)
+    .optional(),
+  propertyCount:
+    nonnegativeIntegerOutputSchema.optional(),
+} as const;
+
+const collisionCoordinateOutputSchema = z
+  .number()
+  .min(-1_000_000_000)
+  .max(1_000_000_000);
+
+const projectedCollisionShapeOutputSchema =
+  z.union([
+    z
+      .object({
+        ...collisionShapeIdentityShape,
+        shape: z.enum([
+          "rectangle",
+          "point",
+          "ellipse",
+          "capsule",
+          "text",
+        ]),
+        x: collisionCoordinateOutputSchema,
+        y: collisionCoordinateOutputSchema,
+        width: collisionCoordinateOutputSchema,
+        height: collisionCoordinateOutputSchema,
+        rotation:
+          collisionCoordinateOutputSchema,
+        textBoundsOnly: z
+          .literal(true)
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...collisionShapeIdentityShape,
+        shape: z.enum(["polygon", "polyline"]),
+        x: collisionCoordinateOutputSchema,
+        y: collisionCoordinateOutputSchema,
+        rotation:
+          collisionCoordinateOutputSchema,
+        pointCount:
+          nonnegativeIntegerOutputSchema,
+        points: z
+          .array(
+            z
+              .object({
+                x: collisionCoordinateOutputSchema,
+                y: collisionCoordinateOutputSchema,
+              })
+              .strict(),
+          )
+          .max(256)
+          .optional(),
+        pointsOmitted: z
+          .literal(true)
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        ...collisionShapeIdentityShape,
+        geometryOmitted: z.literal(true),
+        reason: z.enum([
+          "tile-object",
+          "template",
+        ]),
+      })
+      .strict(),
+  ]);
+
 const tilesetMetadataItemOutputSchema = z
   .object({
     localId: nonnegativeIntegerOutputSchema,
@@ -151,6 +230,14 @@ const tilesetMetadataItemOutputSchema = z
       .object({
         objectCount:
           nonnegativeIntegerOutputSchema,
+        shapes: z
+          .array(
+            projectedCollisionShapeOutputSchema,
+          )
+          .max(128),
+        shapesTruncated: z
+          .literal(true)
+          .optional(),
       })
       .strict()
       .optional(),
@@ -223,7 +310,7 @@ const tilesetDetailSuccessOutputSchema = z
           "tile-scalar-values-with-omission-markers-others-counts-only",
         ),
         collision: z.literal(
-          "object-counts-only",
+          "bounded-shape-geometry-with-omission-markers",
         ),
         wangSets: z.literal("overview-only"),
         sourceImage: z.literal(

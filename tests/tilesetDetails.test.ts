@@ -330,6 +330,224 @@ describe("tileset detail safety limits", () => {
     ).toBe(128);
   });
 
+  it("projects collision shape geometry with omission markers", () => {
+    const document = baseTileset();
+    document.tiles = [
+      {
+        id: 0,
+        objectgroup: {
+          draworder: "index",
+          name: "",
+          objects: [
+            {
+              height: 6,
+              id: 1,
+              name: "wall",
+              rotation: 15,
+              type: "solid",
+              visible: true,
+              width: 10,
+              x: 1,
+              y: 2,
+            },
+            {
+              height: 0,
+              id: 2,
+              name: "",
+              polygon: [
+                { x: 0, y: 0 },
+                { x: 8, y: 0 },
+                { x: 4, y: 8 },
+              ],
+              rotation: 0,
+              type: "",
+              visible: true,
+              width: 0,
+              x: 0,
+              y: 0,
+            },
+            {
+              ellipse: true,
+              height: 4,
+              id: 3,
+              name: "",
+              rotation: 0,
+              type: "",
+              visible: true,
+              width: 4,
+              x: 6,
+              y: 6,
+            },
+            {
+              gid: 1,
+              height: 16,
+              id: 4,
+              name: "prop",
+              rotation: 0,
+              type: "",
+              visible: true,
+              width: 16,
+              x: 0,
+              y: 16,
+            },
+            {
+              height: 0,
+              id: 5,
+              name: "",
+              polyline: Array.from(
+                { length: 300 },
+                (_, i) => ({ x: i, y: i }),
+              ),
+              rotation: 0,
+              type: "",
+              visible: true,
+              width: 0,
+              x: 0,
+              y: 0,
+              properties: [
+                {
+                  name: "oneWay",
+                  type: "bool",
+                  value: true,
+                },
+              ],
+            },
+          ],
+          opacity: 1,
+          type: "objectgroup",
+          visible: true,
+          x: 0,
+          y: 0,
+        },
+      },
+    ];
+
+    const result = summarize(document);
+    const tile = (
+      result.tileMetadata as {
+        items: Array<Record<string, unknown>>;
+      }
+    ).items[0]!;
+    expect(tile.collision).toMatchObject({
+      objectCount: 5,
+      shapes: [
+        {
+          index: 0,
+          id: 1,
+          shape: "rectangle",
+          x: 1,
+          y: 2,
+          width: 10,
+          height: 6,
+          rotation: 15,
+          name: "wall",
+          className: "solid",
+        },
+        {
+          index: 1,
+          id: 2,
+          shape: "polygon",
+          pointCount: 3,
+          points: [
+            { x: 0, y: 0 },
+            { x: 8, y: 0 },
+            { x: 4, y: 8 },
+          ],
+        },
+        {
+          index: 2,
+          id: 3,
+          shape: "ellipse",
+          width: 4,
+          height: 4,
+        },
+        {
+          index: 3,
+          id: 4,
+          geometryOmitted: true,
+          reason: "tile-object",
+          name: "prop",
+        },
+        {
+          index: 4,
+          id: 5,
+          shape: "polyline",
+          pointCount: 300,
+          pointsOmitted: true,
+          propertyCount: 1,
+        },
+      ],
+    });
+    const shapes = (
+      tile.collision as {
+        shapes: Array<Record<string, unknown>>;
+      }
+    ).shapes;
+    expect(shapes[4]).not.toHaveProperty(
+      "points",
+    );
+    expect(result.projection).toMatchObject({
+      collision:
+        "bounded-shape-geometry-with-omission-markers",
+    });
+  });
+
+  it("fails closed on conflicting or malformed collision shapes", () => {
+    const document = baseTileset();
+    document.tiles = [
+      {
+        id: 0,
+        objectgroup: {
+          draworder: "index",
+          objects: [
+            {
+              ellipse: true,
+              point: true,
+              id: 1,
+              x: 0,
+              y: 0,
+            },
+          ],
+          type: "objectgroup",
+        },
+      },
+    ];
+    expect(() =>
+      summarize(document),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+        message: expect.stringContaining(
+          "conflicting shape markers",
+        ),
+      }),
+    );
+
+    document.tiles = [
+      {
+        id: 0,
+        objectgroup: {
+          draworder: "index",
+          objects: [
+            {
+              id: 1,
+              x: Number.NaN,
+              y: 0,
+            },
+          ],
+          type: "objectgroup",
+        },
+      },
+    ];
+    expect(() =>
+      summarize(document),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+  });
+
   it("keeps a normal projection within the 256 KiB serialized result limit", () => {
     const document = baseTileset();
     document.objectalignment = "center";

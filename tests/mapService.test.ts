@@ -874,7 +874,8 @@ describe("MapService", () => {
         tileClassField: "type-with-class-compatibility-fallback",
         properties:
           "tile-scalar-values-with-omission-markers-others-counts-only",
-        collision: "object-counts-only",
+        collision:
+          "bounded-shape-geometry-with-omission-markers",
         wangSets: "overview-only",
         sourceImage: "declared-metadata-only",
       },

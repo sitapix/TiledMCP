@@ -3227,7 +3227,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, collision counts and Wang-set overviews.",
+        "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

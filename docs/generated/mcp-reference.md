@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:44b8aa6db857ec193d4c2ee15cb016438f14badc95f792acf26a7dc2cbfdf673",
+    "revision": "sha256:42072018d8a3d7fca7f15e70a0ae1358c3666b1856b474a21835b664984cc6c8",
     "serverVersion": "0.0.1",
-    "size": 73141
+    "size": 73344
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 73141,
+  "size": 73344,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 73141 UTF-8 bytes, revision `sha256:44b8aa6db857ec193d4c2ee15cb016438f14badc95f792acf26a7dc2cbfdf673`.
+Content contract: `text`, 73344 UTF-8 bytes, revision `sha256:42072018d8a3d7fca7f15e70a0ae1358c3666b1856b474a21835b664984cc6c8`.
 
 Resource templates: none.
 
@@ -16173,7 +16173,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, collision counts and Wang-set overviews.
+Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews.
 
 Annotations:
 
@@ -16337,7 +16337,7 @@ Output schema:
                   "type": "string"
                 },
                 "collision": {
-                  "const": "object-counts-only",
+                  "const": "bounded-shape-geometry-with-omission-markers",
                   "type": "string"
                 },
                 "kind": {
@@ -16477,10 +16477,255 @@ Output schema:
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "shapes": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "type": "string"
+                                    },
+                                    "classNameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "height": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "id": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "index": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "nameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "propertyCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "enum": [
+                                        "rectangle",
+                                        "point",
+                                        "ellipse",
+                                        "capsule",
+                                        "text"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "textBoundsOnly": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "width": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "index",
+                                    "shape",
+                                    "x",
+                                    "y",
+                                    "width",
+                                    "height",
+                                    "rotation"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "type": "string"
+                                    },
+                                    "classNameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "id": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "index": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "nameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "pointCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "points": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "x": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          },
+                                          "y": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "x",
+                                          "y"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 256,
+                                      "type": "array"
+                                    },
+                                    "pointsOmitted": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "propertyCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "enum": [
+                                        "polygon",
+                                        "polyline"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "index",
+                                    "shape",
+                                    "x",
+                                    "y",
+                                    "rotation",
+                                    "pointCount"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "type": "string"
+                                    },
+                                    "classNameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "geometryOmitted": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "id": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "index": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "nameTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    },
+                                    "propertyCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "reason": {
+                                      "enum": [
+                                        "tile-object",
+                                        "template"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "index",
+                                    "geometryOmitted",
+                                    "reason"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "maxItems": 128,
+                            "type": "array"
+                          },
+                          "shapesTruncated": {
+                            "const": true,
+                            "type": "boolean"
                           }
                         },
                         "required": [
-                          "objectCount"
+                          "objectCount",
+                          "shapes"
                         ],
                         "type": "object"
                       },
