@@ -148,3 +148,43 @@ retention 不在 quota-pressure 或 `ensureCapacity()` 中运行。新 checkpoin
 新写入或配额检查失败不会先删除旧恢复点，也不会引入 `store → target` 反向锁序。manifest
 unlink + checkpoint 目录 fsync 是独立 destructive commit point；其后的 GC/锁故障在成功
 document mutation 的有界结果中报告，不能解释为目标写入可以安全重试。
+
+## 9. 显式 committed checkpoint batch prune
+
+`tiled_preview_checkpoint_prune_batch` 属于 `.tiledmcp` internal-state 删除契约，不扩大
+第 2 节的项目资产 document-promotion 保证。它也不是自动 retention：调用方必须从当前
+checkpoint 列表明确提供 2..32 个 UUID；服务端先 lowercase 规范化、拒绝规范化后的重复
+项，不会按 ordinal、createdAt、label、存储压力或其他启发式自动选择 victim。批次按
+canonical checkpoint ID 排序；preview 必须把这个 execution order、完整成员 manifest
+pins 和非原子/可部分提交 warning 展示给批准者。
+
+apply 先验证计划，再把成员 target path 规范化、去重并按确定性路径顺序取得**全部**
+target mutex/file locks，之后才取得唯一 checkpoint-store lock。相同 target 只锁一次，
+所有 batch 使用相同 target 排序；store lock 内不得反向获取 target lock。该顺序阻止合作式
+retention 或其他 checkpoint writer 在预检与删除之间修改计划成员。它仍是 path lock，
+不是 inode lock；第 4 节的 hardlink alias 运维前提同样适用。
+
+首次 manifest unlink 前，内核在这些锁内权威重读全部选中成员，逐项核对 regular/no-follow
+文件、raw SHA-256、size、完整 metadata、canonical path 与 `committed` status。任一成员
+已被 retention/其他 prune 删除，或 bytes/path/status 漂移，都会令整个 batch 零删除。
+这个 pin barrier 有意不读取 stored-before blob，也不要求 global inventory/object 完整：
+操作者批准的是这些精确 manifests，无关损坏条目不能变成阻止修复性 prune 的全局 DoS。
+缺失/损坏 blob 只代表该 recovery point 可能已不可恢复；其他 prepared/committed manifest
+仍在最终 GC 中作为 roots。被选成员若漂为 prepared 则由 status/CAS fail closed。
+
+跨 manifest 不提供原子性。通过 barrier 后按 canonical ID 顺序逐项 `unlink`，每项后立即
+fsync checkpoint 目录，并在首个成员 CAS/unlink/fsync/post-delete 故障时停止：
+
+- 尚无 unlink 成功：返回零删除应用错误，可以重新 list/preview；
+- 至少一个 unlink 成功：返回并缓存有界 `partial` 或 `completed` success，`outcomes`
+  明确区分 `deleted`、`failed` 和 `not-attempted`；
+- unlink 后 fsync 失败：该成员已删除但 durability unconfirmed，不能作为“未发生”重试；
+- 同一 `changeSetId` 的并发或后续 replay 只返回首次缓存结果，绝不继续未尝试成员；
+- 只有全部 manifests 都成功删除并逐项 fsync 后才运行一次 fail-closed GC；partial 时
+  GC 为 not-run，孤儿对象保留给后续完整 sweep。
+
+因此 batch change set 不是 durable job、lease 或 resume token。响应丢失但进程仍存活时，
+相同 ID replay 取得缓存结果；进程重启或 TTL 到期后旧 ID 不存在，客户端必须重新列举磁盘
+事实并为仍存在的 IDs 建立新 proposal，不能把 missing 当作本批已删除的证明。真正的
+all-or-nothing 跨 manifest 事务需要持久 WAL/tombstone/staging 及对应 GC-root 规则，当前
+接口没有做出该承诺。

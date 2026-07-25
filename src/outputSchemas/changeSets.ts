@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+  MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+} from "../storage/checkpoints.js";
+import {
   assetIdOutputSchema,
   changeSetIdOutputSchema,
   checkpointIdOutputSchema,
@@ -761,6 +765,68 @@ const pruneCheckpointOperationPreviewOutputSchema = z
   })
   .strict();
 
+const pruneCheckpointBatchOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal(
+        "pruneCheckpointBatch",
+      ),
+      destructive: z.literal(true),
+      warning: z.string(),
+      checkpointCount:
+        positiveIntegerOutputSchema
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+      checkpointIds: z
+        .array(checkpointIdOutputSchema)
+        .min(
+          MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+        )
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      targetCount:
+        positiveIntegerOutputSchema.max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      targetPaths: z
+        .array(projectPathOutputSchema)
+        .min(1)
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      status: z.literal("committed"),
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      removesRecoveryPointCount:
+        positiveIntegerOutputSchema
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+      removesProjectAssets: z.literal(false),
+      ordering: z.literal(
+        "canonical-checkpoint-id",
+      ),
+      atomic: z.literal(false),
+      stopOnFirstFailure: z.literal(true),
+      partialResult: z.literal(
+        "cached-final-no-resume",
+      ),
+      garbageCollection: z.literal(
+        "once-after-all-manifests-fail-closed",
+      ),
+    })
+    .strict();
+
 const discardPreparedCheckpointOperationPreviewOutputSchema =
   z
     .object({
@@ -1422,6 +1488,294 @@ const checkpointPrunePreviewOutputSchema = z
   })
   .strict();
 
+const checkpointPruneBatchSummaryOutputSchema =
+  z
+    .object({
+      operationCount: z.literal(1),
+      checkpointCount:
+        positiveIntegerOutputSchema
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+      destructive: z.literal(true),
+      checkpointIds: z
+        .array(checkpointIdOutputSchema)
+        .min(
+          MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+        )
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      targetCount:
+        positiveIntegerOutputSchema.max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      targetPaths: z
+        .array(projectPathOutputSchema)
+        .min(1)
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      status: z.literal("committed"),
+      manifestBytes:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      removesRecoveryPointCount:
+        positiveIntegerOutputSchema
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+      removesProjectAssets: z.literal(false),
+      ordering: z.literal(
+        "canonical-checkpoint-id",
+      ),
+      atomic: z.literal(false),
+      stopOnFirstFailure: z.literal(true),
+      partialResult: z.literal(
+        "cached-final-no-resume",
+      ),
+      garbageCollection: z.literal(
+        "once-after-all-manifests-fail-closed",
+      ),
+      warning: z.string(),
+    })
+    .strict();
+
+const checkpointPruneBatchCheckpointBaseOutputShape =
+  {
+    id: checkpointIdOutputSchema,
+    status: z.literal("committed"),
+    label: z
+      .string()
+      .max(1_024)
+      .optional(),
+    createdAt:
+      checkpointTimestampOutputSchema,
+    path: projectPathOutputSchema,
+    before: checkpointPruneBeforeOutputSchema,
+    afterRevision: revisionOutputSchema,
+    manifest: z
+      .object({
+        revision: revisionOutputSchema,
+        size: positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      })
+      .strict(),
+  };
+
+const checkpointPruneBatchCheckpointOutputSchema =
+  z.union([
+    z
+      .object({
+        ...checkpointPruneBatchCheckpointBaseOutputShape,
+        version: z.literal(1),
+      })
+      .strict(),
+    z
+      .object({
+        ...checkpointPruneBatchCheckpointBaseOutputShape,
+        version: z.literal(2),
+        retention: z.union([
+          z
+            .object({
+              class: z.literal(
+                "protected",
+              ),
+            })
+            .strict(),
+          z
+            .object({
+              class:
+                z.literal("rolling"),
+              ordinal:
+                positiveIntegerOutputSchema.max(
+                  Number.MAX_SAFE_INTEGER,
+                ),
+            })
+            .strict(),
+        ]),
+      })
+      .strict(),
+  ]);
+
+const checkpointPruneBatchPreviewOutputSchema =
+  z
+    .object({
+      kind: z.literal(
+        "checkpointPruneBatch",
+      ),
+      changeSetId: changeSetIdOutputSchema,
+      planDigest: changeSetIdOutputSchema,
+      targetPaths: z
+        .array(projectPathOutputSchema)
+        .min(1)
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      expectedRevision: revisionOutputSchema,
+      checkpoints: z
+        .array(
+          checkpointPruneBatchCheckpointOutputSchema,
+        )
+        .min(
+          MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+        )
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+      operations: z.tuple([
+        pruneCheckpointBatchOperationPreviewOutputSchema,
+      ]),
+      summary:
+        checkpointPruneBatchSummaryOutputSchema,
+      snapshotConsistency: z.literal(
+        "checkpoint-store-locked-manifest-set",
+      ),
+      createdAt: isoTimestampOutputSchema,
+      expiresAt: isoTimestampOutputSchema,
+    })
+    .strict()
+    .superRefine(
+      (
+        preview,
+        context,
+      ) => {
+        const checkpointIds =
+          preview.checkpoints.map(
+            ({ id }) => id,
+          );
+        const canonicalCheckpointIds = [
+          ...checkpointIds,
+        ].sort(compareCheckpointPruneBatchStrings);
+        if (
+          !sameCheckpointPruneBatchStrings(
+            checkpointIds,
+            canonicalCheckpointIds,
+          ) ||
+          new Set(checkpointIds).size !==
+            checkpointIds.length
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["checkpoints"],
+            message:
+              "Checkpoint prune batch checkpoints must be in unique canonical checkpoint-ID order.",
+          });
+          return;
+        }
+
+        const targetPaths = [
+          ...new Set(
+            preview.checkpoints.map(
+              ({ path }) => path,
+            ),
+          ),
+        ].sort(compareCheckpointPruneBatchStrings);
+        let manifestBytes = 0;
+        for (const checkpoint of preview.checkpoints) {
+          manifestBytes +=
+            checkpoint.manifest.size;
+          if (
+            !Number.isSafeInteger(
+              manifestBytes,
+            )
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["checkpoints"],
+              message:
+                "Checkpoint prune batch manifest bytes must have a safe-integer total.",
+            });
+            return;
+          }
+        }
+
+        const summary = preview.summary;
+        const operation =
+          preview.operations[0];
+        const checkpointCount =
+          preview.checkpoints.length;
+        if (
+          !sameCheckpointPruneBatchStrings(
+            preview.targetPaths,
+            targetPaths,
+          ) ||
+          summary.checkpointCount !==
+            checkpointCount ||
+          !sameCheckpointPruneBatchStrings(
+            summary.checkpointIds,
+            checkpointIds,
+          ) ||
+          summary.targetCount !==
+            targetPaths.length ||
+          !sameCheckpointPruneBatchStrings(
+            summary.targetPaths,
+            targetPaths,
+          ) ||
+          summary.manifestBytes !==
+            manifestBytes ||
+          summary.removesRecoveryPointCount !==
+            checkpointCount ||
+          operation.checkpointCount !==
+            checkpointCount ||
+          !sameCheckpointPruneBatchStrings(
+            operation.checkpointIds,
+            checkpointIds,
+          ) ||
+          operation.targetCount !==
+            targetPaths.length ||
+          !sameCheckpointPruneBatchStrings(
+            operation.targetPaths,
+            targetPaths,
+          ) ||
+          operation.manifestBytes !==
+            manifestBytes ||
+          operation.removesRecoveryPointCount !==
+            checkpointCount ||
+          operation.warning !==
+            summary.warning
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Checkpoint prune batch checkpoints, targets, summary, and operation must agree.",
+          });
+        }
+      },
+    );
+
+function compareCheckpointPruneBatchStrings(
+  left: string,
+  right: string,
+): number {
+  return left < right
+    ? -1
+    : left > right
+      ? 1
+      : 0;
+}
+
+function sameCheckpointPruneBatchStrings(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (value, index) =>
+        value === right[index],
+    )
+  );
+}
+
 const preparedCheckpointDiscardTargetOutputSchema =
   z.union([
     z
@@ -1526,6 +1880,11 @@ export const checkpointRestorePreviewToolOutputSchema =
 export const checkpointPrunePreviewToolOutputSchema =
   toolOutputSchema(
     checkpointPrunePreviewOutputSchema,
+  );
+
+export const checkpointPruneBatchPreviewToolOutputSchema =
+  toolOutputSchema(
+    checkpointPruneBatchPreviewOutputSchema,
   );
 
 export const preparedCheckpointDiscardPreviewToolOutputSchema =

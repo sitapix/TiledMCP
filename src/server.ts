@@ -121,6 +121,7 @@ import {
 } from "./outputSchemas/common.js";
 import {
   addTilesetPreviewToolOutputSchema,
+  checkpointPruneBatchPreviewToolOutputSchema,
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
@@ -170,6 +171,13 @@ import {
   RASTER_SNAPSHOT_CONSISTENCY,
 } from "./rasterContract.js";
 import {
+  applyCheckpointPruneBatch,
+  CHECKPOINT_PRUNE_BATCH_GARBAGE_COLLECTION,
+  MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+  MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+  planCheckpointPruneBatch,
+} from "./storage/checkpointBatchPrune.js";
+import {
   applyCheckpointPrune,
   planCheckpointPrune,
 } from "./storage/checkpointPrune.js";
@@ -183,6 +191,7 @@ import {
 } from "./storage/preparedCheckpointDiscard.js";
 import {
   CHECKPOINT_ID_PATTERN,
+  CHECKPOINT_ID_INPUT_PATTERN,
   CHECKPOINT_STORAGE_POLICY,
   MAX_CHECKPOINT_OBSERVED_ENTRIES,
   MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
@@ -922,6 +931,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_list_checkpoints",
     "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_checkpoint_prune",
+    "tiled_preview_checkpoint_prune_batch",
     "tiled_preview_checkpoint_restore",
     "tiled_get_map_summary",
     "tiled_get_tileset",
@@ -1053,6 +1063,15 @@ const PREVIEW_ONLY: ToolAnnotations = {
 
 const CHECKPOINT_PRUNE_PREVIEW: ToolAnnotations = {
   title: "Preview pruning a recovery checkpoint",
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+const CHECKPOINT_PRUNE_BATCH_PREVIEW: ToolAnnotations = {
+  title:
+    "Preview pruning recovery checkpoints in a batch",
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: false,
@@ -1365,6 +1384,33 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "unsupported-reconcile-first",
             automaticRetention:
               "separate-opt-in-post-commit-policy",
+            tombstones: false,
+          },
+          pruneBatch: {
+            scope:
+              "2-to-32-explicit-committed-checkpoints",
+            minCheckpointCount:
+              MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+            maxCheckpointCount:
+              MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+            workflow: "preview-then-apply",
+            ordering:
+              "canonical-checkpoint-id",
+            lockOrder:
+              "sorted-unique-targets-then-checkpoint-store",
+            preflight:
+              "all-pins-before-first-unlink",
+            commitMode:
+              "sequential-manifest-unlink-per-item-directory-fsync",
+            atomic: false,
+            stopOnFirstFailure: true,
+            partialResult:
+              "cached-final-no-resume",
+            garbageCollection:
+              CHECKPOINT_PRUNE_BATCH_GARBAGE_COLLECTION,
+            storedBeforeValidation:
+              "not-read",
+            automaticSelection: "none",
             tombstones: false,
           },
           retention: {
@@ -1920,6 +1966,49 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           await planCheckpointPrune(
             store,
             checkpointId,
+          ),
+        ),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_checkpoint_prune_batch",
+    {
+      title:
+        "Preview pruning recovery checkpoints in a batch",
+      description:
+        "Pins 2 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.",
+      inputSchema: z
+        .object({
+          checkpointIds: z
+            .array(
+              z
+                .string()
+                .regex(
+                  CHECKPOINT_ID_INPUT_PATTERN,
+                ),
+            )
+            .min(
+              MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+            )
+            .max(
+              MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+            ),
+        })
+        .strict(),
+      outputSchema:
+        checkpointPruneBatchPreviewToolOutputSchema,
+      annotations:
+        CHECKPOINT_PRUNE_BATCH_PREVIEW,
+    },
+    async ({ checkpointIds }) =>
+      executeTool(async () =>
+        changeSets.put(
+          await planCheckpointPruneBatch(
+            store,
+            checkpointIds,
           ),
         ),
       ),
@@ -2498,7 +2587,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, or committed-checkpoint prune after checking its approved SHA-256 revision and all plan-specific dependency pins.",
+        "Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific dependency pins.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -2535,6 +2624,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                       store,
                       plan,
                     )
+                  : plan.kind ===
+                      "checkpointPruneBatch"
+                    ? applyCheckpointPruneBatch(
+                        store,
+                        plan,
+                      )
                   : maps.applyEdits(plan),
         ),
       ),

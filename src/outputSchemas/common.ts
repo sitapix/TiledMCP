@@ -4,9 +4,11 @@ import { TILED_MCP_APPLICATION_ERROR_CODES } from "../errorRegistry.js";
 import type { JsonValue } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
+  MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
   MAX_CHECKPOINT_OBSERVED_ENTRIES,
   MAX_CHECKPOINT_TIMESTAMP_LENGTH,
   MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+  MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
   ROLLING_CHECKPOINT_RETENTION_POLICY,
 } from "../storage/checkpoints.js";
 
@@ -360,6 +362,300 @@ export const checkpointPruneApplyResultOutputSchema =
     })
     .strict();
 
+const checkpointPruneBatchDeletedOutcomeOutputSchema =
+  z
+    .object({
+      checkpointId:
+        checkpointIdOutputSchema,
+      path: projectPathOutputSchema,
+      outcome: z.literal("deleted"),
+      manifestDeleted: z.literal(true),
+      durability: z.enum([
+        "confirmed",
+        "unconfirmed",
+      ]),
+    })
+    .strict();
+
+const checkpointPruneBatchRetainedOutcomeOutputSchema =
+  z.union([
+    z
+      .object({
+        checkpointId:
+          checkpointIdOutputSchema,
+        path: projectPathOutputSchema,
+        outcome: z.literal("failed"),
+        failureCode: z.literal(
+          "INTERNAL_ERROR",
+        ),
+      })
+      .strict(),
+    z
+      .object({
+        checkpointId:
+          checkpointIdOutputSchema,
+        path: projectPathOutputSchema,
+        outcome: z.literal(
+          "not-attempted",
+        ),
+        reason: z.literal(
+          "batch-stopped-before-checkpoint",
+        ),
+      })
+      .strict(),
+  ]);
+
+const checkpointPruneBatchNotRunGarbageCollectionOutputSchema =
+  z
+    .object({
+      status: z.literal("not-run"),
+      reason: z.literal(
+        "batch-stopped-before-garbage-collection",
+      ),
+    })
+    .strict();
+
+const checkpointPruneBatchApplyBaseOutputShape =
+  {
+    kind: z.literal(
+      "checkpointPruneBatch",
+    ),
+    changeSetId: changeSetIdOutputSchema,
+    replayDisposition: z.literal(
+      "cached-final-no-resume",
+    ),
+    requestedCheckpointCount:
+      positiveIntegerOutputSchema
+        .min(
+          MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+        )
+        .max(
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+        ),
+    warnings: z
+      .array(z.string().max(4_096))
+      .max(64)
+      .optional(),
+  };
+
+export const checkpointPruneBatchApplyResultOutputSchema =
+  z
+    .union([
+    z
+      .object({
+        ...checkpointPruneBatchApplyBaseOutputShape,
+        status: z.literal("completed"),
+        manifestDeletedCount:
+          positiveIntegerOutputSchema
+            .min(
+              MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+            )
+            .max(
+              MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+            ),
+        unresolvedCheckpointCount:
+          z.literal(0),
+        outcomes: z
+          .array(
+            checkpointPruneBatchDeletedOutcomeOutputSchema,
+          )
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+        garbageCollection:
+          checkpointGarbageCollectionOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...checkpointPruneBatchApplyBaseOutputShape,
+        status: z.literal("partial"),
+        manifestDeletedCount:
+          positiveIntegerOutputSchema
+            .min(1)
+            .max(
+              MAX_CHECKPOINT_BATCH_PRUNE_COUNT -
+                1,
+            ),
+        unresolvedCheckpointCount:
+          positiveIntegerOutputSchema
+            .min(1)
+            .max(
+              MAX_CHECKPOINT_BATCH_PRUNE_COUNT -
+                1,
+            ),
+        outcomes: z
+          .array(
+            z.union([
+              checkpointPruneBatchDeletedOutcomeOutputSchema,
+              checkpointPruneBatchRetainedOutcomeOutputSchema,
+            ]),
+          )
+          .min(
+            MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+          )
+          .max(
+            MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+          ),
+        garbageCollection:
+          checkpointPruneBatchNotRunGarbageCollectionOutputSchema,
+      })
+      .strict(),
+    ])
+    .superRefine(
+      (
+        result,
+        context,
+      ) => {
+        const outcomeIds =
+          result.outcomes.map(
+            ({ checkpointId }) =>
+              checkpointId,
+          );
+        const canonicalOutcomeIds = [
+          ...outcomeIds,
+        ].sort(compareOutputStrings);
+        if (
+          result.requestedCheckpointCount !==
+            result.outcomes.length ||
+          result.manifestDeletedCount +
+              result.unresolvedCheckpointCount !==
+            result.requestedCheckpointCount ||
+          outcomeIds.some(
+            (checkpointId, index) =>
+              checkpointId !==
+                canonicalOutcomeIds[index] ||
+              (index > 0 &&
+                checkpointId ===
+                  outcomeIds[index - 1]),
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Checkpoint prune batch counts and canonical outcome order must agree.",
+          });
+          return;
+        }
+        const unconfirmedDurabilityIndexes =
+          result.outcomes.flatMap(
+            (outcome, index) =>
+              outcome.outcome === "deleted" &&
+              outcome.durability === "unconfirmed"
+                ? [index]
+                : [],
+          );
+        if (
+          unconfirmedDurabilityIndexes.length > 1 ||
+          (unconfirmedDurabilityIndexes[0] !==
+            undefined &&
+            unconfirmedDurabilityIndexes[0] !==
+              result.manifestDeletedCount - 1)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Unconfirmed checkpoint manifest durability must stop the batch at the final observed deletion.",
+          });
+          return;
+        }
+        if (
+          unconfirmedDurabilityIndexes[0] !==
+            undefined &&
+          (result.outcomes
+            .slice(
+              result.manifestDeletedCount,
+            )
+            .some(
+              ({ outcome }) =>
+                outcome !==
+                "not-attempted",
+            ) ||
+            (result.status === "completed" &&
+              result.garbageCollection
+                .status !== "failed"))
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "An unconfirmed manifest deletion must stop all later attempts and cannot be followed by garbage collection.",
+          });
+          return;
+        }
+        if (result.status === "completed") {
+          if (
+            result.manifestDeletedCount !==
+              result.requestedCheckpointCount ||
+            result.outcomes.some(
+              ({ outcome }) =>
+                outcome !== "deleted",
+            )
+          ) {
+            context.addIssue({
+              code: "custom",
+              message:
+                "A completed checkpoint prune batch must report every requested checkpoint as deleted.",
+            });
+          }
+          return;
+        }
+        const deletedPrefix =
+          result.outcomes.slice(
+            0,
+            result.manifestDeletedCount,
+          );
+        const retainedSuffix =
+          result.outcomes.slice(
+            result.manifestDeletedCount,
+          );
+        const failedIndexes =
+          retainedSuffix.flatMap(
+            (outcome, index) =>
+              outcome.outcome ===
+              "failed"
+                ? [index]
+                : [],
+          );
+        if (
+          deletedPrefix.some(
+            ({ outcome }) =>
+              outcome !== "deleted",
+          ) ||
+          failedIndexes.length > 1 ||
+          (failedIndexes[0] !== undefined &&
+            failedIndexes[0] !== 0) ||
+          retainedSuffix.some(
+            (outcome, index) =>
+              index >
+                (failedIndexes[0] ??
+                  -1) &&
+              outcome.outcome !==
+                "not-attempted",
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "A partial checkpoint prune batch must contain a deleted prefix, at most one failed checkpoint, and then only not-attempted checkpoints.",
+          });
+        }
+      },
+    );
+
+function compareOutputStrings(
+  left: string,
+  right: string,
+): number {
+  return left < right
+    ? -1
+    : left > right
+      ? 1
+      : 0;
+}
+
 const preparedCheckpointTargetOutputSchema =
   z.union([
     z
@@ -422,6 +718,7 @@ export const preparedCheckpointDiscardApplyResultOutputSchema =
 export const applyResultOutputSchema = z.union([
   documentApplyResultOutputSchema,
   checkpointPruneApplyResultOutputSchema,
+  checkpointPruneBatchApplyResultOutputSchema,
   preparedCheckpointDiscardApplyResultOutputSchema,
 ]);
 

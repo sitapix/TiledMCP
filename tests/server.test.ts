@@ -74,6 +74,7 @@ const CORE_TOOLS = [
   "tiled_list_checkpoints",
   "tiled_preview_prepared_checkpoint_discard",
   "tiled_preview_checkpoint_prune",
+  "tiled_preview_checkpoint_prune_batch",
   "tiled_preview_checkpoint_restore",
   "tiled_get_map_summary",
   "tiled_get_tileset",
@@ -186,7 +187,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the twenty core tools with safety annotations", async () => {
+  it("advertises exactly the twenty-one core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -215,6 +216,7 @@ describe("createTiledMcpServer", () => {
     for (const name of [
       "tiled_preview_prepared_checkpoint_discard",
       "tiled_preview_checkpoint_prune",
+      "tiled_preview_checkpoint_prune_batch",
       "tiled_preview_checkpoint_restore",
       "tiled_preview_edits",
     ]) {
@@ -267,6 +269,27 @@ describe("createTiledMcpServer", () => {
         checkpointId: { type: "string" },
       },
       required: ["checkpointId"],
+      additionalProperties: false,
+    });
+    expect(
+      byName.get(
+        "tiled_preview_checkpoint_prune_batch",
+      )?.inputSchema,
+    ).toMatchObject({
+      type: "object",
+      properties: {
+        checkpointIds: {
+          type: "array",
+          minItems: 2,
+          maxItems: 32,
+          items: {
+            type: "string",
+            pattern:
+              "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+          },
+        },
+      },
+      required: ["checkpointIds"],
       additionalProperties: false,
     });
     expect(
@@ -2493,6 +2516,23 @@ describe("createTiledMcpServer", () => {
           automaticRetention: string;
           tombstones: boolean;
         };
+        pruneBatch: {
+          scope: string;
+          minCheckpointCount: number;
+          maxCheckpointCount: number;
+          workflow: string;
+          ordering: string;
+          lockOrder: string;
+          preflight: string;
+          commitMode: string;
+          atomic: boolean;
+          stopOnFirstFailure: boolean;
+          partialResult: string;
+          garbageCollection: string;
+          storedBeforeValidation: string;
+          automaticSelection: string;
+          tombstones: boolean;
+        };
         storagePolicy:
           typeof CHECKPOINT_STORAGE_POLICY & {
             maxBytes: number;
@@ -2908,6 +2948,31 @@ describe("createTiledMcpServer", () => {
             "unsupported-reconcile-first",
           automaticRetention:
             "separate-opt-in-post-commit-policy",
+          tombstones: false,
+        },
+        pruneBatch: {
+          scope:
+            "2-to-32-explicit-committed-checkpoints",
+          minCheckpointCount: 2,
+          maxCheckpointCount: 32,
+          workflow: "preview-then-apply",
+          ordering:
+            "canonical-checkpoint-id",
+          lockOrder:
+            "sorted-unique-targets-then-checkpoint-store",
+          preflight:
+            "all-pins-before-first-unlink",
+          commitMode:
+            "sequential-manifest-unlink-per-item-directory-fsync",
+          atomic: false,
+          stopOnFirstFailure: true,
+          partialResult:
+            "cached-final-no-resume",
+          garbageCollection:
+            "once-after-all-manifests-fail-closed",
+          storedBeforeValidation:
+            "not-read",
+          automaticSelection: "none",
           tombstones: false,
         },
         retention: {
@@ -4191,6 +4256,64 @@ describe("createTiledMcpServer", () => {
     expect((response.content[0] as { text: string }).text).toContain(
       "Unrecognized key",
     );
+  });
+
+  it("keeps checkpoint prune batch shape errors in the SDK and normalized duplicates in the application protocol", async () => {
+    const firstId =
+      "aaaaaaaa-0000-4000-8000-000000000001";
+    const unknownKey = asToolResponse(
+      await harness.client.callTool({
+        name:
+          "tiled_preview_checkpoint_prune_batch",
+        arguments: {
+          checkpointIds: [
+            firstId,
+            "bbbbbbbb-0000-4000-8000-000000000002",
+          ],
+          unexpected: true,
+        },
+      }),
+    );
+
+    expect(unknownKey.isError).toBe(true);
+    expect(
+      unknownKey.structuredContent,
+    ).toBeUndefined();
+    expect(unknownKey.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining(
+          "Input validation error",
+        ),
+      }),
+    ]);
+
+    const duplicate = asToolResponse(
+      await harness.client.callTool({
+        name:
+          "tiled_preview_checkpoint_prune_batch",
+        arguments: {
+          checkpointIds: [
+            firstId,
+            firstId.toUpperCase(),
+          ],
+        },
+      }),
+    );
+    expect(duplicate.isError).toBe(true);
+    expect(
+      duplicate.structuredContent,
+    ).toMatchObject({
+      result: {
+        ok: false,
+        error: {
+          code: "INVALID_ARGUMENT",
+          message: expect.stringContaining(
+            "duplicate UUIDs",
+          ),
+        },
+      },
+    });
   });
 
   it("rejects unknown prepared checkpoint discard preview keys through its strict schema", async () => {
@@ -6887,6 +7010,406 @@ describe("createTiledMcpServer", () => {
         },
       });
     expect(secondApply).toEqual(firstApply);
+  });
+
+  it("previews, applies and caches an explicit canonical committed-checkpoint prune batch", async () => {
+    const absoluteMapPath = join(
+      harness.root,
+      MAP_PATH,
+    );
+    const before = await readFile(
+      absoluteMapPath,
+    );
+    const middle = Buffer.concat([
+      before,
+      Buffer.from(" "),
+    ]);
+    const after = Buffer.concat([
+      middle,
+      Buffer.from(" "),
+    ]);
+    const firstCommit =
+      await harness.store.commitBytes(
+        MAP_PATH,
+        revisionOf(before),
+        middle,
+        "server batch prune first",
+      );
+    const secondCommit =
+      await harness.store.commitBytes(
+        MAP_PATH,
+        revisionOf(middle),
+        after,
+        "server batch prune second",
+      );
+    if (
+      firstCommit.checkpointId === null ||
+      secondCommit.checkpointId === null
+    ) {
+      throw new Error(
+        "Expected two committed checkpoints.",
+      );
+    }
+    const orderedIds = [
+      firstCommit.checkpointId,
+      secondCommit.checkpointId,
+    ].sort();
+
+    const preview = resultOf<{
+      kind: string;
+      changeSetId: string;
+      planDigest: string;
+      expectedRevision: string;
+      targetPaths: string[];
+      snapshotConsistency: string;
+      checkpoints: Array<{
+        id: string;
+        version: number;
+        path: string;
+        manifest: {
+          revision: string;
+          size: number;
+        };
+      }>;
+      operations: Array<{
+        type: string;
+        checkpointIds: string[];
+        checkpointCount: number;
+        atomic: boolean;
+        stopOnFirstFailure: boolean;
+        partialResult: string;
+      }>;
+      summary: {
+        checkpointIds: string[];
+        checkpointCount: number;
+        targetPaths: string[];
+        manifestBytes: number;
+      };
+    }>(
+      await harness.client.callTool({
+        name:
+          "tiled_preview_checkpoint_prune_batch",
+        arguments: {
+          checkpointIds: [
+            secondCommit.checkpointId.toUpperCase(),
+            firstCommit.checkpointId.toUpperCase(),
+          ],
+        },
+      }),
+    );
+
+    expect(preview).toMatchObject({
+      kind: "checkpointPruneBatch",
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      planDigest: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      expectedRevision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+      targetPaths: [MAP_PATH],
+      snapshotConsistency:
+        "checkpoint-store-locked-manifest-set",
+      checkpoints: orderedIds.map(
+        (id) => ({
+          id,
+          version: 1,
+          path: MAP_PATH,
+          manifest: {
+            revision: expect.stringMatching(
+              /^sha256:[0-9a-f]{64}$/u,
+            ),
+            size: expect.any(Number),
+          },
+        }),
+      ),
+      operations: [
+        {
+          type: "pruneCheckpointBatch",
+          checkpointIds: orderedIds,
+          checkpointCount: 2,
+          atomic: false,
+          stopOnFirstFailure: true,
+          partialResult:
+            "cached-final-no-resume",
+        },
+      ],
+      summary: {
+        checkpointIds: orderedIds,
+        checkpointCount: 2,
+        targetPaths: [MAP_PATH],
+      },
+    });
+    expect(
+      preview.summary.manifestBytes,
+    ).toBe(
+      preview.checkpoints.reduce(
+        (total, checkpoint) =>
+          total + checkpoint.manifest.size,
+        0,
+      ),
+    );
+    expect(
+      await readFile(absoluteMapPath),
+    ).toEqual(after);
+
+    const firstApply =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    const applied = resultOf<{
+      kind: string;
+      changeSetId: string;
+      status: string;
+      replayDisposition: string;
+      requestedCheckpointCount: number;
+      manifestDeletedCount: number;
+      unresolvedCheckpointCount: number;
+      outcomes: Array<{
+        checkpointId: string;
+        path: string;
+        outcome: string;
+        manifestDeleted: boolean;
+        durability: string;
+      }>;
+      garbageCollection: {
+        status: string;
+      };
+    }>(firstApply);
+    expect(applied).toMatchObject({
+      kind: "checkpointPruneBatch",
+      changeSetId: preview.changeSetId,
+      status: "completed",
+      replayDisposition:
+        "cached-final-no-resume",
+      requestedCheckpointCount: 2,
+      manifestDeletedCount: 2,
+      unresolvedCheckpointCount: 0,
+      outcomes: orderedIds.map(
+        (checkpointId) => ({
+          checkpointId,
+          path: MAP_PATH,
+          outcome: "deleted",
+          manifestDeleted: true,
+          durability: "confirmed",
+        }),
+      ),
+      garbageCollection: {
+        status: "completed",
+      },
+    });
+    const replay =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    expect(replay).toEqual(firstApply);
+    expect(
+      await readFile(absoluteMapPath),
+    ).toEqual(after);
+  });
+
+  it("returns and exactly replays a final partial checkpoint prune batch without resuming remaining deletions", async () => {
+    let postDeleteObserverCalls = 0;
+    const originalHarness = harness;
+    harness = await createHarness({
+      checkpointOptions: {
+        observer: {
+          afterManifestDeletedBeforeGarbageCollection() {
+            postDeleteObserverCalls += 1;
+            throw new Error(
+              "Injected stop after the first batch manifest deletion.",
+            );
+          },
+        },
+      },
+    });
+    await originalHarness.client
+      .close()
+      .catch(() => undefined);
+    await originalHarness.server
+      .close()
+      .catch(() => undefined);
+    await rm(originalHarness.root, {
+      recursive: true,
+      force: true,
+    });
+
+    const absoluteMapPath = join(
+      harness.root,
+      MAP_PATH,
+    );
+    const before = await readFile(
+      absoluteMapPath,
+    );
+    const middle = Buffer.concat([
+      before,
+      Buffer.from(" "),
+    ]);
+    const after = Buffer.concat([
+      middle,
+      Buffer.from(" "),
+    ]);
+    const firstCommit =
+      await harness.store.commitBytes(
+        MAP_PATH,
+        revisionOf(before),
+        middle,
+        "server partial batch prune first",
+      );
+    const secondCommit =
+      await harness.store.commitBytes(
+        MAP_PATH,
+        revisionOf(middle),
+        after,
+        "server partial batch prune second",
+      );
+    if (
+      firstCommit.checkpointId === null ||
+      secondCommit.checkpointId === null
+    ) {
+      throw new Error(
+        "Expected two committed checkpoints.",
+      );
+    }
+    const orderedIds = [
+      firstCommit.checkpointId,
+      secondCommit.checkpointId,
+    ].sort();
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+    }>(
+      await harness.client.callTool({
+        name:
+          "tiled_preview_checkpoint_prune_batch",
+        arguments: {
+          checkpointIds: [
+            secondCommit.checkpointId,
+            firstCommit.checkpointId,
+          ],
+        },
+      }),
+    );
+
+    const [
+      firstApplyResponse,
+      concurrentReplayResponse,
+    ] = await Promise.all([
+      harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      }),
+      harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      }),
+    ]);
+    const firstApply = asToolResponse(
+      firstApplyResponse,
+    );
+    const concurrentReplay = asToolResponse(
+      concurrentReplayResponse,
+    );
+    expect(firstApply.isError).not.toBe(true);
+    expect(concurrentReplay).toEqual(firstApply);
+    const applied = resultOf<{
+      kind: string;
+      changeSetId: string;
+      status: string;
+      replayDisposition: string;
+      requestedCheckpointCount: number;
+      manifestDeletedCount: number;
+      unresolvedCheckpointCount: number;
+      outcomes: Array<Record<string, unknown>>;
+      garbageCollection: {
+        status: string;
+        reason?: string;
+      };
+    }>(firstApply);
+    expect(applied).toMatchObject({
+      kind: "checkpointPruneBatch",
+      changeSetId: preview.changeSetId,
+      status: "partial",
+      replayDisposition:
+        "cached-final-no-resume",
+      requestedCheckpointCount: 2,
+      manifestDeletedCount: 1,
+      unresolvedCheckpointCount: 1,
+      garbageCollection: {
+        status: "not-run",
+        reason:
+          "batch-stopped-before-garbage-collection",
+      },
+    });
+    expect(applied.outcomes).toEqual([
+      {
+        checkpointId: orderedIds[0],
+        path: MAP_PATH,
+        outcome: "deleted",
+        manifestDeleted: true,
+        durability: "confirmed",
+      },
+      {
+        checkpointId: orderedIds[1],
+        path: MAP_PATH,
+        outcome: "not-attempted",
+        reason:
+          "batch-stopped-before-checkpoint",
+      },
+    ]);
+    expect(postDeleteObserverCalls).toBe(1);
+    const remainingAfterFirstApply = (
+      await harness.store.checkpoints.list()
+    ).manifests
+      .map(({ id }) => id)
+      .sort();
+    expect(remainingAfterFirstApply).toEqual([
+      orderedIds[1],
+    ]);
+
+    const replay = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      }),
+    );
+    expect(replay).toEqual(firstApply);
+    expect(postDeleteObserverCalls).toBe(1);
+    const remainingAfterReplay = (
+      await harness.store.checkpoints.list()
+    ).manifests
+      .map(({ id }) => id)
+      .sort();
+    expect(remainingAfterReplay).toEqual(
+      remainingAfterFirstApply,
+    );
+    expect(
+      await readFile(absoluteMapPath),
+    ).toEqual(after);
   });
 
   it("previews, applies and idempotently replays a current-before-verified prepared checkpoint discard", async () => {

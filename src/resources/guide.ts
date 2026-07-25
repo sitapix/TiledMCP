@@ -253,7 +253,7 @@ follows a rename automatically.
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 20 core tools or 21
+operation, not a standalone tool, so the registry remains 21 core tools or 22
 when the rasterizer is available. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
@@ -337,11 +337,11 @@ to the owning object layer's \`objects\` member; creation separately advances
 \`nextobjectid\`. Inspect
 \`objectShapeCapabilities\` for the exact create union, shape-mutation policy,
 dimension rule, and source-patch scope. These operations do not add standalone
-tools, so the registry remains 20 core tools or 21 with the rasterizer.
+tools, so the registry remains 21 core tools or 22 with the rasterizer.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
-registry remains 20 core tools or 21 when the rasterizer is available. The
+registry remains 21 core tools or 22 when the rasterizer is available. The
 strict, non-empty patch may contain:
 
 - \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
@@ -365,7 +365,7 @@ restore the original serialized values produce a file-level exact-byte no-op.
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
 seventh operation in the generic preview union, not a standalone tool, so the
-registry remains 20 core tools or 21 when the rasterizer is available. The
+registry remains 21 core tools or 22 when the rasterizer is available. The
 patch must contain at least one field and may contain only:
 
 - \`name\`, \`className\`, \`visible\`, and \`opacity\`;
@@ -397,7 +397,7 @@ layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
 an existing layer. It is the eighth generic operation, not a standalone tool,
-so the registry remains 20 core tools or 21 with the rasterizer. A
+so the registry remains 21 core tools or 22 with the rasterizer. A
 \`deleteLayer\` change set must contain exactly this one operation; do not mix
 it with tile, object, or layer updates.
 
@@ -424,7 +424,7 @@ revision-pinned approval, checkpoint, and apply flow remains mandatory.
 
 Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
 or move it into or out of a Group. This is the ninth generic operation, not a
-standalone tool, so the registry remains 20 core tools or 21 with the
+standalone tool, so the registry remains 21 core tools or 22 with the
 rasterizer. A move change set must contain exactly one operation and cannot be
 mixed with tile, object, update, delete, or another move.
 
@@ -462,7 +462,7 @@ atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
-operation, not a standalone tool, so the registry remains 20 core tools or 21
+operation, not a standalone tool, so the registry remains 21 core tools or 22
 with the rasterizer. A duplicate change set must contain exactly one operation.
 
 \`destination\` has exactly three branches:
@@ -550,7 +550,7 @@ apply not to rewrite the map.
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
 dense rectangular tile stamp. This is the eleventh generic operation, not a
-standalone tool, so the registry remains 20 core tools or 21 with the
+standalone tool, so the registry remains 21 core tools or 22 with the
 rasterizer. The row-major pattern must be non-empty and rectangular: every
 row is non-empty and has the same width, with no sparse holes or
 \`undefined\`. Width and height are each capped at 256 and the complete
@@ -581,7 +581,7 @@ and revision.
 
 Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
 paint-bucket edit. This is the twelfth generic operation, not a standalone
-tool, so the registry remains 20 core tools or 21 with the rasterizer.
+tool, so the registry remains 21 core tools or 22 with the rasterizer.
 \`x\` and \`y\` are an absolute seed coordinate inside the finite tile
 layer. Connectivity is always four-way; there is no connectivity input and
 diagonal-only cells are not connected.
@@ -618,8 +618,8 @@ revision.
 Use
 \`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}\`
 to copy one complete tile rectangle within the same map. This is the fifteenth
-generic operation, not a standalone tool, so the registry remains 20 core
-tools or 21 with the rasterizer. The operation, source, and destination are
+generic operation, not a standalone tool, so the registry remains 21 core
+tools or 22 with the rasterizer. The operation, source, and destination are
 strict objects and reject extra keys.
 
 Both layer IDs must identify finite orthogonal tile layers with numeric data
@@ -735,6 +735,35 @@ document blob. Present the destructive warning for approval, then pass the
 returned change-set ID and expected revision to \`tiled_apply_change_set\`.
 The prune tool accepts committed checkpoints only.
 
+To drain an explicit retention backlog, call
+\`tiled_preview_checkpoint_prune_batch\` with 2 through 32 distinct committed
+checkpoint UUIDs selected from a current listing. The tool never chooses
+retention victims from ordinals, timestamps, labels, or storage pressure.
+It sorts the selected IDs into canonical UUID order, exposes that execution
+order, pins every raw manifest revision, size, metadata record, and target
+path, and returns one aggregate expected revision. Present the complete
+ordered, non-atomic proposal for approval before applying it.
+
+Batch apply first acquires every distinct canonical target lock in
+deterministic path order and then acquires the checkpoint-store lock. Before
+the first unlink it authoritatively re-reads and pins every selected committed
+manifest. One missing member, including one removed by retention after
+preview, or any bytes, size, path, metadata, or status drift makes the whole
+batch fail with zero batch deletions. This barrier deliberately does not read
+stored-before blobs and does not require an unrelated global inventory or
+object set to be healthy; global completeness constrains garbage collection,
+not the explicitly approved manifest set.
+
+After the barrier, batch deletion is not atomic. It unlinks manifests in
+canonical checkpoint-ID order, syncs the checkpoint directory after every
+unlink, and stops on the first fault. A failure before any unlink remains a
+zero-deletion application error. Once any unlink succeeds, the call resolves
+to a bounded completed or partial result and caches that exact result.
+Replay never resumes not-attempted members. Garbage collection runs once only
+after every selected manifest has been deleted and synced; a partial result
+reports GC as not run. List and preview the remaining IDs again if the
+operator wants to continue.
+
 To discard one prepared checkpoint whose current target can be verified equal
 to its pre-write state, call \`tiled_preview_prepared_checkpoint_discard\` with
 its checkpoint ID. An existing-file checkpoint is eligible only when the
@@ -759,7 +788,8 @@ sweep before its first deletion. An incomplete byte or entry inventory also
 fails the write-capacity proof. Initial manifest publication is
 create-if-absent and never replaces an existing recovery point. Quota pressure
 never deletes a valid manifest. Explicit deletion paths are an approved,
-raw-manifest-CAS prune of one committed checkpoint and an approved,
+raw-manifest-CAS prune of one committed checkpoint, an approved 2-through-32
+committed-checkpoint batch prune, and an approved,
 raw-manifest-CAS prepared discard with exact-before target proof.
 
 Automatic retention is disabled unless startup explicitly supplies
@@ -773,9 +803,11 @@ After a target and its new checkpoint are durably committed without a target
 durability warning, retention protects the newest N rolling checkpoints and
 deletes at most the oldest one per commit.
 
-Every deletion path locks the checkpoint target before the store, raw-CASes
-the manifest, unlinks it, syncs the checkpoint directory, and then runs the
-same fail-closed orphan sweep. Automatic retention additionally verifies a
+Every deletion path locks its checkpoint target before the store; batch prune
+locks all distinct targets before the store. It raw-CASes the selected
+manifest, unlinks it, and syncs the checkpoint directory. Single-item paths
+then run the fail-closed orphan sweep, while batch prune runs it once only
+after all manifests are synced. Automatic retention additionally verifies a
 complete inventory, every referenced object's hash and size, the sequence,
 the absence of a prepared checkpoint for that target, and that the current
 target matches the newest rolling after-revision before its first unlink. A
@@ -805,12 +837,14 @@ checkpoint and the filesystem threat model's operational requirements. Restore
 does not include referenced tilesets, images, or other files. A checkpoint
 made before creating a new file cannot be used to delete that file.
 
-Prune and prepared discard do not leave a tombstone: after a successful apply,
-the checkpoint is indistinguishable from an ID that was never present.
-Retention may likewise invalidate an outstanding restore/prune preview; a
-preview is not a durable lease, so apply must surface not-found/changed and be
-previewed again. Multi-checkpoint prune and forced adjudication of ambiguous
-prepared checkpoints are not supported.
+Prune, batch prune, and prepared discard do not leave a tombstone: after a
+successful deletion, the checkpoint is indistinguishable from an ID that was
+never present. Retention may likewise invalidate an outstanding
+restore/prune/batch-prune preview; a preview is not a durable lease. Batch
+apply validates every member before its first unlink, so an invalidated member
+makes that attempt delete none. A cached partial replay returns the same result
+without resuming; after expiry or restart, list and preview again. Forced
+adjudication of ambiguous prepared checkpoints is not supported.
 
 ## Conflict and failure handling
 
@@ -834,8 +868,10 @@ prepared checkpoints are not supported.
   \`--checkpoint-bytes\` / \`TILEDMCP_CHECKPOINT_BYTES\` and restart. Raising
   the byte quota cannot repair an entry-limit or inventory-blocker condition.
   An operator may explicitly preview and approve pruning one committed
-  checkpoint, or discarding one prepared checkpoint whose current target
-  still exactly matches its pre-write state. The optional startup retention
+  checkpoint, select 2 through 32 committed IDs for one bounded batch prune,
+  or discard one prepared checkpoint whose current target still exactly
+  matches its pre-write state. Batch prune does not select retention victims
+  automatically. The optional startup retention
   policy never runs to relieve quota pressure: a new recovery root must fit
   before target promotion. Normal operation maintains N, but lowering N or a
   blocked run leaves an excess that later one-add/one-delete commits cannot

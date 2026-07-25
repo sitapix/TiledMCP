@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 20 tools
-- `with-tmxrasterizer`: 21 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 21 tools
+- `with-tmxrasterizer`: 22 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:a36021330cbc4d4d0b68ab5bf009c0ca1dc5d477dbc7102e0d0e118514747ed7",
+    "revision": "sha256:265306aedd03a7892b1809149b8ccb365a3c559abec70aa0cef21b526b0e8faf",
     "serverVersion": "0.0.1",
-    "size": 48360
+    "size": 50685
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 48360,
+  "size": 50685,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 48360 UTF-8 bytes, revision `sha256:a36021330cbc4d4d0b68ab5bf009c0ca1dc5d477dbc7102e0d0e118514747ed7`.
+Content contract: `text`, 50685 UTF-8 bytes, revision `sha256:265306aedd03a7892b1809149b8ccb365a3c559abec70aa0cef21b526b0e8faf`.
 
 Resource templates: none.
 
@@ -1666,7 +1666,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, or committed-checkpoint prune after checking its approved SHA-256 revision and all plan-specific dependency pins.
+Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific dependency pins.
 
 Annotations:
 
@@ -2432,6 +2432,452 @@ Output schema:
                 "garbageCollection"
               ],
               "type": "object"
+            },
+            {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "changeSetId": {
+                      "pattern": "^changeset:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "garbageCollection": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "blockerCount": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "blockers": {
+                              "items": [],
+                              "type": "array"
+                            },
+                            "blockersTruncated": {
+                              "const": false,
+                              "type": "boolean"
+                            },
+                            "deletedBytes": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedEntries": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedObjects": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedTemporaryFiles": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "status": {
+                              "const": "completed",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "deletedBytes",
+                            "deletedEntries",
+                            "deletedObjects",
+                            "deletedTemporaryFiles",
+                            "blockerCount",
+                            "blockers",
+                            "blockersTruncated"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "blockerCount": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "blockers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "directory": {
+                                    "enum": [
+                                      "checkpoints",
+                                      "objects"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "fileName": {
+                                    "maxLength": 1024,
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "enum": [
+                                      "entry-inspection-failed",
+                                      "byte-accounting-limit-exceeded",
+                                      "malformed-manifest",
+                                      "missing-referenced-object",
+                                      "non-regular-entry",
+                                      "scan-limit-exceeded",
+                                      "symbolic-link",
+                                      "unexpected-entry"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "directory",
+                                  "reason",
+                                  "message"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 32,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "blockersTruncated": {
+                              "type": "boolean"
+                            },
+                            "deletedBytes": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedEntries": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedObjects": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedTemporaryFiles": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "status": {
+                              "const": "blocked",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "deletedBytes",
+                            "deletedEntries",
+                            "deletedObjects",
+                            "deletedTemporaryFiles",
+                            "blockerCount",
+                            "blockers",
+                            "blockersTruncated"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "deletionOutcome": {
+                              "const": "unknown-partial-or-none",
+                              "type": "string"
+                            },
+                            "failureCode": {
+                              "const": "INTERNAL_ERROR",
+                              "type": "string"
+                            },
+                            "status": {
+                              "const": "failed",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "failureCode",
+                            "deletionOutcome"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "kind": {
+                      "const": "checkpointPruneBatch",
+                      "type": "string"
+                    },
+                    "manifestDeletedCount": {
+                      "maximum": 32,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "outcomes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "checkpointId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "durability": {
+                            "enum": [
+                              "confirmed",
+                              "unconfirmed"
+                            ],
+                            "type": "string"
+                          },
+                          "manifestDeleted": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "outcome": {
+                            "const": "deleted",
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "checkpointId",
+                          "path",
+                          "outcome",
+                          "manifestDeleted",
+                          "durability"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 32,
+                      "minItems": 2,
+                      "type": "array"
+                    },
+                    "replayDisposition": {
+                      "const": "cached-final-no-resume",
+                      "type": "string"
+                    },
+                    "requestedCheckpointCount": {
+                      "maximum": 32,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "completed",
+                      "type": "string"
+                    },
+                    "unresolvedCheckpointCount": {
+                      "const": 0,
+                      "type": "number"
+                    },
+                    "warnings": {
+                      "items": {
+                        "maxLength": 4096,
+                        "type": "string"
+                      },
+                      "maxItems": 64,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "changeSetId",
+                    "replayDisposition",
+                    "requestedCheckpointCount",
+                    "status",
+                    "manifestDeletedCount",
+                    "unresolvedCheckpointCount",
+                    "outcomes",
+                    "garbageCollection"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "changeSetId": {
+                      "pattern": "^changeset:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "garbageCollection": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "reason": {
+                          "const": "batch-stopped-before-garbage-collection",
+                          "type": "string"
+                        },
+                        "status": {
+                          "const": "not-run",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "reason"
+                      ],
+                      "type": "object"
+                    },
+                    "kind": {
+                      "const": "checkpointPruneBatch",
+                      "type": "string"
+                    },
+                    "manifestDeletedCount": {
+                      "maximum": 31,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "outcomes": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "checkpointId": {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "durability": {
+                                "enum": [
+                                  "confirmed",
+                                  "unconfirmed"
+                                ],
+                                "type": "string"
+                              },
+                              "manifestDeleted": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "outcome": {
+                                "const": "deleted",
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "checkpointId",
+                              "path",
+                              "outcome",
+                              "manifestDeleted",
+                              "durability"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "checkpointId": {
+                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                    "type": "string"
+                                  },
+                                  "failureCode": {
+                                    "const": "INTERNAL_ERROR",
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "const": "failed",
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "checkpointId",
+                                  "path",
+                                  "outcome",
+                                  "failureCode"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "checkpointId": {
+                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                    "type": "string"
+                                  },
+                                  "outcome": {
+                                    "const": "not-attempted",
+                                    "type": "string"
+                                  },
+                                  "path": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "const": "batch-stopped-before-checkpoint",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "checkpointId",
+                                  "path",
+                                  "outcome",
+                                  "reason"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "maxItems": 32,
+                      "minItems": 2,
+                      "type": "array"
+                    },
+                    "replayDisposition": {
+                      "const": "cached-final-no-resume",
+                      "type": "string"
+                    },
+                    "requestedCheckpointCount": {
+                      "maximum": 32,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "partial",
+                      "type": "string"
+                    },
+                    "unresolvedCheckpointCount": {
+                      "maximum": 31,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "warnings": {
+                      "items": {
+                        "maxLength": 4096,
+                        "type": "string"
+                      },
+                      "maxItems": 64,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "changeSetId",
+                    "replayDisposition",
+                    "requestedCheckpointCount",
+                    "status",
+                    "manifestDeletedCount",
+                    "unresolvedCheckpointCount",
+                    "outcomes",
+                    "garbageCollection"
+                  ],
+                  "type": "object"
+                }
+              ]
             },
             {
               "additionalProperties": false,
@@ -5906,6 +6352,89 @@ Output schema:
                   ],
                   "type": "object"
                 },
+                "pruneBatch": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "atomic": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "automaticSelection": {
+                      "const": "none",
+                      "type": "string"
+                    },
+                    "commitMode": {
+                      "const": "sequential-manifest-unlink-per-item-directory-fsync",
+                      "type": "string"
+                    },
+                    "garbageCollection": {
+                      "const": "once-after-all-manifests-fail-closed",
+                      "type": "string"
+                    },
+                    "lockOrder": {
+                      "const": "sorted-unique-targets-then-checkpoint-store",
+                      "type": "string"
+                    },
+                    "maxCheckpointCount": {
+                      "const": 32,
+                      "type": "number"
+                    },
+                    "minCheckpointCount": {
+                      "const": 2,
+                      "type": "number"
+                    },
+                    "ordering": {
+                      "const": "canonical-checkpoint-id",
+                      "type": "string"
+                    },
+                    "partialResult": {
+                      "const": "cached-final-no-resume",
+                      "type": "string"
+                    },
+                    "preflight": {
+                      "const": "all-pins-before-first-unlink",
+                      "type": "string"
+                    },
+                    "scope": {
+                      "const": "2-to-32-explicit-committed-checkpoints",
+                      "type": "string"
+                    },
+                    "stopOnFirstFailure": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "storedBeforeValidation": {
+                      "const": "not-read",
+                      "type": "string"
+                    },
+                    "tombstones": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "workflow": {
+                      "const": "preview-then-apply",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "minCheckpointCount",
+                    "maxCheckpointCount",
+                    "workflow",
+                    "ordering",
+                    "lockOrder",
+                    "preflight",
+                    "commitMode",
+                    "atomic",
+                    "stopOnFirstFailure",
+                    "partialResult",
+                    "garbageCollection",
+                    "storedBeforeValidation",
+                    "automaticSelection",
+                    "tombstones"
+                  ],
+                  "type": "object"
+                },
                 "restoreScope": {
                   "const": "single-existing-json-document",
                   "type": "string"
@@ -6099,6 +6628,26 @@ Output schema:
                       "const": "project-wide-in-process-mutex-and-cross-process-file-lock",
                       "type": "string"
                     },
+                    "explicitBatchPruneCoordination": {
+                      "const": "all-canonical-target-locks-sorted-then-single-checkpoint-store-lock",
+                      "type": "string"
+                    },
+                    "explicitBatchPruneDeletionOrder": {
+                      "const": "canonical-checkpoint-id-order-with-per-manifest-unlink-and-checkpoint-directory-fsync",
+                      "type": "string"
+                    },
+                    "explicitBatchPruneFailure": {
+                      "const": "stop-after-first-failure-preserve-deleted-prefix-and-never-resume-cached-result",
+                      "type": "string"
+                    },
+                    "explicitBatchPruneGarbageCollection": {
+                      "const": "once-after-all-approved-manifests-are-durably-unlinked-and-post-delete-hooks-complete",
+                      "type": "string"
+                    },
+                    "explicitBatchPrunePreflight": {
+                      "const": "all-approved-committed-manifest-pins-raw-and-semantic-cas-before-first-unlink",
+                      "type": "string"
+                    },
                     "explicitPreparedDiscardCoordination": {
                       "const": "target-lock-then-checkpoint-store-lock",
                       "type": "string"
@@ -6190,11 +6739,11 @@ Output schema:
                       "type": "string"
                     },
                     "validManifestDeletion": {
-                      "const": "explicit-approved-raw-cas-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+                      "const": "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
                       "type": "string"
                     },
                     "version": {
-                      "const": 4,
+                      "const": 5,
                       "type": "number"
                     }
                   },
@@ -6207,6 +6756,11 @@ Output schema:
                     "garbageCollectionRoots",
                     "garbageCollectionDeletion",
                     "validManifestDeletion",
+                    "explicitBatchPruneCoordination",
+                    "explicitBatchPrunePreflight",
+                    "explicitBatchPruneDeletionOrder",
+                    "explicitBatchPruneGarbageCollection",
+                    "explicitBatchPruneFailure",
                     "automaticValidManifestPruning",
                     "automaticRetentionCoordination",
                     "automaticRetentionOrdering",
@@ -6250,6 +6804,7 @@ Output schema:
                 "restoresReferencedDependencies",
                 "preparedDiscard",
                 "prune",
+                "pruneBatch",
                 "retention",
                 "storagePolicy"
               ],
@@ -7782,6 +8337,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_checkpoint_prune_batch",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_preview_checkpoint_restore",
                       "type": "string"
                     },
@@ -7864,6 +8423,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_checkpoint_prune",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_checkpoint_prune_batch",
                       "type": "string"
                     },
                     {
@@ -12312,6 +12875,786 @@ Output schema:
             "expectedRevision",
             "checkpoint",
             "manifest",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_preview_checkpoint_prune_batch`
+
+Availability: `core`
+
+Pins 2 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview pruning recovery checkpoints in a batch"
+}
+```
+
+Example purpose: 预览显式批量删除两个已提交 checkpoint；服务端 lowercase 规范化并拒绝重复项，再按 canonical UUID 顺序固定并执行，不自动选择 retention victim。
+
+```json
+{
+  "arguments": {
+    "checkpointIds": [
+      "AAAAAAAA-1111-4111-8111-111111111111",
+      "bbbbbbbb-0000-4000-8000-000000000000"
+    ]
+  },
+  "name": "tiled_preview_checkpoint_prune_batch"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "checkpointIds": {
+      "items": {
+        "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": [
+    "checkpointIds"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "checkpoints": {
+              "items": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "afterRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "existed"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "objectHash": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "existed",
+                              "revision",
+                              "objectHash",
+                              "size"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "manifest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "size": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "revision",
+                          "size"
+                        ],
+                        "type": "object"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "status": {
+                        "const": "committed",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status",
+                      "createdAt",
+                      "path",
+                      "before",
+                      "afterRevision",
+                      "manifest",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "afterRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "existed"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "objectHash": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "existed",
+                              "revision",
+                              "objectHash",
+                              "size"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "manifest": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "size": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "revision",
+                          "size"
+                        ],
+                        "type": "object"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "retention": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "class": {
+                                "const": "protected",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "class"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "class": {
+                                "const": "rolling",
+                                "type": "string"
+                              },
+                              "ordinal": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "class",
+                              "ordinal"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "const": "committed",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 2,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status",
+                      "createdAt",
+                      "path",
+                      "before",
+                      "afterRevision",
+                      "manifest",
+                      "version",
+                      "retention"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 32,
+              "minItems": 2,
+              "type": "array"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "checkpointPruneBatch",
+              "type": "string"
+            },
+            "operations": {
+              "items": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "atomic": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "checkpointCount": {
+                      "maximum": 32,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "checkpointIds": {
+                      "items": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "maxItems": 32,
+                      "minItems": 2,
+                      "type": "array"
+                    },
+                    "destructive": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "garbageCollection": {
+                      "const": "once-after-all-manifests-fail-closed",
+                      "type": "string"
+                    },
+                    "manifestBytes": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "const": "canonical-checkpoint-id",
+                      "type": "string"
+                    },
+                    "partialResult": {
+                      "const": "cached-final-no-resume",
+                      "type": "string"
+                    },
+                    "removesProjectAssets": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "removesRecoveryPointCount": {
+                      "maximum": 32,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "committed",
+                      "type": "string"
+                    },
+                    "stopOnFirstFailure": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "targetCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 32,
+                      "type": "integer"
+                    },
+                    "targetPaths": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 32,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "type": {
+                      "const": "pruneCheckpointBatch",
+                      "type": "string"
+                    },
+                    "warning": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "destructive",
+                    "warning",
+                    "checkpointCount",
+                    "checkpointIds",
+                    "targetCount",
+                    "targetPaths",
+                    "status",
+                    "manifestBytes",
+                    "removesRecoveryPointCount",
+                    "removesProjectAssets",
+                    "ordering",
+                    "atomic",
+                    "stopOnFirstFailure",
+                    "partialResult",
+                    "garbageCollection"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "checkpoint-store-locked-manifest-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "atomic": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "checkpointCount": {
+                  "maximum": 32,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "checkpointIds": {
+                  "items": {
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "destructive": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "garbageCollection": {
+                  "const": "once-after-all-manifests-fail-closed",
+                  "type": "string"
+                },
+                "manifestBytes": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "operationCount": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "ordering": {
+                  "const": "canonical-checkpoint-id",
+                  "type": "string"
+                },
+                "partialResult": {
+                  "const": "cached-final-no-resume",
+                  "type": "string"
+                },
+                "removesProjectAssets": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "removesRecoveryPointCount": {
+                  "maximum": 32,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "status": {
+                  "const": "committed",
+                  "type": "string"
+                },
+                "stopOnFirstFailure": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "targetCount": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 32,
+                  "type": "integer"
+                },
+                "targetPaths": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "warning": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "operationCount",
+                "checkpointCount",
+                "destructive",
+                "checkpointIds",
+                "targetCount",
+                "targetPaths",
+                "status",
+                "manifestBytes",
+                "removesRecoveryPointCount",
+                "removesProjectAssets",
+                "ordering",
+                "atomic",
+                "stopOnFirstFailure",
+                "partialResult",
+                "garbageCollection",
+                "warning"
+              ],
+              "type": "object"
+            },
+            "targetPaths": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "targetPaths",
+            "expectedRevision",
+            "checkpoints",
             "operations",
             "summary",
             "snapshotConsistency",

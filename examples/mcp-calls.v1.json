@@ -43,6 +43,17 @@
       "purpose": "固定一个已提交 checkpoint 的原始 manifest revision，预览永久删除该恢复点但不立即执行。"
     },
     {
+      "name": "tiled_preview_checkpoint_prune_batch",
+      "profile": "core",
+      "arguments": {
+        "checkpointIds": [
+          "AAAAAAAA-1111-4111-8111-111111111111",
+          "bbbbbbbb-0000-4000-8000-000000000000"
+        ]
+      },
+      "purpose": "预览显式批量删除两个已提交 checkpoint；服务端 lowercase 规范化并拒绝重复项，再按 canonical UUID 顺序固定并执行，不自动选择 retention victim。"
+    },
+    {
       "name": "tiled_preview_checkpoint_restore",
       "profile": "core",
       "arguments": {

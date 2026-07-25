@@ -18,8 +18,13 @@ import {
 } from "../formats/json.js";
 import type { ProjectPathResolver } from "../project/pathResolver.js";
 import {
+  CHECKPOINT_ID_PATTERN,
   CheckpointStore,
+  MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+  MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
   ROLLING_CHECKPOINT_RETENTION_POLICY,
+  type CheckpointBatchPruneStorageExpectation,
+  type CheckpointBatchPruneStorageResult,
   type CheckpointManifest,
   type CheckpointManifestSnapshot,
   type CheckpointPruneGarbageCollectionResult,
@@ -50,6 +55,8 @@ const CHECKPOINT_PRUNE_GC_FAILED_WARNING =
   "The checkpoint manifest was unlinked, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
 const CHECKPOINT_PRUNE_TARGET_LOCK_WARNING =
   "Checkpoint pruning completed, but release of its target lock could not be confirmed; inspect the project lock before retrying mutations.";
+export const CHECKPOINT_BATCH_PRUNE_TARGET_LOCK_WARNING =
+  "Checkpoint batch pruning deleted one or more manifests, but release of one or more target locks could not be confirmed; inspect project locks before retrying mutations.";
 const PREPARED_CHECKPOINT_DISCARD_GC_BLOCKED_WARNING =
   "The prepared checkpoint manifest was deleted, but garbage collection was blocked; unreferenced checkpoint storage was retained.";
 const PREPARED_CHECKPOINT_DISCARD_GC_FAILED_WARNING =
@@ -179,6 +186,18 @@ export interface CheckpointPruneResult {
     CheckpointPruneGarbageCollection;
   warnings?: string[];
 }
+
+export interface CheckpointBatchPruneExpectation
+  extends CheckpointBatchPruneStorageExpectation {}
+
+export interface CheckpointBatchPruneInspection {
+  kind: "checkpointPruneBatch";
+  checkpoints:
+    CheckpointBatchPruneExpectation[];
+}
+
+export type CheckpointBatchPruneResult =
+  CheckpointBatchPruneStorageResult;
 
 export type PreparedCheckpointDiscardTarget =
   | { existed: false }
@@ -662,6 +681,119 @@ export class DocumentStore {
         return addCheckpointPruneWarning(
           committedResult,
           CHECKPOINT_PRUNE_TARGET_LOCK_WARNING,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async inspectCheckpointBatchPrune(
+    checkpointIds: readonly string[],
+  ): Promise<CheckpointBatchPruneInspection> {
+    const snapshots =
+      await this.checkpoints.inspectBatchPrune(
+        checkpointIds,
+      );
+    return {
+      kind: "checkpointPruneBatch",
+      checkpoints: snapshots.map(
+        checkpointBatchPruneExpectation,
+      ),
+    };
+  }
+
+  async pruneCheckpointBatchPlanned(
+    expectedCheckpoints: readonly CheckpointBatchPruneExpectation[],
+  ): Promise<CheckpointBatchPruneResult> {
+    const expected =
+      copyCheckpointBatchPruneExpectations(
+        expectedCheckpoints,
+      );
+    assertCheckpointBatchPruneExpectations(
+      expected,
+    );
+    expected.sort((left, right) =>
+      compareCanonicalText(
+        left.id,
+        right.id,
+      ),
+    );
+    const targetPaths = [
+      ...new Set(
+        expected.map(({ path }) =>
+          this.resolver.normalize(path),
+        ),
+      ),
+    ].sort(compareCanonicalText);
+    let committedResult:
+      | CheckpointBatchPruneResult
+      | undefined;
+    let targetLockReleaseFailed = false;
+
+    const withAllFileLocks = async (
+      index: number,
+    ): Promise<CheckpointBatchPruneResult> => {
+      const targetPath =
+        targetPaths[index];
+      if (targetPath === undefined) {
+        committedResult =
+          await this.checkpoints.pruneCommittedBatch(
+            expected,
+          );
+        return committedResult;
+      }
+      return withProjectFileLock(
+        this.resolver,
+        targetPath,
+        () =>
+          withAllFileLocks(index + 1),
+        {
+          onReleaseFailure: () => {
+            targetLockReleaseFailed =
+              true;
+          },
+        },
+      );
+    };
+    const withAllMutexes = async (
+      index: number,
+    ): Promise<CheckpointBatchPruneResult> => {
+      const targetPath =
+        targetPaths[index];
+      if (targetPath === undefined) {
+        return withAllFileLocks(0);
+      }
+      return this.mutex.runExclusive(
+        targetPath,
+        () => withAllMutexes(index + 1),
+      );
+    };
+
+    try {
+      const result =
+        await withAllMutexes(0);
+      if (
+        targetLockReleaseFailed &&
+        result.manifestDeletedCount > 0
+      ) {
+        return addCheckpointBatchPruneWarning(
+          result,
+          CHECKPOINT_BATCH_PRUNE_TARGET_LOCK_WARNING,
+        );
+      }
+      return result;
+    } catch (error) {
+      // Once any manifest has been observed unlinked, target lock release
+      // failures cannot turn the bounded destructive result into a retryable
+      // exception.
+      if (
+        committedResult !== undefined &&
+        committedResult.manifestDeletedCount >
+          0
+      ) {
+        return addCheckpointBatchPruneWarning(
+          committedResult,
+          CHECKPOINT_BATCH_PRUNE_TARGET_LOCK_WARNING,
         );
       }
       throw error;
@@ -1608,6 +1740,137 @@ function checkpointPruneExpectation(
   };
 }
 
+function checkpointBatchPruneExpectation(
+  snapshot: CheckpointManifestSnapshot,
+): CheckpointBatchPruneExpectation {
+  const manifest = snapshot.manifest;
+  if (manifest.status !== "committed") {
+    throw new TiledMcpError(
+      "CHECKPOINT_NOT_COMMITTED",
+      `Checkpoint ${manifest.id} is still prepared and cannot be batch pruned.`,
+      { checkpointId: manifest.id },
+    );
+  }
+  return {
+    id: manifest.id,
+    version: manifest.version,
+    createdAt: manifest.createdAt,
+    ...(manifest.label.length === 0
+      ? {}
+      : { label: manifest.label }),
+    path: manifest.path,
+    status: "committed",
+    before: copyCheckpointBefore(
+      manifest.before,
+    ),
+    afterRevision: manifest.afterRevision,
+    ...(manifest.retention === undefined
+      ? {}
+      : {
+          retention: {
+            ...manifest.retention,
+          },
+        }),
+    manifestRevision:
+      snapshot.manifestRevision,
+    manifestSize: snapshot.manifestSize,
+  };
+}
+
+function copyCheckpointBatchPruneExpectations(
+  expectations: readonly CheckpointBatchPruneExpectation[],
+): CheckpointBatchPruneExpectation[] {
+  if (!Array.isArray(expectations)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Checkpoint batch prune expectations must be an array.",
+    );
+  }
+  return expectations.map((expected) => ({
+    id: expected.id,
+    version: expected.version,
+    createdAt: expected.createdAt,
+    ...(expected.label === undefined
+      ? {}
+      : { label: expected.label }),
+    path: expected.path,
+    status: expected.status,
+    before: copyCheckpointBefore(
+      expected.before,
+    ),
+    afterRevision: expected.afterRevision,
+    ...(expected.retention === undefined
+      ? {}
+      : {
+          retention: {
+            ...expected.retention,
+          },
+        }),
+    manifestRevision:
+      expected.manifestRevision,
+    manifestSize: expected.manifestSize,
+  }));
+}
+
+function assertCheckpointBatchPruneExpectations(
+  expectations: readonly CheckpointBatchPruneExpectation[],
+): asserts expectations is CheckpointBatchPruneStorageExpectation[] {
+  if (
+    expectations.length <
+      MIN_CHECKPOINT_BATCH_PRUNE_COUNT ||
+    expectations.length >
+      MAX_CHECKPOINT_BATCH_PRUNE_COUNT
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `Checkpoint batch prune requires from ${MIN_CHECKPOINT_BATCH_PRUNE_COUNT} through ${MAX_CHECKPOINT_BATCH_PRUNE_COUNT} checkpoints.`,
+    );
+  }
+  const ids = new Set<string>();
+  for (const expected of expectations) {
+    const validRetention =
+      (expected.version === 1 &&
+        expected.retention ===
+          undefined) ||
+      (expected.version === 2 &&
+        expected.retention !==
+          undefined &&
+        (expected.retention.class ===
+          "protected" ||
+          (expected.retention.class ===
+            "rolling" &&
+            Number.isSafeInteger(
+              expected.retention.ordinal,
+            ) &&
+            expected.retention.ordinal >
+              0)));
+    if (
+      !CHECKPOINT_ID_PATTERN.test(
+        expected.id,
+      ) ||
+      expected.id !==
+        expected.id.toLowerCase() ||
+      ids.has(expected.id) ||
+      expected.status !== "committed" ||
+      !CHECKPOINT_MANIFEST_REVISION_PATTERN.test(
+        expected.manifestRevision,
+      ) ||
+      !Number.isSafeInteger(
+        expected.manifestSize,
+      ) ||
+      expected.manifestSize < 1 ||
+      !validRetention
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Checkpoint batch prune expectations are invalid.",
+        { checkpointId: expected.id },
+      );
+    }
+    ids.add(expected.id);
+  }
+}
+
 function copyCheckpointPruneExpectation(
   expected: CheckpointPruneExpectation,
 ): CheckpointPruneExpectation {
@@ -1713,6 +1976,22 @@ function addCheckpointPruneWarning(
   result: CheckpointPruneResult,
   warning: string,
 ): CheckpointPruneResult {
+  return {
+    ...result,
+    warnings: [
+      ...(result.warnings ?? []),
+      warning,
+    ],
+  };
+}
+
+function addCheckpointBatchPruneWarning(
+  result: CheckpointBatchPruneResult,
+  warning: string,
+): CheckpointBatchPruneResult {
+  if (result.warnings?.includes(warning)) {
+    return result;
+  }
   return {
     ...result,
     warnings: [
@@ -2057,6 +2336,17 @@ function errorCode(error: unknown): string {
     return (error as NodeJS.ErrnoException).code as string;
   }
   return asTiledMcpError(error).code;
+}
+
+function compareCanonicalText(
+  left: string,
+  right: string,
+): number {
+  return left < right
+    ? -1
+    : left > right
+      ? 1
+      : 0;
 }
 
 function isMissingCode(code: string): boolean {

@@ -17,14 +17,14 @@
    `filesystemThreatModelContract`，以及
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 20 个工具。`tiled_render_map` 只有在
-   `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
+3. 核心 profile 当前包含 21 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 22，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 20 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 21 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -59,8 +59,10 @@ content-addressed object 或 manifest；error details 是不透明诊断，不�
 动作。检查 capability、内部状态和部署容量后，只有操作者另行确认 entry 维度仍在上限内、
 byte 维度单独超限时，才可提高 `--checkpoint-bytes` /
 `TILEDMCP_CHECKPOINT_BYTES` 并重启；entry 超限或 inventory blocker 不会因提高 byte quota
-消失。可以经 preview/批准显式 prune 一个 committed checkpoint；对于当前目标仍能机器
-验证为 before 状态的 prepared checkpoint，也可经独立 preview/批准显式 discard。长期
+消失。可以经 preview/批准显式 prune 一个 committed checkpoint，或显式选择 2..32 个
+committed IDs 用 batch prune 清理 retention backlog；batch 不自动选择 victim。对于当前
+目标仍能机器验证为 before 状态的 prepared checkpoint，也可经独立 preview/批准显式
+discard。长期
 编辑可由操作者在启动时设置 `--checkpoint-retain-per-target N` 或
 `TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N`，显式批准默认关闭的 v2 rolling retention；
 `N` 至少为 2。它只在新 checkpoint 成功 committed 后按 durable ordinal 每次至多删除一个
@@ -138,24 +140,68 @@ revision。只有收到针对该 proposal 的明确批准后，才调用
 - `tiled_create_layer`
 - `tiled_preview_prepared_checkpoint_discard`
 - `tiled_preview_checkpoint_prune`
+- `tiled_preview_checkpoint_prune_batch`
 - `tiled_preview_checkpoint_restore`
 
 checkpoint restore 只恢复 manifest 指向的单个 JSON 文档，不会连带恢复其 tileset、图片
-或其他依赖。checkpoint prune 只接受一个 committed checkpoint ID；prepared discard
+或其他依赖。单项 checkpoint prune 只接受一个 committed checkpoint ID；batch prune
+接受 2..32 个 committed UUID，lowercase 规范化后拒绝重复项，并按 canonical ID
+顺序展示和执行；prepared discard
 只接受目标仍精确等于写前状态的 prepared checkpoint：existing-file 目标必须以 raw
 revision 和 size 同时匹配 `before`，create 目标必须严格缺失。目标等于 after、无关内容、
 existing-file 目标缺失、create 目标存在、symlink/非普通文件和
 `before.revision === afterRevision` 都是稳定 conflict，不允许强制跳过。discard preview
 不读取 stored-before blob，但会绑定 raw manifest revision/size、完整 metadata 和目标
-状态证据。两种删除在获批 apply 后都永久删除 manifest，再运行 fail-closed orphan GC，
-且不会修改目标项目资产。
+状态证据。这三条经批准的显式删除路径都只永久删除 manifest，不会修改目标项目资产；
+单项 prune/discard 随后运行 fail-closed orphan GC，batch 则仅在全部成员逐项持久删除后
+运行一次，partial 明确不运行 GC。
 
 提交项目资产后重新读取 map summary，并按需要调用 `tiled_validate` 和
 `tiled_render_preview` 检查结构与视觉结果。change set 会过期；map edit proposal 会绑定
 目标 map revision，并在适用时绑定完整 dependency pins，checkpoint restore 绑定其单个
-目标文档的 revision，checkpoint prune/discard 则绑定 raw manifest revision；discard
-另外固定目标状态 CAS。任一种 proposal 过期或冲突后都必须重新预览和批准；prune/discard
-成功后均不留 tombstone，不要把 not-found 当成可重试信号。
+目标文档的 revision，单项 checkpoint prune/discard 绑定 raw manifest revision，batch
+prune 则绑定有序 `{id,manifestRevision,manifestSize}` pins 的聚合 revision；discard
+另外固定目标状态 CAS。任一种
+proposal 过期或冲突后都必须重新预览和批准；prune/discard 成功后均不留 tombstone，不要
+把 not-found 当成可重试信号。
+
+## 用 batch prune 显式清理 retention backlog
+
+batch prune 不是自动 retention 的追赶模式，也不会替操作者推导 victim。安全客户端应：
+
+1. 分页调用 `tiled_list_checkpoints`，保留当前仍为 `committed` 的候选及其目标路径；
+2. 由操作者明确选择 2..32 个不同 UUID；不要仅凭 createdAt、label、UUID、mtime 或
+   retention ordinal 自动授权删除；
+3. 调用 `tiled_preview_checkpoint_prune_batch({checkpointIds})`；
+4. 展示 preview 返回的 canonical-ID execution order、每个恢复点、目标、manifest pin、
+   非原子 warning、聚合 `expectedRevision` 与 change-set expiry；
+5. 获得针对**这份有序 proposal**的批准后，才调用统一的
+   `tiled_apply_change_set({changeSetId, expectedRevision})`；
+6. 按结构化 batch result 的逐项状态更新 UI，再重新列举 checkpoint，而不是从请求列表
+   推断磁盘事实。
+
+apply 会先按 canonical target path 顺序取得全部去重 target locks，再取 checkpoint-store
+lock，并在首次 unlink 前权威重读和 pin 全部成员。只要任一成员已被 retention/另一个 prune
+删除，或其 raw bytes、size、path、metadata、`committed` status 漂移，本批次就以零删除
+错误结束；重新 list 和 preview，不能删掉仍匹配的“其余部分”。该预检不读取 stored-before
+blob，也不要求无关 global inventory/object 完整，因此一个已损坏的旧 blob 或其他 storage
+blocker 不会替操作者改变已批准的 manifest 集。
+
+通过全成员 barrier 后，删除是非原子的：按 canonical ID 顺序逐项 unlink，每项立即 fsync
+checkpoint 目录，遇到首个故障就停止。客户端必须这样解释结果：
+
+- `completed`：全部选中 manifests 已观察为删除；逐项 durability 与最终
+  `garbageCollection` 仍须分别检查，正常路径只运行一次 fail-closed GC，末项 fsync/hook
+  故障则可能直接报告 GC failed；
+- `partial`：至少一个 manifest 已删除，剩余项明确为 failed/not-attempted；GC 不运行；
+- application error：首次 unlink 前失败，本次 batch 自身零删除，但仍应重新读取事实；
+- 响应丢失且进程仍在：用同一 change set replay，取得 exact cached result；
+- partial replay：**只返回缓存，绝不继续**；若仍要删除 not-attempted IDs，必须建立新的
+  preview 并再次批准；
+- TTL 到期或服务重启：旧 change set 不是 durable resume token，重新列举并重新 preview。
+
+不要写“重试直到全部删除”的循环，也不要在 partial 后把 missing ID 当作该 batch 已删除的
+证据。真正的 all-or-nothing 多 manifest 事务不在当前契约中。
 
 ## `tiled_create_map` 是 no-replace 例外
 

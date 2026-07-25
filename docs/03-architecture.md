@@ -7,10 +7,10 @@
 > hostile parent swap、锁作用域与运维条件已经由
 > [filesystem threat model v1](04-security.md) 冻结为明确 guarantee/unsupported 边界；
 > create-map direct no-replace 例外和固定 Tiled 1.12.2 的不可跳过集成门也已落地。
-> checkpoint store 的总量/entry 配额、fail-closed orphan GC、显式 committed
-> checkpoint prune、机器验证当前目标仍等于 before 的 prepared discard，以及默认关闭的
-> v2 rolling post-commit retention 已落地；当前主要未完成运维项是含混 prepared 状态的
-> 强制人工裁决与批量 prune。
+> checkpoint store 的总量/entry 配额、fail-closed orphan GC、显式单项或 2..32 项
+> committed checkpoint prune、机器验证当前目标仍等于 before 的 prepared discard，以及
+> 默认关闭的 v2 rolling post-commit retention 已落地；当前主要未完成运维项是含混
+> prepared 状态的强制人工裁决。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
 > rename 边界由 capability contract 明示。当前 discovery contract 与 98-code v1 application-error
 > registry 已分别由
@@ -55,12 +55,14 @@ tile/object/image/group 图层，批准后才由通用 apply 写入并推进 `ne
 anti-ABA change-set registry：恢复先只读固定 manifest/blob/目标 revision，经客户端批准
 后才由通用 apply 提交。`tiled_preview_checkpoint_prune` 则固定一个 committed
 checkpoint 的 raw manifest revision，经批准后只删除该恢复点并运行 fail-closed orphan
-GC；`tiled_preview_prepared_checkpoint_discard` 仅在当前目标仍精确等于 checkpoint 的
+GC；`tiled_preview_checkpoint_prune_batch` 固定 2..32 个显式 committed IDs，按
+canonical ID 顺序执行全成员预检与可部分提交的批量删除；`tiled_preview_prepared_checkpoint_discard`
+仅在当前目标仍精确等于 checkpoint 的
 before 状态时固定 raw manifest 与目标证据，经批准后删除这个 prepared 恢复点。
 whole-map `tiled_analyze_usage` 只读投影也已落地，递归统计
 tile-layer cells 与 tile objects，并用独立扫描、distinct aggregation 和结果预算约束
-工作量。registry 因此包含 20 个 core tools；探测到
-`tmxrasterizer` 时为 21 个。Tiled
+工作量。registry 因此包含 21 个 core tools；探测到
+`tmxrasterizer` 时为 22 个。Tiled
 export/evaluate、项目资产/schema/render Resource Templates、跨文件 WAL 和
 任意跨文件系统 asset move/rebind 仍是目标架构，不是当前能力。当前 wire 的 external
 TSJ 与 prospective image-layer dependency 已使用 `.tiledmcp/asset-registry.v1.json`
@@ -83,7 +85,7 @@ pre-install 失败可能留下新的 prepared checkpoint，成功后的重复调
 `FILE_ALREADY_EXISTS`；客户端必须先重新检查目标，不能盲目自动重试。完整 machine
 boundary 由 `mapCreationCapabilities` 公布。
 
-20 个核心工具和可选第 21 个 rasterizer 工具现在分别注册完整、固定字段且
+21 个核心工具和可选第 22 个 rasterizer 工具现在分别注册完整、固定字段且
 `additionalProperties: false` 的 output schema；递归 layer、operation preview 和
 summary 的固定对象也保持 closed。统一外层是
 `{result: ToolSpecificSuccess | ApplicationErrorResult}`，但成功结果仍按职责分开：
@@ -664,7 +666,7 @@ layer 已由独占的 generic `deleteLayer` operation 提供，不属于 create-
 ### 6.4 精确 tile replacement
 
 `replaceTiles` 已作为 `tiled_preview_edits` 的第六种封闭 operation 实现，不注册新的
-standalone MCP tool，因此 registry 仍是 20 个 core / 21 个含 rasterizer 的工具。输入为
+standalone MCP tool，因此 registry 仍是 21 个 core / 22 个含 rasterizer 的工具。输入为
 一个已有 tile layer ID、一到 128 组 `{from: TileRef, to: TileRef|null}` mapping，以及
 可选绝对 tile region `{x,y,width,height}`。`from` 不允许为空；`to:null` 才是清空。
 region 必须落在 layer 的 `x/y/width/height` bounds 中，省略时扫描完整 layer bounds，
@@ -716,7 +718,7 @@ tileset unused-local-ID sample 最多 16 项，最终 JSON 最多 256 KiB。这�
 
 `updateLayer` 是 `tiled_preview_edits` 封闭 union 的第 7 种 operation；wire shape 为
 `{type:"updateLayer", layerId, patch}`。它不注册 standalone `tiled_update_layer`，
-所以 registry 仍为 20 core / 21 with rasterizer。planner 以正整数 `layerId` 递归定位
+所以 registry 仍为 21 core / 22 with rasterizer。planner 以正整数 `layerId` 递归定位
 已有 `tilelayer`、`objectgroup`、`imagelayer` 或 `group`，不接受名称 fallback，也不
 改变 layer hierarchy、sibling order 或 ID。
 
@@ -754,7 +756,7 @@ insert/replace/delete，并以 layer path + raw member key 去重；它不序列
 
 `deleteLayer` 是 `tiled_preview_edits` 封闭 union 的第 8 种 operation，wire shape 为
 `{type:"deleteLayer", layerId, deleteDescendants?}`。它没有 standalone tool，因此工具
-面保持 20 core / 21 with rasterizer。planner 在任何语义 mutation 之前先统计
+面保持 21 core / 22 with rasterizer。planner 在任何语义 mutation 之前先统计
 `deleteLayer`：只要出现一次，operations 总长度必须恰为 1；出现多次或与
 tile/object/updateLayer 混批都拒绝。这个 exclusivity 让 subtree/reference/source
 边界始终相对于同一个原始 map snapshot 计算。
@@ -790,7 +792,7 @@ element/comma/whitespace；未触及 sibling、祖先、未知字段、BOM、CRL
 
 `moveLayer` 是 `tiled_preview_edits` 封闭 union 的第 9 种 operation，wire shape 为
 `{type:"moveLayer", layerId, parentGroupId?, index}`。它没有 standalone
-`tiled_move_layer`，所以 registry 保持 20 core / 21 with rasterizer。与 deletion
+`tiled_move_layer`，所以 registry 保持 21 core / 22 with rasterizer。与 deletion
 一样，planner 在 mutation 前强制 exclusivity：一个含 move 的 change set 必须且只能有
 这一项，多个 move 或与 tile/object/update/delete 混批都拒绝，从而让 source/target
 container path 与 subtree summary 始终基于同一个原始 map snapshot。
@@ -840,7 +842,7 @@ revision pins，再进入同一进程/文件锁、raw-byte CAS、写前 content-
 
 `duplicateLayer` 是 `tiled_preview_edits` 封闭 union 的第 10 种 operation，wire shape
 为 `{type:"duplicateLayer", layerId, destination?, name?}`。它没有 standalone
-`tiled_duplicate_layer`，registry 仍为 20 core / 21 with rasterizer。planner 在 clone
+`tiled_duplicate_layer`，registry 仍为 21 core / 22 with rasterizer。planner 在 clone
 前强制 operations 总长度恰为 1，拒绝 multiple duplicate 或与
 tile/object/update/delete/move 混批；这样 source location、target container、ID
 inventory、reference graph 和 source patch 都来自同一个原始 snapshot。
@@ -909,7 +911,7 @@ preview 固定 map revision、完整 dependency revision set、operation 与 dig
 
 `stampPattern` 是 `tiled_preview_edits` 封闭 union 的第 11 种 operation，wire shape 为
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有 standalone
-`tiled_stamp_pattern`，registry 仍为 20 core / 21 with rasterizer。与 `setTiles` /
+`tiled_stamp_pattern`，registry 仍为 21 core / 22 with rasterizer。与 `setTiles` /
 `fillRegion` / `replaceTiles` 一样，它只接受 finite orthogonal、numeric-array tile
 layer；`layerId` 是正整数，`x/y` 是 pattern 左上角的绝对 tile 坐标。
 
@@ -945,7 +947,7 @@ plan 的 `tileStamps` summary 固定 operation/layer、规范化 region、`cellC
 
 `floodFill` 是 `tiled_preview_edits` 封闭 union 的第 12 种 operation，wire shape 为
 `{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它没有 standalone
-`tiled_flood_fill`，registry 仍为 20 core / 21 with rasterizer。与其他 M1 tile edit
+`tiled_flood_fill`，registry 仍为 21 core / 22 with rasterizer。与其他 M1 tile edit
 相同，它只接受 finite orthogonal、numeric-array tile layer；`layerId` 是正整数，
 `x/y` 是 seed 的绝对 tile 坐标，必须落在该 layer 自身的
 `x/y/width/height` 半开 bounds 内。pixel offset 与 Group rendering offset 不参与 cell
@@ -996,7 +998,7 @@ net no-op 返回 `changed:false`，不创建无意义 diff，revision 与 source
 
 `updateMap` 是 `tiled_preview_edits` 封闭 union 的第 13 种 operation，wire shape 为
 `{type:"updateMap", patch}`。它不注册 standalone `tiled_update_map`，registry 仍为
-20 core / 21 with rasterizer。operation 与 patch 都使用 exact-key schema；patch 必须
+21 core / 22 with rasterizer。operation 与 patch 都使用 exact-key schema；patch 必须
 非空，并仅允许 `renderOrder`、`backgroundColor` 与 `className`。
 
 字段到 TMJ 根成员的映射固定为 `renderOrder→renderorder`、
@@ -1034,7 +1036,7 @@ revision 和原始 bytes 精确不变。
 
 `removeTilesetFromMap` 是 `tiled_preview_edits` 封闭 union 的第 14 种 operation，wire
 shape 为 `{type:"removeTilesetFromMap", tilesetAssetId}`。它不注册 standalone
-`tiled_remove_tileset_from_map`，所以 registry 仍为 20 core / 21 with rasterizer。
+`tiled_remove_tileset_from_map`，所以 registry 仍为 21 core / 22 with rasterizer。
 operation 使用 exact-key strict schema；`tilesetAssetId` 只能精确定位当前 map 已引用且
 通过 M1 external root-atlas profile 的 binding，不接受 path/name fallback、embedded
 tileset、未知 ID 或额外 key。
@@ -1079,7 +1081,7 @@ checkpoint/CAS/原子替换；不会删除或改写目标 TSJ、atlas image 或�
 
 `copyRegion` 是 `tiled_preview_edits` 封闭 union 的第 15 种 operation，wire shape 为
 `{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}`。
-它不注册 standalone `tiled_copy_region`，所以 registry 仍为 20 core / 21 with
+它不注册 standalone `tiled_copy_region`，所以 registry 仍为 21 core / 22 with
 rasterizer。operation、source 与 destination 均使用 exact-key strict schema；source
 和 destination 必须属于同一 pinned map，两个 `layerId` 都必须定位 finite orthogonal、
 numeric-array tile layer。infinite/chunk、字符串/base64 data、压缩层、未知 key、非正
@@ -1148,7 +1150,7 @@ exact-byte net no-op，返回 `changed:false`，不创建无意义 diff。
 
 对象能力仍属于 `tiled_preview_edits` 的现有 `createObject` / `updateObject` /
 `deleteObjects` operations，不注册 standalone object tools，因此 registry 保持
-20 core / 21 with rasterizer。create wire 的 `object` 使用以 `shape` 判别的 exact-key
+21 core / 22 with rasterizer。create wire 的 `object` 使用以 `shape` 判别的 exact-key
 strict union：rectangle 保持可选尺寸，point 不允许尺寸；ellipse/capsule 的 `width`
 和 `height` 也可省略，并按 Tiled 语义规范化为 0，显式提供时必须为有限、非负且不超过
 1,000,000,000 的数。
@@ -1331,11 +1333,12 @@ unexpected、symlink、非普通 entry、缺失引用、无法安全计费或扫
 阻断整个 sweep；`lstat`/扫描失败或 safe-integer accounting overflow 同时使新写入的容量
 证明失败。content object 和 manifest 首次发布都使用 create-if-absent；UUID 碰撞不会覆盖
 已有恢复点。该协调只覆盖遵守 checkpoint-store lock 的写者；同权限非合作进程主动篡改
-`.tiledmcp` 命名空间不在 v4 保证内。
+`.tiledmcp` 命名空间不在 storage policy v5 保证内。
 仍无法容纳时以 `CHECKPOINT_QUOTA_EXCEEDED` 在目标 promotion 前 fail closed。quota
 pressure 下 GC 不自动删除任何有效 manifest。有效 manifest 的删除入口是经批准、
-raw-manifest-CAS 的单个 committed prune；经批准且机器证明当前目标仍等于 before 状态的
-单个 prepared discard；或由启动配置显式批准的 v2 rolling post-commit retention。
+raw-manifest-CAS 的单个 committed prune，或显式选择 2..32 个不同 IDs 的 committed
+batch prune；经批准且机器证明当前目标仍等于 before 状态的单个 prepared discard；或由
+启动配置显式批准的 v2 rolling post-commit retention。
 
 当前单文件实现的 manifest 状态为 `prepared | committed`。`tiled_list_checkpoints` 以
 manifest 数量和目录扫描条目双重预算流式枚举；异常文件名、symlink、超限/坏 JSON、非法路径
@@ -1401,8 +1404,52 @@ checkpoint 目录，这一 durable boundary 之后 prune 不可回滚且不留 t
 扫描全部 prepared/committed roots；inventory 不完整时全 sweep 零删除并返回 blocked，
 完整时只删除无引用 canonical objects 与私有 crash temp。unlink 之后发生的目录 sync、
 observer、GC 或 lock-release 错误都返回 `manifestDeleted:true` 的成功 prune 分支与固定
-warning/failed GC outcome，避免客户端误以为操作未发生而自动重试。批量 prune 和含混
-prepared checkpoint 的强制人工裁决仍不在当前能力内。
+warning/failed GC outcome，避免客户端误以为操作未发生而自动重试。
+
+batch prune 是独立的 `CheckpointPruneBatchPlan` / `checkpointPruneBatch` change-set
+分支，而不是把单项 schema 扩成多义 union。preview 接受 2..32 个 checkpoint UUID，先
+lowercase 规范化并拒绝规范化后的重复项，严格解析每个 committed manifest 后按 canonical
+ID 排序；有序 `{id,manifestRevision,manifestSize}` vector 进入聚合 `baseRevision`，完整
+expectations/summary 进入 plan digest，同一顺序用于 preview operations 和最终 execution
+order。调用方必须从当前 checkpoint 列表显式给出 IDs；planner 不读取 retention policy
+来推导 victim，也不按
+ordinal、时间、label 或容量压力自动补齐 batch。计划保存每项完整 metadata、
+manifest raw revision/size 与 canonical target path，并由有序 expectations 数组的位置固定
+execution order；registry 仍只保存有界计划。
+
+apply 的多锁路由先验证计划本身，再从计划成员取得 canonical target paths。目标 path
+去重后按统一的确定性字符串顺序嵌套获取所有 DocumentStore mutex 和跨进程 target file locks；只有
+全部 target locks 到手后才进入一次 checkpoint-store lock，并持有到 manifest 阶段和最终
+GC 完成。所有 batch 与单目标写者都保持 `all targets → store`，任何 store 内核都不得反向
+获取 target lock；相同 target 去重避免自锁，多 batch 使用同一 target 排序避免锁环。
+hardlink/case alias 仍受 frozen threat model 的 one-normalized-path 运维前提约束，不能把
+path lock 宣称为 inode lock。
+
+在第一次 destructive unlink 前，store 内核权威重读**全部**成员并校验 regular/no-follow
+文件、raw revision/size、完整 expectation、canonical path 和 `committed` status。这是一个
+全批次 pin barrier：任一 ID 已被 retention/其他显式 prune 删除，或任一 manifest
+bytes/path/status 漂移，整个 batch 都在首次 unlink 前零删除返回。该 barrier 不读取
+stored-before blobs，也不建立 global inventory/object 完整性前置条件；显式批准的是精确
+manifest 集，不能让无关损坏条目阻塞 backlog repair。现存其他 prepared/committed
+manifests 仍在最终 GC inventory 中作为 roots；被选成员若漂为 prepared 则由 status/CAS
+阻断。
+
+通过 barrier 后，内核按 canonical checkpoint ID 顺序逐项 unlink，并在**每个**成功
+unlink 后立即 fsync checkpoint 目录。跨 manifest 不存在原子回滚：任一成员 CAS、unlink、
+fsync 或 post-delete fault 都 stop-on-first。尚无 unlink 成功时可抛 application error，
+ChangeSetRegistry 会保留计划供完整重试；只要至少一个 unlink 成功，存储边界及其上层纯映射
+就必须 resolve 有界 `partial`/`completed` 结果，不能再 throw 使 registry 清掉
+`inFlight`。结果的 `outcomes` 逐项区分 `deleted`、`failed`、`not-attempted`，并对 unlink
+后 fsync 失败标为 deletion committed、durability unconfirmed。registry 缓存首个完整或
+部分结果；同一 change set 的并发/后续 replay 只返回 exact cache，绝不从剩余 index
+自动 resume。
+
+只有全部选中 manifests 都成功 unlink 并逐项 fsync 后，内核才建立一次 global inventory
+并运行一次现有 fail-closed orphan GC；blocker 令对象 sweep 零删除但不回滚 manifests。
+partial batch 将 GC 明确标为 not-run，孤儿 objects 留给后续安全 sweep。继续清理
+`not-attempted` 成员必须重新 list、重新 preview 和批准，服务重启后旧的内存
+changeSetId 也不能作为 durable resume token。含混 prepared checkpoint 的强制人工裁决
+仍不在当前能力内。
 
 自动 retention 的 manifest 格式与删除资格是显式的，不从旧字段猜测。未配置
 `--checkpoint-retain-per-target` /
@@ -1423,7 +1470,9 @@ mark committed 后调用 retention；调用时仍持同一 target mutex/file loc
 checkpoint-store lock。存储内核本身不会从 store lock 反向获取 target lock，也不挂在
 `ensureCapacity()` 上，所以所有路径维持 `target → store`，并且一次新写入失败时不会先
 丢失旧 recovery root。该策略不在启动期批量追赶，也没有 timer；每次成功 commit 最多
-删除一个。正常稳态维持 N；降低 N 或一次 blocker 造成的超额不会自行减少，必须显式 prune。
+删除一个。正常稳态维持 N；降低 N 或一次 blocker 造成的超额不会自行减少，操作者必须
+从当前列表显式选择 victim，再用单项或 2..32 项 batch prune 追赶；自动 retention 不替其
+选择。
 
 删除前的内核在 store lock 内重新建立完整 manifest raw snapshot/inventory，阻断任一
 prepared 同目标或全局 storage blocker，并对全部 recovery roots 的 referenced objects
@@ -1448,8 +1497,9 @@ manifest unlink 后立即 fsync checkpoints 目录；从这一点起 `manifestDe
 commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后故障同样折叠进
 `CommitResult.checkpointRetention` 与固定 warning，不能把已经写入的新目标变成可安全重试
 的 application error。target-lock 释放失败沿用全局 file-lock helper 的非抛错 stderr
-诊断，不反转已提交结果。现有 restore/prune preview 没有跨进程 durable pin，因而可能被
-合法 retention 失效；apply 必须把 not-found/changed 当作重新预览信号。
+诊断，不反转已提交结果。现有 restore/prune/batch-prune preview 没有跨进程 durable pin，
+因而可能被合法 retention 失效；batch 在首次 unlink 前重验全部成员，任一失效都令该批次
+零删除。apply 必须把 not-found/changed 当作重新预览信号。
 
 ## 10. 图像、资源与进程安全
 
@@ -1462,6 +1512,7 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
 | 单张地图引用的 TSJ 原始 bytes 合计 | 64 MiB |
 | 单 tile layer / 单次总解压 | 16M cells / 256 MiB |
 | 单 change set tile 写入 | 100,000 cells |
+| 单次 committed checkpoint batch prune | 2..32 个互不重复 UUID；canonical-ID execution order |
 | 单个 `stampPattern` operation | 单边 256 cells；总计 16,384 cells；preview sample 8 |
 | 单个 `replaceTiles` operation | 128 mappings |
 | 单个 `copyRegion` operation | 两侧完整 bounds；`2 × cellCount` reads，`cellCount` writes |
@@ -1534,8 +1585,8 @@ commit 前的 blocker 返回零删除，document mutation 仍成功；commit 后
 - source-preserving raw JSON、窄 typed views、目标版本 `FeatureMatrix`。
 - revision hash、既有目标 CAS、create missing precondition、进程内/跨进程锁，以及对应
   的单文件 rename / hard-link no-replace 提交。
-- content-addressed checkpoint、restore、显式 committed prune、current-before-verified
-  prepared discard 和启动恢复扫描。
+- content-addressed checkpoint、restore、显式单项/2..32 项 committed prune、
+  current-before-verified prepared discard 和启动恢复扫描。
 - `ChangePlan`、dry-run、稳定 diagnostics、结构 validator。
 - GID codec 及所有 flags 的 property-based tests。
 - Tiled/evaluate/export/tmxrasterizer/codec 的 capability probing；one-shot 兼容性探针。
@@ -1579,8 +1630,8 @@ M0 不追求完整地图 CRUD。验收标准：
   apply 后也只修改 map 文件；generic union 的独占 `removeTilesetFromMap` 只移除全图
   tile cells/tile objects 零引用的 external binding，保留其他 `firstgid` 和外部文件。
 - 同一 map 内的 batch/dry-run、validate，以及已接入 preview/apply 的单文件
-  checkpoint exact-byte restore、committed prune 与 current-before-verified prepared
-  discard。
+  checkpoint exact-byte restore、单项/2..32 项 committed prune 与
+  current-before-verified prepared discard。
 - 已实现 tileset contact sheet，以及正交 tile-layer region preview、图层筛选、
   H/V/D、opacity、网格和绝对坐标 gutter；对象/碰撞/高亮 overlay 仍待实现。
 - 通过 `tmxrasterizer` 或 one-shot Tiled 做可选兼容性/视觉复核。
@@ -1632,6 +1683,7 @@ M1 明确拒绝：
 | Tiled 版本/导出插件变化 | adapter 行为漂移 | runtime probe、格式动态发现 | pinned Tiled 集成测试 + capability 缺失测试 |
 | native preview 与 Tiled 不同 | 模型视觉误判 | 明确支持子集、rasterizer 对照 | golden image + perceptual diff + unsupported cases |
 | checkpoint blob 损坏、prepared 误判、并发 writer/GC 超卖或 GC 误删 | 无法恢复、错误删除恢复点或绕过容量上限 | hash verify、全量 prepared/committed 根追踪、target→store 锁序、discard exact-before + raw-manifest CAS、inventory 不完整时首次 GC unlink 前阻断 | corruption、缺失引用、未知 entry、symlink、扫描上限、并发 writer/GC、untracked/new/deleted file restore，以及 exact-before/create-missing、after/unrelated/ambiguous、target/manifest race、post-unlink failure |
+| committed checkpoint batch prune 的后项 pin 漂移、多目标锁序不一致、中途故障或 partial replay 被误当成续跑 | 错删未获批恢复点、锁环、丢失删除事实、重复执行剩余删除或提前回收共享 object | 首次 unlink 前全成员 raw/semantic pin barrier、去重 target 的统一确定性排序与 `all targets → store` 锁序、canonical-ID prefix commit、逐项目录 durability、stop-on-first、`cached-final-no-resume`，以及仅在全部成员 durable unlink 且 post-delete hooks 完成后运行一次 GC | 后项 missing/raw-byte drift 时全批零删除；同目标去重、锁不可用零删除与反序多目标并发无死锁；首项 unlink→fsync fault、后项 unlink fault 和末项 post-delete hook fault 分别验证 unconfirmed/deleted prefix 与 GC gate；partial 的并发/后续 replay 返回 exact cache 且不再进入 storage；完整 batch 验证共享 object sweep，partial 明确 not-run，GC blocker 不反转 manifest 删除事实 |
 
 测试分层：
 

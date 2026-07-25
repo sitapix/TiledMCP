@@ -149,6 +149,13 @@ describe("CheckpointStore listing", () => {
     const temporaryName = `${randomUUID()}.json.${randomUUID()}.tmp`;
     await writeFile(join(checkpointsDirectory, temporaryName), "partial", "utf8");
 
+    const uppercaseManifestId =
+      randomUUID().toUpperCase();
+    await writeManifest(
+      checkpointsDirectory,
+      manifest(uppercaseManifestId),
+    );
+
     const result = await store.list({ limit: 20 });
     const corruptNames = result.corruptEntries.map(({ fileName }) => fileName);
 
@@ -164,8 +171,11 @@ describe("CheckpointStore listing", () => {
         `${oversizedId}.json`,
         `${reservedPathId}.json`,
         `${symlinkId}.json`,
+        `${uppercaseManifestId}.json`,
         "unexpected-entry",
-      ].sort(),
+      ].sort((left, right) =>
+        left.localeCompare(right),
+      ),
     );
     expect(corruptNames).not.toContain(temporaryName);
     expect(result.corruptEntries).toEqual(
@@ -178,6 +188,12 @@ describe("CheckpointStore listing", () => {
           checkpointId: mismatchedHashId,
           code: "CHECKPOINT_CORRUPT",
         }),
+        {
+          fileName: `${uppercaseManifestId}.json`,
+          code: "CHECKPOINT_CORRUPT",
+          message:
+            "Unexpected entry in the checkpoint manifest directory.",
+        },
       ]),
     );
     await expect(store.read(mismatchedHashId)).rejects.toMatchObject({

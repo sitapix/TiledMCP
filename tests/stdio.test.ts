@@ -71,12 +71,15 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       "tiled_preview_checkpoint_prune",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_preview_checkpoint_prune_batch",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_restore",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_analyze_usage",
     );
-    expect(tools.tools.length === 20 || tools.tools.length === 21).toBe(
+    expect(tools.tools.length === 21 || tools.tools.length === 22).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -127,6 +130,31 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
             "unsupported-reconcile-first",
           automaticRetention:
             "separate-opt-in-post-commit-policy",
+          tombstones: false,
+        },
+        pruneBatch: {
+          scope:
+            "2-to-32-explicit-committed-checkpoints",
+          minCheckpointCount: 2,
+          maxCheckpointCount: 32,
+          workflow: "preview-then-apply",
+          ordering:
+            "canonical-checkpoint-id",
+          lockOrder:
+            "sorted-unique-targets-then-checkpoint-store",
+          preflight:
+            "all-pins-before-first-unlink",
+          commitMode:
+            "sequential-manifest-unlink-per-item-directory-fsync",
+          atomic: false,
+          stopOnFirstFailure: true,
+          partialResult:
+            "cached-final-no-resume",
+          garbageCollection:
+            "once-after-all-manifests-fail-closed",
+          storedBeforeValidation:
+            "not-read",
+          automaticSelection: "none",
           tombstones: false,
         },
         retention: {
@@ -1410,6 +1438,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:20|21) tools\)/u,
+    /ready for .+ \((?:21|22) tools\)/u,
   );
 });

@@ -38,13 +38,15 @@ const MAX_SCAN_LIMIT = 10_000;
 const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const OBJECT_HASH_PATTERN = /^[0-9a-f]{64}$/u;
 export const CHECKPOINT_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+export const CHECKPOINT_ID_INPUT_PATTERN =
+  /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/u;
 const CHECKPOINT_MANIFEST_PATTERN =
-  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/iu;
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/u;
 const CHECKPOINT_TEMP_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 const CHECKPOINT_OBJECT_TEMP_PATTERN =
-  /^[0-9a-f]{64}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/iu;
+  /^[0-9a-f]{64}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/u;
 const CHECKPOINT_STORAGE_MUTEX = new KeyedMutex();
 const CHECKPOINT_RETENTION_SEQUENCE_FILE =
   "checkpoint-retention-sequence.json";
@@ -52,10 +54,24 @@ const CHECKPOINT_RETENTION_SEQUENCE_MAX_BYTES = 1_024;
 export const MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT = 2;
 export const ROLLING_CHECKPOINT_RETENTION_POLICY =
   "rolling-per-target-count-v1" as const;
+export const MIN_CHECKPOINT_BATCH_PRUNE_COUNT = 2;
+export const MAX_CHECKPOINT_BATCH_PRUNE_COUNT = 32;
+export const CHECKPOINT_BATCH_PRUNE_STORE_LOCK_WARNING =
+  "Checkpoint batch pruning deleted one or more manifests, but release of the checkpoint-store lock could not be confirmed.";
+export const CHECKPOINT_BATCH_PRUNE_DURABILITY_WARNING =
+  "Checkpoint batch pruning observed a manifest unlink whose directory durability could not be confirmed; later approved deletions were not attempted.";
+export const CHECKPOINT_BATCH_PRUNE_STOPPED_WARNING =
+  "Checkpoint batch pruning stopped after deleting a prefix; the other approved manifest deletions remain unresolved and require a fresh list and preview.";
+export const CHECKPOINT_BATCH_PRUNE_GC_BLOCKED_WARNING =
+  "Checkpoint batch pruning deleted every approved manifest, but garbage collection was blocked; unreferenced checkpoint storage was retained.";
+export const CHECKPOINT_BATCH_PRUNE_GC_FAILED_WARNING =
+  "Checkpoint batch pruning deleted every approved manifest, but garbage collection could not be completed; unreferenced checkpoint storage may remain.";
+export const CHECKPOINT_BATCH_PRUNE_GC_NOT_RUN_WARNING =
+  "Checkpoint batch pruning stopped after a manifest unlink, so garbage collection was not run.";
 
 export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   name: "tiled-mcp-checkpoint-storage",
-  version: 4,
+  version: 5,
   quotaAccounting:
     "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
   quotaScope:
@@ -67,7 +83,17 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   garbageCollectionDeletion:
     "unreferenced-canonical-objects-and-private-crash-temporaries-only",
   validManifestDeletion:
-    "explicit-approved-raw-cas-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+    "explicit-approved-raw-cas-single-or-bounded-batch-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+  explicitBatchPruneCoordination:
+    "all-canonical-target-locks-sorted-then-single-checkpoint-store-lock",
+  explicitBatchPrunePreflight:
+    "all-approved-committed-manifest-pins-raw-and-semantic-cas-before-first-unlink",
+  explicitBatchPruneDeletionOrder:
+    "canonical-checkpoint-id-order-with-per-manifest-unlink-and-checkpoint-directory-fsync",
+  explicitBatchPruneGarbageCollection:
+    "once-after-all-approved-manifests-are-durably-unlinked-and-post-delete-hooks-complete",
+  explicitBatchPruneFailure:
+    "stop-after-first-failure-preserve-deleted-prefix-and-never-resume-cached-result",
   automaticValidManifestPruning:
     "explicitly-configured-v2-rolling-committed-manifests-only",
   automaticRetentionCoordination:
@@ -122,6 +148,13 @@ export interface CheckpointStoreObserver {
   afterObjectPublishedBeforeManifest?(context: {
     manifest: CheckpointManifest;
     objectHash: string;
+  }): void | Promise<void>;
+  /**
+   * Batch-prune-only fault seam. Throwing here models failure after unlink
+   * became observable but before checkpoint-directory durability is known.
+   */
+  afterBatchManifestUnlinkedBeforeDirectorySync?(context: {
+    checkpointId: string;
   }): void | Promise<void>;
   afterManifestDeletedBeforeGarbageCollection?(context: {
     checkpointId: string;
@@ -367,6 +400,58 @@ export interface CheckpointPruneStorageResult {
   manifestDeleted: true;
   garbageCollection:
     CheckpointPruneGarbageCollectionResult;
+}
+
+export interface CheckpointBatchPruneStorageExpectation
+  extends CheckpointPruneStorageExpectation {
+  version: CheckpointManifest["version"];
+  retention?: CheckpointManifest["retention"];
+}
+
+export type CheckpointBatchPruneOutcome =
+  | {
+      checkpointId: string;
+      path: string;
+      outcome: "deleted";
+      manifestDeleted: true;
+      durability:
+        | "confirmed"
+        | "unconfirmed";
+    }
+  | {
+      checkpointId: string;
+      path: string;
+      outcome: "failed";
+      failureCode: "INTERNAL_ERROR";
+    }
+  | {
+      checkpointId: string;
+      path: string;
+      outcome: "not-attempted";
+      reason:
+        "batch-stopped-before-checkpoint";
+    };
+
+export type CheckpointBatchPruneGarbageCollectionResult =
+  | CheckpointManifestDeletionGarbageCollectionResult
+  | {
+      status: "not-run";
+      reason:
+        "batch-stopped-before-garbage-collection";
+    };
+
+export interface CheckpointBatchPruneStorageResult {
+  kind: "checkpointPruneBatch";
+  status: "completed" | "partial";
+  replayDisposition:
+    "cached-final-no-resume";
+  requestedCheckpointCount: number;
+  manifestDeletedCount: number;
+  unresolvedCheckpointCount: number;
+  outcomes: CheckpointBatchPruneOutcome[];
+  garbageCollection:
+    CheckpointBatchPruneGarbageCollectionResult;
+  warnings?: string[];
 }
 
 export interface PreparedCheckpointDiscardStorageResult {
@@ -650,6 +735,376 @@ export class CheckpointStore {
       expected,
       "committed",
     );
+  }
+
+  async inspectBatchPrune(
+    checkpointIds: readonly string[],
+  ): Promise<CheckpointManifestSnapshot[]> {
+    const orderedIds =
+      canonicalCheckpointBatchIds(
+        checkpointIds,
+      );
+    return this.runStorageExclusive(async () => {
+      const { checkpoints } =
+        await this.ensureStorageDirectories();
+      const snapshots: CheckpointManifestSnapshot[] =
+        [];
+      for (const id of orderedIds) {
+        const snapshot =
+          await this.readManifestSnapshot(
+            checkpoints,
+            id,
+          );
+        if (
+          snapshot.manifest.status !==
+          "committed"
+        ) {
+          throw new TiledMcpError(
+            "CHECKPOINT_NOT_COMMITTED",
+            `Checkpoint ${id} is still prepared and cannot be batch pruned.`,
+            { checkpointId: id },
+          );
+        }
+        snapshots.push(snapshot);
+      }
+      return snapshots;
+    });
+  }
+
+  /**
+   * The caller must hold every distinct authoritative target lock, sorted by
+   * normalized project path. This method acquires the checkpoint-store lock
+   * once, pins every manifest before the first unlink, and then removes a
+   * canonical-id prefix with one fsync commit point per manifest.
+   */
+  async pruneCommittedBatch(
+    expectations: readonly CheckpointBatchPruneStorageExpectation[],
+  ): Promise<CheckpointBatchPruneStorageResult> {
+    const ordered =
+      canonicalCheckpointBatchExpectations(
+        expectations,
+      );
+    let outcomes: CheckpointBatchPruneOutcome[] =
+      [];
+    let manifestDeletedCount = 0;
+    let storeLockReleaseFailed = false;
+    let result:
+      | CheckpointBatchPruneStorageResult
+      | undefined;
+
+    const finish = (
+      garbageCollection: CheckpointBatchPruneGarbageCollectionResult,
+      warnings: readonly string[],
+    ): CheckpointBatchPruneStorageResult => {
+      const completedOutcomes = [
+        ...outcomes,
+      ];
+      const attemptedIds = new Set(
+        completedOutcomes.map(
+          ({ checkpointId }) =>
+            checkpointId,
+        ),
+      );
+      for (const expected of ordered) {
+        if (
+          attemptedIds.has(expected.id)
+        ) {
+          continue;
+        }
+        completedOutcomes.push({
+          checkpointId: expected.id,
+          path: expected.path,
+          outcome: "not-attempted",
+          reason:
+            "batch-stopped-before-checkpoint",
+        });
+      }
+      const uniqueWarnings = [
+        ...new Set(warnings),
+      ];
+      return {
+        kind: "checkpointPruneBatch",
+        status:
+          manifestDeletedCount ===
+          ordered.length
+            ? "completed"
+            : "partial",
+        replayDisposition:
+          "cached-final-no-resume",
+        requestedCheckpointCount:
+          ordered.length,
+        manifestDeletedCount,
+        unresolvedCheckpointCount:
+          ordered.length -
+          manifestDeletedCount,
+        outcomes: completedOutcomes,
+        garbageCollection,
+        ...(uniqueWarnings.length === 0
+          ? {}
+          : { warnings: uniqueWarnings }),
+      };
+    };
+
+    try {
+      result =
+        await this.runStorageExclusive(
+          async () => {
+            const directories =
+              await this.ensureStorageDirectories();
+            const pinned: Array<
+              CheckpointManifest & {
+                status: "committed";
+              }
+            > = [];
+
+            // This is deliberately a complete batch preflight, not a loop
+            // around the single-prune kernel. Any pin drift aborts before the
+            // first destructive operation.
+            for (const expected of ordered) {
+              const snapshot =
+                await this.readManifestSnapshot(
+                  directories.checkpoints,
+                  expected.id,
+                );
+              if (
+                !sameCheckpointBatchPruneExpectation(
+                  expected,
+                  snapshot,
+                ) ||
+                snapshot.manifest.status !==
+                  "committed"
+              ) {
+                throw new TiledMcpError(
+                  "CHECKPOINT_CHANGED",
+                  `Checkpoint ${expected.id} changed after batch prune inspection.`,
+                  {
+                    checkpointId:
+                      expected.id,
+                  },
+                );
+              }
+              pinned.push(
+                snapshot.manifest as CheckpointManifest & {
+                  status: "committed";
+                },
+              );
+            }
+
+            let stopped = false;
+            let durabilityUnconfirmed = false;
+            for (
+              let index = 0;
+              index < pinned.length;
+              index += 1
+            ) {
+              const manifest =
+                pinned[index] as CheckpointManifest & {
+                  status: "committed";
+                };
+              try {
+                await unlink(
+                  join(
+                    directories.checkpoints,
+                    `${manifest.id}.json`,
+                  ),
+                );
+              } catch (error) {
+                if (
+                  manifestDeletedCount === 0
+                ) {
+                  throw error;
+                }
+                outcomes.push({
+                  checkpointId:
+                    manifest.id,
+                  path: manifest.path,
+                  outcome: "failed",
+                  failureCode:
+                    "INTERNAL_ERROR",
+                });
+                stopped = true;
+                break;
+              }
+
+              manifestDeletedCount += 1;
+              let durability:
+                | "confirmed"
+                | "unconfirmed" =
+                "confirmed";
+              try {
+                await this.observer
+                  ?.afterBatchManifestUnlinkedBeforeDirectorySync?.(
+                    {
+                      checkpointId:
+                        manifest.id,
+                    },
+                  );
+                await syncDirectory(
+                  directories.checkpoints,
+                );
+              } catch {
+                durability =
+                  "unconfirmed";
+                durabilityUnconfirmed =
+                  true;
+              }
+              outcomes.push({
+                checkpointId: manifest.id,
+                path: manifest.path,
+                outcome: "deleted",
+                manifestDeleted: true,
+                durability,
+              });
+              if (
+                durability ===
+                "unconfirmed"
+              ) {
+                stopped = true;
+                break;
+              }
+              try {
+                await this.observer
+                  ?.afterManifestDeletedBeforeGarbageCollection?.(
+                    {
+                      checkpointId:
+                        manifest.id,
+                    },
+                  );
+              } catch {
+                stopped = true;
+                break;
+              }
+            }
+
+            if (stopped) {
+              const allManifestsDeleted =
+                manifestDeletedCount ===
+                ordered.length;
+              const warnings: string[] =
+                allManifestsDeleted
+                  ? [
+                      CHECKPOINT_BATCH_PRUNE_GC_FAILED_WARNING,
+                    ]
+                  : [
+                      CHECKPOINT_BATCH_PRUNE_GC_NOT_RUN_WARNING,
+                      CHECKPOINT_BATCH_PRUNE_STOPPED_WARNING,
+                    ];
+              if (durabilityUnconfirmed) {
+                warnings.push(
+                  CHECKPOINT_BATCH_PRUNE_DURABILITY_WARNING,
+                );
+              }
+              return finish(
+                allManifestsDeleted
+                  ? {
+                      status: "failed",
+                      failureCode:
+                        "INTERNAL_ERROR",
+                      deletionOutcome:
+                        "unknown-partial-or-none",
+                    }
+                  : {
+                      status: "not-run",
+                      reason:
+                        "batch-stopped-before-garbage-collection",
+                    },
+                warnings,
+              );
+            }
+
+            let garbageCollection: CheckpointManifestDeletionGarbageCollectionResult;
+            try {
+              const inventory =
+                await this.inventory(
+                  directories,
+                );
+              const report =
+                await this.sweepInventory(
+                  directories,
+                  inventory,
+                );
+              garbageCollection =
+                checkpointManifestDeletionGarbageCollectionResult(
+                  report,
+                );
+            } catch {
+              garbageCollection = {
+                status: "failed",
+                failureCode:
+                  "INTERNAL_ERROR",
+                deletionOutcome:
+                  "unknown-partial-or-none",
+              };
+            }
+            const warnings: string[] = [];
+            if (
+              garbageCollection.status ===
+              "blocked"
+            ) {
+              warnings.push(
+                CHECKPOINT_BATCH_PRUNE_GC_BLOCKED_WARNING,
+              );
+            } else if (
+              garbageCollection.status ===
+              "failed"
+            ) {
+              warnings.push(
+                CHECKPOINT_BATCH_PRUNE_GC_FAILED_WARNING,
+              );
+            }
+            return finish(
+              garbageCollection,
+              warnings,
+            );
+          },
+          () => {
+            storeLockReleaseFailed = true;
+          },
+        );
+    } catch (error) {
+      if (manifestDeletedCount === 0) {
+        throw error;
+      }
+      const allManifestsDeleted =
+        manifestDeletedCount ===
+        ordered.length;
+      result = finish(
+        allManifestsDeleted
+          ? {
+              status: "failed",
+              failureCode:
+                "INTERNAL_ERROR",
+              deletionOutcome:
+                "unknown-partial-or-none",
+            }
+          : {
+              status: "not-run",
+              reason:
+                "batch-stopped-before-garbage-collection",
+            },
+        [
+          allManifestsDeleted
+            ? CHECKPOINT_BATCH_PRUNE_GC_FAILED_WARNING
+            : CHECKPOINT_BATCH_PRUNE_GC_NOT_RUN_WARNING,
+          ...(!allManifestsDeleted
+            ? [
+                CHECKPOINT_BATCH_PRUNE_STOPPED_WARNING,
+              ]
+            : []),
+        ],
+      );
+    }
+
+    if (
+      storeLockReleaseFailed &&
+      manifestDeletedCount > 0
+    ) {
+      result = addCheckpointBatchPruneWarning(
+        result,
+        CHECKPOINT_BATCH_PRUNE_STORE_LOCK_WARNING,
+      );
+    }
+    return result;
   }
 
   async discardPrepared(
@@ -2087,6 +2542,220 @@ interface CheckpointManifestDeletionStorageResult<
   manifestDeleted: true;
   garbageCollection:
     CheckpointManifestDeletionGarbageCollectionResult;
+}
+
+function canonicalCheckpointBatchIds(
+  checkpointIds: readonly string[],
+): string[] {
+  if (
+    !Array.isArray(checkpointIds) ||
+    checkpointIds.length <
+      MIN_CHECKPOINT_BATCH_PRUNE_COUNT ||
+    checkpointIds.length >
+      MAX_CHECKPOINT_BATCH_PRUNE_COUNT
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `Checkpoint batch prune requires from ${MIN_CHECKPOINT_BATCH_PRUNE_COUNT} through ${MAX_CHECKPOINT_BATCH_PRUNE_COUNT} checkpoint ids.`,
+      {
+        minimum:
+          MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
+        maximum:
+          MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
+      },
+    );
+  }
+  const unique = new Set<string>();
+  for (const id of checkpointIds) {
+    if (
+      typeof id !== "string" ||
+      !CHECKPOINT_ID_PATTERN.test(id) ||
+      id !== id.toLowerCase()
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Checkpoint batch prune ids must be canonical lowercase UUIDs.",
+      );
+    }
+    if (unique.has(id)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `Checkpoint batch prune contains duplicate id ${id}.`,
+        { checkpointId: id },
+      );
+    }
+    unique.add(id);
+  }
+  return [...unique].sort(compareCanonicalText);
+}
+
+function canonicalCheckpointBatchExpectations(
+  expectations: readonly CheckpointBatchPruneStorageExpectation[],
+): CheckpointBatchPruneStorageExpectation[] {
+  const orderedIds =
+    canonicalCheckpointBatchIds(
+      expectations.map(({ id }) => id),
+    );
+  const byId = new Map(
+    expectations.map((expected) => [
+      expected.id,
+      expected,
+    ]),
+  );
+  return orderedIds.map((id) => {
+    const expected =
+      byId.get(id) as CheckpointBatchPruneStorageExpectation;
+    if (
+      expected.status !== "committed" ||
+      typeof expected.path !==
+        "string" ||
+      typeof expected.createdAt !==
+        "string" ||
+      (expected.label !== undefined &&
+        typeof expected.label !==
+          "string") ||
+      !REVISION_PATTERN.test(
+        expected.afterRevision,
+      ) ||
+      !REVISION_PATTERN.test(
+        expected.manifestRevision,
+      ) ||
+      !Number.isSafeInteger(
+        expected.manifestSize,
+      ) ||
+      expected.manifestSize < 1 ||
+      !validCheckpointBatchRetention(
+        expected,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `Checkpoint ${id} has an invalid batch prune expectation.`,
+        { checkpointId: id },
+      );
+    }
+    const {
+      retention,
+      ...withoutRetention
+    } = expected;
+    return {
+      ...withoutRetention,
+      before: expected.before.existed
+        ? { ...expected.before }
+        : { existed: false },
+      ...(retention === undefined
+        ? {}
+        : {
+            retention: {
+              ...retention,
+            },
+          }),
+    };
+  });
+}
+
+function validCheckpointBatchRetention(
+  expected: CheckpointBatchPruneStorageExpectation,
+): boolean {
+  if (expected.version === 1) {
+    return (
+      expected.retention === undefined
+    );
+  }
+  if (
+    expected.version !== 2 ||
+    expected.retention === undefined
+  ) {
+    return false;
+  }
+  if (
+    expected.retention.class ===
+    "protected"
+  ) {
+    return true;
+  }
+  return (
+    expected.retention.class ===
+      "rolling" &&
+    Number.isSafeInteger(
+      expected.retention.ordinal,
+    ) &&
+    expected.retention.ordinal > 0
+  );
+}
+
+function sameCheckpointBatchPruneExpectation(
+  expected: CheckpointBatchPruneStorageExpectation,
+  actual: CheckpointManifestSnapshot,
+): boolean {
+  return (
+    sameCheckpointManifestDeletionExpectation(
+      expected,
+      actual,
+    ) &&
+    expected.version ===
+      actual.manifest.version &&
+    sameCheckpointBatchRetention(
+      expected,
+      actual.manifest,
+    )
+  );
+}
+
+function sameCheckpointBatchRetention(
+  expected: CheckpointBatchPruneStorageExpectation,
+  actual: CheckpointManifest,
+): boolean {
+  if (expected.version === 1) {
+    return (
+      actual.version === 1 &&
+      actual.retention === undefined
+    );
+  }
+  if (
+    actual.version !== 2 ||
+    expected.retention === undefined ||
+    actual.retention === undefined ||
+    expected.retention.class !==
+      actual.retention.class
+  ) {
+    return false;
+  }
+  return (
+    expected.retention.class ===
+      "protected" ||
+    (actual.retention.class ===
+      "rolling" &&
+      expected.retention.ordinal ===
+        actual.retention.ordinal)
+  );
+}
+
+function compareCanonicalText(
+  left: string,
+  right: string,
+): number {
+  return left < right
+    ? -1
+    : left > right
+      ? 1
+      : 0;
+}
+
+function addCheckpointBatchPruneWarning(
+  result: CheckpointBatchPruneStorageResult,
+  warning: string,
+): CheckpointBatchPruneStorageResult {
+  if (result.warnings?.includes(warning)) {
+    return result;
+  }
+  return {
+    ...result,
+    warnings: [
+      ...(result.warnings ?? []),
+      warning,
+    ],
+  };
 }
 
 function projectedCheckpointStorage(
