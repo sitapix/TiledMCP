@@ -15,7 +15,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   TiledCliAdapter,
@@ -26,6 +26,9 @@ import {
   TILED_MCP_APPLICATION_ERROR_REGISTRY,
   TILED_MCP_APPLICATION_ERROR_REGISTRY_JSON,
 } from "../src/errorRegistry.js";
+import {
+  TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
+} from "../src/filesystemThreatModelContract.js";
 import { serializeJsonDocument, type JsonObject } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
@@ -82,6 +85,7 @@ interface Harness {
   root: string;
   client: Client;
   server: McpServer;
+  store: DocumentStore;
 }
 
 interface ToolResponse {
@@ -2130,6 +2134,15 @@ describe("createTiledMcpServer", () => {
     expect(content.text).toContain(
       '`snapshotConsistency:"non-atomic-read-set"`',
     );
+    expect(content.text).toContain(
+      "`filesystemThreatModelContract`",
+    );
+    expect(content.text).toContain(
+      "non-cooperative writer",
+    );
+    expect(content.text).toContain(
+      "OS sandbox or mediated writer",
+    );
 
     const applicationErrors =
       await harness.client.readResource({
@@ -2501,6 +2514,8 @@ describe("createTiledMcpServer", () => {
           editedRangesReformatted: boolean;
         };
       };
+      filesystemThreatModelContract:
+        typeof TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT;
       cli: {
         tiled: { available: boolean };
         rasterizer: { available: boolean };
@@ -2966,6 +2981,8 @@ describe("createTiledMcpServer", () => {
           editedRangesReformatted: true,
         },
       },
+      filesystemThreatModelContract:
+        TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
       cli: {
         tiled: { available: false },
         rasterizer: { available: false },
@@ -2978,6 +2995,11 @@ describe("createTiledMcpServer", () => {
         "optional-nonnegative-default-zero",
       sourcePatch: "object-layer-objects-member-local",
     });
+    expect(
+      Object.keys(capabilities.safetyStatus),
+    ).toEqual([
+      "jsonLexicalPreservation",
+    ]);
 
     const assets = resultOf<Array<{ path: string; kind: string }>>(
       await harness.client.callTool({
@@ -6140,7 +6162,7 @@ describe("createTiledMcpServer", () => {
     }
   });
 
-  it("previews without writing, then applies once and replays the cached result", async () => {
+  it("previews without writing, then applies once and replays the cached result without re-reading changed disk state", async () => {
     const absoluteMapPath = join(harness.root, MAP_PATH);
     const before = await readFile(absoluteMapPath);
     const summary = resultOf<{
@@ -6215,6 +6237,16 @@ describe("createTiledMcpServer", () => {
     });
     expect(await readFile(absoluteMapPath)).not.toEqual(before);
 
+    const readSnapshot = vi.spyOn(
+      harness.store,
+      "readSnapshot",
+    );
+    const commitBytes = vi.spyOn(
+      harness.store,
+      "commitBytes",
+    );
+    await writeFile(absoluteMapPath, before);
+
     const secondApply = await harness.client.callTool({
       name: "tiled_apply_change_set",
       arguments: {
@@ -6223,8 +6255,14 @@ describe("createTiledMcpServer", () => {
       },
     });
     expect(secondApply).toEqual(firstApply);
+    expect(readSnapshot).not.toHaveBeenCalled();
+    expect(commitBytes).not.toHaveBeenCalled();
+    expect(await readFile(absoluteMapPath)).toEqual(
+      before,
+    );
+    readSnapshot.mockRestore();
+    commitBytes.mockRestore();
 
-    await writeFile(absoluteMapPath, before);
     const replayPreview = resultOf<{
       changeSetId: string;
       expectedRevision: string;
@@ -7489,7 +7527,12 @@ async function createHarness(
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await created.server.connect(serverTransport);
   await client.connect(clientTransport);
-  return { root, client, server: created.server };
+  return {
+    root,
+    client,
+    server: created.server,
+    store,
+  };
 }
 
 async function terrainPng(): Promise<Buffer> {

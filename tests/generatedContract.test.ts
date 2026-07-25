@@ -18,6 +18,9 @@ import {
   TILED_MCP_CAPABILITY_ISSUE_CODES,
 } from "../src/errorRegistry.js";
 import {
+  TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
+} from "../src/filesystemThreatModelContract.js";
+import {
   APPLICATION_ERROR_RESOURCE_META,
   APPLICATION_ERROR_RESOURCE_MIME_TYPE,
   APPLICATION_ERROR_RESOURCE_REVISION,
@@ -293,6 +296,32 @@ describe("generated MCP contract", () => {
       },
       `${capabilitiesLabel} applicationErrorContract`,
     );
+    const filesystemThreatModelSchema =
+      schemaProperty(
+        capabilitySuccessSchema,
+        "filesystemThreatModelContract",
+        `${capabilitiesLabel} capability result`,
+      );
+    expectExactLiteralSchema(
+      filesystemThreatModelSchema,
+      TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
+      `${capabilitiesLabel} filesystemThreatModelContract`,
+    );
+    const safetyStatusSchema = schemaProperty(
+      capabilitySuccessSchema,
+      "safetyStatus",
+      `${capabilitiesLabel} capability result`,
+    );
+    expect(
+      Object.keys(
+        asRecord(
+          safetyStatusSchema.properties,
+          `${capabilitiesLabel} safetyStatus.properties`,
+        ),
+      ),
+    ).toEqual([
+      "jsonLexicalPreservation",
+    ]);
   });
 
   it("publishes exact direct resources and application error metadata without environment leaks", () => {
@@ -559,6 +588,65 @@ function expectLiteralObjectSchema(
       ).const,
       `${label}.properties.${key}.const`,
     ).toEqual(value);
+  }
+}
+
+function expectExactLiteralSchema(
+  schema: Record<string, unknown>,
+  expected: unknown,
+  label: string,
+): void {
+  if (
+    expected === null ||
+    typeof expected !== "object"
+  ) {
+    expect(
+      schema.const,
+      `${label}.const`,
+    ).toEqual(expected);
+    return;
+  }
+  if (Array.isArray(expected)) {
+    throw new Error(
+      `${label} does not support array literals`,
+    );
+  }
+
+  expect(schema.type, `${label}.type`).toBe(
+    "object",
+  );
+  expect(
+    schema.additionalProperties,
+    `${label}.additionalProperties`,
+  ).toBe(false);
+  const properties = asRecord(
+    schema.properties,
+    `${label}.properties`,
+  );
+  const expectedEntries = Object.entries(
+    expected,
+  );
+  const expectedKeys = expectedEntries
+    .map(([key]) => key)
+    .sort();
+  expect(
+    Object.keys(properties).sort(),
+  ).toEqual(expectedKeys);
+  expect(
+    asStringArray(
+      schema.required,
+      `${label}.required`,
+    ).sort(),
+  ).toEqual(expectedKeys);
+  for (const [key, value] of expectedEntries) {
+    expectExactLiteralSchema(
+      asRecord(
+        properties[key],
+        `${label}.properties.${key}`,
+      ),
+      value,
+      `${label}.${key}`,
+    );
   }
 }
 

@@ -22,7 +22,9 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
    evidence, internal metadata effects, registry-loss behavior, and crash
    durability. Inspect \`mapCreationCapabilities\` before creating a map: it
    declares the one direct no-preview exception, exact format/version limits,
-   approval boundary, retry semantics, and no-replace behavior.
+   approval boundary, retry semantics, and no-replace behavior. Before any
+   write, inspect \`filesystemThreatModelContract\`: its guarantees apply only
+   when the declared operational requirements hold.
 2. Use MCP \`resources/list\` and read \`tiled://application-errors\` when the
    complete current application-code allowlist is needed.
 3. Call \`tiled_list_files\` to discover project-relative map and tileset paths.
@@ -34,6 +36,26 @@ The M1 edit profile is intentionally narrow: finite orthogonal TMJ maps,
 external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle,
 point, ellipse, or Tiled 1.12 capsule objects. Unsupported Tiled semantics
 fail closed instead of being approximated.
+
+## Filesystem threat model
+
+The direct filesystem backend protects existing-target commits against
+writers that use the same normalized project path and honor the TiledMCP lock.
+This contract covers project-asset JSON document targets and explicitly
+excludes server-internal \`.tiledmcp\` state.
+It detects different external bytes visible before the final SHA-256 check,
+but ordinary rename is not conditional: a non-cooperative writer can still
+save between that check and promotion. Pause Tiled autosave and other writers
+during commits. When \`changed:true\`, the success records a promotion event,
+not a lease on the current path; re-read before making another state-dependent
+decision.
+
+Static symlinks and path escapes are rejected. A same-privilege hostile local
+process that swaps a parent directory during a call is outside this backend's
+boundary. Hardlink aliases also do not share a path lock. Strict isolation
+requires an OS sandbox or mediated writer, neither of which is implemented.
+\`tiled_create_map\` is stronger only for target existence: its hard-link
+promotion atomically refuses a destination created by another process.
 
 ## Read tool results
 
@@ -430,8 +452,9 @@ against the original source snapshot, so removing an earlier root sibling
 cannot misaddress a later target Group. The exact source element bytes are
 moved, preserving subtree formatting, unknown fields, number/string lexemes,
 BOM, and CRLF outside the necessary array seams. Apply still replans, verifies
-the digest and revisions, and commits only through the normal lock, raw-byte
-CAS, checkpoint, and atomic-replacement flow.
+the digest and revisions, and commits only through the normal lock with a
+raw-byte revision guard (CAS for cooperative writers), checkpoint, and
+atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
@@ -496,8 +519,9 @@ unknown fields, BOM, CRLF, key order, and untouched numeric/string lexemes keep
 their exact source bytes. Only the insertion and value-local high-water
 counter patches are synthesized. Preview pins the map and complete dependency
 revision set. Apply replans destination, allocation, references, limits,
-summary, and source patches, verifies the digest and raw-byte CAS, then uses
-the normal lock, write-ahead checkpoint, and atomic replacement.
+summary, and source patches, verifies the digest and revision pins, then
+commits under the normal lock with a raw-byte guard (CAS for cooperative
+writers), write-ahead checkpoint, and atomic replacement.
 
 A \`replaceTiles\` operation has a numeric \`layerId\`, one to 128
 \`mappings\` shaped as \`{from: TileRef, to: TileRef|null}\`, and an optional
@@ -693,7 +717,10 @@ After a successful apply:
    and retain its PNG \`sha256\`, renderer version, effective options, and
    non-atomic snapshot marker with the observation.
 
-Every write creates a recovery checkpoint before replacement.
+A net-changing apply or restore of an existing JSON document prepares a
+recovery checkpoint before replacement. A no-op does not replace the target
+or create a checkpoint. \`tiled_create_map\` instead prepares an
+\`existed:false\` audit checkpoint; it cannot be restored as deletion.
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
 entries without reading the stored document bytes.
 
@@ -709,10 +736,12 @@ To restore one checkpoint safely:
 4. Apply the returned opaque change set through
    \`tiled_apply_change_set\`, then re-read and validate the target.
 
-Restore replaces one existing JSON document with exact checkpoint bytes and
-creates another checkpoint for the version being replaced. It does not restore
-referenced tilesets, images, or other files. A checkpoint made before creating
-a new file cannot be used to delete that file.
+When \`wouldChange:true\`, restore replaces one existing JSON document with
+exact checkpoint bytes and creates another checkpoint for the version being
+replaced. A no-op restore does neither. Recoverability also requires an intact
+checkpoint and the filesystem threat model's operational requirements. Restore
+does not include referenced tilesets, images, or other files. A checkpoint
+made before creating a new file cannot be used to delete that file.
 
 ## Conflict and failure handling
 

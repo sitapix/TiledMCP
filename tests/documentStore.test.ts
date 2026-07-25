@@ -202,6 +202,53 @@ describe("DocumentStore", () => {
     );
   });
 
+  it("accepts an A-to-B-to-A byte-identical ABA under the SHA-256 revision model", async () => {
+    const absolutePath = join(
+      root,
+      "maps",
+      "level.tmj",
+    );
+    const original =
+      serializeJsonDocument(INITIAL_DOCUMENT);
+    await writeFile(absolutePath, original);
+    const loaded =
+      await store.read("maps/level.tmj");
+
+    const intermediate = Buffer.from(
+      '{"type":"map","width":99,"external":"temporary"}\n',
+      "utf8",
+    );
+    expect(revisionOf(intermediate)).not.toBe(
+      loaded.revision,
+    );
+    await writeFile(absolutePath, intermediate);
+    await writeFile(absolutePath, original);
+    expect(
+      await store.readRevision("maps/level.tmj"),
+    ).toBe(loaded.revision);
+
+    const proposed = Buffer.from(
+      '{"type":"map","version":"1.10","width":2,"height":1,"layers":[]}\n',
+      "utf8",
+    );
+    const result = await store.commitBytes(
+      "maps/level.tmj",
+      loaded.revision,
+      proposed,
+      "accept byte-identical ABA",
+    );
+
+    expect(result).toMatchObject({
+      path: "maps/level.tmj",
+      beforeRevision: loaded.revision,
+      revision: revisionOf(proposed),
+      changed: true,
+    });
+    expect(await readFile(absolutePath)).toEqual(
+      proposed,
+    );
+  });
+
   it("atomically commits a complete document and preserves unknown JSON fields", async () => {
     const initial = serializeJsonDocument(INITIAL_DOCUMENT);
     await writeFile(join(root, "maps", "level.tmj"), initial);

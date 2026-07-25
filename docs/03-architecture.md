@@ -3,9 +3,11 @@
 > 本文描述实现边界、数据保真策略、事务模型和分期交付范围。功能契约见
 > [02-mcp-spec.md](02-mcp-spec.md)。当前状态是**实现架构草案**；已注册工具已有精确
 > closed output schema、有界 compact text summary 和可追溯 rasterizer PNG 元数据，但
-> non-cooperative external-writer CAS、hostile parent swap 与运维边界仍未全部定案，
-> 接口与全部磁盘格式仍不视为冻结。create-map direct no-replace 例外已经正式定案，
-> 固定 Tiled 1.12.2 的不可跳过集成门也已落地。
+> 接口与全部磁盘格式仍不整体视为冻结。direct filesystem 的 non-cooperative writer、
+> hostile parent swap、锁作用域与运维条件已经由
+> [filesystem threat model v1](04-security.md) 冻结为明确 guarantee/unsupported 边界；
+> create-map direct no-replace 例外和固定 Tiled 1.12.2 的不可跳过集成门也已落地。
+> 当前主要未完成运维项是 checkpoint 总容量配额与 GC。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
 > rename 边界由 capability contract 明示。当前 discovery contract 与 97-code v1 application-error
 > registry 已分别由
@@ -15,7 +17,8 @@
 
 ### 当前落地状态（2026-07-25）
 
-存储沙箱、原始 bytes revision/CAS、两层锁、单文件原子替换、内容寻址 checkpoint、
+静态存储沙箱、原始 bytes revision/合作写者 CAS、两层锁、单路径原子可见替换、
+内容寻址 checkpoint、
 启动期 `prepared` 对账、有界 checkpoint 索引、4-bit GID codec、有限正交 TMJ 基础
 tile edits、rectangle/point/ellipse/capsule 对象增删改、stdio MCP 和
 `tmxrasterizer` adapter 已经落地
@@ -183,8 +186,11 @@ Node 的普通 `rename` 没有 compare-and-swap 条件，非合作写者仍可�
 替换之间竞态。Linux `renameat2(RENAME_NOREPLACE)` 只能严格解决“目标不存在时创建”，
 `RENAME_EXCHANGE` 也不按 revision/hash 比较，因此 descriptor-relative helper 本身不能
 提供 external-writer CAS。严格“绝不覆盖”需要让所有写入经过强制中介（例如 FUSE/写入
-broker），或让 Tiled 扩展遵守同一锁协议。现阶段这是公开的 M0 blocker，不应被测试中的
-普通 stale-revision 场景掩盖。
+broker），或让 Tiled 扩展遵守同一锁协议。`filesystemThreatModelContract` v1 已把它
+冻结为 unsupported，并把“既有目标提交时不得有非合作写者并发保存”列为运维前提；这不再
+是待定的 M0 语义，也不能被普通 stale-revision 测试掩盖。该 contract 的 scope 只覆盖
+项目资产 JSON 文档目标；asset registry、checkpoint manifests、locks 等 `.tiledmcp`
+server-internal state 由各自契约和实现规则约束。
 
 同理，现有 `lstat`/`realpath`/`O_NOFOLLOW` 能拒绝静态越界和最终组件 symlink，但无法
 消除恶意进程在检查后替换中间父目录的 TOCTOU；真正的 hostile-local sandbox 需要
@@ -202,7 +208,8 @@ TiledMCP 的第一目标不是“能改 JSON”，而是让自动化编辑同时
 
 1. **无损**：未知字段、未来版本字段以及未被编辑的 JSON 文本不因一次局部修改而丢失或被规范化。
 2. **并发安全**：既有目标写入基于明确 revision；唯一 direct create 使用 missing
-   precondition。用户在 Tiled 中保存后，旧请求不能静默覆盖新内容。
+   precondition。合作写者或在最终 guard 前已被观察到的外部保存不会被旧请求静默覆盖；
+   非合作写者在 guard 后到 rename 前的窗口由 threat-model v1 明示，不作严格保证。
 3. **可恢复**：既有目标的单文件提交使用 checkpoint + 原子替换；direct create 使用
    hard-link no-replace，当前不会把 `before.existed:false` 恢复成删除。未来跨文件提交
    必须通过 WAL 恢复，不能把多次 `rename` 宣称为天然原子。
@@ -263,12 +270,13 @@ count；error 在公共 kind/version/ok/byte-count 字段之外，只报告 code
 resolve paths
   → load raw bytes and revisions
   → build typed views
-  → plan edits and diagnostics
+  → plan edits, diagnostics, and validate the in-memory result
   → acquire locks
-  → compare revisions again (CAS)
-  → stage and validate result
-  → checkpoint
-  → commit or record recoverable transaction
+  → compare revisions against the pinned source
+  → prepare the write-ahead checkpoint
+  → write and fsync same-directory filesystem staging
+  → perform the final revision guard (cooperative CAS / pre-rename guard)
+  → promote, fsync the parent where supported, and finalize checkpoint state
 ```
 
 工具 handler 不直接写文件，也不直接启动外部进程。它只调用应用层用例；用例生成
@@ -1206,22 +1214,27 @@ precondition。
 
 每个目标文件使用两层锁：
 
-1. 进程内按 canonical path 的异步 mutex；
-2. `.tiledmcp/locks/<sha256(canonical-path)>.lock` 的跨进程 advisory lock。
+1. 进程内按 normalized project path 的异步 mutex；
+2. `.tiledmcp/locks/<sha256(normalized-project-path)>.lock` 的跨进程 advisory lock。
 
-锁按 canonical path 排序获取，避免死锁。锁文件通过 candidate + hard link 原子抢占，并
+锁按 normalized project path 排序获取，避免死锁。它不是 inode lock；指向同一 inode 的
+不同 hardlink alias 不会自动共享锁，因此 v1 要求一个逻辑目标只使用一个规范化项目路径。
+锁文件通过 candidate + hard link 原子抢占，并
 写入 pid、nonce 和时间。当前实现对 stale lock **不自动回收**：无法证明原写者已退出时
 宁可 fail closed；未来若加入 lease 回收，也必须先证明进程身份而不能仅凭 mtime。获取锁后
-重新读取 bytes 并比较 revision。冲突返回 `REVISION_CONFLICT`，附当前 revision 和重新
-预览建议，绝不自动 reload 后继续覆盖。
+重新读取 bytes 并比较 revision。观察到冲突时返回 `REVISION_CONFLICT`，附当前 revision
+和重新预览建议，绝不自动 reload 后继续覆盖；这仍不是非合作写者的原子 conditional
+replace。
 
 安全敏感的最终组件使用 `O_NOFOLLOW | O_NONBLOCK` 打开，再以 `fstat` 确认普通文件。当前
 JSON 文档和图片读取还会在同一 fd 上比较读前/读后的 dev、inode、size、mtime、ctime，
 并校验实际读取字节数；普通原地覆写、增长或截断会返回
 `DOCUMENT_CHANGED_DURING_READ` / `IMAGE_CHANGED_DURING_READ`，不会为混合 bytes 签发
-revision。rename 后已打开的旧 inode 仍是内部一致快照，上层需要用返回前的路径 revision
-复核识别绑定变化。当前绝对路径 API 仍不能证明中间父目录在整个操作期间未被替换；未来 native helper 必须从预先
-打开的 root dirfd 出发，用 `openat2` 与 `*at` 系列操作贯穿 read/stage/link/rename/unlink。
+revision。外部 atomic-save 在 fd 打开后替换 pathname 时，旧 inode 仍是内部一致快照；
+当前 final snapshot 后不再验证 pathname→inode binding，因而这是 external-writer blind
+window 的一部分。当前绝对路径 API 也不能证明中间父目录在整个操作期间未被替换；未来
+native helper 必须从预先打开的 root dirfd 出发，用 `openat2` 与 `*at` 系列操作贯穿
+read/stage/link/rename/unlink。
 
 ### 8.2 单文件原子提交
 
@@ -1243,8 +1256,11 @@ durability warning，不能用内容相等认领外部抢占。创建成功后�
 committed；失败 warning 会明确自动对账无法证明创建者。
 
 这里的“原子”只描述单次同文件系统替换的可见性，不代表对非合作写者做了 conditional
-replace，也不等同于 crash durability。磁盘/文件系统不支持所需语义时，服务器应拒绝写入
-或明确降级，不能仍返回原子成功。
+replace，也不等同于 crash durability。保证只在运维方确认底层文件系统满足 contract
+要求时成立；服务器会传播实际 syscall failure，但不会探测或证明底层 atomicity、锁和
+`fsync` 语义，也没有验证分布式文件系统。`changed:true` 的成功结果只记录本次 promotion
+事件，不是响应时 pathname 仍指向该 revision 的 lease；后续状态相关决策必须重新读取。
+已成功的同一 change-set id replay 返回首次缓存结果，也不会重新查询磁盘。
 
 同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
 第二个写目标时，计划在 dry-run 阶段返回
@@ -1291,9 +1307,9 @@ manifest 至少记录：
 - manifest schema version 和完整性 hash。
 
 blob 写入采用 create-if-absent + fsync，读取和恢复时重新校验 hash。恢复同样获取锁、检查调用者
-提供的 expected current revision，并通过正常提交路径完成；它不是直接复制覆盖。自动
-checkpoint、命名 checkpoint、保留数量、总字节配额和 GC 分开配置；GC 只删除不再被任一
-checkpoint/WAL 引用的 blob。
+提供的 expected current revision，并通过正常提交路径完成；它不是直接复制覆盖。当前自动
+checkpoint 还没有总字节配额或 GC。命名 checkpoint、保留数量、独立配额配置和“只删除
+不再被任一 checkpoint/WAL 引用 blob”的 GC 都是未来设计，不能当作现行配置。
 
 当前单文件实现的 manifest 状态为 `prepared | committed`。`tiled_list_checkpoints` 以
 manifest 数量和目录扫描条目双重预算流式枚举；异常文件名、symlink、超限/坏 JSON、非法路径
@@ -1312,8 +1328,10 @@ destructive，并提醒依赖 TSJ、图片和其他文件不会被连带恢复�
 上获取同一套进程内与跨进程锁，重新读取 manifest 并只允许 `prepared → committed` 的状态
 前进；随后先做目标 revision CAS，再重新校验 blob、安全 JSON 和当前 DocumentStore 大小
 上限。若 existing-file `prepared` 写入已精确落盘，必须成功持久化 `committed` 状态后才
-覆盖目标；状态含混、manifest/blob 篡改或 revision 过期均 fail closed。实际写入前仍为
-当前版本创建新的 checkpoint，再以原始 bytes 原子替换，因此恢复也是可逆的。
+覆盖目标；状态含混、manifest/blob 篡改或 revision 过期均 fail closed。实际替换前仍为
+当前版本创建新的 checkpoint，再以原始 bytes 原子替换。只有实际改变目标的 restore 才
+创建该恢复点；其后续可恢复性还要求 checkpoint 完整且 threat-model operational
+requirements 成立。no-op restore 不替换目标，也不创建新 checkpoint。
 `before.existed:false` 代表创建文件前状态，prepared exact match 不会被自动认领，当前版本
 也拒绝把它解释为删除操作。
 
@@ -1410,11 +1428,12 @@ M0 不追求完整地图 CRUD。验收标准：
 - 所有 fixture no-op 均不写文件，未知字段不会在局部 patch 中丢失。
 - 对合作写者，revision 过期时 100% 拒绝覆盖；若要把同一承诺扩展到未修改的 Tiled GUI，
   必须启用 mediated backend，默认文件系统 backend 明确报告不具备该能力。
-- 既有目标的单文件提交在每个故障注入点都保持旧版或新版之一，并可恢复 checkpoint；
+- 在不模拟突然断电、底层文件系统满足 operational requirements 的 process-error 注入中，
+  既有目标的单文件提交保持旧版或新版之一，并为发生改变的既有目标保留恢复 checkpoint；
   direct create 保持不存在或完整新版之一，checkpoint 只用于审计，不恢复为删除。
 - 路径逃逸、静态 symlink/最终组件替换、重复 key 与当前已实现 codec 的超限输入均被安全
   拒绝。恶意本机进程交换中间父目录不在当前保证内，由
-  `safetyStatus.hostileParentSwapProtection:false` 明示。
+  `filesystemThreatModelContract.unsupported.hostileParentSwapProtection` 明示。
 
 ### M1：可用的最小正交编辑闭环
 
@@ -1488,9 +1507,9 @@ M1 明确拒绝：
 | 稀疏 local id 被 `tilecount` 截断 | GID 指向错误 tileset | highest-id/nexttileid 区间模型 | atlas、稀疏 image collection、firstgid gap fixtures |
 | tile 语义检索误把默认/继承值当显式值 | 选错 `TileRef` | 只扫描显式 `tiles[]`/property，类型和值精确匹配，revision-pinned 分页 | type/class 优先级、all/any、false/0/空串、稀疏乱序分页、revision race |
 | chunk 被强制重切 | diff 爆炸或坐标损坏 | 原 chunk 保留、局部 rewrite | 负坐标、非 16×16、混合尺寸、重叠 chunk |
-| Tiled 同时保存 | 静默覆盖用户修改 | raw-byte revision、锁内 CAS | 保存竞争与锁顺序并发测试 |
+| Tiled 同时保存 | 静默覆盖用户修改 | 最终 raw-byte guard 只能检测此前可见的保存；运维上禁止并发保存，严格保证需 mediated writer | guard 前保存必须 conflict；guard 后窗口作为 threat-model unsupported，不伪造 strict passing test |
 | 跨文件中途崩溃 | 半提交 | WAL + content-addressed old/new blobs | 每个 fsync/rename 后 fault injection 和幂等恢复 |
-| symlink/外部引用逃逸 | 越权读写 | canonical roots、父目录验证 | `..`、绝对路径、symlink swap、FIFO、只读 root |
+| symlink/外部引用逃逸 | 越权读写 | canonical root、静态组件/父目录验证；hostile parent swap 不在 direct backend 保证内 | `..`、绝对路径、静态 symlink、FIFO；主动 swap 作为 unsupported 对抗边界 |
 | 压缩炸弹/巨图 | OOM 或阻塞 | checked size、流式上限、像素配额 | gzip/zlib/zstd 超限、伪造尺寸、截断数据 |
 | Tiled 版本/导出插件变化 | adapter 行为漂移 | runtime probe、格式动态发现 | pinned Tiled 集成测试 + capability 缺失测试 |
 | native preview 与 Tiled 不同 | 模型视觉误判 | 明确支持子集、rasterizer 对照 | golden image + perceptual diff + unsupported cases |
@@ -1515,7 +1534,8 @@ M1 明确拒绝：
    `pnpm run verify:tiled-1.12.2` 门则不可 skip，精确拒绝缺失/错版本，检查真实
    `--export-formats`、fixture JSON round-trip、64×48 `tmxrasterizer` PNG，以及
    `tiled_create_map` 输出被 Tiled 1.12.2 重新导出后的 parsed equivalence。
-5. **Fault recovery**：锁、checkpoint、单文件 replace 和 WAL 的每个持久化边界注入崩溃。
+5. **Fault recovery**：覆盖当前锁、checkpoint 与单文件 replace 的 process-error 注入；
+   sudden power loss 不在保证内，未来 WAL 的持久化边界测试随 WAL 实现一并加入。
 6. **Security**：恶意 JSON、压缩、图片、路径、symlink race、超时和子进程输出洪泛。
 
 ## 13. 配置

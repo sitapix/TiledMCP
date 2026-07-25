@@ -10,10 +10,10 @@
 
 第一条可运行的纵向闭环已经完成：
 
-- 项目根目录沙箱、路径逃逸与 symlink 拒绝；
+- 项目根目录沙箱、静态路径逃逸与 symlink 拒绝；
 - 严格安全的 TMJ/TSJ JSON 读取，以及只重写目标子树的 source-preserving patch；
-- 原始 bytes 的 SHA-256 revision、CAS、进程内互斥和跨进程文件锁；
-- 同目录原子替换、写前内容寻址 checkpoint、只读索引、启动对账，以及经
+- 原始 bytes 的 SHA-256 revision、合作写者 CAS、进程内互斥和跨进程文件锁；
+- 同目录单路径原子可见替换、写前内容寻址 checkpoint、只读索引、启动对账，以及经
   preview/批准后按原始 bytes 恢复单个既有 JSON 文档；
 - 有限正交 TMJ + 外部 atlas TSJ 的摘要、矩形 region 读取和只读校验；
 - 按 map + tileset `assetId` 定位的有界 TSJ 详情，覆盖 atlas geometry、稀疏
@@ -84,8 +84,11 @@ hardlink 在旧路径删除后与 rename 的最终状态不可区分，可能继
 `tiled_create_map` 已正式冻结为唯一 direct additive no-preview 例外：只创建此前不存在的
 有限正交 TMJ，已有目标即使 bytes 相同也返回 `FILE_ALREADY_EXISTS`；精确边界由
 `mapCreationCapabilities` 公布。仓库另提供不可静默跳过、精确要求 Tiled 1.12.2 的
-`pnpm run verify:tiled-1.12.2` 集成门。接口仍未 Frozen：non-cooperative
-external-writer CAS 与 hostile parent-directory swap 的威胁模型仍是公开的 M0 决策项。
+`pnpm run verify:tiled-1.12.2` 集成门。direct filesystem backend 的威胁模型已经由
+`filesystemThreatModelContract` v1 冻结：非合作既有目标 conditional replace 与 hostile
+parent swap 明确属于 unsupported，并附带可机读运维条件；其 scope 只覆盖项目资产 JSON
+文档目标，明确排除 `.tiledmcp` server-internal state，不再是含糊的 M0 决策项。
+整体接口仍以 0.0.x Draft 发布；当前主要运维缺口是 checkpoint 总容量配额与 GC。
 当前运行能力仍应以
 `tiled_get_capabilities`、`tools/list` 和 resource discovery 为准。
 
@@ -96,6 +99,7 @@ external-writer CAS 与 hostile parent-directory swap 的威胁模型仍是公�
 | [docs/01-tiled-research.md](docs/01-tiled-research.md) | Tiled 软件调研：核心数据模型、文件格式、自动化生态、现有同类 MCP 分析 |
 | [docs/02-mcp-spec.md](docs/02-mcp-spec.md) | **MCP 功能规格草案**：Tools / Resources / Prompts 清单与分期计划 |
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
+| [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
 | [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 97 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 19 工具 schema、annotations 与调用参考 |
@@ -170,7 +174,7 @@ rasterization，并确认 `tiled_create_map` 产物可由目标版本重新导�
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
-| `tiled_apply_change_set` | 以目标 revision CAS 提交已批准的 map edit 或 checkpoint restore |
+| `tiled_apply_change_set` | 以目标 revision guard（合作写者 CAS）提交已批准的 map edit 或 checkpoint restore |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回带 map/TSJ/output/renderer 可追溯元数据的 PNG |
 
 `tiled_render_map` 的成功结果使用 pre-Frozen clean break，不再返回 `mapPath`、`bytes`、
@@ -365,9 +369,10 @@ move summary 回显 `sourceParentGroupId` / `targetParentGroupId`（根级为 `n
 BOM、CRLF、缩进、键序、数字/字符串词法与未知字段均保持原 bytes。
 
 move 仍走 revision-pinned preview → 客户端批准 → apply：change set 固定 operation、
-map revision 与完整 dependency revisions，apply 重验摘要并用 CAS 提交；实际写入前照常
-创建内容寻址 checkpoint。它没有 `tiled_move_layer` standalone tool，所以注册数量仍是
-18 个 core / 19 个含 rasterizer 的工具。
+map revision 与完整 dependency revisions，apply 重验摘要并在锁内执行 revision guard
+（对合作写者构成 CAS）；实际写入前照常创建内容寻址 checkpoint。它没有
+`tiled_move_layer` standalone tool，所以注册数量仍是 18 个 core / 19 个含 rasterizer
+的工具。
 
 复制已有图层使用 generic union 的第 10 种 operation：
 `{type:"duplicateLayer", layerId, destination?, name?}`。它也必须独占 change set，且
@@ -412,8 +417,9 @@ object 的 GID 会按现有 tileset binding 校验，包含 transform flags 的�
 预估写回后的 TMJ 仍须不超过 64 MiB。source writer 只插入一个紧凑的新 JSON element，
 并对实际变化的 `nextlayerid` / `nextobjectid` 做 value-local counter patch；原 source
 subtree、既有 siblings、未知字段、BOM、CRLF、键序与数字/字符串词法保持原 bytes。
-apply 会重算目标、分配、引用和摘要，校验 change-set digest、map/dependency revision 与
-raw-byte CAS，然后才在锁内创建 checkpoint 并原子替换。
+apply 会重算目标、分配、引用和摘要，校验 change-set digest 与 map/dependency revision，
+随后在正常锁内执行 raw-byte revision guard（对合作写者构成 CAS）、创建 checkpoint 并
+原子替换。
 
 盖章写入使用 generic union 的第 11 种 operation：
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有
@@ -591,8 +597,10 @@ revision；再调用 `tiled_preview_checkpoint_restore(checkpointId, expectedRev
 preview 会验证 manifest、内容寻址 blob、原始 JSON bytes 和当前目标 revision，只返回
 带 TTL 的 destructive proposal；客户端批准后仍由 `tiled_apply_change_set` 写盘。恢复
 只替换该 checkpoint 对应的一个既有 JSON 文档，不会连带恢复其引用的 TSJ、图片或其他
-文件，也不会用“创建文件前”的 checkpoint 删除文件。成功恢复前还会为当前版本再建一个
-checkpoint，因此恢复本身也可逆。
+文件，也不会用“创建文件前”的 checkpoint 删除文件。只有 `wouldChange:true` 的恢复才会
+在替换前为当前版本再建 checkpoint；它的后续可恢复性还要求 checkpoint 完整且
+`filesystemThreatModelContract.operationalRequirements` 成立。no-op 恢复不替换文件，
+也不创建新 checkpoint。
 
 ## 开发与验证
 
@@ -701,7 +709,8 @@ checkpoint restore。架构与 roadmap
   change set 可以同时修改 layer member、tile `data` 和 object `objects`，而不重排整个
   layer object。插入、替换或删除的 member 之外，BOM、CRLF、缩进、键序、数字词法与未知
   字段保持原 bytes。preview 固定 operation、requested/changed fields、Group 后代影响
-  标记、map revision 与完整 dependency set；apply 会重新计算摘要并做 revision CAS。
+  标记、map revision 与完整 dependency set；apply 会重新计算摘要并在锁内执行 revision
+  guard（对合作写者构成 CAS）。
   `locked:true` 不构成写保护，若需要禁止 MCP 编辑必须由更高层策略处理。
 - `deleteLayer` 是同一 union 的第 8 种 operation，但因其删除边界和 object-reference
   检查基于原始完整 map，它必须独占 change set。删除目标是直接父 `layers` array 中的
@@ -717,15 +726,15 @@ checkpoint restore。架构与 roadmap
   移动，禁止 self/descendant cycle，结果深度上限为 64；锁只产生 advisory warning，
   preview 会区分移动前后的 effective lock 与 render-order/render-context 影响。
   apply 通过基于原 source container paths 的 `JsonArrayMove` 搬移 element 精确 bytes，
-  保持未触及 lexeme 与 `nextlayerid`/`nextobjectid`，并沿用 revision/CAS/checkpoint
-  安全边界。
+  保持未触及 lexeme 与 `nextlayerid`/`nextobjectid`，并沿用 revision guard（对合作写者
+  构成 CAS）/checkpoint 安全边界。
 - `duplicateLayer` 是同一 union 已实现的第 10 种 operation，也没有 standalone tool。
   它必须独占 change set，以三分支 `destination` 选择同父/root/Group 和最终 insertion
   index，复制完整 subtree，并从 layer/object 高水位按 preorder 分配 ID。typed
   object/list 引用只在副本内部重连，外部/零引用与外部 image/file 仍共享，class/template
   等无法证明安全的语义 fail closed。新副本用紧凑 JSON 插入，原 subtree 与 siblings 的
-  source bytes 不重排；计数器使用 value-local patch，并沿用 revision/CAS/checkpoint
-  安全边界。
+  source bytes 不重排；计数器使用 value-local patch，并沿用 revision guard（对合作写者
+  构成 CAS）/checkpoint 安全边界。
 - `stampPattern` 是同一 union 已实现的第 11 种 operation，不新增 standalone tool。
   它在绝对坐标一次写入非空、稠密、等宽的 row-major `(TileRef|null)[][]`；`null` 是清空
   而非透明跳过，目标矩形必须完整位于 layer bounds 内且不做 clipping。单边最多 256、
@@ -769,12 +778,16 @@ checkpoint restore。架构与 roadmap
   `objects` member-local。
 - 删除对象会拒绝留下直接或 list 中的 `object` 属性悬挂引用；遇到可能隐藏 typed object
   reference 的 class 属性会 fail closed，复杂 class 编辑留到读取项目类型定义后实现。
-- 两个 TiledMCP 写者由锁与 CAS 保护；不遵守该锁的 Tiled GUI/其他程序仍可能在最终
+- 使用同一规范化路径并遵守锁协议的 TiledMCP 写者由锁与 raw-byte CAS 保护；不遵守该锁
+  的 Tiled GUI/其他程序仍可能在最终
   revision 检查与 `rename` 之间发生极小竞态。当前请避免在 MCP 提交瞬间同时保存，
   普通 Linux `renameat2` 也不提供“按内容 hash 条件替换”；要获得严格 external-writer
   CAS，需要 FUSE/写入 broker 或让 Tiled 遵守同一锁协议。
 - 现有路径检查会拒绝静态 symlink 和越界引用，但还不是 `openat2`/容器级 OS 沙箱；
   主动在调用过程中替换父目录的本地攻击者不在当前保证内。
+- 上述边界与 hardlink alias、本地文件系统/`fsync` 前提已经固定在
+  `filesystemThreatModelContract` v1；需要抵御同权限本地攻击者时必须使用 OS 沙箱或
+  强制写入中介。
 - 崩溃遗留的 stale lock 会 fail closed，并要求确认无活跃写者后手动删除；不会冒险
   自动抢锁。启动扫描只会把目标精确等于 `afterRevision` 的 existing-file `prepared`
   checkpoint 补记为 `committed`；prepared create 即使 hash 相同也因来源不明报告

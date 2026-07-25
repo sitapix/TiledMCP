@@ -25,6 +25,9 @@ import {
   type TiledMcpApplicationErrorCode,
 } from "./errorRegistry.js";
 import { TiledMcpError, asTiledMcpError } from "./errors.js";
+import {
+  TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
+} from "./filesystemThreatModelContract.js";
 import type { JsonValue } from "./formats/json.js";
 import {
   DEFAULT_TILESET_SHEET_PAGE_SIZE,
@@ -1522,15 +1525,13 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
         },
         safetyStatus: {
-          cooperativeWriterLocking: true,
-          externalWriterAtomicCompareAndSwap: false,
-          staticSymlinkRejection: true,
-          hostileParentSwapProtection: false,
           jsonLexicalPreservation: {
             outsideEditedRanges: true,
             editedRangesReformatted: true,
           },
         },
+        filesystemThreatModelContract:
+          TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
         textContentContract: {
           name: TEXT_CONTENT_CONTRACT_NAME,
           version: TEXT_CONTENT_CONTRACT_VERSION,
@@ -1643,7 +1644,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Inspect TiledMCP capabilities",
       description:
-        "Returns the implemented edit profile and locally available Tiled command-line adapters.",
+        "Returns the implemented edit profile, frozen direct-filesystem threat model and operational requirements, and locally available Tiled command-line adapters.",
       inputSchema: z.object({}).strict(),
       outputSchema:
         capabilitiesToolOutputSchema,

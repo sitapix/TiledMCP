@@ -13,7 +13,8 @@
 
 1. 以 `tools/list` 返回的工具和 input schema 作为本次连接的实际 wire contract。
 2. 读取 capability 中的 `editProfiles`、`serverVersion`、`cli` 探测结果、
-   `registeredTools` 和 `applicationErrorContract`，不要从旧会话或文档推断当前能力。
+   `registeredTools`、`applicationErrorContract` 和
+   `filesystemThreatModelContract`，不要从旧会话或文档推断当前能力。
 3. 核心 profile 当前包含 18 个工具。`tiled_render_map` 只有在
    `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
@@ -23,6 +24,22 @@
 
 能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 18 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
+
+## 先满足文件系统运维条件
+
+`filesystemThreatModelContract` v1 的保证只在其 `operationalRequirements` 成立时有效：
+
+- 同一逻辑文件必须使用同一个规范化项目路径；hardlink alias 不共享路径锁；
+- Tiled GUI、同步器和其他非合作写者不得在既有目标提交窗口并发保存；
+- 运维方必须确认本地文件系统具有所需的同文件系统原子 rename/hard-link 与有效 `fsync`
+  语义；server 只传播 syscall failure，不会验证这些底层语义；
+- 项目根和父目录必须可信，不抵御同权限恶意进程的主动 parent swap。
+
+既有目标最终 SHA-256 检查与无条件 `rename` 之间仍有非合作写者窗口。`changed:true` 的
+成功响应只表示 promotion 曾发生，不是当前状态 lease；需要继续决策时重新读取 map
+revision。相同
+`changeSetId` 的成功 replay 返回首次缓存结果，也不是磁盘查询。需要严格抵御非合作写者或
+hostile local process 时，使用 OS sandbox/FUSE/write broker；当前 backend 未实现它们。
 
 ## 把 revision 与依赖当成同一个快照传递
 

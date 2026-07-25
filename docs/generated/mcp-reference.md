@@ -184,9 +184,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e",
+    "revision": "sha256:cdfcd809f350c8b36a93b4a3b711d639b1dcecc842fd4f61cbb84c9b2e381677",
     "serverVersion": "0.0.1",
-    "size": 41025
+    "size": 42802
   },
   "annotations": {
     "audience": [
@@ -198,7 +198,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 41025,
+  "size": 42802,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -206,7 +206,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3734 UTF-8 bytes, revision `sha256:2edbfa6645ee35e89e814cb4d2648aa888e4ec3487cc0b5df958a38876b0dab8`.
 
-Content contract: `text`, 41025 UTF-8 bytes, revision `sha256:3ce42b7e433a9cb8fc0ec27ab118a5f3da9c67167567c92d62492cead385de4e`.
+Content contract: `text`, 42802 UTF-8 bytes, revision `sha256:cdfcd809f350c8b36a93b4a3b711d639b1dcecc842fd4f61cbb84c9b2e381677`.
 
 Resource templates: none.
 
@@ -4170,7 +4170,7 @@ Output schema:
 
 Availability: `core`
 
-Returns the implemented edit profile and locally available Tiled command-line adapters.
+Returns the implemented edit profile, frozen direct-filesystem threat model and operational requirements, and locally available Tiled command-line adapters.
 
 Annotations:
 
@@ -4663,6 +4663,245 @@ Output schema:
                 }
               ],
               "type": "array"
+            },
+            "filesystemThreatModelContract": {
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "const": "direct-filesystem",
+                  "type": "string"
+                },
+                "compatibility": {
+                  "const": "field-or-value-change-requires-version-bump",
+                  "type": "string"
+                },
+                "guaranteeBasis": {
+                  "const": "only-when-operational-requirements-hold",
+                  "type": "string"
+                },
+                "guarantees": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "abaSemantics": {
+                      "const": "identical-bytes-accepted",
+                      "type": "string"
+                    },
+                    "changeSetReplay": {
+                      "const": "cached-first-result-no-current-state-revalidation",
+                      "type": "string"
+                    },
+                    "cooperativeExistingTargetCas": {
+                      "const": "raw-byte-sha256-under-same-normalized-path-lock",
+                      "type": "string"
+                    },
+                    "dependencySnapshot": {
+                      "const": "non-atomic-read-set",
+                      "type": "string"
+                    },
+                    "existingTargetFinalCheck": {
+                      "const": "full-byte-sha256-before-promotion",
+                      "type": "string"
+                    },
+                    "existingTargetPromotion": {
+                      "const": "same-directory-unconditional-atomic-rename-replace",
+                      "type": "string"
+                    },
+                    "missingTargetPromotion": {
+                      "const": "same-directory-hard-link-no-replace",
+                      "type": "string"
+                    },
+                    "postPromotionFailure": {
+                      "const": "success-with-durability-warning-only-after-sha256-readback-match",
+                      "type": "string"
+                    },
+                    "promotionResult": {
+                      "const": "successful-promotion-event-not-current-state-lease",
+                      "type": "string"
+                    },
+                    "revisionModel": {
+                      "const": "sha256-exact-raw-bytes-no-generation",
+                      "type": "string"
+                    },
+                    "stagingSync": {
+                      "const": "file-fsync-before-promotion",
+                      "type": "string"
+                    },
+                    "staleLockPolicy": {
+                      "const": "fail-closed-manual-review",
+                      "type": "string"
+                    },
+                    "staticSymlinkRejection": {
+                      "const": "pre-existing-project-relative-components-including-final-target",
+                      "type": "string"
+                    },
+                    "visibility": {
+                      "const": "single-path-only",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "revisionModel",
+                    "abaSemantics",
+                    "cooperativeExistingTargetCas",
+                    "existingTargetFinalCheck",
+                    "existingTargetPromotion",
+                    "missingTargetPromotion",
+                    "staticSymlinkRejection",
+                    "stagingSync",
+                    "postPromotionFailure",
+                    "staleLockPolicy",
+                    "visibility",
+                    "promotionResult",
+                    "changeSetReplay",
+                    "dependencySnapshot"
+                  ],
+                  "type": "object"
+                },
+                "name": {
+                  "const": "tiled-mcp-direct-filesystem-threat-model",
+                  "type": "string"
+                },
+                "operationalRequirements": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cooperativeWriterScope": {
+                      "const": "same-project-state-same-normalized-target-path-all-writers-honor-lock",
+                      "type": "string"
+                    },
+                    "distributedFilesystems": {
+                      "const": "not-validated",
+                      "type": "string"
+                    },
+                    "externalWriterPolicy": {
+                      "const": "no-concurrent-noncooperative-write-during-existing-target-commit",
+                      "type": "string"
+                    },
+                    "filesystemAtomicity": {
+                      "const": "same-filesystem-atomic-rename-and-hard-link",
+                      "type": "string"
+                    },
+                    "filesystemDurability": {
+                      "const": "file-and-directory-fsync-honored",
+                      "type": "string"
+                    },
+                    "hardlinkAliasPolicy": {
+                      "const": "one-normalized-project-path-per-logical-target",
+                      "type": "string"
+                    },
+                    "namespaceTrust": {
+                      "const": "project-root-and-parent-directories-not-hostilely-replaced",
+                      "type": "string"
+                    },
+                    "projectRoot": {
+                      "const": "single-explicit-canonical-directory",
+                      "type": "string"
+                    },
+                    "strictIsolation": {
+                      "const": "os-sandbox-or-mediated-writer-required",
+                      "type": "string"
+                    },
+                    "toolPathInputs": {
+                      "const": "canonical-project-relative-posix",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectRoot",
+                    "toolPathInputs",
+                    "cooperativeWriterScope",
+                    "hardlinkAliasPolicy",
+                    "filesystemAtomicity",
+                    "filesystemDurability",
+                    "distributedFilesystems",
+                    "namespaceTrust",
+                    "externalWriterPolicy",
+                    "strictIsolation"
+                  ],
+                  "type": "object"
+                },
+                "scope": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "appliesTo": {
+                      "const": "project-asset-json-document-targets",
+                      "type": "string"
+                    },
+                    "excludes": {
+                      "const": "server-internal-dot-tiledmcp-state",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "appliesTo",
+                    "excludes"
+                  ],
+                  "type": "object"
+                },
+                "unsupported": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "crossFileAtomicity": {
+                      "const": "not-supported",
+                      "type": "string"
+                    },
+                    "existingTargetConditionalReplace": {
+                      "const": "not-provided",
+                      "type": "string"
+                    },
+                    "hostileParentSwapProtection": {
+                      "const": "path-check-to-use-race-not-protected",
+                      "type": "string"
+                    },
+                    "mediatedWriterBackend": {
+                      "const": "not-implemented",
+                      "type": "string"
+                    },
+                    "nonCooperativeExternalWriterCas": {
+                      "const": "final-check-to-rename-race-not-protected",
+                      "type": "string"
+                    },
+                    "pathnameBindingAfterFinalSnapshot": {
+                      "const": "not-checked",
+                      "type": "string"
+                    },
+                    "powerLossDurability": {
+                      "const": "filesystem-dependent-not-guaranteed",
+                      "type": "string"
+                    },
+                    "targetMetadataCas": {
+                      "const": "not-provided",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "nonCooperativeExternalWriterCas",
+                    "existingTargetConditionalReplace",
+                    "pathnameBindingAfterFinalSnapshot",
+                    "targetMetadataCas",
+                    "hostileParentSwapProtection",
+                    "crossFileAtomicity",
+                    "powerLossDurability",
+                    "mediatedWriterBackend"
+                  ],
+                  "type": "object"
+                },
+                "version": {
+                  "const": 1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name",
+                "version",
+                "compatibility",
+                "backend",
+                "scope",
+                "guaranteeBasis",
+                "guarantees",
+                "unsupported",
+                "operationalRequirements"
+              ],
+              "type": "object"
             },
             "layerCreationCapabilities": {
               "additionalProperties": false,
@@ -5972,18 +6211,6 @@ Output schema:
             "safetyStatus": {
               "additionalProperties": false,
               "properties": {
-                "cooperativeWriterLocking": {
-                  "const": true,
-                  "type": "boolean"
-                },
-                "externalWriterAtomicCompareAndSwap": {
-                  "const": false,
-                  "type": "boolean"
-                },
-                "hostileParentSwapProtection": {
-                  "const": false,
-                  "type": "boolean"
-                },
                 "jsonLexicalPreservation": {
                   "additionalProperties": false,
                   "properties": {
@@ -6001,17 +6228,9 @@ Output schema:
                     "editedRangesReformatted"
                   ],
                   "type": "object"
-                },
-                "staticSymlinkRejection": {
-                  "const": true,
-                  "type": "boolean"
                 }
               },
               "required": [
-                "cooperativeWriterLocking",
-                "externalWriterAtomicCompareAndSwap",
-                "staticSymlinkRejection",
-                "hostileParentSwapProtection",
                 "jsonLexicalPreservation"
               ],
               "type": "object"
@@ -6665,6 +6884,7 @@ Output schema:
             "rasterMapCapabilities",
             "limits",
             "safetyStatus",
+            "filesystemThreatModelContract",
             "textContentContract",
             "applicationErrorContract",
             "assetIdentityContract",

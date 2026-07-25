@@ -6,7 +6,8 @@
 > [discovery 机器契约](../contracts/mcp-contract.v1.json)、
 > [application-error 机器契约](../contracts/application-errors.v1.json) 和
 > [生成式参考](generated/mcp-reference.md)，安全组合方式见
-> [调用工作流](examples/safe-workflows.md)。
+> [调用工作流](examples/safe-workflows.md)，direct filesystem 的冻结信任边界见
+> [文件系统威胁模型](04-security.md)。
 
 ## 0. 协议基线与冻结条件
 
@@ -57,8 +58,10 @@ image-layer dependency `assetId` 已接入版本化持久 registry：首次分�
 尽力迁移；弱 identity、原路径仍存活的 copy/hardlink、跨文件系统 move 与其他无法匹配
 file identity 的场景分配新 ID，不按内容猜身份。`tiled_create_map` 已正式定案为唯一
 direct additive no-preview 例外，固定 Tiled 1.12.2 的不可跳过集成门也已落地。
-本文仍是 Draft，因为 non-cooperative external-writer CAS、hostile parent swap 与其他
-威胁模型/运维门槛尚未全部定案；运行时应以
+direct filesystem 的 non-cooperative external-writer CAS、hostile parent swap、锁作用域
+和部署前提已经由 `filesystemThreatModelContract` v1 冻结为明确 guarantee/unsupported/
+operational requirements。本文仍是 Draft，因为 checkpoint 总容量配额/GC 等其余运维
+冻结门槛尚未完成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
@@ -117,6 +120,29 @@ hard-link promotion、checkpoint/重试边界固化为 machine-readable const；
 - v1 保证合作进程的原子可见性与 lost-update 防护，不承诺首次创建 `.tiledmcp` 目录时的
   断电 durability；`crashDurability` 明示该边界，异常掉电后 registry 丢失按
   `registryLossPolicy` 处理，ID 可能重分配。
+
+### 0.3 Direct filesystem threat model v1
+
+`tiled_get_capabilities.filesystemThreatModelContract` 是当前 direct backend 对
+**项目资产 JSON 文档目标**的权威机器边界，固定
+`name:"tiled-mcp-direct-filesystem-threat-model"`、`version:1`。其 `scope` 明确排除
+`.tiledmcp` server-internal state；同版本任一字段或值的语义变化都必须提升版本。
+
+- guarantee 只在 `operationalRequirements` 全部成立时有效：单一显式项目根、本地
+  same-filesystem rename/hard-link/`fsync` 语义、同一逻辑目标只使用一个规范化项目路径、
+  合作写者遵守锁，且外部编辑器不在既有目标提交窗口并发保存；
+- 既有目标使用 raw-byte SHA-256 最终 guard + 无条件原子 rename。它对合作写者构成 CAS，
+  也能拒绝最终检查前已观察到的外部变化，但**不是**非合作写者的 conditional replace；
+- create-map 的 hard-link no-replace 对目标存在性提供独立的原子保证；
+- 静态 symlink/越界会拒绝；同权限恶意进程的 parent path check-to-use swap 明确
+  unsupported，严格隔离需要 OS sandbox 或 mediated writer；
+- `changed:true` 的成功 promotion 是一次事件，不是当前路径 lease；成功 change-set
+  replay 返回首次缓存结果，也不是重新读取。需要当前状态时必须再次读取 revision；
+- 跨文件原子性、target metadata CAS、distributed filesystem 语义与异常断电 durability
+  均不在 v1 保证内。
+
+完整部署与事故处理要求见 [04-security.md](04-security.md)。旧 `safetyStatus` 只保留 JSON
+词法保真摘要，不再用无前提布尔值表达文件系统安全。
 
 ## 1. 共享契约
 
@@ -301,9 +327,11 @@ type ApplyResult = CommitResult & {
    完整结果位置、structured byte 计算方式及 SDK input-error 策略。图片工具另外返回 MCP
    `image` content，二进制不进入 `structuredContent`。
 8. `Revision` 基于原始 bytes，而不是解析后对象或 mtime。所有**既有目标**的项目资产
-   写入必须携带 `expectedRevision`；提交前不匹配则返回 `REVISION_CONFLICT`，绝不静默
-   覆盖。唯一例外 `tiled_create_map` 以服务器内部 missing precondition + 原子
-   no-replace link 实现不存在状态的 CAS，不接受调用方伪造 missing revision。
+   写入必须携带 `expectedRevision`；最终 guard 观察到不匹配时返回
+   `REVISION_CONFLICT`。对遵守同一路径锁的写者，这构成 lost-update CAS；对非合作写者，
+   guard 与无条件 rename 之间仍有 contract 明示的窗口。唯一例外 `tiled_create_map`
+   以服务器内部 missing precondition + 原子 no-replace link 实现不存在状态的 CAS，
+   不接受调用方伪造 missing revision。
 9. `selectionId`、`changeSetId` 等句柄必须显式传递，绑定项目、客户端连接、地图 revision
    和 TTL；它们不是“当前选区/上一步操作”之类的隐式会话状态。
 10. M1 只接受 `Region.kind = "rect"`；其余分支保留在共享契约中，直到对应阶段实现后才加入
@@ -350,7 +378,11 @@ type ApplyResult = CommitResult & {
   不得自动重试，必须先检查目标与 checkpoint 状态。其
   `mapCreationCapabilities.approvalBoundary` 明示授权由客户端在 tool call 前确认，
   服务器不把任意输入布尔值当作授权证明。
-- `tiled_create_checkpoint` 固定为 `{false,false,false,false}`；checkpoint 列表为 `{true,false,true,false}`。恢复预览每次签发新的 anti-ABA change set，固定为 `{true,false,false,false}`。写目标文件的转换、导出和 rasterize 保守标为 destructive。
+- `tiled_create_checkpoint` 是尚未注册的候选工具；若未来以当前“创建新 checkpoint”
+  语义加入，计划 annotations 为 `{false,false,false,false}`，但这不是现行 discovery
+  contract。已注册的 checkpoint 列表为 `{true,false,true,false}`；恢复预览每次签发新的
+  anti-ABA change set，固定为 `{true,false,false,false}`。写目标文件的转换、导出和
+  rasterize 保守标为 destructive。
 - 本地 Tiled CLI 子进程仍为 `openWorldHint: false`；未来任何访问网络的工具必须设为 `true`。
 - `destructiveHint: false` 不免除 revision CAS；`destructiveHint: true` 必须走客户端批准门。
 
@@ -428,8 +460,8 @@ root member 做 insertion/replacement/deletion。未触及的根成员、layers/
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_preview_edits` | 预览同一 map 上的一组编辑，返回 change set；`operations` 是封闭的 discriminated union，不接受任意 `{tool,args}` | `mapPath`, `expectedRevision`, `expectedDependencyRevisions`, `operations` |
-| `tiled_apply_change_set` | 提交已经由客户端批准的 map edit 或 checkpoint restore change set；提交前重新做锁与 revision CAS | `changeSetId`, `expectedRevision` |
-| `tiled_create_checkpoint` | 为显式文档集合建立自有内容寻址快照；破坏性提交前也自动创建匿名快照 | `paths`, `label?` |
+| `tiled_apply_change_set` | 提交已经由客户端批准的 map edit 或 checkpoint restore change set；提交前重新做锁与 revision guard（对合作写者构成 CAS） | `changeSetId`, `expectedRevision` |
+| `tiled_create_checkpoint` | **候选 / 未注册**；未来为显式文档集合建立自有内容寻址快照；当前只有 net-changing 既有目标提交前的自动 checkpoint | `paths`, `label?` |
 | `tiled_list_checkpoints` | **已实现**；有界列出 manifest，并把损坏条目隔离到 `corruptEntries`，不读取或恢复目标 | `status?`, `limit?`, `scanLimit?` |
 | `tiled_preview_checkpoint_restore` | **已实现单文件版**；只读校验 checkpoint 与目标，返回带 destructive 摘要的 change set；实际恢复仍由 `tiled_apply_change_set` 提交 | `checkpointId`, `expectedRevision` |
 
@@ -446,8 +478,10 @@ preview 本身不写盘，但 operation 摘要明确 `destructive:true`，并报
 apply 在目标锁内重新读取并逐字段验证 manifest，先做目标 revision CAS，再验证 blob；
 唯一允许的 manifest 漂移是 `prepared → committed`。若 source checkpoint 仍是
 `prepared` 且 `before.existed:true`，只有目标精确等于其 `afterRevision` 才允许先持久化
-为 `committed` 后恢复。恢复通过正常 checkpoint + 原子替换路径写回原始 bytes，因此
-恢复本身可再次恢复。
+为 `committed` 后恢复。实际发生替换前会为当前版本创建 checkpoint，再以原始 bytes
+原子替换；因此只有 `wouldChange:true` 的 restore 才建立新的恢复点，并且其可恢复性还
+要求 checkpoint 完整且 `filesystemThreatModelContract.operationalRequirements` 成立。
+no-op restore 不替换目标，也不创建新 checkpoint。
 `before.existed:false` 会稳定报 `REVERT_WOULD_DELETE`：当前工具不会以恢复之名删除后来
 创建的文件，也不会隐式恢复任何依赖闭包。对于仍为 `prepared` 的 create checkpoint，
 目标即使精确等于 `afterRevision` 也不能证明创建者；启动对账固定报告
@@ -1279,7 +1313,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
-| **M0：内核** | 项目路径解析与沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、文件锁与 CAS；单文档 temp+rename；内容寻址快照与恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；并发修改必报冲突；模拟写入中断后原文件完整；任一已提交修改可从快照恢复 |
+| **M0：内核** | 项目路径解析与静态沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、合作写者文件锁与 CAS；单文档 temp+rename、create hard-link no-replace；内容寻址快照与既有目标恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；合作写者或最终 guard 前已观察到的修改必报冲突；模拟写入中断后目标保持旧版/新版之一；既有目标的已提交修改可从快照恢复，create checkpoint 不解释为删除；非合作写者与 hostile parent 的剩余窗口由 threat-model v1 明示 |
 | **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、rectangle/point/ellipse/capsule 基础 object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
