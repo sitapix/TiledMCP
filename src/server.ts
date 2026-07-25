@@ -183,6 +183,7 @@ import {
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
   createTilesetPreviewToolOutputSchema,
+  deleteFilePreviewToolOutputSchema,
   preparedCheckpointAbandonPreviewToolOutputSchema,
   preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
@@ -195,6 +196,11 @@ import {
   MAX_CREATE_TILESET_SPACING,
   MAX_CREATE_TILESET_TILE_EDGE,
 } from "./maps/tilesetCreate.js";
+import {
+  MAX_DELETE_REFERENCE_SCAN_ASSETS,
+  MAX_DELETE_REFERENCE_SCAN_BYTES,
+  MAX_DELETE_REFERRER_SAMPLE,
+} from "./maps/fileDelete.js";
 import {
   MAX_TILE_ANIMATION_FRAME_DURATION_MS,
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
@@ -1376,6 +1382,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_analyze_usage",
     "tiled_create_map",
     "tiled_create_tileset",
+    "tiled_delete_file",
     "tiled_add_tileset_to_map",
     "tiled_update_tile",
     "tiled_create_layer",
@@ -2236,6 +2243,35 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           directCreationException:
             "tiled_create_map-only-clause-unchanged",
         },
+        fileDeletionCapabilities: {
+          form: "preview-approve-apply",
+          targets: [".tmj", ".tsj"],
+          referenceScan: {
+            coverage: [
+              "tmj-map-tileset-sources",
+              "json-world-map-members",
+              "json-template-tileset-sources",
+            ],
+            xmlAssets: "fail-closed",
+            patternWorlds: "fail-closed",
+            malformedReferrers: "fail-closed",
+            reruns: "preview-and-apply",
+            maxCandidateReferrers:
+              MAX_DELETE_REFERENCE_SCAN_ASSETS,
+            maxScannedBytes:
+              MAX_DELETE_REFERENCE_SCAN_BYTES,
+            referencedBySample:
+              MAX_DELETE_REFERRER_SAMPLE,
+          },
+          checkpointPolicy:
+            "committed-before-unlink",
+          recovery:
+            "checkpoint-restore-recreates-missing-target",
+          missingTargetRestoreRevision:
+            "sha256-of-restorable-content",
+          expectedRevisionSemantics:
+            "sha256-of-current-target-bytes",
+        },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           pageIndexBase: 0,
@@ -3006,7 +3042,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview restoring a recovery checkpoint",
       description:
-        "Validates one checkpoint and its exact pre-write JSON bytes, pins the current target revision, and returns a destructive restore proposal without writing. Only that document is restored; referenced tilesets, images and other files are not.",
+        "Validates one checkpoint and its exact pre-write JSON bytes, pins the current target revision, and returns a destructive restore proposal without writing. When the target file is missing (deleted through tiled_delete_file or externally), expectedRevision must equal the checkpoint's restorable content revision and the approved restore recreates the file with no-replace semantics. Only that document is restored; referenced tilesets, images and other files are not.",
       inputSchema: z
         .object({
           checkpointId: z
@@ -3693,6 +3729,32 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_delete_file",
+    {
+      title: "Preview deleting a project document",
+      description:
+        "Plans the permanent deletion of one project-local TMJ map or TSJ tileset. The bounded fail-closed reference scan (TMJ maps, JSON worlds, JSON templates; XML assets or pattern-based worlds reject the scan) must prove the target unreferenced, and it re-runs on apply. Apply commits a checkpoint of the exact current bytes before unlinking, so restoring that checkpoint recreates the file; the tool itself modifies nothing.",
+      inputSchema: z
+        .object({
+          path: projectPathSchema,
+        })
+        .strict(),
+      outputSchema:
+        deleteFilePreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({ path }) =>
+      executeTool(async () => {
+        const plan = await maps.planDeleteFile({
+          path,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_add_tileset_to_map",
     {
       title: "Preview adding a tileset to a map",
@@ -3975,7 +4037,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, tileset edit, tileset creation, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
+        "Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -4041,9 +4103,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                             ? maps.applyTilesetCreate(
                                 plan,
                               )
-                            : maps.applyEdits(
-                                plan,
-                              ),
+                            : plan.kind ===
+                                "fileDelete"
+                              ? maps.applyDeleteFile(
+                                  plan,
+                                )
+                              : maps.applyEdits(
+                                  plan,
+                                ),
         ),
       ),
   );

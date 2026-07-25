@@ -293,7 +293,7 @@ describe("checkpoint restore planning and application", () => {
       await expect(
         store.revertPlanned(
           inspection.checkpoint,
-          inspection.currentRevision,
+          inspection.currentRevision as string,
         ),
       ).rejects.toMatchObject({
         name: "TiledMcpError",
@@ -323,7 +323,7 @@ describe("checkpoint restore planning and application", () => {
     await store.checkpoints.markCommitted(prepared);
     const result = await store.revertPlanned(
       inspection.checkpoint,
-      inspection.currentRevision,
+      inspection.currentRevision as string,
     );
 
     expect(result).toMatchObject({
@@ -384,7 +384,7 @@ describe("checkpoint restore planning and application", () => {
     await expect(
       store.revertPlanned(
         inspection.checkpoint,
-        inspection.currentRevision,
+        inspection.currentRevision as string,
       ),
     ).rejects.toMatchObject({
       name: "TiledMcpError",

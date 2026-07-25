@@ -14,12 +14,12 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 27 tools
-- `with-tmxrasterizer`: 28 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 28 tools
+- `with-tmxrasterizer`: 29 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -42,6 +42,7 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
     "EXTERNAL_REFERENCE_NOT_ALLOWED",
     "FILE_ALREADY_EXISTS",
+    "FILE_IN_USE",
     "FILE_LOCKED",
     "FILE_LOCK_CORRUPT",
     "FILE_NOT_FOUND",
@@ -119,6 +120,7 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
     "UNSUPPORTED_PROPERTY_QUERY",
     "UNSUPPORTED_PROPERTY_WRITE",
+    "UNSUPPORTED_REFERENCE_SCAN",
     "UNSUPPORTED_RENDER_FEATURE",
     "UNSUPPORTED_RENDER_LAYER",
     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -161,9 +163,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
+    "revision": "sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3",
     "serverVersion": "0.0.1",
-    "size": 3875
+    "size": 3928
   },
   "annotations": {
     "audience": [
@@ -175,7 +177,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3875,
+  "size": 3928,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -188,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:d378db68d0ef2a1dc8c36eeb0c2d25c5af30da873b436d4dbe9d997c73c5595f",
+    "revision": "sha256:14497a723105eeb7fee53df769a4cdae3d90709ac9cbd3b21a677e256f6c7974",
     "serverVersion": "0.0.1",
-    "size": 69543
+    "size": 70899
   },
   "annotations": {
     "audience": [
@@ -202,15 +204,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 69543,
+  "size": 70899,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3875 UTF-8 bytes, revision `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`.
+Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 69543 UTF-8 bytes, revision `sha256:d378db68d0ef2a1dc8c36eeb0c2d25c5af30da873b436d4dbe9d997c73c5595f`.
+Content contract: `text`, 70899 UTF-8 bytes, revision `sha256:14497a723105eeb7fee53df769a4cdae3d90709ac9cbd3b21a677e256f6c7974`.
 
 Resource templates: none.
 
@@ -649,6 +651,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -726,6 +729,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -1542,6 +1546,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -1619,6 +1624,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -1675,7 +1681,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, tileset edit, tileset creation, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
+Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
 
 Annotations:
 
@@ -2154,6 +2160,52 @@ Output schema:
                 "checkpointId",
                 "changed",
                 "changeSetId"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "beforeRevision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "changeSetId": {
+                  "pattern": "^changeset:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "checkpointId": {
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "deleted": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "kind": {
+                  "const": "fileDelete",
+                  "type": "string"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "changeSetId",
+                "path",
+                "beforeRevision",
+                "checkpointId",
+                "deleted"
               ],
               "type": "object"
             },
@@ -4023,6 +4075,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -4100,6 +4153,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -4888,6 +4942,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -4965,6 +5020,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -5549,6 +5605,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -5626,6 +5683,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -6171,6 +6229,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -6248,6 +6307,466 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_delete_file`
+
+Availability: `core`
+
+Plans the permanent deletion of one project-local TMJ map or TSJ tileset. The bounded fail-closed reference scan (TMJ maps, JSON worlds, JSON templates; XML assets or pattern-based worlds reject the scan) must prove the target unreferenced, and it re-runs on apply. Apply commits a checkpoint of the exact current bytes before unlinking, so restoring that checkpoint recreates the file; the tool itself modifies nothing.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: 预览删除一个未被引用的项目文档；有界引用扫描 fail closed，apply 先提交当前字节的 checkpoint 再删除，恢复即重建文件。
+
+```json
+{
+  "arguments": {
+    "path": "tiles/unused.tsj"
+  },
+  "name": "tiled_delete_file"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "path": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "fileDelete",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "destructive": {
+                    "const": true,
+                    "type": "boolean"
+                  },
+                  "revision": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "scan": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "scannedBytes": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedMaps": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedTemplates": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedWorlds": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "scannedMaps",
+                      "scannedWorlds",
+                      "scannedTemplates",
+                      "scannedBytes"
+                    ],
+                    "type": "object"
+                  },
+                  "size": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "targetKind": {
+                    "enum": [
+                      "map",
+                      "tileset"
+                    ],
+                    "type": "string"
+                  },
+                  "targetPath": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "deleteFile",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "targetPath",
+                  "targetKind",
+                  "revision",
+                  "size",
+                  "scan"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "checkpointPolicy": {
+                  "const": "committed-before-unlink",
+                  "type": "string"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "scan": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "scannedBytes": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "scannedMaps": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "scannedTemplates": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "scannedWorlds": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "scannedMaps",
+                    "scannedWorlds",
+                    "scannedTemplates",
+                    "scannedBytes"
+                  ],
+                  "type": "object"
+                },
+                "size": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "targetKind": {
+                  "enum": [
+                    "map",
+                    "tileset"
+                  ],
+                  "type": "string"
+                },
+                "targetPath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "wouldChange": {
+                  "const": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "targetPath",
+                "targetKind",
+                "revision",
+                "size",
+                "scan",
+                "checkpointPolicy",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "targetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "targetPath",
+            "expectedRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -7190,6 +7709,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -7267,6 +7787,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -7438,7 +7959,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
+                  "const": "sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -7446,7 +7967,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3875,
+                  "const": 3928,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -8561,6 +9082,115 @@ Output schema:
                 }
               ],
               "type": "array"
+            },
+            "fileDeletionCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "checkpointPolicy": {
+                  "const": "committed-before-unlink",
+                  "type": "string"
+                },
+                "expectedRevisionSemantics": {
+                  "const": "sha256-of-current-target-bytes",
+                  "type": "string"
+                },
+                "form": {
+                  "const": "preview-approve-apply",
+                  "type": "string"
+                },
+                "missingTargetRestoreRevision": {
+                  "const": "sha256-of-restorable-content",
+                  "type": "string"
+                },
+                "recovery": {
+                  "const": "checkpoint-restore-recreates-missing-target",
+                  "type": "string"
+                },
+                "referenceScan": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coverage": {
+                      "items": [
+                        {
+                          "const": "tmj-map-tileset-sources",
+                          "type": "string"
+                        },
+                        {
+                          "const": "json-world-map-members",
+                          "type": "string"
+                        },
+                        {
+                          "const": "json-template-tileset-sources",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "malformedReferrers": {
+                      "const": "fail-closed",
+                      "type": "string"
+                    },
+                    "maxCandidateReferrers": {
+                      "const": 2000,
+                      "type": "number"
+                    },
+                    "maxScannedBytes": {
+                      "const": 67108864,
+                      "type": "number"
+                    },
+                    "patternWorlds": {
+                      "const": "fail-closed",
+                      "type": "string"
+                    },
+                    "referencedBySample": {
+                      "const": 32,
+                      "type": "number"
+                    },
+                    "reruns": {
+                      "const": "preview-and-apply",
+                      "type": "string"
+                    },
+                    "xmlAssets": {
+                      "const": "fail-closed",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "coverage",
+                    "xmlAssets",
+                    "patternWorlds",
+                    "malformedReferrers",
+                    "reruns",
+                    "maxCandidateReferrers",
+                    "maxScannedBytes",
+                    "referencedBySample"
+                  ],
+                  "type": "object"
+                },
+                "targets": {
+                  "items": [
+                    {
+                      "const": ".tmj",
+                      "type": "string"
+                    },
+                    {
+                      "const": ".tsj",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                }
+              },
+              "required": [
+                "form",
+                "targets",
+                "referenceScan",
+                "checkpointPolicy",
+                "recovery",
+                "missingTargetRestoreRevision",
+                "expectedRevisionSemantics"
+              ],
+              "type": "object"
             },
             "filesystemThreatModelContract": {
               "additionalProperties": false,
@@ -11273,6 +11903,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_delete_file",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_add_tileset_to_map",
                       "type": "string"
                     },
@@ -11383,6 +12017,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_create_tileset",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_delete_file",
                       "type": "string"
                     },
                     {
@@ -12464,6 +13102,7 @@ Output schema:
             "checkpointCapabilities",
             "mapCreationCapabilities",
             "tilesetCreationCapabilities",
+            "fileDeletionCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
             "tilesetDetailCapabilities",
@@ -12509,6 +13148,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -12586,6 +13226,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -13062,6 +13703,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -13139,6 +13781,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -14075,6 +14718,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -14152,6 +14796,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -14519,6 +15164,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -14596,6 +15242,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15473,6 +16120,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -15550,6 +16198,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -16011,6 +16660,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -16088,6 +16738,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -16282,6 +16933,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -16359,6 +17011,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -16673,6 +17326,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -16750,6 +17404,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -17206,6 +17861,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -17283,6 +17939,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -17989,6 +18646,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -18066,6 +18724,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -18122,7 +18781,7 @@ Output schema:
 
 Availability: `core`
 
-Validates one checkpoint and its exact pre-write JSON bytes, pins the current target revision, and returns a destructive restore proposal without writing. Only that document is restored; referenced tilesets, images and other files are not.
+Validates one checkpoint and its exact pre-write JSON bytes, pins the current target revision, and returns a destructive restore proposal without writing. When the target file is missing (deleted through tiled_delete_file or externally), expectedRevision must equal the checkpoint's restorable content revision and the approved restore recreates the file with no-replace semantics. Only that document is restored; referenced tilesets, images and other files are not.
 
 Annotations:
 
@@ -18286,8 +18945,15 @@ Output schema:
                       "type": "string"
                     },
                     "currentRevision": {
-                      "pattern": "^sha256:[0-9a-f]{64}$",
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "pattern": "^sha256:[0-9a-f]{64}$",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "destructive": {
                       "const": true,
@@ -18382,8 +19048,15 @@ Output schema:
                   "type": "string"
                 },
                 "currentRevision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "destructive": {
                   "const": true,
@@ -18472,6 +19145,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -18549,6 +19223,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -25593,6 +26268,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -25670,6 +26346,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -26324,6 +27001,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -26401,6 +27079,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -27033,6 +27712,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -27110,6 +27790,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -27623,6 +28304,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -27700,6 +28382,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -28009,6 +28692,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -28086,6 +28770,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -29295,6 +29980,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -29372,6 +30058,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -29897,6 +30584,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -29974,6 +30662,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -30475,6 +31164,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -30552,6 +31242,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -31268,6 +31959,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -31345,6 +32037,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -31573,6 +32266,7 @@ Output schema:
                     "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
                     "EXTERNAL_REFERENCE_NOT_ALLOWED",
                     "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
                     "FILE_LOCKED",
                     "FILE_LOCK_CORRUPT",
                     "FILE_NOT_FOUND",
@@ -31650,6 +32344,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",

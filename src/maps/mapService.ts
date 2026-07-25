@@ -25,6 +25,16 @@ import {
   type TilesetCreatePlan,
 } from "./tilesetCreate.js";
 import {
+  assertFileDeletePlan,
+  fileDeletePlanId,
+  fileDeleteSummary,
+  MAX_DELETE_REFERENCE_SCAN_ASSETS,
+  MAX_DELETE_REFERENCE_SCAN_BYTES,
+  MAX_DELETE_REFERRER_SAMPLE,
+  type FileDeletePlan,
+  type FileDeleteScanSummary,
+} from "./fileDelete.js";
+import {
   patchJsonDocumentSource,
   type JsonArrayDeletion,
   type JsonArrayInsertion,
@@ -82,6 +92,7 @@ import type {
   CommitResult,
   DocumentSnapshot,
   DocumentStore,
+  FileDeleteStoreResult,
   LoadedDocument,
 } from "../storage/documentStore.js";
 import { decodeGid, encodeGid, type MapOrientation } from "./gid.js";
@@ -2327,6 +2338,303 @@ export class MapService {
       `apply change set ${plan.id}`,
     );
     return { ...result, changeSetId: plan.id };
+  }
+
+  async planDeleteFile(input: {
+    path: string;
+  }): Promise<FileDeletePlan> {
+    const targetPath = this.resolver.normalize(
+      input.path,
+    );
+    const extension = posix
+      .extname(targetPath)
+      .toLowerCase();
+    const targetKind =
+      extension === ".tmj"
+        ? ("map" as const)
+        : extension === ".tsj"
+          ? ("tileset" as const)
+          : undefined;
+    if (targetKind === undefined) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "File deletion covers .tmj maps and .tsj tilesets only.",
+        { path: targetPath },
+      );
+    }
+    const snapshot =
+      await this.store.readSnapshot(targetPath);
+    const scan = await this.scanDeleteReferences(
+      targetPath,
+      targetKind,
+    );
+    const unsigned: Omit<FileDeletePlan, "id"> = {
+      kind: "fileDelete",
+      version: 1,
+      targetPath,
+      targetKind,
+      baseRevision: snapshot.revision,
+      size: snapshot.size,
+      scan,
+      summary: fileDeleteSummary({
+        targetPath,
+        targetKind,
+        revision: snapshot.revision,
+        size: snapshot.size,
+        scan,
+      }),
+    };
+    return {
+      ...unsigned,
+      id: fileDeletePlanId(unsigned),
+    };
+  }
+
+  async applyDeleteFile(
+    plan: FileDeletePlan,
+  ): Promise<
+    FileDeleteStoreResult & { changeSetId: string }
+  > {
+    assertFileDeletePlan(plan);
+    // References may have appeared since the preview; the scan is fail-closed
+    // evidence, so it re-runs against the current project state.
+    await this.scanDeleteReferences(
+      plan.targetPath,
+      plan.targetKind,
+    );
+    const result =
+      await this.store.deleteDocument(
+        plan.targetPath,
+        plan.baseRevision,
+        `apply change set ${plan.id}`,
+      );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private async scanDeleteReferences(
+    targetPath: string,
+    targetKind: "map" | "tileset",
+  ): Promise<FileDeleteScanSummary> {
+    const assets =
+      await this.resolver.listAssets(10_000);
+    const xmlAssets = assets.filter((asset) =>
+      /\.(?:tmx|tsx|tx)$/iu.test(asset.path),
+    );
+    if (xmlAssets.length > 0) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_REFERENCE_SCAN",
+        "The project contains XML Tiled assets that may reference the target but cannot be scanned in the JSON-only profile.",
+        {
+          path: targetPath,
+          reason: "xml-assets-present",
+          xmlAssetCount: xmlAssets.length,
+          xmlAssetSample: xmlAssets
+            .slice(0, MAX_DELETE_REFERRER_SAMPLE)
+            .map((asset) => asset.path),
+        },
+      );
+    }
+    const referrers = assets.filter((asset) => {
+      if (asset.path === targetPath) {
+        return false;
+      }
+      if (targetKind === "tileset") {
+        return (
+          asset.path.toLowerCase().endsWith(".tmj") ||
+          asset.path.toLowerCase().endsWith(".tj")
+        );
+      }
+      return asset.path
+        .toLowerCase()
+        .endsWith(".world");
+    });
+    if (
+      referrers.length >
+      MAX_DELETE_REFERENCE_SCAN_ASSETS
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `The reference scan covers at most ${MAX_DELETE_REFERENCE_SCAN_ASSETS} candidate referrers.`,
+        {
+          path: targetPath,
+          limit: MAX_DELETE_REFERENCE_SCAN_ASSETS,
+          actual: referrers.length,
+        },
+      );
+    }
+    const scan: FileDeleteScanSummary = {
+      scannedMaps: 0,
+      scannedWorlds: 0,
+      scannedTemplates: 0,
+      scannedBytes: 0,
+    };
+    const referencing: string[] = [];
+    let referencingCount = 0;
+    for (const referrer of referrers) {
+      const snapshot =
+        await this.store.readSnapshot(
+          referrer.path,
+        );
+      scan.scannedBytes += snapshot.size;
+      if (
+        scan.scannedBytes >
+        MAX_DELETE_REFERENCE_SCAN_BYTES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `The reference scan covers at most ${MAX_DELETE_REFERENCE_SCAN_BYTES} bytes of candidate referrers.`,
+          {
+            path: targetPath,
+            limit:
+              MAX_DELETE_REFERENCE_SCAN_BYTES,
+          },
+        );
+      }
+      let document: JsonObject;
+      try {
+        document =
+          this.store.parseSnapshot(
+            snapshot,
+          ).document;
+      } catch {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${referrer.path} could not be parsed, so references to ${targetPath} cannot be ruled out.`,
+          {
+            path: referrer.path,
+            target: targetPath,
+          },
+        );
+      }
+      const lower = referrer.path.toLowerCase();
+      let references = false;
+      if (lower.endsWith(".tmj")) {
+        scan.scannedMaps += 1;
+        references =
+          await this.documentReferencesTileset(
+            referrer.path,
+            document,
+            targetPath,
+          );
+      } else if (lower.endsWith(".tj")) {
+        scan.scannedTemplates += 1;
+        const source = isJsonObject(
+          document.tileset,
+        )
+          ? document.tileset.source
+          : undefined;
+        references =
+          typeof source === "string" &&
+          (await this.referenceResolvesTo(
+            referrer.path,
+            source,
+            targetPath,
+          ));
+      } else {
+        scan.scannedWorlds += 1;
+        if (
+          Array.isArray(document.patterns) &&
+          document.patterns.length > 0
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_REFERENCE_SCAN",
+            `${referrer.path} uses pattern-based world membership, which cannot prove the target map is unreferenced.`,
+            {
+              path: referrer.path,
+              target: targetPath,
+              reason: "world-patterns",
+            },
+          );
+        }
+        const maps = Array.isArray(document.maps)
+          ? document.maps
+          : [];
+        for (const entry of maps) {
+          const fileName = isJsonObject(entry)
+            ? entry.fileName
+            : undefined;
+          if (
+            typeof fileName === "string" &&
+            (await this.referenceResolvesTo(
+              referrer.path,
+              fileName,
+              targetPath,
+            ))
+          ) {
+            references = true;
+            break;
+          }
+        }
+      }
+      if (references) {
+        referencingCount += 1;
+        if (
+          referencing.length <
+          MAX_DELETE_REFERRER_SAMPLE
+        ) {
+          referencing.push(referrer.path);
+        }
+      }
+    }
+    if (referencingCount > 0) {
+      throw new TiledMcpError(
+        "FILE_IN_USE",
+        `${targetPath} is still referenced by ${referencingCount} project asset${referencingCount === 1 ? "" : "s"}.`,
+        {
+          path: targetPath,
+          referencedByCount: referencingCount,
+          referencedBy: referencing,
+        },
+      );
+    }
+    return scan;
+  }
+
+  private async documentReferencesTileset(
+    mapPath: string,
+    document: JsonObject,
+    targetPath: string,
+  ): Promise<boolean> {
+    const tilesets = Array.isArray(
+      document.tilesets,
+    )
+      ? document.tilesets
+      : [];
+    for (const entry of tilesets) {
+      const source = isJsonObject(entry)
+        ? entry.source
+        : undefined;
+      if (
+        typeof source === "string" &&
+        (await this.referenceResolvesTo(
+          mapPath,
+          source,
+          targetPath,
+        ))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async referenceResolvesTo(
+    fromPath: string,
+    reference: string,
+    targetPath: string,
+  ): Promise<boolean> {
+    try {
+      return (
+        (await this.resolver.resolveReference(
+          fromPath,
+          reference,
+        )) === targetPath
+      );
+    } catch {
+      // References escaping the project root cannot point at an in-root
+      // target.
+      return false;
+    }
   }
 
   private async assertCreateTargetAbsent(

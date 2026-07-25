@@ -509,6 +509,24 @@ apply 前图片变化会以 `DEPENDENCY_REVISION_CONFLICT` 拒绝；目标文件
 节相同）一律 `FILE_ALREADY_EXISTS`，成功结果 `beforeRevision:null`。新文件尚未
 被任何 map 引用，随后用 `tiled_add_tileset_to_map` 挂载并重新读取 map summary。
 
+## 删除文件先证明未被引用，恢复走 checkpoint
+
+`tiled_delete_file` 返回 destructive 的 `fileDelete` change set，批准后 apply 才
+删除。preview 与 apply 都执行有界 fail-closed 引用扫描：TMJ maps、JSON worlds、
+JSON templates 逐个解析比对；项目里存在 `.tmx`/`.tsx`/`.tx` XML 资产或
+pattern-based world 时直接以 `UNSUPPORTED_REFERENCE_SCAN` 拒绝，命中引用返回
+`FILE_IN_USE` 与 referencedBy 样本——先用 `tiled_preview_edits` 的
+`removeTilesetFromMap` 等入口解除引用再删。apply 在 CAS 通过后**先提交当前字节的
+checkpoint 再 unlink**，结果里的 `checkpointId` 就是恢复入口：
+
+1. `tiled_preview_checkpoint_restore({checkpointId, expectedRevision})`，其中
+   `expectedRevision` 用删除结果的 `beforeRevision`（目标缺失时它就是恢复内容的
+   SHA-256）；
+2. 检查返回的 `targetMissing:true` 与 `summary.currentRevision:null`；
+3. 批准后 `tiled_apply_change_set` 以 no-replace 方式字节精确重建文件。
+
+期间若有人在原路径重建了文件，restore apply 以 `CHECKPOINT_STATE_CONFLICT` 拒绝。
+
 ## Raster 预览是可选能力
 
 `tiled_render_preview`、`tiled_render_tileset_sheet` 与 `tiled_render_tiles` 是核心

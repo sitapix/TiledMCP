@@ -26,7 +26,10 @@ export interface CheckpointRestoreSummary {
   destructive: true;
   checkpointId: string;
   targetPath: string;
-  currentRevision: string;
+  /**
+   * `null` when the target file is missing and the restore recreates it.
+   */
+  currentRevision: string | null;
   restoreRevision: string;
   restoreBytes: number;
   wouldChange: boolean;
@@ -39,10 +42,16 @@ export interface CheckpointRestorePlan {
   id: string;
   checkpoint: CheckpointRestoreExpectation;
   targetPath: string;
+  /**
+   * With a missing target there is no current revision to pin, so this is
+   * the restored content revision itself and `targetMissing` marks the
+   * recreate intent inside the signed plan.
+   */
   baseRevision: string;
   restoreRevision: string;
   restoreSize: number;
   wouldChange: boolean;
+  targetMissing?: true;
   summary: CheckpointRestoreSummary;
 }
 
@@ -52,7 +61,7 @@ export type CheckpointRestoreOperationPreview = {
   warning: string;
   checkpointId: string;
   targetPath: string;
-  currentRevision: string;
+  currentRevision: string | null;
   restoreRevision: string;
   restoreBytes: number;
   exactBytes: true;
@@ -81,10 +90,15 @@ export async function planCheckpointRestore(
     version: 1,
     checkpoint: structuredClone(inspection.checkpoint),
     targetPath: inspection.checkpoint.path,
-    baseRevision: inspection.currentRevision,
+    baseRevision:
+      inspection.currentRevision ??
+      inspection.restoreRevision,
     restoreRevision: inspection.restoreRevision,
     restoreSize: inspection.restoreSize,
     wouldChange: inspection.changed,
+    ...(inspection.currentRevision === null
+      ? { targetMissing: true as const }
+      : {}),
     summary,
   };
   return {
@@ -108,7 +122,10 @@ export async function applyCheckpointRestore(
   const expectedSummary = checkpointRestoreSummary({
     checkpointId: plan.checkpoint.id,
     targetPath: plan.targetPath,
-    currentRevision: plan.baseRevision,
+    currentRevision:
+      plan.targetMissing === true
+        ? null
+        : plan.baseRevision,
     restoreRevision: plan.restoreRevision,
     restoreSize: plan.restoreSize,
     wouldChange: plan.wouldChange,
@@ -125,6 +142,9 @@ export async function applyCheckpointRestore(
   const result = await store.revertPlanned(
     structuredClone(plan.checkpoint),
     plan.baseRevision,
+    plan.targetMissing === true
+      ? { expectMissingTarget: true }
+      : {},
   );
   return { ...result, changeSetId: plan.id };
 }
@@ -138,7 +158,10 @@ export function checkpointRestoreOperationPreview(
     warning: CHECKPOINT_RESTORE_WARNING,
     checkpointId: plan.checkpoint.id,
     targetPath: plan.targetPath,
-    currentRevision: plan.baseRevision,
+    currentRevision:
+      plan.targetMissing === true
+        ? null
+        : plan.baseRevision,
     restoreRevision: plan.restoreRevision,
     restoreBytes: plan.restoreSize,
     exactBytes: true,
@@ -149,7 +172,7 @@ export function checkpointRestoreOperationPreview(
 function checkpointRestoreSummary(input: {
   checkpointId: string;
   targetPath: string;
-  currentRevision: string;
+  currentRevision: string | null;
   restoreRevision: string;
   restoreSize: number;
   wouldChange: boolean;
@@ -181,18 +204,35 @@ function assertCheckpointRestorePlan(
   plan: CheckpointRestorePlan,
 ): void {
   try {
-    assertExactKeys(plan, [
-      "baseRevision",
-      "checkpoint",
-      "id",
-      "kind",
-      "restoreRevision",
-      "restoreSize",
-      "summary",
-      "targetPath",
-      "version",
-      "wouldChange",
-    ]);
+    assertExactKeys(
+      plan,
+      plan.targetMissing === undefined
+        ? [
+            "baseRevision",
+            "checkpoint",
+            "id",
+            "kind",
+            "restoreRevision",
+            "restoreSize",
+            "summary",
+            "targetPath",
+            "version",
+            "wouldChange",
+          ]
+        : [
+            "baseRevision",
+            "checkpoint",
+            "id",
+            "kind",
+            "restoreRevision",
+            "restoreSize",
+            "summary",
+            "targetMissing",
+            "targetPath",
+            "version",
+            "wouldChange",
+          ],
+    );
     assertExactKeys(plan.checkpoint, [
       "afterRevision",
       "before",
@@ -242,8 +282,16 @@ function assertCheckpointRestorePlan(
       plan.restoreRevision !== plan.checkpoint.before.revision ||
       plan.restoreSize !== plan.checkpoint.before.size ||
       typeof plan.wouldChange !== "boolean" ||
-      plan.wouldChange !==
-        (plan.baseRevision !== plan.restoreRevision)
+      (plan.targetMissing !== undefined &&
+        plan.targetMissing !== true) ||
+      (plan.targetMissing === true
+        ? plan.baseRevision !==
+            plan.restoreRevision ||
+          plan.wouldChange !== true ||
+          plan.checkpoint.status !== "committed"
+        : plan.wouldChange !==
+          (plan.baseRevision !==
+            plan.restoreRevision))
     ) {
       throw new Error("invalid checkpoint restore plan");
     }

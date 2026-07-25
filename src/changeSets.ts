@@ -11,6 +11,7 @@ import {
 import type {
   CheckpointPruneResult,
   CommitResult,
+  FileDeleteStoreResult,
   PreparedCheckpointAbandonResult,
   PreparedCheckpointCommitResult,
   PreparedCheckpointDiscardResult,
@@ -45,6 +46,11 @@ import {
   CREATE_TILESET_WARNING,
   type TilesetCreatePlan,
 } from "./maps/tilesetCreate.js";
+import {
+  assertFileDeletePlan,
+  DELETE_FILE_WARNING,
+  type FileDeletePlan,
+} from "./maps/fileDelete.js";
 import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
@@ -126,6 +132,7 @@ export type ChangeSetPlan =
   | MapEditPlan
   | TilesetEditPlan
   | TilesetCreatePlan
+  | FileDeletePlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
@@ -137,6 +144,9 @@ type ChangeSetOperationResult =
   | (CommitResult & {
       changeSetId: string;
     })
+  | (FileDeleteStoreResult & {
+      changeSetId: string;
+    })
   | CheckpointPruneResult
   | CheckpointPruneBatchResult
   | PreparedCheckpointCommitResult
@@ -145,6 +155,9 @@ type ChangeSetOperationResult =
 
 export type ChangeSetApplyResult =
   | (CommitResult & {
+      changeSetId: string;
+    })
+  | (FileDeleteStoreResult & {
       changeSetId: string;
     })
   | (CheckpointPruneResult & {
@@ -210,6 +223,13 @@ export interface TilesetCreateChangeSetPreview
   tilesetPath: string;
   image: TilesetCreatePlan["image"];
   summary: TilesetCreatePlan["summary"];
+}
+
+export interface FileDeleteChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "fileDelete";
+  targetPath: string;
+  summary: FileDeletePlan["summary"];
 }
 
 export interface CheckpointRestoreChangeSetPreview
@@ -402,6 +422,7 @@ export type ChangeSetPreview =
   | MapEditChangeSetPreview
   | TilesetEditChangeSetPreview
   | TilesetCreateChangeSetPreview
+  | FileDeleteChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
@@ -766,6 +787,16 @@ type OperationPreview =
       tileCount: number;
       contentRevision: string;
       image: TilesetCreatePlan["image"];
+    }
+  | {
+      type: "deleteFile";
+      destructive: true;
+      warning: string;
+      targetPath: string;
+      targetKind: "map" | "tileset";
+      revision: string;
+      size: number;
+      scan: FileDeletePlan["scan"];
     }
   | CheckpointRestoreOperationPreview
   | CheckpointPruneOperationPreview
@@ -1547,6 +1578,35 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         (tileUpdate) =>
           updateTileOperationPreview(tileUpdate),
       ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+  if (entry.plan.kind === "fileDelete") {
+    const plan = entry.plan;
+    assertFileDeletePlan(plan);
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      targetPath: plan.targetPath,
+      expectedRevision: plan.baseRevision,
+      operations: [
+        {
+          type: "deleteFile",
+          destructive: true,
+          warning: DELETE_FILE_WARNING,
+          targetPath: plan.targetPath,
+          targetKind: plan.targetKind,
+          revision: plan.baseRevision,
+          size: plan.size,
+          scan: structuredClone(plan.scan),
+        },
+      ],
       summary: structuredClone(plan.summary),
       snapshotConsistency: "non-atomic-read-set",
       createdAt: entry.createdAt,

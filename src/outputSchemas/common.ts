@@ -939,8 +939,25 @@ export const preparedCheckpointDiscardApplyResultOutputSchema =
  * rather than a project document, so they have explicitly discriminated
  * success branches.
  */
+export const fileDeleteApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal("fileDelete"),
+      changeSetId: changeSetIdOutputSchema,
+      path: projectPathOutputSchema,
+      beforeRevision: revisionOutputSchema,
+      checkpointId: checkpointIdOutputSchema,
+      deleted: z.literal(true),
+      warnings: z
+        .array(z.string().max(4_096))
+        .max(32)
+        .optional(),
+    })
+    .strict();
+
 export const applyResultOutputSchema = z.union([
   documentApplyResultOutputSchema,
+  fileDeleteApplyResultOutputSchema,
   checkpointPruneApplyResultOutputSchema,
   checkpointPruneBatchApplyResultOutputSchema,
   preparedCheckpointCommitApplyResultOutputSchema,

@@ -1101,7 +1101,8 @@ const restoreCheckpointOperationPreviewOutputSchema = z
     warning: z.string(),
     checkpointId: checkpointIdOutputSchema,
     targetPath: projectPathOutputSchema,
-    currentRevision: revisionOutputSchema,
+    currentRevision:
+      revisionOutputSchema.nullable(),
     restoreRevision: revisionOutputSchema,
     restoreBytes: nonnegativeIntegerOutputSchema,
     exactBytes: z.literal(true),
@@ -1854,7 +1855,8 @@ const checkpointRestoreSummaryOutputSchema = z
     destructive: z.literal(true),
     checkpointId: checkpointIdOutputSchema,
     targetPath: projectPathOutputSchema,
-    currentRevision: revisionOutputSchema,
+    currentRevision:
+      revisionOutputSchema.nullable(),
     restoreRevision: revisionOutputSchema,
     restoreBytes: nonnegativeIntegerOutputSchema,
     wouldChange: z.boolean(),
@@ -2923,6 +2925,76 @@ const tilesetCreatePreviewOutputSchema = z
 export const createTilesetPreviewToolOutputSchema =
   toolOutputSchema(
     tilesetCreatePreviewOutputSchema,
+  );
+
+const fileDeleteScanOutputSchema = z
+  .object({
+    scannedMaps: nonnegativeIntegerOutputSchema,
+    scannedWorlds:
+      nonnegativeIntegerOutputSchema,
+    scannedTemplates:
+      nonnegativeIntegerOutputSchema,
+    scannedBytes:
+      nonnegativeIntegerOutputSchema,
+  })
+  .strict();
+
+const fileDeleteTargetKindOutputSchema = z.enum([
+  "map",
+  "tileset",
+]);
+
+const fileDeleteSummaryOutputSchema = z
+  .object({
+    targetPath: projectPathOutputSchema,
+    targetKind: fileDeleteTargetKindOutputSchema,
+    revision: revisionOutputSchema,
+    size: nonnegativeIntegerOutputSchema,
+    scan: fileDeleteScanOutputSchema,
+    checkpointPolicy: z.literal(
+      "committed-before-unlink",
+    ),
+    wouldChange: z.literal(true),
+  })
+  .strict();
+
+const deleteFileOperationPreviewOutputSchema = z
+  .object({
+    type: z.literal("deleteFile"),
+    destructive: z.literal(true),
+    warning: z.string(),
+    targetPath: projectPathOutputSchema,
+    targetKind: fileDeleteTargetKindOutputSchema,
+    revision: revisionOutputSchema,
+    size: nonnegativeIntegerOutputSchema,
+    scan: fileDeleteScanOutputSchema,
+  })
+  .strict();
+
+const fileDeletePreviewOutputSchema = z
+  .object({
+    kind: z.literal("fileDelete"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    targetPath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        deleteFileOperationPreviewOutputSchema,
+      )
+      .length(1),
+    summary: fileDeleteSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const deleteFilePreviewToolOutputSchema =
+  toolOutputSchema(
+    fileDeletePreviewOutputSchema,
   );
 
 export const createLayerPreviewToolOutputSchema =

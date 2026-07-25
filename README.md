@@ -124,7 +124,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
-| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 101 个 v1 application code 及其兼容性、fallback 和排除边界 |
+| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 103 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 26 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
@@ -183,8 +183,8 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 }
 ```
 
-当前注册 27 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
-28 个可选工具：
+当前注册 28 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
+29 个可选工具：
 
 | 工具 | 作用 |
 |---|---|
@@ -210,6 +210,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_validate` | 只读结构与 MVP profile 校验 |
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
 | `tiled_create_tileset` | 预览从项目图片新建 external atlas TSJ；不直接写盘，apply 绝不覆盖已有文件 |
+| `tiled_delete_file` | 预览删除一个 TMJ/TSJ；引用扫描 fail closed，apply 先提交 checkpoint 再删除（可恢复） |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
 | `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性元数据更新；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
@@ -238,7 +239,7 @@ TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径
 返回
 `{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
 应用错误码的精确 wire 位置是 `structuredContent.result.error.code`。当前 v1 注册表包含
-101 个 application code；机器 artifact 是
+103 个 application code；机器 artifact 是
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json)，运行时
 同一内容可从 direct Resource `tiled://application-errors` 读取，并由
 `tiled_get_capabilities.applicationErrorContract` 公布 URI、revision、size、fallback 和
@@ -271,7 +272,7 @@ inline image bytes。error summary 给稳定 `code`、有界单行 `message`、�
 | URI | 类型 | 作用 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | 串联能力发现、sheet/preview 检查、change set 客户端批准、提交与提交后复核；内容带 SHA-256 revision 和 UTF-8 byte size |
-| `tiled://application-errors` | `application/json` | 当前 101 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
+| `tiled://application-errors` | `application/json` | 当前 103 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
 
 资产、schema 和 render Resource Templates 尚未注册；应以
 `resources/list` / `resources/templates/list` 的实际响应为准。
@@ -324,7 +325,7 @@ operation 合计最多写
 对象编辑继续通过通用 `tiled_preview_edits` 的 `createObject`、`updateObject` 和
 `deleteObjects` operations 提供；另有只读 `tiled_get_object` 用于在替换/删除 path
 对象或覆盖 text 内容前取得完整、有界的语义投影，所以 registry 为
-27 core / 28 with rasterizer。`createObject.object` 是按 `shape` 判别且拒绝额外 key
+28 core / 29 with rasterizer。`createObject.object` 是按 `shape` 判别且拒绝额外 key
 的 strict union：
 
 - `rectangle` 保持现有可选 `width` / `height` 契约；
@@ -410,7 +411,7 @@ layer update 会回显 `requestedFields`、`changedFields`、`wouldChange` 与
 `#AARRGGBB` 或 `null`。blend mode 是 13 项封闭枚举：`normal`、`add`、
 `multiply`、`screen`、`overlay`、`darken`、`lighten`、`color-dodge`、
 `color-burn`、`hard-light`、`soft-light`、`difference`、`exclusion`。
-它不是新的 standalone MCP tool，所以仍是 27 个 core / 28 个含 rasterizer 的工具。
+它不是新的 standalone MCP tool，所以仍是 28 个 core / 29 个含 rasterizer 的工具。
 
 删除已有图层使用 generic union 的第 8 种 operation：
 `{type:"deleteLayer", layerId, deleteDescendants?}`。它必须是 change set 中唯一的
@@ -431,7 +432,7 @@ destructive preview 回显选中 layer 的类型/名称/父 Group/index，以及
 `nextlayerid` 或 `nextobjectid`，不会复用历史 ID；写回只从直接父层的 `layers` 数组删除
 一个 element，保留所有未触及 sibling、祖先和其他 source bytes。它仍通过正常的
 revision-pinned preview/批准/apply 流程，不新增 standalone tool，工具数保持
-27 core / 28 optional。
+28 core / 29 optional。
 
 移动已有图层使用 generic union 的第 9 种 operation：
 `{type:"moveLayer", layerId, parentGroupId?, index}`。它必须独占 change set，不能与
@@ -461,12 +462,12 @@ BOM、CRLF、缩进、键序、数字/字符串词法与未知字段均保持原
 move 仍走 revision-pinned preview → 客户端批准 → apply：change set 固定 operation、
 map revision 与完整 dependency revisions，apply 重验摘要并在锁内执行 revision guard
 （对合作写者构成 CAS）；实际写入前照常创建内容寻址 checkpoint。它没有
-`tiled_move_layer` standalone tool，所以注册数量仍是 27 个 core / 28 个含 rasterizer
+`tiled_move_layer` standalone tool，所以注册数量仍是 28 个 core / 29 个含 rasterizer
 的工具。
 
 复制已有图层使用 generic union 的第 10 种 operation：
 `{type:"duplicateLayer", layerId, destination?, name?}`。它也必须独占 change set，且
-没有 `tiled_duplicate_layer` standalone tool，所以工具数仍为 27 core / 28 with
+没有 `tiled_duplicate_layer` standalone tool，所以工具数仍为 28 core / 29 with
 rasterizer。`destination` 是以下三个 strict 分支之一：
 
 - `{kind:"sameParent", index?}`：目标为原直接父；省略 `index` 时插在原
@@ -513,7 +514,7 @@ apply 会重算目标、分配、引用和摘要，校验 change-set digest 与 
 
 盖章写入使用 generic union 的第 11 种 operation：
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它没有
-`tiled_stamp_pattern` standalone tool，所以 registry 仍为 27 core / 28 with
+`tiled_stamp_pattern` standalone tool，所以 registry 仍为 28 core / 29 with
 rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维数组：每行非空且等宽，
 不能有 sparse hole/`undefined`。每条边最多 256 格，总格数最多 16,384。
 
@@ -533,7 +534,7 @@ rasterizer。`pattern` 必须是非空、稠密、矩形、row-major 的二维�
 
 油漆桶填充使用 generic union 的第 12 种 operation：
 `{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它没有
-`tiled_flood_fill` standalone tool，所以 registry 仍为 27 core / 28 with rasterizer。
+`tiled_flood_fill` standalone tool，所以 registry 仍为 28 core / 29 with rasterizer。
 `x/y` 是目标有限 tile layer 中的绝对 seed 坐标；连通性固定为四向，不接受对角连接或
 connectivity 参数。
 
@@ -558,7 +559,7 @@ revision 与文件 bytes 完全不变。
 
 修改 map 根级显示/元数据字段时，使用 generic union 的第 13 种 operation：
 `{type:"updateMap", patch}`。它不注册 `tiled_update_map` standalone tool，所以 registry
-仍为 27 core / 28 with rasterizer。operation 与 patch 都拒绝额外 key，patch 必须非空，
+仍为 28 core / 29 with rasterizer。operation 与 patch 都拒绝额外 key，patch 必须非空，
 且只能包含：
 
 - `renderOrder`：`right-down`、`right-up`、`left-down`、`left-up` 之一，写入
@@ -588,7 +589,7 @@ apply 只对实际变化的根对象 member 做 insertion/replacement/deletion�
 移除 map 中一个当前 external atlas binding 时，使用 generic union 的第 14 种 operation：
 `{type:"removeTilesetFromMap", tilesetAssetId}`。operation 是拒绝额外 key 的 strict
 object，并且必须独占 change set；它不注册 standalone tool，所以 registry 仍为
-27 core / 28 with rasterizer。`tilesetAssetId` 必须精确匹配当前 map summary 返回的
+28 core / 29 with rasterizer。`tilesetAssetId` 必须精确匹配当前 map summary 返回的
 opaque asset ID，不能用路径、名称或自行推导的 ID 代替。
 
 planner 会递归扫描全图每个有限 tile layer cell 和每个 object layer object，包括隐藏、
@@ -661,7 +662,7 @@ copy intent 仍计入 scan/write budget，但 `changedCellCount:0`、
 快照、GID 校验、预算和摘要；copy 执行时实际发生变化的 destination tile layer 才进入
 `data`-member-local source patch 候选。若后序 operation 恢复原值，最终 source diff
 仍折叠为 exact-byte no-op。该 operation 不注册 standalone tool，因此工具数仍为
-27 core / 28 with rasterizer。
+28 core / 29 with rasterizer。
 
 更新单个已引用 TSJ 的 per-tile 元数据时，使用专用 preview 工具
 `tiled_update_tile`（首个 TSJ 写入面）：以 `mapPath + tilesetAssetId` 定位、同时
@@ -690,6 +691,16 @@ prospective TSJ bytes 的 SHA-256**（无既有文件可 pin）。apply 重读�
 `before.existed:false` 的 checkpoint。新文件随后用 `tiled_add_tileset_to_map`
 挂载；`tilesetCreationCapabilities` 公布全部策略。
 
+删除 TMJ/TSJ 用 `tiled_delete_file`（preview→apply，destructive）：有界 fail-closed
+引用扫描覆盖 TMJ maps（`tilesets[].source`）、JSON worlds（`maps[].fileName`）与
+JSON templates（`tileset.source`），候选 ≤2,000 个 / 64 MiB；存在 XML 资产或
+pattern-based world 时以 `UNSUPPORTED_REFERENCE_SCAN` 拒绝，命中引用返回
+`FILE_IN_USE`（含样本）。apply 重放扫描并 CAS 当前 revision，**先提交当前字节的
+committed checkpoint 再 unlink**——任何崩溃窗口要么留下完整文件、要么留下可恢复
+的 checkpoint。恢复走 `tiled_preview_checkpoint_restore` 的缺失目标扩展：
+`expectedRevision` 即恢复内容的 SHA-256，批准后以 no-replace 方式字节精确重建；
+该扩展同样适用于被外部工具误删的文件。`fileDeletionCapabilities` 公布全部策略。
+
 调整地图尺寸时，使用 generic union 的第 16 种、必须独占 change set 的 operation：
 `{type:"resizeMap",width,height,offsetX?,offsetY?}`。语义按 Tiled 1.12.2 官方源码
 核实：`offsetX`/`offsetY` 单位为 tile，表示**旧内容在新地图中的位置**（缩小/向左上
@@ -711,7 +722,7 @@ points 相对锚点自动跟随，**从不删除**；越界对象原样保留，
 `destructive:true` 的 operation preview 回显新旧 bounds、offset、preserved/cropped
 非零格计数、最多 16 项 `croppedCellSample` 与受影响 layer 计数。同尺寸零偏移且无
 实际变化时是 exact-byte no-op。该 operation 不注册 standalone tool，工具数仍为
-27 core / 28 with rasterizer。
+28 core / 29 with rasterizer。
 
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
@@ -853,7 +864,7 @@ pnpm build
 `resources/list`、`resources/templates/list` 和 `resources/read` 响应重建两份 machine
 contracts（discovery 与 application errors）和 reference；它不会探测 PATH 或启动本机
 Tiled。`pnpm contract:check` 比较这两份 contract 与 reference 的生成结果和已提交
-artifact，并重新用公开 input schema 校验全部 28 个示例。`pnpm test` 会先执行该 drift
+artifact，并重新用公开 input schema 校验全部 29 个示例。`pnpm test` 会先执行该 drift
 gate、构建 `dist/`，并包含真实 production stdio smoke；
 `pnpm test:watch` 为避免使用 stale build 而排除该单项，可随时用
 `pnpm test:stdio` 单独重建并复跑；`pnpm verify` 串联 typecheck、build、契约检查和完整
@@ -940,7 +951,7 @@ checkpoint restore。架构与 roadmap
   尚不支持在同一 preview 中继续给新 Group 添加子层；已有图层的移动与删除分别使用
   独占的 `moveLayer` / `deleteLayer` operation，不能和 create-layer proposal 混批。
 - `replaceTiles` 是通用 `tiled_preview_edits` 的 operation，不新增注册工具，因此仍为
-  27 个 core / 28 个含 rasterizer 的工具。它只接受非空 `from`，按包含
+  28 个 core / 29 个含 rasterizer 的工具。它只接受非空 `from`，按包含
   transform/raw flags 的完整 encoded GID 精确匹配；
   `to:null` 才表示清空。一个 operation 的多组 mapping 同时、single-pass 求值，可选
   region 使用绝对 tile 坐标，省略时覆盖 layer bounds。每个 operation 最多 128 组映射，

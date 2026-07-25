@@ -126,6 +126,19 @@ export interface CommitResult {
   warnings?: string[];
 }
 
+export interface FileDeleteStoreResult {
+  kind: "fileDelete";
+  path: string;
+  beforeRevision: string;
+  /**
+   * The committed pre-delete checkpoint; restoring it recreates the deleted
+   * file with its exact former bytes.
+   */
+  checkpointId: string;
+  deleted: true;
+  warnings?: string[];
+}
+
 export type CheckpointRetentionResult =
   | RollingCheckpointRetentionResult
   | {
@@ -160,7 +173,11 @@ export interface CheckpointRestoreExpectation {
 
 export interface CheckpointRestoreInspection {
   checkpoint: CheckpointRestoreExpectation;
-  currentRevision: string;
+  /**
+   * `null` when the target file is missing: the restore recreates it and
+   * `expectedRevision` pins the restored content itself.
+   */
+  currentRevision: string | null;
   restoreRevision: string;
   restoreSize: number;
   changed: boolean;
@@ -1542,7 +1559,60 @@ export class DocumentStore {
     );
     const normalized = this.resolver.normalize(manifest.path);
     this.assertSize(before, normalized);
-    const current = await this.readSnapshot(normalized);
+    let current: DocumentSnapshot | null;
+    try {
+      current = await this.readSnapshot(normalized);
+    } catch (error) {
+      if (
+        error instanceof TiledMcpError &&
+        error.code === "FILE_NOT_FOUND"
+      ) {
+        current = null;
+      } else {
+        throw error;
+      }
+    }
+    const checkpoint = checkpointRestoreExpectation(manifest);
+    if (current === null) {
+      // The target is gone (deleted through tiled_delete_file or externally).
+      // With no current bytes to pin, the approved revision is the restored
+      // content itself.
+      if (manifest.status === "prepared") {
+        throw new TiledMcpError(
+          "CHECKPOINT_STATE_CONFLICT",
+          `Checkpoint ${checkpointId} is prepared and its target is missing; adjudicate it before restoring.`,
+          {
+            checkpointId,
+            currentRevision: null,
+            afterRevision: manifest.afterRevision,
+          },
+        );
+      }
+      if (
+        expectedRevision !==
+        checkpoint.before.revision
+      ) {
+        throw new TiledMcpError(
+          "REVISION_CONFLICT",
+          `${normalized} is missing; expectedRevision must equal the checkpoint's restorable content revision.`,
+          {
+            path: normalized,
+            expectedRevision,
+            actualRevision: null,
+            restoreRevision:
+              checkpoint.before.revision,
+          },
+        );
+      }
+      return {
+        checkpoint,
+        currentRevision: null,
+        restoreRevision:
+          checkpoint.before.revision,
+        restoreSize: before.byteLength,
+        changed: true,
+      };
+    }
     assertExpectedRevision(
       normalized,
       expectedRevision,
@@ -1552,7 +1622,6 @@ export class DocumentStore {
       manifest,
       current.revision,
     );
-    const checkpoint = checkpointRestoreExpectation(manifest);
     return {
       checkpoint,
       currentRevision: current.revision,
@@ -1579,6 +1648,7 @@ export class DocumentStore {
   async revertPlanned(
     expectedCheckpoint: CheckpointRestoreExpectation,
     expectedRevision: string,
+    options: { expectMissingTarget?: boolean } = {},
   ): Promise<CommitResult> {
     const normalized = this.resolver.normalize(
       expectedCheckpoint.path,
@@ -1601,6 +1671,14 @@ export class DocumentStore {
               checkpointId: expectedCheckpoint.id,
               path: manifest.path,
             },
+          );
+        }
+        if (options.expectMissingTarget === true) {
+          return this.revertIntoMissingTarget(
+            expectedCheckpoint,
+            manifest,
+            expectedRevision,
+            normalized,
           );
         }
         const absolutePath =
@@ -1703,6 +1781,166 @@ export class DocumentStore {
                   retention.result,
               }),
           ...(warnings.length === 0 ? {} : { warnings }),
+        };
+      }),
+    );
+  }
+
+  /**
+   * Recreates a missing target from a committed checkpoint's exact before
+   * bytes. `expectedRevision` pins the restored content itself; a target
+   * that reappeared since the preview fails closed.
+   */
+  private async revertIntoMissingTarget(
+    expectedCheckpoint: CheckpointRestoreExpectation,
+    manifest: CheckpointManifest,
+    expectedRevision: string,
+    normalized: string,
+  ): Promise<CommitResult> {
+    if (manifest.status !== "committed") {
+      throw new TiledMcpError(
+        "CHECKPOINT_STATE_CONFLICT",
+        `Checkpoint ${manifest.id} is prepared and its target is missing; adjudicate it before restoring.`,
+        {
+          checkpointId: manifest.id,
+          currentRevision: null,
+          afterRevision: manifest.afterRevision,
+        },
+      );
+    }
+    const absolutePath =
+      await this.resolver.resolveForCreate(
+        normalized,
+      );
+    try {
+      await stat(absolutePath);
+      throw new TiledMcpError(
+        "CHECKPOINT_STATE_CONFLICT",
+        `${normalized} reappeared after the restore preview. Preview the restore again.`,
+        {
+          checkpointId: manifest.id,
+          path: normalized,
+        },
+      );
+    } catch (error) {
+      if (!hasCode(error, "ENOENT")) {
+        throw error;
+      }
+    }
+    const before = await this.checkpoints.readBefore(manifest);
+    if (!before) {
+      throw new TiledMcpError(
+        "REVERT_WOULD_DELETE",
+        "This checkpoint represents creation of a new file; deletion is not supported by the MVP.",
+        {
+          checkpointId: expectedCheckpoint.id,
+          path: manifest.path,
+        },
+      );
+    }
+    validateCheckpointRestoreDocument(
+      before,
+      manifest.path,
+      manifest.id,
+    );
+    this.assertSize(before, normalized);
+    const restoredRevision = revisionOf(before);
+    if (restoredRevision !== expectedRevision) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${normalized} is missing; expectedRevision must equal the checkpoint's restorable content revision.`,
+        {
+          path: normalized,
+          expectedRevision,
+          actualRevision: null,
+          restoreRevision: restoredRevision,
+        },
+      );
+    }
+    const restoreCheckpoint = await this.checkpoints.prepare(
+      normalized,
+      undefined,
+      restoredRevision,
+      `revert checkpoint ${expectedCheckpoint.id}`,
+    );
+    const warnings = await this.atomicReplaceConfirmed(
+      absolutePath,
+      before,
+      undefined,
+      normalized,
+    );
+    const finalization =
+      await this.markCheckpointBestEffort(
+        restoreCheckpoint,
+      );
+    warnings.push(...finalization.warnings);
+    return {
+      path: normalized,
+      beforeRevision: null,
+      revision: restoredRevision,
+      checkpointId: restoreCheckpoint.id,
+      changed: true,
+      ...(warnings.length === 0 ? {} : { warnings }),
+    };
+  }
+
+  /**
+   * Deletes one project document after committing a checkpoint of its exact
+   * current bytes, so the deletion stays restorable through the standard
+   * checkpoint-restore flow. The checkpoint is committed before the unlink:
+   * every crash window leaves either the intact file or a restorable
+   * committed checkpoint.
+   */
+  async deleteDocument(
+    projectPath: string,
+    expectedRevision: string,
+    label = "delete document",
+  ): Promise<FileDeleteStoreResult> {
+    const normalized = this.resolver.normalize(projectPath);
+    return this.mutex.runExclusive(normalized, () =>
+      withProjectFileLock(this.resolver, normalized, async () => {
+        const absolutePath =
+          await this.resolver.resolveExisting(normalized);
+        const current = await this.readBounded(
+          absolutePath,
+          normalized,
+        );
+        const currentRevision = revisionOf(current);
+        assertExpectedRevision(
+          normalized,
+          expectedRevision,
+          currentRevision,
+        );
+        const checkpoint = await this.checkpoints.prepare(
+          normalized,
+          current,
+          currentRevision,
+          label,
+        );
+        const committed =
+          await this.checkpoints.markCommitted(
+            checkpoint,
+          );
+        await unlink(absolutePath);
+        const warnings: string[] = [];
+        try {
+          await syncDirectoryBestEffort(
+            dirname(absolutePath),
+          );
+        } catch {
+          warnings.push(
+            `Could not durably sync the parent directory of ${normalized} after deletion.`,
+          );
+        }
+        return {
+          kind: "fileDelete",
+          path: normalized,
+          beforeRevision: currentRevision,
+          checkpointId: committed.id,
+          deleted: true,
+          ...(warnings.length === 0
+            ? {}
+            : { warnings }),
         };
       }),
     );
@@ -3199,6 +3437,17 @@ function compareCanonicalText(
 
 function isMissingCode(code: string): boolean {
   return code === "FILE_NOT_FOUND" || code === "ENOENT";
+}
+
+async function syncDirectoryBestEffort(
+  path: string,
+): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 function hasCode(error: unknown, code: string): boolean {

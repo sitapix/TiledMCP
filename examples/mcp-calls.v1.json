@@ -267,6 +267,14 @@
       "purpose": "预览从项目内图集图片创建一个新的 external TSJ；expectedRevision 即批准内容的 SHA-256，apply 绝不覆盖已有文件。"
     },
     {
+      "name": "tiled_delete_file",
+      "profile": "core",
+      "arguments": {
+        "path": "tiles/unused.tsj"
+      },
+      "purpose": "预览删除一个未被引用的项目文档；有界引用扫描 fail closed，apply 先提交当前字节的 checkpoint 再删除，恢复即重建文件。"
+    },
+    {
       "name": "tiled_add_tileset_to_map",
       "profile": "core",
       "arguments": {
