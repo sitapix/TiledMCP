@@ -267,6 +267,30 @@
       "purpose": "pin 住已有依赖和候选 TSJ 后预览新增外部 tileset binding。"
     },
     {
+      "name": "tiled_update_tile",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "updates": [
+          {
+            "tileId": 2,
+            "patch": {
+              "probability": 0.25,
+              "className": "Grass",
+              "animation": [
+                { "tileId": 2, "durationMs": 200 },
+                { "tileId": 3, "durationMs": 200 }
+              ]
+            }
+          }
+        ]
+      },
+      "purpose": "pin 住 map 与 TSJ revision 后预览单 tile 的 probability/class/动画元数据更新。"
+    },
+    {
       "name": "tiled_create_layer",
       "profile": "core",
       "arguments": {

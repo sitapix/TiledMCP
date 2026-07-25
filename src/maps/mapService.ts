@@ -87,6 +87,13 @@ import {
   summarizeTilesetDocument,
 } from "./tilesetDetails.js";
 import {
+  applyTileMetadataUpdates,
+  assertTilesetEditPlan,
+  tilesetEditPlanId,
+  type TileMetadataUpdate,
+  type TilesetEditPlan,
+} from "./tilesetEdits.js";
+import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
   searchTilesetDocument,
@@ -463,6 +470,14 @@ export interface GetTilesetInput {
   tilesetAssetId: string;
   startTileId?: number;
   limit?: number;
+}
+
+export interface UpdateTileInput {
+  mapPath: string;
+  tilesetAssetId: string;
+  expectedMapRevision: string;
+  expectedTilesetRevision: string;
+  updates: TileMetadataUpdate[];
 }
 
 export interface FindTilesInput {
@@ -1931,6 +1946,207 @@ export class MapService {
       "REVISION_CONFLICT",
     );
     return { ...unsignedPlan, id: planId(unsignedPlan) };
+  }
+
+  async planUpdateTile(
+    input: UpdateTileInput,
+  ): Promise<TilesetEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    assertRequiredRevision(
+      input.expectedTilesetRevision,
+      "expectedTilesetRevision",
+    );
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        expectedMapRevision:
+          input.expectedMapRevision,
+      },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      input.tilesetAssetId,
+    );
+    if (
+      binding.revision !==
+      input.expectedTilesetRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} does not match the expected tileset revision.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision:
+            input.expectedTilesetRevision,
+          actualRevision: binding.revision,
+        },
+      );
+    }
+    const loaded =
+      await this.loadBoundTilesetForEdit(
+        binding,
+      );
+    const edited = cloneJson(loaded.document);
+    const planned = applyTileMetadataUpdates(
+      edited,
+      binding.tileCount,
+      structuredClone(
+        input.updates,
+      ) as TileMetadataUpdate[],
+      binding.path,
+    );
+    const unsignedPlan: Omit<TilesetEditPlan, "id"> = {
+      kind: "tilesetEdit",
+      version: 1,
+      mapPath: context.loaded.path,
+      tilesetPath: binding.path,
+      assetId: binding.assetId,
+      baseRevision: binding.revision,
+      mapRevision: context.loaded.revision,
+      updates: structuredClone(
+        input.updates,
+      ) as TileMetadataUpdate[],
+      summary: planned.summary,
+    };
+    await assertRevisionUnchanged(
+      this.store,
+      binding.path,
+      binding.revision,
+      "DEPENDENCY_REVISION_CONFLICT",
+      { assetId: binding.assetId },
+    );
+    await assertRevisionUnchanged(
+      this.store,
+      context.loaded.path,
+      context.loaded.revision,
+      "REVISION_CONFLICT",
+    );
+    return {
+      ...unsignedPlan,
+      id: tilesetEditPlanId(unsignedPlan),
+    };
+  }
+
+  async applyTilesetEdit(
+    plan: TilesetEditPlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    assertTilesetEditPlan(plan);
+    const context = await this.loadEditableContext(
+      plan.mapPath,
+      { expectedMapRevision: plan.mapRevision },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      plan.assetId,
+    );
+    if (
+      binding.path !== plan.tilesetPath ||
+      binding.revision !== plan.baseRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${plan.tilesetPath} no longer matches the pinned tileset binding.`,
+        {
+          assetId: plan.assetId,
+          expectedRevision: plan.baseRevision,
+          actualRevision: binding.revision,
+        },
+      );
+    }
+    const loaded =
+      await this.loadBoundTilesetForEdit(
+        binding,
+      );
+    const edited = cloneJson(loaded.document);
+    const applied = applyTileMetadataUpdates(
+      edited,
+      binding.tileCount,
+      structuredClone(
+        plan.updates,
+      ) as TileMetadataUpdate[],
+      binding.path,
+    );
+    if (
+      stableJson(
+        applied.summary as unknown as JsonValue,
+      ) !==
+      stableJson(plan.summary as unknown as JsonValue)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The tileset edit summary does not match its updates.",
+      );
+    }
+    const patchedSource = patchJsonDocumentSource(
+      loaded.source,
+      edited,
+      [],
+      plan.tilesetPath,
+      applied.patches.insertions,
+      applied.patches.memberPatches,
+      applied.patches.deletions,
+      [],
+    );
+    const result = await this.store.commitBytes(
+      plan.tilesetPath,
+      plan.baseRevision,
+      patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private async loadBoundTilesetForEdit(
+    binding: TilesetBinding,
+  ): Promise<{
+    document: JsonObject;
+    source: Buffer;
+  }> {
+    const tileset = await this.store.read(
+      binding.path,
+    );
+    if (tileset.revision !== binding.revision) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} changed while the tile update was being prepared.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision: binding.revision,
+          actualRevision: tileset.revision,
+        },
+      );
+    }
+    const imageReference = expectString(
+      tileset.document.image,
+      `${binding.path}.image`,
+    );
+    const imagePath =
+      await this.resolver.resolveReference(
+        binding.path,
+        imageReference,
+      );
+    // Reuse the bounded semantic scanner as the tileset write-profile gate;
+    // it rejects non-atlas tiles, duplicate or out-of-range ids, and
+    // malformed probability/animation metadata before any mutation.
+    summarizeTilesetDocument({
+      document: tileset.document,
+      path: binding.path,
+      imagePath,
+      name: binding.name,
+      nameTruncated: binding.nameTruncated,
+      tileCount: binding.tileCount,
+      startTileId: 0,
+      limit: 1,
+    });
+    return {
+      document: tileset.document,
+      source: tileset.source,
+    };
   }
 
   async planCreateLayer(

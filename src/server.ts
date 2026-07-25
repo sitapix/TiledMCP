@@ -185,7 +185,15 @@ import {
   preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
+  updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
+import {
+  MAX_TILE_ANIMATION_FRAME_DURATION_MS,
+  MAX_TILE_ANIMATION_FRAMES_PER_TILE,
+  MAX_TILE_CLASS_NAME_CODE_POINTS,
+  MAX_TILE_PROBABILITY,
+  MAX_TILE_UPDATES_PER_CHANGE_SET,
+} from "./maps/tilesetEdits.js";
 import {
   checkpointListToolOutputSchema,
   listFilesToolOutputSchema,
@@ -1170,6 +1178,63 @@ const removeTilesetFromMapSchema = z
   })
   .strict();
 
+const tileAnimationFrameSchema = z
+  .object({
+    tileId: z
+      .number()
+      .int()
+      .min(0)
+      .max(0x0fffffff),
+    durationMs: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_TILE_ANIMATION_FRAME_DURATION_MS),
+  })
+  .strict();
+
+const tileMetadataPatchSchema = z
+  .object({
+    probability: z
+      .number()
+      .min(0)
+      .max(MAX_TILE_PROBABILITY)
+      .nullable()
+      .optional(),
+    className: mapClassNameSchema
+      .refine((value) => value.length > 0, {
+        message:
+          "className must be a non-empty string; use null to remove the class",
+      })
+      .nullable()
+      .optional(),
+    animation: z
+      .array(tileAnimationFrameSchema)
+      .min(1)
+      .max(MAX_TILE_ANIMATION_FRAMES_PER_TILE)
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (patch) => Object.keys(patch).length > 0,
+    {
+      message:
+        "Tile update patch must contain at least one field",
+    },
+  );
+
+const tileMetadataUpdateSchema = z
+  .object({
+    tileId: z
+      .number()
+      .int()
+      .min(0)
+      .max(0x0fffffff),
+    patch: tileMetadataPatchSchema,
+  })
+  .strict();
+
 const mapEditSchema = z.discriminatedUnion("type", [
   updateMapSchema,
   resizeMapSchema,
@@ -1214,6 +1279,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_analyze_usage",
     "tiled_create_map",
     "tiled_add_tileset_to_map",
+    "tiled_update_tile",
     "tiled_create_layer",
     "tiled_preview_edits",
     "tiled_apply_change_set",
@@ -1470,6 +1536,32 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "exclusive-single-operation-change-set",
           sourcePatch:
             "root-dimensions-and-affected-layer-members-local",
+        },
+        tileMetadataUpdateCapabilities: {
+          fields: [
+            "probability",
+            "className",
+            "animation",
+          ],
+          addressing:
+            "map-scoped-tileset-asset-id",
+          planner:
+            "dedicated-single-tileset-preview",
+          probabilityDefaultRemoval:
+            "one-or-null-removes-member",
+          classMemberPolicy:
+            "update-existing-class-else-tiled-1-12-type-member",
+          ambiguousClassMembers: "fail-closed",
+          animationReplacement: "whole-array",
+          animationSerialization:
+            "tiled-tileid-duration-members",
+          entryLifecycle:
+            "insert-ascending-remove-when-only-id",
+          structuralUpdates:
+            "exclusive-single-update-change-set",
+          unorderedTilesInsertion: "fail-closed",
+          sourcePatch:
+            "tiles-entry-member-local",
         },
         mapUpdateCapabilities: {
           fields: [
@@ -2225,6 +2317,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
           maxStampPatternCells:
             MAX_STAMP_PATTERN_CELLS,
+          maxTileUpdatesPerChangeSet:
+            MAX_TILE_UPDATES_PER_CHANGE_SET,
+          maxTileAnimationFramesPerTile:
+            MAX_TILE_ANIMATION_FRAMES_PER_TILE,
+          maxTileAnimationFrameDurationMs:
+            MAX_TILE_ANIMATION_FRAME_DURATION_MS,
+          maxTileClassNameCodePoints:
+            MAX_TILE_CLASS_NAME_CODE_POINTS,
+          maxTileProbability: MAX_TILE_PROBABILITY,
           maxResizeMapDimension:
             MAX_RESIZE_MAP_DIMENSION,
           maxResizeOffsetMagnitude:
@@ -3374,6 +3475,67 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_update_tile",
+    {
+      title: "Preview per-tile metadata updates",
+      description:
+        "Validates bounded probability, class, and animation updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Tile geometry, the atlas image, GID layout, and referencing maps are never touched. Asset discovery may update project-internal safety metadata.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          tilesetAssetId: z
+            .string()
+            .regex(/^asset_[0-9a-f]{24}$/u),
+          expectedMapRevision: revisionSchema,
+          expectedTilesetRevision: revisionSchema,
+          updates: z
+            .array(tileMetadataUpdateSchema)
+            .min(1)
+            .max(MAX_TILE_UPDATES_PER_CHANGE_SET)
+            .superRefine((updates, context) => {
+              const seen = new Set<number>();
+              for (const [
+                index,
+                update,
+              ] of updates.entries()) {
+                if (seen.has(update.tileId)) {
+                  context.addIssue({
+                    code: "custom",
+                    message: `updates[${index}] repeats tile ID ${update.tileId}`,
+                    path: [index, "tileId"],
+                  });
+                }
+                seen.add(update.tileId);
+              }
+            }),
+        })
+        .strict(),
+      outputSchema:
+        updateTilePreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      tilesetAssetId,
+      expectedMapRevision,
+      expectedTilesetRevision,
+      updates,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planUpdateTile({
+          mapPath,
+          tilesetAssetId,
+          expectedMapRevision,
+          expectedTilesetRevision,
+          updates,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_create_layer",
     {
       title: "Preview creating a map layer",
@@ -3589,7 +3751,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                             store,
                             plan,
                           )
-                        : maps.applyEdits(plan),
+                        : plan.kind ===
+                            "tilesetEdit"
+                          ? maps.applyTilesetEdit(
+                              plan,
+                            )
+                          : maps.applyEdits(plan),
         ),
       ),
   );

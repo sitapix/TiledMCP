@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 25 tools
-- `with-tmxrasterizer`: 26 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 26 tools
+- `with-tmxrasterizer`: 27 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -187,9 +187,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:f3f2d3f61176e4172dc9cb84c5d374e511b6ddaaa48ab12836f82f6ad2592817",
+    "revision": "sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960",
     "serverVersion": "0.0.1",
-    "size": 64434
+    "size": 66311
   },
   "annotations": {
     "audience": [
@@ -201,7 +201,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 64434,
+  "size": 66311,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -209,7 +209,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3841 UTF-8 bytes, revision `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`.
 
-Content contract: `text`, 64434 UTF-8 bytes, revision `sha256:f3f2d3f61176e4172dc9cb84c5d374e511b6ddaaa48ab12836f82f6ad2592817`.
+Content contract: `text`, 66311 UTF-8 bytes, revision `sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960`.
 
 Resource templates: none.
 
@@ -8764,6 +8764,18 @@ Output schema:
                   "const": 256,
                   "type": "number"
                 },
+                "maxTileAnimationFrameDurationMs": {
+                  "const": 1000000000,
+                  "type": "number"
+                },
+                "maxTileAnimationFramesPerTile": {
+                  "const": 256,
+                  "type": "number"
+                },
+                "maxTileClassNameCodePoints": {
+                  "const": 1024,
+                  "type": "number"
+                },
                 "maxTileFindClauses": {
                   "const": 8,
                   "type": "number"
@@ -8796,6 +8808,10 @@ Output schema:
                   "const": 1000000,
                   "type": "number"
                 },
+                "maxTileProbability": {
+                  "const": 1000000000,
+                  "type": "number"
+                },
                 "maxTileRenderBytes": {
                   "const": 8388608,
                   "type": "number"
@@ -8818,6 +8834,10 @@ Output schema:
                 },
                 "maxTileRenderScale": {
                   "const": 4,
+                  "type": "number"
+                },
+                "maxTileUpdatesPerChangeSet": {
+                  "const": 64,
                   "type": "number"
                 },
                 "maxTilesetAnimationFrameSample": {
@@ -8937,6 +8957,11 @@ Output schema:
                 "maxPendingTextObjectPayloadBytes",
                 "maxStampPatternEdge",
                 "maxStampPatternCells",
+                "maxTileUpdatesPerChangeSet",
+                "maxTileAnimationFramesPerTile",
+                "maxTileAnimationFrameDurationMs",
+                "maxTileClassNameCodePoints",
+                "maxTileProbability",
                 "maxResizeMapDimension",
                 "maxResizeOffsetMagnitude",
                 "maxResizeSourceCellScans",
@@ -10467,6 +10492,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_layer",
                       "type": "string"
                     },
@@ -10569,6 +10598,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_add_tileset_to_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_tile",
                       "type": "string"
                     },
                     {
@@ -10930,6 +10963,87 @@ Output schema:
                 "operationOrdering",
                 "scanAccounting",
                 "scanBudget",
+                "sourcePatch"
+              ],
+              "type": "object"
+            },
+            "tileMetadataUpdateCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "addressing": {
+                  "const": "map-scoped-tileset-asset-id",
+                  "type": "string"
+                },
+                "ambiguousClassMembers": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "animationReplacement": {
+                  "const": "whole-array",
+                  "type": "string"
+                },
+                "animationSerialization": {
+                  "const": "tiled-tileid-duration-members",
+                  "type": "string"
+                },
+                "classMemberPolicy": {
+                  "const": "update-existing-class-else-tiled-1-12-type-member",
+                  "type": "string"
+                },
+                "entryLifecycle": {
+                  "const": "insert-ascending-remove-when-only-id",
+                  "type": "string"
+                },
+                "fields": {
+                  "items": [
+                    {
+                      "const": "probability",
+                      "type": "string"
+                    },
+                    {
+                      "const": "className",
+                      "type": "string"
+                    },
+                    {
+                      "const": "animation",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "planner": {
+                  "const": "dedicated-single-tileset-preview",
+                  "type": "string"
+                },
+                "probabilityDefaultRemoval": {
+                  "const": "one-or-null-removes-member",
+                  "type": "string"
+                },
+                "sourcePatch": {
+                  "const": "tiles-entry-member-local",
+                  "type": "string"
+                },
+                "structuralUpdates": {
+                  "const": "exclusive-single-update-change-set",
+                  "type": "string"
+                },
+                "unorderedTilesInsertion": {
+                  "const": "fail-closed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "fields",
+                "addressing",
+                "planner",
+                "probabilityDefaultRemoval",
+                "classMemberPolicy",
+                "ambiguousClassMembers",
+                "animationReplacement",
+                "animationSerialization",
+                "entryLifecycle",
+                "structuralUpdates",
+                "unorderedTilesInsertion",
                 "sourcePatch"
               ],
               "type": "object"
@@ -11391,6 +11505,7 @@ Output schema:
             "editProfiles",
             "mapOperations",
             "mapResizeCapabilities",
+            "tileMetadataUpdateCapabilities",
             "mapUpdateCapabilities",
             "tileOperations",
             "tileStampCapabilities",
@@ -29064,6 +29179,627 @@ Output schema:
             "page",
             "scale",
             "truncated"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_update_tile`
+
+Availability: `core`
+
+Validates bounded probability, class, and animation updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Tile geometry, the atlas image, GID layout, and referencing maps are never touched. Asset discovery may update project-internal safety metadata.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: pin 住 map 与 TSJ revision 后预览单 tile 的 probability/class/动画元数据更新。
+
+```json
+{
+  "arguments": {
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "mapPath": "maps/example.tmj",
+    "tilesetAssetId": "asset_0123456789abcdef01234567",
+    "updates": [
+      {
+        "patch": {
+          "animation": [
+            {
+              "durationMs": 200,
+              "tileId": 2
+            },
+            {
+              "durationMs": 200,
+              "tileId": 3
+            }
+          ],
+          "className": "Grass",
+          "probability": 0.25
+        },
+        "tileId": 2
+      }
+    ]
+  },
+  "name": "tiled_update_tile"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedTilesetRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "tilesetAssetId": {
+      "pattern": "^asset_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "updates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "patch": {
+            "additionalProperties": false,
+            "properties": {
+              "animation": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "durationMs": {
+                          "maximum": 1000000000,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "tileId": {
+                          "maximum": 268435455,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "tileId",
+                        "durationMs"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 256,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "className": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "probability": {
+                "anyOf": [
+                  {
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "tileId": {
+            "maximum": 268435455,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tileId",
+          "patch"
+        ],
+        "type": "object"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "mapPath",
+    "tilesetAssetId",
+    "expectedMapRevision",
+    "expectedTilesetRevision",
+    "updates"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "pattern": "^asset_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "tilesetEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "mapRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "changedFields": {
+                    "items": {
+                      "enum": [
+                        "probability",
+                        "className",
+                        "animation"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "type": "array"
+                  },
+                  "destructive": {
+                    "const": false,
+                    "type": "boolean"
+                  },
+                  "entryAction": {
+                    "enum": [
+                      "insert",
+                      "update",
+                      "remove",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "newAnimationFrameCount": {
+                    "maximum": 256,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "previousAnimationFrameCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "requestedFields": {
+                    "items": {
+                      "enum": [
+                        "probability",
+                        "className",
+                        "animation"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "tileId": {
+                    "maximum": 268435455,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "updateTile",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  },
+                  "wouldChange": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "tileId",
+                  "entryAction",
+                  "requestedFields",
+                  "changedFields",
+                  "wouldChange"
+                ],
+                "type": "object"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "tileUpdates": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "probability",
+                            "className",
+                            "animation"
+                          ],
+                          "type": "string"
+                        },
+                        "maxItems": 3,
+                        "type": "array"
+                      },
+                      "entryAction": {
+                        "enum": [
+                          "insert",
+                          "update",
+                          "remove",
+                          "none"
+                        ],
+                        "type": "string"
+                      },
+                      "newAnimationFrameCount": {
+                        "maximum": 256,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "previousAnimationFrameCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "requestedFields": {
+                        "items": {
+                          "enum": [
+                            "probability",
+                            "className",
+                            "animation"
+                          ],
+                          "type": "string"
+                        },
+                        "maxItems": 3,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "tileId": {
+                        "maximum": 268435455,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "updateIndex": {
+                        "maximum": 63,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "updateIndex",
+                      "tileId",
+                      "entryAction",
+                      "requestedFields",
+                      "changedFields",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 64,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "tilesMemberAction": {
+                  "enum": [
+                    "insert",
+                    "keep",
+                    "remove",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "updateCount": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 64,
+                  "type": "integer"
+                },
+                "wouldChange": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "updateCount",
+                "tileUpdates",
+                "tilesMemberAction",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "tilesetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "tilesetPath",
+            "assetId",
+            "expectedRevision",
+            "mapRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
           ],
           "type": "object"
         },

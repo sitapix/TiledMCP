@@ -18,14 +18,14 @@
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
    `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 25 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 26，不能把它当成必备工具。
+3. 核心 profile 当前包含 26 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 27，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 25 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 26 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -139,6 +139,7 @@ revision。只有收到针对该 proposal 的明确批准后，才调用
 以下 preview-only 工具同样返回 change set，并复用相同批准与 apply 边界：
 
 - `tiled_add_tileset_to_map`
+- `tiled_update_tile`
 - `tiled_create_layer`
 - `tiled_preview_prepared_checkpoint_discard`
 - `tiled_preview_prepared_checkpoint_commit`
@@ -170,6 +171,17 @@ evidence digest。任一种
 proposal 过期或冲突后都必须重新预览和批准；prune/discard/abandon 成功后均不留
 tombstone，不要
 把 not-found 当成可重试信号。
+
+### 更新单 tileset 的 per-tile 元数据
+
+`tiled_update_tile` 是首个 TSJ 写入面：以 `mapPath + tilesetAssetId` 定位当前已
+引用的 external atlas TSJ，同时 pin `expectedMapRevision` 与
+`expectedTilesetRevision`，返回独立的 `tilesetEdit` change set。注意其
+`expectedRevision` 是 **TSJ 的 revision**——apply 时传它，不要传 map revision。
+批准前向人展示每个 update 的 `entryAction`、requested/changed fields 与动画帧
+计数变化。apply 只提交 TSJ；已 pin 旧 tileset revision 的待批 map change set 会
+冲突，需要重新预览。创建或删除 `tiles[]` 条目的更新必须独占 change set；
+probability 设为 `1`/`null` 即恢复 Tiled 默认（移除成员）。
 
 ### 独占地调整地图尺寸
 

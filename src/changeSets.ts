@@ -35,6 +35,12 @@ import {
   type CheckpointRestoreSummary,
 } from "./storage/checkpointRestore.js";
 import {
+  assertTilesetEditPlan,
+  updateTileOperationPreview,
+  type TilesetEditPlan,
+  type UpdateTileOperationPreview,
+} from "./maps/tilesetEdits.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -113,6 +119,7 @@ const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 
 export type ChangeSetPlan =
   | MapEditPlan
+  | TilesetEditPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
@@ -179,6 +186,16 @@ export interface MapEditChangeSetPreview
   dependencyRevisions: Record<string, string>;
   prospectiveDependencyRevisions?: Record<string, string>;
   summary: MapEditPlan["summary"];
+}
+
+export interface TilesetEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "tilesetEdit";
+  mapPath: string;
+  tilesetPath: string;
+  assetId: string;
+  mapRevision: string;
+  summary: TilesetEditPlan["summary"];
 }
 
 export interface CheckpointRestoreChangeSetPreview
@@ -369,6 +386,7 @@ export interface PreparedCheckpointAbandonChangeSetPreview
 
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
+  | TilesetEditChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
@@ -716,6 +734,7 @@ type OperationPreview =
         height: number;
       };
     }
+  | UpdateTileOperationPreview
   | CheckpointRestoreOperationPreview
   | CheckpointPruneOperationPreview
   | CheckpointPruneBatchOperationPreview
@@ -1463,6 +1482,48 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "tilesetEdit") {
+    const plan = entry.plan;
+    assertTilesetEditPlan(plan);
+    if (
+      plan.summary.updateCount !==
+        plan.updates.length ||
+      plan.summary.tileUpdates.length !==
+        plan.updates.length ||
+      plan.summary.tileUpdates.some(
+        (tileUpdate, index) =>
+          tileUpdate.updateIndex !== index ||
+          tileUpdate.tileId !==
+            plan.updates[index]?.tileId,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The tileset edit summary does not match its updates.",
+      );
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      mapPath: plan.mapPath,
+      tilesetPath: plan.tilesetPath,
+      assetId: plan.assetId,
+      expectedRevision: plan.baseRevision,
+      mapRevision: plan.mapRevision,
+      operations: plan.summary.tileUpdates.map(
+        (tileUpdate) =>
+          updateTileOperationPreview(tileUpdate),
+      ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+
   if (entry.plan.kind === "checkpointRestore") {
     const plan = entry.plan;
     return {
@@ -1789,6 +1850,9 @@ function sumSummaryScanCounts(
 function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
   if (plan.kind === "mapEdit") {
     return { ...plan, operations: [] };
+  }
+  if (plan.kind === "tilesetEdit") {
+    return { ...plan, updates: [] };
   }
   return plan;
 }

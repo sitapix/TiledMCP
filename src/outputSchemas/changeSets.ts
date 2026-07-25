@@ -25,6 +25,10 @@ import {
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
 } from "../storage/checkpoints.js";
 import {
+  MAX_TILE_ANIMATION_FRAMES_PER_TILE,
+  MAX_TILE_UPDATES_PER_CHANGE_SET,
+} from "../maps/tilesetEdits.js";
+import {
   assetIdOutputSchema,
   changeSetIdOutputSchema,
   checkpointIdOutputSchema,
@@ -2630,6 +2634,101 @@ export const addTilesetPreviewToolOutputSchema =
   toolOutputSchema(
     addTilesetMapEditPreviewOutputSchema,
   );
+
+const tilePatchFieldOutputSchema = z.enum([
+  "probability",
+  "className",
+  "animation",
+]);
+const tileEntryActionOutputSchema = z.enum([
+  "insert",
+  "update",
+  "remove",
+  "none",
+]);
+const tileUpdateAccountingShape = {
+  tileId: nonnegativeIntegerOutputSchema.max(
+    0x0fffffff,
+  ),
+  entryAction: tileEntryActionOutputSchema,
+  requestedFields: z
+    .array(tilePatchFieldOutputSchema)
+    .min(1)
+    .max(3),
+  changedFields: z
+    .array(tilePatchFieldOutputSchema)
+    .max(3),
+  wouldChange: z.boolean(),
+  previousAnimationFrameCount:
+    nonnegativeIntegerOutputSchema.optional(),
+  newAnimationFrameCount:
+    nonnegativeIntegerOutputSchema
+      .max(MAX_TILE_ANIMATION_FRAMES_PER_TILE)
+      .optional(),
+} as const;
+
+const updateTileOperationPreviewOutputSchema = z
+  .object({
+    type: z.literal("updateTile"),
+    destructive: z.literal(false),
+    warning: z.string(),
+    ...tileUpdateAccountingShape,
+  })
+  .strict();
+
+const tileUpdateSummaryOutputSchema = z
+  .object({
+    updateIndex: nonnegativeIntegerOutputSchema.max(
+      MAX_TILE_UPDATES_PER_CHANGE_SET - 1,
+    ),
+    ...tileUpdateAccountingShape,
+  })
+  .strict();
+
+const tilesetEditSummaryOutputSchema = z
+  .object({
+    updateCount: positiveIntegerOutputSchema.max(
+      MAX_TILE_UPDATES_PER_CHANGE_SET,
+    ),
+    tileUpdates: z
+      .array(tileUpdateSummaryOutputSchema)
+      .min(1)
+      .max(MAX_TILE_UPDATES_PER_CHANGE_SET),
+    tilesMemberAction: z.enum([
+      "insert",
+      "keep",
+      "remove",
+      "none",
+    ]),
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const tilesetEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("tilesetEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    mapPath: projectPathOutputSchema,
+    tilesetPath: projectPathOutputSchema,
+    assetId: assetIdOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    mapRevision: revisionOutputSchema,
+    operations: z
+      .array(updateTileOperationPreviewOutputSchema)
+      .min(1)
+      .max(MAX_TILE_UPDATES_PER_CHANGE_SET),
+    summary: tilesetEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const updateTilePreviewToolOutputSchema =
+  toolOutputSchema(tilesetEditPreviewOutputSchema);
 
 export const createLayerPreviewToolOutputSchema =
   toolOutputSchema(
