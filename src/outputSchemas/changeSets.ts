@@ -26,6 +26,8 @@ import {
 } from "../storage/checkpoints.js";
 import {
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
+  MAX_TILE_PROPERTY_REMOVES_PER_TILE,
+  MAX_TILE_PROPERTY_SETS_PER_TILE,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
 } from "../maps/tilesetEdits.js";
 import {
@@ -2639,6 +2641,7 @@ const tilePatchFieldOutputSchema = z.enum([
   "probability",
   "className",
   "animation",
+  "properties",
 ]);
 const tileEntryActionOutputSchema = z.enum([
   "insert",
@@ -2654,16 +2657,23 @@ const tileUpdateAccountingShape = {
   requestedFields: z
     .array(tilePatchFieldOutputSchema)
     .min(1)
-    .max(3),
+    .max(4),
   changedFields: z
     .array(tilePatchFieldOutputSchema)
-    .max(3),
+    .max(4),
   wouldChange: z.boolean(),
   previousAnimationFrameCount:
     nonnegativeIntegerOutputSchema.optional(),
   newAnimationFrameCount:
     nonnegativeIntegerOutputSchema
       .max(MAX_TILE_ANIMATION_FRAMES_PER_TILE)
+      .optional(),
+  propertiesSet: nonnegativeIntegerOutputSchema
+    .max(MAX_TILE_PROPERTY_SETS_PER_TILE)
+    .optional(),
+  propertiesRemoved:
+    nonnegativeIntegerOutputSchema
+      .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
       .optional(),
 } as const;
 

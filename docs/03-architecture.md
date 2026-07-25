@@ -13,7 +13,7 @@
 > post-commit retention 均已落地。通用 force、缺少来源证明的更宽 commit 和项目资产
 > 删除仍明确 unsupported。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
-> rename 边界由 capability contract 明示。当前 discovery contract 与 100-code v1 application-error
+> rename 边界由 capability contract 明示。当前 discovery contract 与 101-code v1 application-error
 > registry 已分别由
 > [discovery machine artifact](../contracts/mcp-contract.v1.json)、
 > [application-error machine artifact](../contracts/application-errors.v1.json) 和
@@ -107,7 +107,7 @@ create-map commit 和 change-set apply 不是同一个 mutation 类型。handler
 图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
 
 application code 的唯一稳定 wire 位置是
-`structuredContent.result.error.code`。当前 v1 allowlist 有 100 个 code，单一代码来源
+`structuredContent.result.error.code`。当前 v1 allowlist 有 101 个 code，单一代码来源
 生成 `contracts/application-errors.v1.json`，并把完全相同的 JSON 暴露为
 `tiled://application-errors`；`tiled_get_capabilities.applicationErrorContract` 公布
 resource URI、revision、size、wire location、`INTERNAL_ERROR` fallback 和兼容策略。
@@ -269,7 +269,7 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 能同时验证合法成功结果和 handler 内的合法应用错误。
 
 协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
-`structuredContent`。进入 handler 后的失败才经过统一错误归一化、100-code application
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、101-code application
 allowlist、长度/深度预算和 JSON 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，
 不承担 transport/application 错误 envelope 的职责。
 
@@ -418,7 +418,7 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
 安装的 Tiled 版本只影响 official adapter 的运行能力，也不等于资产兼容目标。每个已知特性
 在 `FeatureMatrix` 中声明最小目标版本、允许的文档类型、读/写状态与验证器；尚未支持写入的
 字段可以保留和展示。目标架构计划让相关 patch 返回
-`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 100-code
+`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 101-code
 v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后续 registry 前，
 客户端不得依赖它。
 
@@ -442,7 +442,7 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 - 当前只允许 primary root 内的引用，没有 additional read roots。
 - 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
   目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
-  **planned / not current** code，不属于当前 100-code v1 application registry。
+  **planned / not current** code，不属于当前 101-code v1 application registry。
 - 新引用必须落在允许 root 中，并以拥有者为基准写成规范化相对路径；不自动把相对路径改成
   绝对路径。
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
@@ -1340,8 +1340,13 @@ set**——source patch 原语不允许同一数组的插入/删除与该数组�
 `summarizeTilesetDocument` write-profile gate；未触及条目、未知成员与
 version/tiledversion 戳保持原 bytes，明确不同于 Tiled 保存时的整文件重写。预算全
 部由 strict input schema 承担（64 updates、256 帧/tile、1024 code points、1e9
-数值界），pending registry 无需新增旋钮。碰撞形状、per-tile properties 与
-image-collection tileset 编辑仍是后续候选。
+数值界），pending registry 无需新增旋钮。`properties` patch 提供有界标量
+set/remove：可写类型与搜索侧可比较集合对称（string/int/float/bool/color/file，
+显式 `type` 成员总是写入），新属性按 Tiled 名字典序插入（乱序数组新增 fail
+closed）、既有条目原位更新保留未知成员，class/enum/list/object 目标以
+`UNSUPPORTED_PROPERTY_WRITE` fail closed 而未触碰的复杂条目保留；整组编辑是
+tiles 条目的单个 `properties` member patch，清空后移除该成员并联动 only-id 条目
+删除。碰撞形状与 image-collection tileset 编辑仍是后续候选。
 
 ## 7. Tile data、chunk 与压缩
 
@@ -1438,7 +1443,7 @@ replace，也不等同于 crash durability。保证只在运维方确认底层�
 同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
 第二个写目标时，计划在 dry-run 阶段返回
 `MULTI_FILE_TRANSACTION_NOT_AVAILABLE`；该名称是 **planned / not current** code，
-不属于当前 100-code v1 application registry。
+不属于当前 101-code v1 application registry。
 
 ### 8.3 跨文件可恢复事务
 
@@ -1982,7 +1987,7 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract` 与 `applicationErrorContract`、100-code v1 registry machine
+   `textContentContract` 与 `applicationErrorContract`、101-code v1 registry machine
    artifact / `tiled://application-errors` resource 一致性、未知 code 兼容与
    `INTERNAL_ERROR` fallback、各 excluded surface 类型边界、三种图片工具的同-buffer
    artifact metadata、rasterizer

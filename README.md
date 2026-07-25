@@ -88,7 +88,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UT
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
 PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
-双 profile discovery contract、100-code v1 application-error contract 和人类参考文档，
+双 profile discovery contract、101-code v1 application-error contract 和人类参考文档，
 并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
 asset identity v1 已经落地并通过 `tiled_get_capabilities.assetIdentityContract`
 公布精确边界；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
@@ -122,7 +122,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
-| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 100 个 v1 application code 及其兼容性、fallback 和排除边界 |
+| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 101 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 26 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
@@ -208,7 +208,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_validate` | 只读结构与 MVP profile 校验 |
 | `tiled_create_map` | 新建有限正交 TMJ，已有文件绝不覆盖 |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
-| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画元数据更新；不直接写盘 |
+| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性元数据更新；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune |
@@ -235,7 +235,7 @@ TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径
 返回
 `{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
 应用错误码的精确 wire 位置是 `structuredContent.result.error.code`。当前 v1 注册表包含
-100 个 application code；机器 artifact 是
+101 个 application code；机器 artifact 是
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json)，运行时
 同一内容可从 direct Resource `tiled://application-errors` 读取，并由
 `tiled_get_capabilities.applicationErrorContract` 公布 URI、revision、size、fallback 和
@@ -268,7 +268,7 @@ inline image bytes。error summary 给稳定 `code`、有界单行 `message`、�
 | URI | 类型 | 作用 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | 串联能力发现、sheet/preview 检查、change set 客户端批准、提交与提交后复核；内容带 SHA-256 revision 和 UTF-8 byte size |
-| `tiled://application-errors` | `application/json` | 当前 100 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
+| `tiled://application-errors` | `application/json` | 当前 101 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
 
 资产、schema 和 render Resource Templates 尚未注册；应以
 `resources/list` / `resources/templates/list` 的实际响应为准。
@@ -662,7 +662,9 @@ fail closed），`null` 移除；`animation` 以 `{tileId, durationMs}` 帧数�
 （每 tile ≤256 帧、帧 id 必须在 tilecount 内），序列化为 Tiled 的
 `[{tileid, duration}]`。无条目的 tile 按升序插入新条目、仅剩 `{id}` 的条目删除、
 `tiles` 根成员按需插入/移除——与 Tiled 的省略语义一致；**创建或删除条目的更新必须
-独占整个 change set**。返回的 `tilesetEdit` change set 以 **TSJ revision** 作为
+独占整个 change set**。`properties` 另支持有界标量 set/remove（string/int/float/
+bool/color/file，与搜索侧可比较类型对称；class/enum/list/object 目标 fail
+closed，未触碰的复杂条目保留；新属性按名字典序插入）。返回的 `tilesetEdit` change set 以 **TSJ revision** 作为
 `expectedRevision`，apply 只提交 TSJ；map 不被改写，但 pin 旧 tileset revision 的
 待批 map change set 会随之冲突。未触及的条目、未知成员与 version 戳保持原 bytes。
 

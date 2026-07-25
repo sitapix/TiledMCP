@@ -181,7 +181,9 @@ tombstone，不要
 批准前向人展示每个 update 的 `entryAction`、requested/changed fields 与动画帧
 计数变化。apply 只提交 TSJ；已 pin 旧 tileset revision 的待批 map change set 会
 冲突，需要重新预览。创建或删除 `tiles[]` 条目的更新必须独占 change set；
-probability 设为 `1`/`null` 即恢复 Tiled 默认（移除成员）。
+probability 设为 `1`/`null` 即恢复 Tiled 默认（移除成员）。标量自定义属性经
+`patch.properties.set/remove` 编辑；class/enum/list/object 属性 fail closed，
+未触碰的复杂条目保留。
 
 ### 独占地调整地图尺寸
 
@@ -485,7 +487,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 ## 区分 SDK 输入错误、应用错误与诊断
 
-当前 v1 application-error registry 包含 100 个 code。code 的稳定 wire 位置是
+当前 v1 application-error registry 包含 101 个 code。code 的稳定 wire 位置是
 `structuredContent.result.error.code`；完整 allowlist 由
 [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
 和 direct Resource `tiled://application-errors` 提供，capability 中的
@@ -494,7 +496,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 不同失败/诊断表面不能共用一个枚举：
 
-| 表面 | 客户端处理 | 属于 100-code application registry |
+| 表面 | 客户端处理 | 属于 101-code application registry |
 |---|---|---|
 | MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
 | Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |

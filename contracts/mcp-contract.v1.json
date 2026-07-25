@@ -3,8 +3,8 @@
     "path": "contracts/application-errors.v1.json",
     "registryVersion": 1,
     "resourceUri": "tiled://application-errors",
-    "revision": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
-    "size": 3841
+    "revision": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
+    "size": 3875
   },
   "examples": {
     "count": 27,
@@ -91,26 +91,26 @@
     {
       "_meta": {
         "registryVersion": 1,
-        "revision": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+        "revision": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
         "serverVersion": "0.0.1",
-        "size": 3841
+        "size": 3875
       },
-      "byteLength": 3841,
+      "byteLength": 3875,
       "contentKind": "text",
       "mimeType": "application/json",
-      "sha256": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+      "sha256": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
       "uri": "tiled://application-errors"
     },
     {
       "_meta": {
-        "revision": "sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960",
+        "revision": "sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed",
         "serverVersion": "0.0.1",
-        "size": 66311
+        "size": 67022
       },
-      "byteLength": 66311,
+      "byteLength": 67022,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960",
+      "sha256": "sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed",
       "uri": "tiled://guide"
     }
   ],
@@ -118,9 +118,9 @@
     {
       "_meta": {
         "registryVersion": 1,
-        "revision": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+        "revision": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
         "serverVersion": "0.0.1",
-        "size": 3841
+        "size": 3875
       },
       "annotations": {
         "audience": [
@@ -132,15 +132,15 @@
       "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
       "mimeType": "application/json",
       "name": "application-errors",
-      "size": 3841,
+      "size": 3875,
       "title": "TiledMCP stable application error registry",
       "uri": "tiled://application-errors"
     },
     {
       "_meta": {
-        "revision": "sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960",
+        "revision": "sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed",
         "serverVersion": "0.0.1",
-        "size": 66311
+        "size": 67022
       },
       "annotations": {
         "audience": [
@@ -152,7 +152,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 66311,
+      "size": 67022,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -678,6 +678,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -1541,6 +1542,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -3996,6 +3998,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -4829,6 +4832,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -5460,6 +5464,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -6440,6 +6445,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -6589,7 +6595,7 @@
                         "type": "string"
                       },
                       "revision": {
-                        "const": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+                        "const": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
                         "type": "string"
                       },
                       "sdkInputErrors": {
@@ -6597,7 +6603,7 @@
                         "type": "string"
                       },
                       "size": {
-                        "const": 3841,
+                        "const": 3875,
                         "type": "number"
                       },
                       "wireLocation": {
@@ -8592,6 +8598,26 @@
                         "const": 1000000000,
                         "type": "number"
                       },
+                      "maxTilePropertiesPerTile": {
+                        "const": 128,
+                        "type": "number"
+                      },
+                      "maxTilePropertyNameCodePoints": {
+                        "const": 256,
+                        "type": "number"
+                      },
+                      "maxTilePropertyRemovesPerTile": {
+                        "const": 32,
+                        "type": "number"
+                      },
+                      "maxTilePropertySetsPerTile": {
+                        "const": 32,
+                        "type": "number"
+                      },
+                      "maxTilePropertyValueCodePoints": {
+                        "const": 1024,
+                        "type": "number"
+                      },
                       "maxTileRenderBytes": {
                         "const": 8388608,
                         "type": "number"
@@ -8742,6 +8768,11 @@
                       "maxTileAnimationFrameDurationMs",
                       "maxTileClassNameCodePoints",
                       "maxTileProbability",
+                      "maxTilePropertySetsPerTile",
+                      "maxTilePropertyRemovesPerTile",
+                      "maxTilePropertiesPerTile",
+                      "maxTilePropertyNameCodePoints",
+                      "maxTilePropertyValueCodePoints",
                       "maxResizeMapDimension",
                       "maxResizeOffsetMagnitude",
                       "maxResizeSourceCellScans",
@@ -10770,6 +10801,10 @@
                         "const": "update-existing-class-else-tiled-1-12-type-member",
                         "type": "string"
                       },
+                      "complexPropertyTargets": {
+                        "const": "fail-closed",
+                        "type": "string"
+                      },
                       "entryLifecycle": {
                         "const": "insert-ascending-remove-when-only-id",
                         "type": "string"
@@ -10787,6 +10822,10 @@
                           {
                             "const": "animation",
                             "type": "string"
+                          },
+                          {
+                            "const": "properties",
+                            "type": "string"
                           }
                         ],
                         "type": "array"
@@ -10799,6 +10838,47 @@
                         "const": "one-or-null-removes-member",
                         "type": "string"
                       },
+                      "propertyColorInput": {
+                        "const": "rrggbb-or-aarrggbb-stored-verbatim",
+                        "type": "string"
+                      },
+                      "propertyOrdering": {
+                        "const": "tiled-name-sorted-insert-fail-closed-on-unsorted",
+                        "type": "string"
+                      },
+                      "propertyTypeMember": {
+                        "const": "always-written",
+                        "type": "string"
+                      },
+                      "propertyWriteTypes": {
+                        "items": [
+                          {
+                            "const": "string",
+                            "type": "string"
+                          },
+                          {
+                            "const": "int",
+                            "type": "string"
+                          },
+                          {
+                            "const": "float",
+                            "type": "string"
+                          },
+                          {
+                            "const": "bool",
+                            "type": "string"
+                          },
+                          {
+                            "const": "color",
+                            "type": "string"
+                          },
+                          {
+                            "const": "file",
+                            "type": "string"
+                          }
+                        ],
+                        "type": "array"
+                      },
                       "sourcePatch": {
                         "const": "tiles-entry-member-local",
                         "type": "string"
@@ -10810,10 +10890,20 @@
                       "unorderedTilesInsertion": {
                         "const": "fail-closed",
                         "type": "string"
+                      },
+                      "untouchedComplexProperties": {
+                        "const": "preserved",
+                        "type": "string"
                       }
                     },
                     "required": [
                       "fields",
+                      "propertyWriteTypes",
+                      "propertyOrdering",
+                      "complexPropertyTargets",
+                      "untouchedComplexProperties",
+                      "propertyTypeMember",
+                      "propertyColorInput",
                       "addressing",
                       "planner",
                       "probabilityDefaultRemoval",
@@ -11422,6 +11512,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -11950,6 +12041,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -12937,6 +13029,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -13351,6 +13444,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -14277,6 +14371,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -14788,6 +14883,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15034,6 +15130,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15398,6 +15495,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15906,6 +16004,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -16661,6 +16760,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -17118,6 +17218,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -23807,6 +23908,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -24513,6 +24615,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -25197,6 +25300,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -25762,6 +25866,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -26121,6 +26226,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -27354,6 +27460,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -27921,6 +28028,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -28469,6 +28577,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -28617,6 +28726,153 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "properties": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "remove": {
+                          "items": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "maxItems": 32,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "set": {
+                          "items": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "name": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "string",
+                                      "file"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "maxLength": 2048,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "type",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "name": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "const": "int",
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": -9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "type",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "name": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "const": "float",
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "type",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "name": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "const": "bool",
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "type",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "name": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "const": "color",
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "type",
+                                  "value"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "maxItems": 32,
+                          "minItems": 1,
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
                     }
                   },
                   "type": "object"
@@ -28733,11 +28989,12 @@
                             "enum": [
                               "probability",
                               "className",
-                              "animation"
+                              "animation",
+                              "properties"
                             ],
                             "type": "string"
                           },
-                          "maxItems": 3,
+                          "maxItems": 4,
                           "type": "array"
                         },
                         "destructive": {
@@ -28763,16 +29020,27 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "propertiesRemoved": {
+                          "maximum": 32,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "propertiesSet": {
+                          "maximum": 32,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "requestedFields": {
                           "items": {
                             "enum": [
                               "probability",
                               "className",
-                              "animation"
+                              "animation",
+                              "properties"
                             ],
                             "type": "string"
                           },
-                          "maxItems": 3,
+                          "maxItems": 4,
                           "minItems": 1,
                           "type": "array"
                         },
@@ -28828,11 +29096,12 @@
                                 "enum": [
                                   "probability",
                                   "className",
-                                  "animation"
+                                  "animation",
+                                  "properties"
                                 ],
                                 "type": "string"
                               },
-                              "maxItems": 3,
+                              "maxItems": 4,
                               "type": "array"
                             },
                             "entryAction": {
@@ -28854,16 +29123,27 @@
                               "minimum": 0,
                               "type": "integer"
                             },
+                            "propertiesRemoved": {
+                              "maximum": 32,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "propertiesSet": {
+                              "maximum": 32,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
                             "requestedFields": {
                               "items": {
                                 "enum": [
                                   "probability",
                                   "className",
-                                  "animation"
+                                  "animation",
+                                  "properties"
                                 ],
                                 "type": "string"
                               },
-                              "maxItems": 3,
+                              "maxItems": 4,
                               "minItems": 1,
                               "type": "array"
                             },
@@ -29044,6 +29324,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -29324,6 +29605,7 @@
                           "UNSUPPORTED_OBJECT_PROFILE",
                           "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                           "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
                           "UNSUPPORTED_RENDER_FEATURE",
                           "UNSUPPORTED_RENDER_LAYER",
                           "UNSUPPORTED_RESIZE_LAYER_BOUNDS",

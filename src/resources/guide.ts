@@ -86,7 +86,7 @@ application-level summary envelope.
 
 ## Handle application errors
 
-The current v1 application-error registry contains 100 codes. Its committed
+The current v1 application-error registry contains 101 codes. Its committed
 machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
 is available at the direct resource \`tiled://application-errors\`.
 \`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
@@ -361,6 +361,17 @@ ambiguous, and \`null\` removes the class. \`animation\` is a whole-array
 replacement of \`{tileId, durationMs}\` frames — at most 256 per tile, every
 frame id inside the tileset range, durations positive bounded integers — and
 serializes as Tiled \`{tileid, duration}\` members; \`null\` removes it.
+
+\`properties\` applies bounded scalar set/remove operations to the tile's
+custom properties: at most 32 sets and 32 removals per tile, writable types
+\`string\`, \`int\`, \`float\`, \`bool\`, \`color\`, and \`file\`, always
+written with an explicit \`type\` member. New properties insert in Tiled's
+name-sorted order (an unsorted existing array fails closed for inserts),
+existing entries are updated in place, and removing a missing name is a
+no-op. Targeting a \`class\`, enum, \`list\`, or \`object\` property fails
+closed with \`UNSUPPORTED_PROPERTY_WRITE\`; untouched complex entries are
+preserved. Color values accept \`#RRGGBB\` or \`#AARRGGBB\` and are stored
+verbatim — Tiled itself normalizes to \`#aarrggbb\` on its next save.
 
 Edits patch only the targeted \`tiles[]\` entry members and preserve every
 other byte, including unknown members and the tileset's version stamps.

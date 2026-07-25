@@ -192,7 +192,13 @@ import {
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
   MAX_TILE_CLASS_NAME_CODE_POINTS,
   MAX_TILE_PROBABILITY,
+  MAX_TILE_PROPERTIES_PER_TILE,
+  MAX_TILE_PROPERTY_NAME_CODE_POINTS,
+  MAX_TILE_PROPERTY_REMOVES_PER_TILE,
+  MAX_TILE_PROPERTY_SETS_PER_TILE,
+  MAX_TILE_PROPERTY_VALUE_CODE_POINTS,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
+  TILE_PROPERTY_WRITE_TYPES,
 } from "./maps/tilesetEdits.js";
 import {
   checkpointListToolOutputSchema,
@@ -1178,6 +1184,11 @@ const removeTilesetFromMapSchema = z
   })
   .strict();
 
+const tilePropertyNameSchema = z
+  .string()
+  .min(1)
+  .max(MAX_TILE_PROPERTY_NAME_CODE_POINTS * 2);
+
 const tileAnimationFrameSchema = z
   .object({
     tileId: z
@@ -1192,6 +1203,79 @@ const tileAnimationFrameSchema = z
       .max(MAX_TILE_ANIMATION_FRAME_DURATION_MS),
   })
   .strict();
+
+const tilePropertyWriteSchema = z
+  .discriminatedUnion("type", [
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.enum(["string", "file"]),
+        value: z
+          .string()
+          .max(
+            MAX_TILE_PROPERTY_VALUE_CODE_POINTS * 2,
+          ),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("int"),
+        value: z
+          .number()
+          .int()
+          .min(Number.MIN_SAFE_INTEGER)
+          .max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("float"),
+        value: z.number().finite(),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("bool"),
+        value: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        name: tilePropertyNameSchema,
+        type: z.literal("color"),
+        value: z
+          .string()
+          .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu),
+      })
+      .strict(),
+  ]);
+
+const tilePropertiesPatchSchema = z
+  .object({
+    set: z
+      .array(tilePropertyWriteSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_SETS_PER_TILE)
+      .optional(),
+    remove: z
+      .array(tilePropertyNameSchema)
+      .min(1)
+      .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (patch) =>
+      patch.set !== undefined ||
+      patch.remove !== undefined,
+    {
+      message:
+        "Tile properties patch must contain set or remove entries",
+    },
+  );
 
 const tileMetadataPatchSchema = z
   .object({
@@ -1214,6 +1298,8 @@ const tileMetadataPatchSchema = z
       .max(MAX_TILE_ANIMATION_FRAMES_PER_TILE)
       .nullable()
       .optional(),
+    properties:
+      tilePropertiesPatchSchema.optional(),
   })
   .strict()
   .refine(
@@ -1542,7 +1628,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "probability",
             "className",
             "animation",
+            "properties",
           ],
+          propertyWriteTypes: [
+            ...TILE_PROPERTY_WRITE_TYPES,
+          ],
+          propertyOrdering:
+            "tiled-name-sorted-insert-fail-closed-on-unsorted",
+          complexPropertyTargets: "fail-closed",
+          untouchedComplexProperties: "preserved",
+          propertyTypeMember: "always-written",
+          propertyColorInput:
+            "rrggbb-or-aarrggbb-stored-verbatim",
           addressing:
             "map-scoped-tileset-asset-id",
           planner:
@@ -2326,6 +2423,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxTileClassNameCodePoints:
             MAX_TILE_CLASS_NAME_CODE_POINTS,
           maxTileProbability: MAX_TILE_PROBABILITY,
+          maxTilePropertySetsPerTile:
+            MAX_TILE_PROPERTY_SETS_PER_TILE,
+          maxTilePropertyRemovesPerTile:
+            MAX_TILE_PROPERTY_REMOVES_PER_TILE,
+          maxTilePropertiesPerTile:
+            MAX_TILE_PROPERTIES_PER_TILE,
+          maxTilePropertyNameCodePoints:
+            MAX_TILE_PROPERTY_NAME_CODE_POINTS,
+          maxTilePropertyValueCodePoints:
+            MAX_TILE_PROPERTY_VALUE_CODE_POINTS,
           maxResizeMapDimension:
             MAX_RESIZE_MAP_DIMENSION,
           maxResizeOffsetMagnitude:

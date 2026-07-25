@@ -487,6 +487,297 @@ describe("updateTile", () => {
     });
   });
 
+  it("sets, replaces and removes scalar properties with sorted inserts", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [
+        {
+          id: 1,
+          properties: [
+            {
+              name: "alpha",
+              type: "int",
+              value: 1,
+            },
+            {
+              name: "loot",
+              propertytype: "LootInfo",
+              type: "class",
+              value: { gold: 5 },
+            },
+            {
+              name: "zeta",
+              type: "string",
+              value: "old",
+            },
+          ],
+        },
+      ],
+    });
+    const plan = await plan_(harness, [
+      {
+        tileId: 1,
+        patch: {
+          properties: {
+            set: [
+              {
+                name: "walkable",
+                type: "bool",
+                value: true,
+              },
+              {
+                name: "zeta",
+                type: "float",
+                value: 2.5,
+              },
+              {
+                name: "tint",
+                type: "color",
+                value: "#80FF0000",
+              },
+            ],
+            remove: ["alpha", "missing"],
+          },
+        },
+      },
+    ]);
+    expect(plan.summary.tileUpdates[0]).toMatchObject({
+      entryAction: "update",
+      requestedFields: ["properties"],
+      changedFields: ["properties"],
+      propertiesSet: 3,
+      propertiesRemoved: 1,
+      wouldChange: true,
+    });
+    await harness.service.applyTilesetEdit(plan);
+    const written = await readTileset(harness.root);
+    const properties = (
+      (written.tiles as JsonObject[])[0]!
+        .properties as JsonObject[]
+    );
+    expect(properties).toEqual([
+      {
+        name: "loot",
+        propertytype: "LootInfo",
+        type: "class",
+        value: { gold: 5 },
+      },
+      { name: "tint", type: "color", value: "#80FF0000" },
+      { name: "walkable", type: "bool", value: true },
+      { name: "zeta", type: "float", value: 2.5 },
+    ]);
+  });
+
+  it("prunes an emptied properties member and then the entry itself", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [
+        {
+          id: 1,
+          properties: [
+            {
+              name: "alpha",
+              type: "int",
+              value: 1,
+            },
+          ],
+        },
+      ],
+    });
+    const plan = await plan_(harness, [
+      {
+        tileId: 1,
+        patch: {
+          properties: { remove: ["alpha"] },
+        },
+      },
+    ]);
+    expect(plan.summary.tileUpdates[0]).toMatchObject({
+      entryAction: "remove",
+      propertiesRemoved: 1,
+    });
+    expect(plan.summary.tilesMemberAction).toBe(
+      "remove",
+    );
+    await harness.service.applyTilesetEdit(plan);
+    const text = await readFile(
+      join(harness.root, TILESET_PATH),
+      "utf8",
+    );
+    expect(text).not.toContain('"tiles"');
+  });
+
+  it.each([
+    {
+      name: "class property target",
+      properties: [
+        {
+          name: "loot",
+          propertytype: "LootInfo",
+          type: "class",
+          value: {},
+        },
+      ],
+      patch: { remove: ["loot"] },
+    },
+    {
+      name: "enum property target",
+      properties: [
+        {
+          name: "rank",
+          propertytype: "Rank",
+          type: "string",
+          value: "gold",
+        },
+      ],
+      patch: {
+        set: [
+          {
+            name: "rank",
+            type: "string" as const,
+            value: "silver",
+          },
+        ],
+      },
+    },
+    {
+      name: "object property target",
+      properties: [
+        { name: "target", type: "object", value: 7 },
+      ],
+      patch: { remove: ["target"] },
+    },
+  ])(
+    "fails closed on a $name",
+    async ({ properties, patch }) => {
+      const harness = await createHarness(roots, {
+        tiles: [{ id: 1, properties }],
+      });
+      await expect(
+        plan_(harness, [
+          { tileId: 1, patch: { properties: patch } },
+        ]),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_PROPERTY_WRITE",
+      });
+    },
+  );
+
+  it("fails closed when adding to unsorted properties but still edits existing ones", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [
+        {
+          id: 1,
+          properties: [
+            {
+              name: "zeta",
+              type: "string",
+              value: "z",
+            },
+            {
+              name: "alpha",
+              type: "int",
+              value: 1,
+            },
+          ],
+        },
+      ],
+    });
+    await expect(
+      plan_(harness, [
+        {
+          tileId: 1,
+          patch: {
+            properties: {
+              set: [
+                {
+                  name: "beta",
+                  type: "bool",
+                  value: true,
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    const plan = await plan_(harness, [
+      {
+        tileId: 1,
+        patch: {
+          properties: {
+            set: [
+              {
+                name: "alpha",
+                type: "int",
+                value: 2,
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    await harness.service.applyTilesetEdit(plan);
+    const written = await readTileset(harness.root);
+    expect(
+      (
+        (written.tiles as JsonObject[])[0]!
+          .properties as JsonObject[]
+      ).map((property) => property.name),
+    ).toEqual(["zeta", "alpha"]);
+  });
+
+  it("treats identical property writes as an exact-byte no-op", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [
+        {
+          id: 1,
+          properties: [
+            {
+              name: "alpha",
+              type: "int",
+              value: 1,
+            },
+          ],
+        },
+      ],
+    });
+    const before = await readFile(
+      join(harness.root, TILESET_PATH),
+    );
+    const plan = await plan_(harness, [
+      {
+        tileId: 1,
+        patch: {
+          properties: {
+            set: [
+              {
+                name: "alpha",
+                type: "int",
+                value: 1,
+              },
+            ],
+            remove: ["missing"],
+          },
+        },
+      },
+    ]);
+    expect(plan.summary.tileUpdates[0]).toMatchObject({
+      changedFields: [],
+      wouldChange: false,
+      propertiesSet: 0,
+      propertiesRemoved: 0,
+    });
+    const result =
+      await harness.service.applyTilesetEdit(plan);
+    expect(result.changed).toBe(false);
+    expect(
+      await readFile(
+        join(harness.root, TILESET_PATH),
+      ),
+    ).toEqual(before);
+  });
+
   it("survives a real Tiled 1.12 tileset export round-trip when the CLI is available", async () => {
     const harness = await createHarness(roots, {});
     const plan = await plan_(harness, [
@@ -499,6 +790,15 @@ describe("updateTile", () => {
             { tileId: 2, durationMs: 150 },
             { tileId: 3, durationMs: 250 },
           ],
+          properties: {
+            set: [
+              {
+                name: "walkable",
+                type: "bool",
+                value: true,
+              },
+            ],
+          },
         },
       },
     ]);
@@ -550,6 +850,13 @@ describe("updateTile", () => {
       animation: [
         { tileid: 2, duration: 150 },
         { tileid: 3, duration: 250 },
+      ],
+      properties: [
+        {
+          name: "walkable",
+          type: "bool",
+          value: true,
+        },
       ],
     });
   }, 40_000);

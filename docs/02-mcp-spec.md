@@ -55,7 +55,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。双 profile 的完整 discovery artifact、包含当前 100 个 v1 application code 的
+aliases。双 profile 的完整 discovery artifact、包含当前 101 个 v1 application code 的
 稳定错误 registry、生成式参考和每工具调用示例现已落地并纳入 drift gate；schema 无法
 表达的 revision/批准语义由手写安全工作流维护。当前 wire 实际使用的 external TSJ 与
 image-layer dependency `assetId` 已接入版本化持久 registry：首次分配兼容旧路径哈希，
@@ -303,7 +303,7 @@ type ApplyResult = CommitResult & {
 3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
    并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
    `structuredContent`；code 的精确 wire 位置是
-   `structuredContent.result.error.code`。当前 v1 application registry 有 100 个 code，
+   `structuredContent.result.error.code`。当前 v1 application registry 有 101 个 code，
    机器 artifact 为
    [`contracts/application-errors.v1.json`](../contracts/application-errors.v1.json)，
    相同 JSON 由 `tiled://application-errors` 提供；
@@ -322,7 +322,7 @@ type ApplyResult = CommitResult & {
 5. application registry 只覆盖上述 tool application envelope，不包括 MCP SDK input
    error、`cli.*.issues[].code` capability-probe 诊断、startup fatal error、
    `tiled_validate` 的 `Diagnostic[]`、checkpoint reconciliation diagnostics 或原始 OS
-   error code。这些表面各自遵循独立契约，不能与 100-code allowlist 混用。
+   error code。这些表面各自遵循独立契约，不能与 101-code allowlist 混用。
 6. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
@@ -1256,7 +1256,7 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 | `tiled_create_tileset` | 从图集图片创建 `.tsj`（自动读取图片尺寸算 tilecount/columns） | `tilesetPath`, `image`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，不修改项目资产，但可能更新项目内部 safety metadata | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
-| `tiled_update_tile` | **已实现专用 preview 工具（第 26 个 core tool）**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画元数据，走独立 `tilesetEdit` change set；碰撞形状与 per-tile properties 编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
+| `tiled_update_tile` | **已实现专用 preview 工具（第 26 个 core tool）**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性元数据，走独立 `tilesetEdit` change set；碰撞形状编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 
 `tiled_add_tileset_to_map` 是专用 preview 入口，不把 `addTileset` 扩进通用
@@ -1301,8 +1301,18 @@ revision 的待批 map change set 会在 apply 后冲突。字段语义按 Tiled
 - `animation`：`{tileId, durationMs}` 帧数组全量替换，序列化为 Tiled 的
   `[{tileid, duration}]`；每 tile 最多 256 帧，帧 id 必须落在 tilecount 内
   （`TILE_ID_OUT_OF_RANGE`），duration 为 1..1e9 的整数；`null` 移除成员。
+- `properties`：对 tile 自定义属性做有界标量 set/remove（每 tile 最多 32 set +
+  32 remove，结果最多 128 条）。可写类型为 string/int/float/bool/color/file——与
+  `tiled_find_tiles` 的可比较标量集合完全对称；写入总是带显式 `type` 成员（Tiled
+  1.12.2 写入器行为）。新属性按 Tiled 的名字典序插入（现有数组乱序时新增 fail
+  closed），既有条目原位更新并保留未知成员，移除缺失名是 no-op。以 `class`、
+  enum（任何 `propertytype`）、`list` 或 `object` 属性为目标一律
+  `UNSUPPORTED_PROPERTY_WRITE` fail closed；未被触碰的复杂条目语义保留。color 值
+  接受 `#RRGGBB`/`#AARRGGBB` 并按原样存储（Tiled 自己保存时会规范化为
+  `#aarrggbb`）。
 - 条目生命周期与 Tiled 的省略语义一致：无条目的 tile 按升序插入新条目（`tiles[]`
-  非升序时插入 fail closed），编辑后仅剩 `{id}` 的条目删除，`tiles` 根成员按需
+  非升序时插入 fail closed），编辑后仅剩 `{id}` 的条目删除（清空的 `properties`
+  成员同样移除），`tiles` 根成员按需
   插入/移除；**创建或删除条目的更新必须独占整个 change set**（source patch 原语不
   允许同一数组的结构性修改与条目内 member patch 混用）。
 - source patch 只触及目标 `tiles[]` 条目的相关成员；未触及的条目、未知成员与
@@ -1831,7 +1841,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 | URI | `mimeType` | 内容 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | **已实现。** 使用 playbook：能力发现 → 摘要 → tile search/sparse render/sheet/map preview → 预览 edits → 客户端批准 → 提交 → 校验与渲染自查 |
-| `tiled://application-errors` | `application/json` | **已实现。** 当前 100 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
+| `tiled://application-errors` | `application/json` | **已实现。** 当前 101 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
 | `tiled://project/index` | `application/json` | **Roadmap，未实现。** 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
 | `tiled://schema/tool-contracts` | `application/schema+json` | **Roadmap，未实现。** 从代码生成的已注册工具 input/output schemas |
 | `tiled://schema/tmj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
@@ -1855,7 +1865,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 - JSON/text direct read 的目标默认上限是 `2 MiB`，当前嵌入式 guide 使用更严格的
   `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。`RESOURCE_TOO_LARGE` 是配合未来
   asset/template Resource reads 规划的 resource-layer code，**尚未实现，也不属于当前
-  100-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
+  101-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
   截断后伪装成完整内容。
 - 当前 v1 registry 覆盖的 `assetId` 在同一项目内部状态中跨服务器重启可复用；同路径
   替换与可唯一验证的普通同文件系统 file-identity move 保持映射；原路径仍存活的 copy/

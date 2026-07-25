@@ -19,7 +19,7 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -118,6 +118,7 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "UNSUPPORTED_OBJECT_PROFILE",
     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
     "UNSUPPORTED_PROPERTY_QUERY",
+    "UNSUPPORTED_PROPERTY_WRITE",
     "UNSUPPORTED_RENDER_FEATURE",
     "UNSUPPORTED_RENDER_LAYER",
     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -160,9 +161,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+    "revision": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
     "serverVersion": "0.0.1",
-    "size": 3841
+    "size": 3875
   },
   "annotations": {
     "audience": [
@@ -174,7 +175,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3841,
+  "size": 3875,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -187,9 +188,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960",
+    "revision": "sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed",
     "serverVersion": "0.0.1",
-    "size": 66311
+    "size": 67022
   },
   "annotations": {
     "audience": [
@@ -201,15 +202,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 66311,
+  "size": 67022,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3841 UTF-8 bytes, revision `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`.
+Content contract: `text`, 3875 UTF-8 bytes, revision `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`.
 
-Content contract: `text`, 66311 UTF-8 bytes, revision `sha256:88d4f9b7a7c6f41a0107b96c6bf65100168aeeeafdcde10732005e8b6fe5c960`.
+Content contract: `text`, 67022 UTF-8 bytes, revision `sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed`.
 
 Resource templates: none.
 
@@ -724,6 +725,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -1616,6 +1618,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -4096,6 +4099,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -4960,6 +4964,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -5620,6 +5625,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -6638,6 +6644,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -6809,7 +6816,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
+                  "const": "sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -6817,7 +6824,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3841,
+                  "const": 3875,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -8812,6 +8819,26 @@ Output schema:
                   "const": 1000000000,
                   "type": "number"
                 },
+                "maxTilePropertiesPerTile": {
+                  "const": 128,
+                  "type": "number"
+                },
+                "maxTilePropertyNameCodePoints": {
+                  "const": 256,
+                  "type": "number"
+                },
+                "maxTilePropertyRemovesPerTile": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "maxTilePropertySetsPerTile": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "maxTilePropertyValueCodePoints": {
+                  "const": 1024,
+                  "type": "number"
+                },
                 "maxTileRenderBytes": {
                   "const": 8388608,
                   "type": "number"
@@ -8962,6 +8989,11 @@ Output schema:
                 "maxTileAnimationFrameDurationMs",
                 "maxTileClassNameCodePoints",
                 "maxTileProbability",
+                "maxTilePropertySetsPerTile",
+                "maxTilePropertyRemovesPerTile",
+                "maxTilePropertiesPerTile",
+                "maxTilePropertyNameCodePoints",
+                "maxTilePropertyValueCodePoints",
                 "maxResizeMapDimension",
                 "maxResizeOffsetMagnitude",
                 "maxResizeSourceCellScans",
@@ -10990,6 +11022,10 @@ Output schema:
                   "const": "update-existing-class-else-tiled-1-12-type-member",
                   "type": "string"
                 },
+                "complexPropertyTargets": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
                 "entryLifecycle": {
                   "const": "insert-ascending-remove-when-only-id",
                   "type": "string"
@@ -11007,6 +11043,10 @@ Output schema:
                     {
                       "const": "animation",
                       "type": "string"
+                    },
+                    {
+                      "const": "properties",
+                      "type": "string"
                     }
                   ],
                   "type": "array"
@@ -11019,6 +11059,47 @@ Output schema:
                   "const": "one-or-null-removes-member",
                   "type": "string"
                 },
+                "propertyColorInput": {
+                  "const": "rrggbb-or-aarrggbb-stored-verbatim",
+                  "type": "string"
+                },
+                "propertyOrdering": {
+                  "const": "tiled-name-sorted-insert-fail-closed-on-unsorted",
+                  "type": "string"
+                },
+                "propertyTypeMember": {
+                  "const": "always-written",
+                  "type": "string"
+                },
+                "propertyWriteTypes": {
+                  "items": [
+                    {
+                      "const": "string",
+                      "type": "string"
+                    },
+                    {
+                      "const": "int",
+                      "type": "string"
+                    },
+                    {
+                      "const": "float",
+                      "type": "string"
+                    },
+                    {
+                      "const": "bool",
+                      "type": "string"
+                    },
+                    {
+                      "const": "color",
+                      "type": "string"
+                    },
+                    {
+                      "const": "file",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
                 "sourcePatch": {
                   "const": "tiles-entry-member-local",
                   "type": "string"
@@ -11030,10 +11111,20 @@ Output schema:
                 "unorderedTilesInsertion": {
                   "const": "fail-closed",
                   "type": "string"
+                },
+                "untouchedComplexProperties": {
+                  "const": "preserved",
+                  "type": "string"
                 }
               },
               "required": [
                 "fields",
+                "propertyWriteTypes",
+                "propertyOrdering",
+                "complexPropertyTargets",
+                "untouchedComplexProperties",
+                "propertyTypeMember",
+                "propertyColorInput",
                 "addressing",
                 "planner",
                 "probabilityDefaultRemoval",
@@ -11642,6 +11733,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -12194,6 +12286,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -13206,6 +13299,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -13649,6 +13743,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -14602,6 +14697,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15139,6 +15235,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15409,6 +15506,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -15799,6 +15897,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -16331,6 +16430,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -17113,6 +17213,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -17595,6 +17696,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -24408,6 +24510,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -25138,6 +25241,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -25846,6 +25950,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -26435,6 +26540,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -26820,6 +26926,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -28105,6 +28212,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -28706,6 +28814,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -29283,6 +29392,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -29473,6 +29583,153 @@ Input schema:
                     "type": "null"
                   }
                 ]
+              },
+              "properties": {
+                "additionalProperties": false,
+                "properties": {
+                  "remove": {
+                    "items": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "set": {
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": {
+                              "enum": [
+                                "string",
+                                "file"
+                              ],
+                              "type": "string"
+                            },
+                            "value": {
+                              "maxLength": 2048,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "type",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "int",
+                              "type": "string"
+                            },
+                            "value": {
+                              "maximum": 9007199254740991,
+                              "minimum": -9007199254740991,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "type",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "float",
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "type",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "bool",
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "type",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": {
+                              "const": "color",
+                              "type": "string"
+                            },
+                            "value": {
+                              "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "type",
+                            "value"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
               }
             },
             "type": "object"
@@ -29593,11 +29850,12 @@ Output schema:
                       "enum": [
                         "probability",
                         "className",
-                        "animation"
+                        "animation",
+                        "properties"
                       ],
                       "type": "string"
                     },
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "type": "array"
                   },
                   "destructive": {
@@ -29623,16 +29881,27 @@ Output schema:
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "propertiesRemoved": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "propertiesSet": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "requestedFields": {
                     "items": {
                       "enum": [
                         "probability",
                         "className",
-                        "animation"
+                        "animation",
+                        "properties"
                       ],
                       "type": "string"
                     },
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "minItems": 1,
                     "type": "array"
                   },
@@ -29688,11 +29957,12 @@ Output schema:
                           "enum": [
                             "probability",
                             "className",
-                            "animation"
+                            "animation",
+                            "properties"
                           ],
                           "type": "string"
                         },
-                        "maxItems": 3,
+                        "maxItems": 4,
                         "type": "array"
                       },
                       "entryAction": {
@@ -29714,16 +29984,27 @@ Output schema:
                         "minimum": 0,
                         "type": "integer"
                       },
+                      "propertiesRemoved": {
+                        "maximum": 32,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "propertiesSet": {
+                        "maximum": 32,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "requestedFields": {
                         "items": {
                           "enum": [
                             "probability",
                             "className",
-                            "animation"
+                            "animation",
+                            "properties"
                           ],
                           "type": "string"
                         },
-                        "maxItems": 3,
+                        "maxItems": 4,
                         "minItems": 1,
                         "type": "array"
                       },
@@ -29904,6 +30185,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
@@ -30208,6 +30490,7 @@ Output schema:
                     "UNSUPPORTED_OBJECT_PROFILE",
                     "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
                     "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
                     "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
