@@ -18,14 +18,14 @@
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
    `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 23 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 24，不能把它当成必备工具。
+3. 核心 profile 当前包含 24 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 25，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 23 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 24 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -203,6 +203,58 @@ path points 合计最多 8,192，所有 pending change sets 合计最多保留 6
 `limits.maxPendingObjectShapePoints`，不要靠拆批绕过预算。后续
 `updateObject` 只允许 common fields，不能更新 shape、points 或 path dimensions；
 删除仍须使用会执行悬挂 object-reference 检查的 `deleteObjects`。
+
+### 读取并更新 text 对象
+
+`tiled_list_objects` 只返回适合最多 10,000 项列表的精简 geometry，不返回 path points
+或 text 正文/样式。需要修改公共字段/删除既有 path 对象，或覆盖 text 正文/样式时，
+先按列表返回的全图唯一 ID 调用
+`tiled_get_object({mapPath,objectId})`。它返回 map `revision`、完整
+`dependencyRevisions` 和一个严格 shape-discriminated object；polygon/polyline 带完整
+points，text 带解析 TMJ 缺省后的完整样式。tile/template、冲突 marker 或未知 nested
+text profile 会 fail closed，客户端不能靠 list summary 猜原值。
+
+创建 text 时，正文和样式与 common 字段同处 flat object；不要自行构造 nested TMJ：
+
+```json
+{
+  "type": "createObject",
+  "layerId": 2,
+  "object": {
+    "shape": "text",
+    "x": 96,
+    "y": 64,
+    "width": 192,
+    "height": 48,
+    "text": "Gate opens\\nafter all switches",
+    "fontFamily": "sans-serif",
+    "pixelSize": 18,
+    "color": "#ffd166",
+    "bold": true,
+    "wrap": true,
+    "horizontalAlignment": "center",
+    "name": "Gate hint"
+  }
+}
+```
+
+正文允许空串，最多 4,096 Unicode scalars / 16,384 UTF-8 bytes，只允许 TAB/LF/CR
+控制字符；fontFamily 为 1–256 scalars / 1,024 bytes 且不允许控制字符，二者都拒绝
+未配对 surrogate。pixelSize 是 1..999 的整数。服务端写入 nested TMJ `text` object，
+并按文件格式默认 `sans-serif/16/#000000/false styles/kerning:true/left/top/wrap:false`
+省略默认项；这里的 wrap 缺省与 Tiled UI 新建文本时常见的显式 `wrap:true` 不同。
+
+更新时只传需要修改的 flat fields，例如
+`{type:"updateObject",objectId:7,patch:{text:"Ready",color:"#66ff99"}}`。先前
+`tiled_get_object` 返回的 revision/dependencies 应直接成为 `tiled_preview_edits` 的
+pins；批准前仍检查 preview。text-specific 字段不能打到其他 shape。一个 change set 的
+12 类 text fields 按每 operation 的 canonical compact JSON UTF-8 合计最多 256 KiB，
+pending registry 合计 2 MiB；后序覆盖或删除不会抵扣预算。
+
+内建 `tiled_render_preview` 的 v1 profile 仍只渲染 tile layers，并会把可见 object
+layers 报告为 omitted；它不能用来视觉确认 text 排版。需要像 Tiled 一样核对字体、
+换行和对齐时，使用 discovery 中实际存在的可选 `tiled_render_map`，或在 Tiled
+1.12.2 中打开项目；字体未安装导致的替换不属于 MCP 的可移植语义。
 
 需要把待核对区域直接标在图片中时，可在 `tiled_render_preview` 传入：
 

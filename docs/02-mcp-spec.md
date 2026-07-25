@@ -20,14 +20,15 @@
 
 ### 0.1 当前实现切片（2026-07-25）
 
-当前代码注册 23 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
+当前代码注册 24 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
 索引、单文件恢复预览、prepared-checkpoint discard/commit/abandon 预览，以及 committed-checkpoint
 单项与 2..32 项 batch prune 预览、地图摘要、whole-map tile
 usage analysis、有界外部 atlas TSJ
 详情、显式 tile metadata 精确检索、矩形 region、
-带 local ID 的分页 tileset sheet、native tile-layer region preview、对象列表、只读
+带 local ID 的分页 tileset sheet、native tile-layer region preview、对象列表、单对象
+详情、只读
 校验、增量创建地图、空图层创建预览、map edits 预览、外部 tileset 挂载预览与 change
-set 提交；探测到 `tmxrasterizer` 时再注册第 24 个高保真地图 PNG 工具。另注册两个不依赖
+set 提交；探测到 `tmxrasterizer` 时再注册第 25 个高保真地图 PNG 工具。另注册两个不依赖
 项目内容的 direct Resources：Markdown playbook `tiled://guide` 和 JSON registry
 `tiled://application-errors`；二者通过 `resources/list` 发现并由 `resources/read`
 返回带内容 revision/size 的固定内容。当前 Resource Templates 列表为空。已实现的编辑
@@ -37,8 +38,8 @@ union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `removeTilesetFromMap`，以及第 15 种、可混批的 `copyRegion`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
-对象写入支持 rectangle/point/ellipse/capsule，以及有界 polygon/polyline path；
-模板、tile object 与文本等复杂对象仍会明确拒绝。
+对象写入支持 rectangle/point/ellipse/capsule、有界 polygon/polyline path 与有界
+text；模板与 tile object 仍会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、每个工具各自的完整字段级 closed output schema、四项
@@ -433,7 +434,7 @@ type ApplyResult = CommitResult & {
 当前已实现的 map-root update wire contract 是
 `{type:"updateMap", patch}`，并属于通用 `tiled_preview_edits.operations` union 的
 第 13 种 operation。它不额外注册 `tiled_update_map` standalone tool，因此 registry
-保持 23 core / 24 with rasterizer。operation 与 patch 都是 strict object；patch 至少
+保持 24 core / 25 with rasterizer。operation 与 patch 都是 strict object；patch 至少
 包含一个字段且只允许：
 
 | operation patch | TMJ root member | 输入约束 |
@@ -728,7 +729,7 @@ Group 后再向它添加子层，也不支持 infinite/chunk；移动和删除�
 当前已实现的 common-layer update wire contract 是
 `{type:"updateLayer", layerId, patch}`，并属于通用
 `tiled_preview_edits.operations` union；它不额外注册 `tiled_update_layer` 工具，因此
-registry 仍为 23 个 core / 24 个含 rasterizer。`layerId` 必须是正整数，并递归定位一个
+registry 仍为 24 个 core / 25 个含 rasterizer。`layerId` 必须是正整数，并递归定位一个
 现有 `tilelayer`、`objectgroup`、`imagelayer` 或 `group`；不按名称 fallback。patch
 必须至少包含一个字段，禁止额外 key。允许字段与 TMJ key 的映射为：
 
@@ -773,7 +774,7 @@ CAS。
 `tiled_preview_edits.operations` union 的第 8 种 operation。由于删除检查必须针对同一个
 原始完整 map 计算，含 `deleteLayer` 的 change set 必须且只能有这一项 operation；不能
 同批 set tile、改 object 或 update layer。它不额外注册 `tiled_delete_layer`，registry
-仍是 23 个 core / 24 个含 rasterizer。
+仍是 24 个 core / 25 个含 rasterizer。
 
 正整数 `layerId` 可递归定位 4 类已有 layer。tile/object/image leaf 与空 Group 不需要
 额外确认；非空 Group 若没有 `deleteDescendants:true` 会以 `LAYER_HAS_DESCENDANTS`
@@ -806,7 +807,7 @@ bytes。preview 固定 map revision 与完整 dependency set，apply 重算 oper
 `{type:"moveLayer", layerId, parentGroupId?, index}`，它是 generic
 `tiled_preview_edits.operations` union 的第 9 种 operation。它必须独占 change set：
 多次 move，或与 tile/object/update/delete 混批，都会在任何语义 mutation 前拒绝。
-它不额外注册 `tiled_move_layer`，所以 registry 仍是 23 个 core / 24 个含
+它不额外注册 `tiled_move_layer`，所以 registry 仍是 24 个 core / 25 个含
 rasterizer。
 
 `layerId` 与显式 `parentGroupId` 必须是正整数；省略 `parentGroupId` 表示根
@@ -843,7 +844,7 @@ exact bytes 并搬入目标，只改源/目标数组接缝所需的逗号与 whi
 `{type:"duplicateLayer", layerId, destination?, name?}`，它是 generic
 `tiled_preview_edits.operations` union 的第 10 种 operation。它必须独占 change set，
 不能与 tile/object/update/delete/move 或第二次 duplicate 混批，也不注册
-`tiled_duplicate_layer` standalone tool；registry 因此仍是 23 core / 24 with
+`tiled_duplicate_layer` standalone tool；registry 因此仍是 24 core / 25 with
 rasterizer。
 
 `destination` 省略时复制到 source 的直接父数组并插在 `sourceIndex + 1`。显式值必须严格
@@ -942,7 +943,7 @@ layer bounds 内；省略时精确采用该 layer 的 `x/y/width/height` bounds�
 当前已实现的 stamp wire contract 是
 `{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}`。它是通用
 `tiled_preview_edits.operations` union 的第 11 种 operation，不额外注册
-`tiled_stamp_pattern` 工具，因此 registry 保持 23 core / 24 with rasterizer。
+`tiled_stamp_pattern` 工具，因此 registry 保持 24 core / 25 with rasterizer。
 `pattern` 必须是非空、稠密、矩形、row-major 的二维数组：外层和每行均非空、所有行等宽，
 不接受 sparse hole/`undefined`。宽和高各最多 256，总格数最多 16,384。
 
@@ -969,7 +970,7 @@ preview 回显规范化 `region`、`cellCount`、非空/清空/变换/实际变�
 当前已实现的 flood-fill wire contract 是
 `{type:"floodFill", layerId, x, y, tile:TileRef|null}`。它是通用
 `tiled_preview_edits.operations` union 的第 12 种 operation，不额外注册
-`tiled_flood_fill` 工具，因此 registry 仍为 23 core / 24 with rasterizer。它只接受
+`tiled_flood_fill` 工具，因此 registry 仍为 24 core / 25 with rasterizer。它只接受
 finite orthogonal、numeric-array tile layer；`layerId` 是正整数，`x/y` 是 layer 空间
 中的绝对 seed tile 坐标且必须位于 layer 自身的 `x/y/width/height` bounds 内。
 
@@ -1005,7 +1006,7 @@ layer 生成 `data`-member-local source patch。source=target 或 mixed operatio
 当前已实现的矩形复制 wire contract 是
 `{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}`。
 它是通用 `tiled_preview_edits.operations` union 的第 15 种 operation，不注册
-`tiled_copy_region` standalone tool，因此 registry 仍为 23 core / 24 with rasterizer。
+`tiled_copy_region` standalone tool，因此 registry 仍为 24 core / 25 with rasterizer。
 operation、`source` 与 `destination` 均为 exact-key strict object。source 和
 destination 必须位于同一 map，且两侧 layer 都必须是 finite orthogonal、
 numeric-array tile layer；不支持 infinite chunks、字符串/base64 data 或压缩编码。
@@ -1076,7 +1077,8 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_list_objects` | **已实现基础版**；有界列出全部或指定 object layer，返回精简视图 | `mapPath`, `layerId?`, `limit?` |
-| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?`, `name?`, `class?`, `rotation?` |
+| `tiled_get_object` | **已实现**；按全图唯一 ID 返回一个有界、严格 shape 判别的 editable semantic projection；path 返回完整 points，text 返回解析缺省后的完整样式；tile/template 拒绝 | `mapPath`, `objectId` |
+| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline/text | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?\|text?`, `name?`, `class?`, `rotation?` |
 | `tiled_update_object` | 候选独立入口；当前通过 `updateObject` operation 修改基础对象字段 | `mapPath`, `objectId`, `patch` |
 | `tiled_delete_object` | 候选独立入口；当前通过带醒目 destructive 摘要的 `deleteObjects` operation 提供；拒绝留下 object/list 引用，class 属性存在时 fail closed | `mapPath`, `objectIds` |
 | `tiled_instantiate_template` | 从 `.tx`/`.tj` 模板实例化对象（后续候选） | `mapPath`, `layerId`, `templatePath`, `x`, `y`, `overrides?` |
@@ -1097,21 +1099,35 @@ polygon/polyline create wire 禁止 `width` / `height`，写入 TMJ 时统一保
 写入 TMJ 时分别只增加 `ellipse:true` 或 `capsule:true` marker，不能同时携带另一种
 shape marker。
 
-这六类对象都能使用现有 `updateObject` / `deleteObjects`。update patch 没有
+text create wire 与其他分支一样是 flat strict object：`text` 必填且允许空，样式字段为
+`fontFamily`、`pixelSize`、`color`、`bold`、`italic`、`underline`、`strikeout`、
+`kerning`、`wrap`、`horizontalAlignment` 和 `verticalAlignment`；`width` / `height`
+可省略并默认 0。正文最多 4,096 个 Unicode scalar 且 UTF-8 最多 16,384 bytes，只允许
+TAB/LF/CR 三种 Cc；fontFamily 为 1–256 scalars、最多 1,024 bytes、拒绝全部 Cc；二者
+都拒绝未配对 surrogate。pixelSize 是 1..999 的整数；颜色为 `#RRGGBB` 或
+`#AARRGGBB`。wire 写入 nested TMJ `text:{text,...}`，按文件格式默认值
+`sans-serif/16/#000000/false styles/kerning:true/left/top/wrap:false` 稀疏省略。
+
+这七类对象都能使用现有 `updateObject` / `deleteObjects`。update patch 没有
 `shape` 或 `points` 字段，因此不能做 shape/path mutation；polygon/polyline 还拒绝
 `width` / `height` 更新，只接受 x/y/name/className/rotation/visible/opacity 等 common
-fields。对 ellipse/capsule 更新任意基础字段时，
+fields。text 对象允许局部更新 common、dimensions 和上述 12 个 flat text fields；
+text-specific patch 命中非 text 对象时返回 `OBJECT_SHAPE_MISMATCH`。对
+ellipse/capsule 更新任意基础字段时，
 planner 继续验证最终 width/height 为有限非负数；存量对象缺失的尺寸按 Tiled 语义解释
 为 0，显式 0 合法，null、负数或超限值会拒绝整个 proposal。对象 patch 继续只替换目标
 object layer 的 `objects` member，create 另以
-value-local patch 推进 `nextobjectid`，未触及 source bytes 保持不变。该扩展不注册
-standalone object tool，registry 仍为 23 core / 24 with rasterizer。
+value-local patch 推进 `nextobjectid`，未触及 source bytes 保持不变。只读
+`tiled_get_object` 返回 map revision、完整 dependency revisions 和 bounded object
+projection；不返回 raw/custom property/vendor/template 数据。存量 text 的未知 nested
+key、错误类型/enum、超限 Unicode 或冲突 shape marker 都 fail closed。registry 为
+24 core / 25 with rasterizer。
 
 `tiled_get_capabilities.objectShapeCapabilities` 精确为：
 
 ```json
 {
-  "creatable": ["rectangle", "point", "ellipse", "capsule", "polygon", "polyline"],
+  "creatable": ["rectangle", "point", "ellipse", "capsule", "polygon", "polyline", "text"],
   "shapeMutation": false,
   "ellipseAndCapsuleDimensions": "optional-nonnegative-default-zero",
   "polygonAndPolylinePoints": {
@@ -1125,9 +1141,70 @@ standalone object tool，registry 仍为 23 core / 24 with rasterizer。
     "polylineClosure": "open"
   },
   "polygonAndPolylineUpdates": "common-fields-only-no-dimensions-or-points",
+  "textObject": {
+    "wireLayout": "flat-on-create-object-and-update-patch",
+    "fields": ["text", "fontFamily", "pixelSize", "wrap", "color", "bold", "italic", "underline", "strikeout", "kerning", "horizontalAlignment", "verticalAlignment"],
+    "dimensions": "optional-nonnegative-default-zero",
+    "content": {
+      "field": "text",
+      "required": true,
+      "emptyAllowed": true,
+      "lengthUnit": "unicode-code-points",
+      "maximum": 4096,
+      "maximumUtf8Bytes": 16384,
+      "unicode": "well-formed-no-unpaired-surrogates",
+      "allowedControlCodePoints": ["U+0009", "U+000A", "U+000D"]
+    },
+    "fontFamily": {
+      "minimum": 1,
+      "maximum": 256,
+      "maximumUtf8Bytes": 1024,
+      "lengthUnit": "unicode-code-points",
+      "default": "sans-serif",
+      "unicode": "well-formed-no-unpaired-surrogates",
+      "allowedControlCodePoints": []
+    },
+    "pixelSize": {
+      "integer": true,
+      "minimum": 1,
+      "maximum": 999,
+      "default": 16
+    },
+    "color": {
+      "formats": ["#RRGGBB", "#AARRGGBB"],
+      "default": "#000000"
+    },
+    "horizontalAlignment": {
+      "values": ["left", "center", "right", "justify"],
+      "default": "left"
+    },
+    "verticalAlignment": {
+      "values": ["top", "center", "bottom"],
+      "default": "top"
+    },
+    "booleanDefaults": {
+      "wrap": false,
+      "bold": false,
+      "italic": false,
+      "underline": false,
+      "strikeout": false,
+      "kerning": true
+    },
+    "payloadBudget": {
+      "measure": "canonical-json-utf8-bytes",
+      "scope": "all-present-flat-text-fields-per-operation-summed",
+      "maximumPerChangeSet": 262144
+    },
+    "updates": "common-fields-dimensions-and-partial-flat-text-fields",
+    "serialization": "nested-tmj-text-with-tiled-default-elision"
+  },
   "sourcePatch": "object-layer-objects-member-local"
 }
 ```
+
+pending canonical payload 总量通过
+`limits.maxPendingTextObjectPayloadBytes:2097152` 公布。计费按每个 create/update
+operation 实际出现的 text-specific 字段分别计算，不因后序覆盖或删除而折叠。
 
 ### 3.7 Tileset 管理
 
@@ -1168,7 +1245,7 @@ snapshot。
 当前已实现的 tileset-reference removal wire contract 是
 `{type:"removeTilesetFromMap", tilesetAssetId}`。它属于
 `tiled_preview_edits.operations` 封闭 union 的第 14 种 operation，不额外注册
-`tiled_remove_tileset_from_map`，因此 registry 保持 23 core / 24 with rasterizer。
+`tiled_remove_tileset_from_map`，因此 registry 保持 24 core / 25 with rasterizer。
 operation 是 exact-key strict object，`tilesetAssetId` 必须是非空 opaque ID，并精确
 定位当前 map 已引用、已通过 M1 external root-atlas profile 校验的 binding。路径、名称、
 embedded tileset、未引用 asset ID 和额外 key 都不能作为 fallback。
@@ -1562,7 +1639,7 @@ Prompts 是由 `prompts/get` 展开的**消息模板**，不是服务端宏、�
 | 阶段 | 范围 | 交付判据 |
 |---|---|---|
 | **M0：内核** | 项目路径解析与静态沙箱；宽松 raw JSON 无损加载/目标子树 patch；原始 bytes revision、合作写者文件锁与 CAS；单文档 temp+rename、create hard-link no-replace；内容寻址快照与既有目标恢复；只读 validate；schema/codegen/契约测试基础 | 未知字段往返不丢失；合作写者或最终 guard 前已观察到的修改必报冲突；模拟写入中断后目标保持旧版/新版之一；既有目标的已提交修改可从快照恢复，create checkpoint 不解释为删除；非合作写者与 hostile parent 的剩余窗口由 threat-model v1 明示 |
-| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、rectangle/point/ellipse/capsule 与有界 polygon/polyline object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、单项及 2..32 项 committed prune、current-before-verified prepared discard 与含混 prepared commit/abandon 人工裁决、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
+| **M1：首个可用 MVP** | **仅有限、正交 TMJ + 外部 atlas TSJ**；项目文件列表、地图/tileset 摘要、whole-map tile usage analysis、显式 tile metadata 精确检索、矩形 region 与单对象详情读取、已实现 set/fill/绝对坐标稠密矩形 stamp/精确 simultaneous replace/固定四向 encoded-GID flood fill/同 map 绝对矩形 copy、rectangle/point/ellipse/capsule、有界 polygon/polyline 与有界 text object 编辑、map 根级 render/background/class update、4 类 layer 公共属性 update，以及独占递归 delete / subtree move / safe subtree duplicate、4 类空图层创建、外部 tileset 挂载的专用 preview、独占且仅限零引用的 external tileset binding removal、change set 预览/提交、单文件 checkpoint 精确恢复、单项及 2..32 项 committed prune、current-before-verified prepared discard 与含混 prepared commit/abandon 人工裁决、只读校验、tileset sheet、地图预览、guide。暂不支持无限 chunk、压缩 layer data、内嵌/collection tileset、等距/六边形 | 模型能按 class/property 找到精确 `TileRef`、盘点全图 tile 使用、先看 sheet，并在修改/删除 path 对象或覆盖 text 内容前读取完整有界详情，再安全修改 map 根属性、管理未使用的 external tileset binding，并创建/更新/移动/复制/删除图层及编辑、复制有限正交 TMJ tile 区域；move/delete/duplicate/tileset removal/copy 有有界影响摘要，提交前能预览且 revision 冲突不覆盖；修改后 Tiled 1.12.2 打开无警告、预览正确，并能经批准恢复原始 bytes |
 | **M2：格式与事务扩展** | 无限地图与原 chunk 边界保持、压缩数据、内嵌/collection tileset、跨文件可恢复事务、对象模板、复杂属性（含嵌套 class/list）、选择句柄和更多渲染方向 | 覆盖新增 fixture 的字节/语义往返；跨文件故障注入后可自动恢复到提交前或提交后的一致状态 |
 | **后续 roadmap** | Wang/官方 `wangEdit` 后端、程序生成与预制件、World、游戏性分析、one-shot Tiled AutoMapping/转换/导出、TMX 独立写出、参考图导入、实时 GUI 扩展（若确有需求） | 每项独立设计、实现和验收；不以“58 个工具全部完成”作为单一里程碑 |
 

@@ -192,6 +192,15 @@
       "purpose": "有界列出指定 object layer 的对象。"
     },
     {
+      "name": "tiled_get_object",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "objectId": 7
+      },
+      "purpose": "在修改/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。"
+    },
+    {
       "name": "tiled_validate",
       "profile": "core",
       "arguments": {
@@ -317,10 +326,29 @@
               ],
               "name": "Guard route"
             }
+          },
+          {
+            "type": "createObject",
+            "layerId": 2,
+            "object": {
+              "shape": "text",
+              "x": 96,
+              "y": 48,
+              "width": 192,
+              "height": 48,
+              "text": "Gate opens\\nafter all switches",
+              "fontFamily": "sans-serif",
+              "pixelSize": 18,
+              "color": "#ffd166",
+              "bold": true,
+              "wrap": true,
+              "horizontalAlignment": "center",
+              "name": "Gate hint"
+            }
           }
         ]
       },
-      "purpose": "在同一待批准 change set 中预览严格 map 根属性编辑及使用 object-local points 的 polygon/polyline 创建。"
+      "purpose": "在同一待批准 change set 中预览严格 map 根属性编辑，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。"
     },
     {
       "name": "tiled_apply_change_set",

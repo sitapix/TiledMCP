@@ -62,7 +62,13 @@ Project、World 与 Map 不是严格的所有权树：地图可以脱离 Project
 - **矩形**（默认，无形状子元素，原点左上角）
 - **椭圆** `ellipse`、**点** `point`、**胶囊** `capsule`（1.12 新增）
 - **多边形/折线** `polygon` / `polyline`：`points` 为相对对象位置的坐标对（JSON 中为 `[{x,y},...]` 数组）；polygon ≥3 点闭合，polyline ≥2 点开放
-- **文本** `text`：`fontfamily`、`pixelsize`（默认 16）、`wrap`、`color`、`bold/italic/underline/strikeout`、`halign`/`valign`
+- **文本** `text`：TMJ object 顶层保留 `width`/`height`，内容与样式位于 nested
+  `text` object。`text.text` 为正文；`fontfamily` 默认 `sans-serif`、`pixelsize`
+  默认 16、`color` 默认 `#000000`，`bold/italic/underline/strikeout/wrap` 默认
+  `false`、`kerning` 默认 `true`，`halign` 默认 `left`、`valign` 默认 `top`。
+  `halign` 可为 `left/center/right/justify`，`valign` 可为 `top/center/bottom`；
+  `#AARRGGBB` 的 alpha 在最前。文件格式缺省 `wrap:false`，但 Tiled UI/脚本新建
+  TextData 常显式导出 `wrap:true`，自动化写入器必须明确选择，不能混用两套默认值
 - **Tile Object**：带 `gid` 的对象，可自由缩放旋转，锚点由 tileset 的 `objectalignment` 决定
 
 对象间引用：`object` 类型的自定义属性存目标对象 `id`（如"开关→门"）。

@@ -18,11 +18,27 @@ import {
   MAX_TILESET_SHEET_SCALE,
 } from "../images/tilesetSheet.js";
 import {
+  MAX_OBJECT_DISPLAY_STRING_LENGTH,
+  MAX_OBJECT_SHAPE_POINTS,
+  MIN_POLYGON_OBJECT_POINTS,
+  MIN_POLYLINE_OBJECT_POINTS,
+} from "../maps/mapService.js";
+import {
   MAX_PREVIEW_ATLASES,
   MAX_PREVIEW_LAYERS,
   MAX_PREVIEW_OMITTED_LAYERS,
   MAX_PREVIEW_REGION_CELLS,
 } from "../maps/previewScene.js";
+import {
+  MAX_TEXT_OBJECT_CONTENT_CODE_POINTS,
+  MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS,
+  MAX_TEXT_OBJECT_PIXEL_SIZE,
+  MIN_TEXT_OBJECT_PIXEL_SIZE,
+  TEXT_OBJECT_FIELDS,
+  TEXT_OBJECT_HORIZONTAL_ALIGNMENTS,
+  TEXT_OBJECT_VERTICAL_ALIGNMENTS,
+  measureTextObjectPayloadBytes,
+} from "../maps/textObjects.js";
 import {
   MAX_RASTER_PNG_BYTES,
   MAX_RASTER_RENDER_EDGE,
@@ -51,6 +67,43 @@ import {
 const tiledColorOutputSchema = z
   .string()
   .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu);
+type TextObjectField =
+  (typeof TEXT_OBJECT_FIELDS)[number];
+function isValidTextObjectField(
+  field: TextObjectField,
+  value: unknown,
+): boolean {
+  try {
+    measureTextObjectPayloadBytes({ [field]: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const textObjectContentOutputSchema = z
+  .string()
+  .max(MAX_TEXT_OBJECT_CONTENT_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("text", value),
+  );
+const textObjectFontFamilyOutputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("fontFamily", value),
+  );
+const textObjectPixelSizeOutputSchema = z
+  .number()
+  .int()
+  .min(MIN_TEXT_OBJECT_PIXEL_SIZE)
+  .max(MAX_TEXT_OBJECT_PIXEL_SIZE);
+const textObjectHorizontalAlignmentOutputSchema =
+  z.enum(TEXT_OBJECT_HORIZONTAL_ALIGNMENTS);
+const textObjectVerticalAlignmentOutputSchema =
+  z.enum(TEXT_OBJECT_VERTICAL_ALIGNMENTS);
 
 const displayStringOutputSchema = z.string();
 const truncatedMarkerOutputSchema = z
@@ -351,6 +404,153 @@ const objectListResultOutputSchema = z
 
 export const objectListToolOutputSchema =
   toolOutputSchema(objectListResultOutputSchema);
+
+const objectDetailsDisplayStringOutputSchema =
+  displayStringOutputSchema
+    .max(MAX_OBJECT_DISPLAY_STRING_LENGTH * 2)
+    .refine(
+      (value) =>
+        Array.from(value).length <=
+        MAX_OBJECT_DISPLAY_STRING_LENGTH,
+    );
+const objectDetailsCommonOutputShape = {
+  id: positiveIntegerOutputSchema.max(
+    Number.MAX_SAFE_INTEGER,
+  ),
+  layerId: positiveIntegerOutputSchema.max(
+    Number.MAX_SAFE_INTEGER,
+  ),
+  layerName:
+    objectDetailsDisplayStringOutputSchema,
+  layerNameTruncated:
+    truncatedMarkerOutputSchema,
+  name: objectDetailsDisplayStringOutputSchema,
+  nameTruncated: truncatedMarkerOutputSchema,
+  className:
+    objectDetailsDisplayStringOutputSchema,
+  classNameTruncated:
+    truncatedMarkerOutputSchema,
+  x: z.number().min(-1_000_000_000).max(
+    1_000_000_000,
+  ),
+  y: z.number().min(-1_000_000_000).max(
+    1_000_000_000,
+  ),
+  rotation: z.number().min(-1_000_000_000).max(
+    1_000_000_000,
+  ),
+  visible: z.boolean(),
+  opacity: z.number().min(0).max(1),
+} as const;
+
+const objectDetailsExtentOutputSchema = z
+  .number()
+  .min(0)
+  .max(1_000_000_000);
+const objectDetailsPointOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("point"),
+  })
+  .strict();
+const objectDetailsRectangleOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("rectangle"),
+    width: objectDetailsExtentOutputSchema,
+    height: objectDetailsExtentOutputSchema,
+  })
+  .strict();
+const objectDetailsEllipseOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("ellipse"),
+    width: objectDetailsExtentOutputSchema,
+    height: objectDetailsExtentOutputSchema,
+  })
+  .strict();
+const objectDetailsCapsuleOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("capsule"),
+    width: objectDetailsExtentOutputSchema,
+    height: objectDetailsExtentOutputSchema,
+  })
+  .strict();
+const objectDetailsPathPointOutputSchema = z
+  .object({
+    x: z.number().min(-1_000_000_000).max(
+      1_000_000_000,
+    ),
+    y: z.number().min(-1_000_000_000).max(
+      1_000_000_000,
+    ),
+  })
+  .strict();
+const objectDetailsPolygonOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("polygon"),
+    points: z
+      .array(objectDetailsPathPointOutputSchema)
+      .min(MIN_POLYGON_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
+  })
+  .strict();
+const objectDetailsPolylineOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("polyline"),
+    points: z
+      .array(objectDetailsPathPointOutputSchema)
+      .min(MIN_POLYLINE_OBJECT_POINTS)
+      .max(MAX_OBJECT_SHAPE_POINTS),
+  })
+  .strict();
+const objectDetailsTextOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("text"),
+    width: objectDetailsExtentOutputSchema,
+    height: objectDetailsExtentOutputSchema,
+    text: textObjectContentOutputSchema,
+    fontFamily:
+      textObjectFontFamilyOutputSchema,
+    pixelSize:
+      textObjectPixelSizeOutputSchema,
+    wrap: z.boolean(),
+    color: tiledColorOutputSchema,
+    bold: z.boolean(),
+    italic: z.boolean(),
+    underline: z.boolean(),
+    strikeout: z.boolean(),
+    kerning: z.boolean(),
+    horizontalAlignment:
+      textObjectHorizontalAlignmentOutputSchema,
+    verticalAlignment:
+      textObjectVerticalAlignmentOutputSchema,
+  })
+  .strict();
+const objectDetailsResultOutputSchema = z
+  .object({
+    mapPath: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    dependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    object: z.discriminatedUnion("shape", [
+      objectDetailsRectangleOutputSchema,
+      objectDetailsPointOutputSchema,
+      objectDetailsEllipseOutputSchema,
+      objectDetailsCapsuleOutputSchema,
+      objectDetailsPolygonOutputSchema,
+      objectDetailsPolylineOutputSchema,
+      objectDetailsTextOutputSchema,
+    ]),
+  })
+  .strict();
+
+export const objectDetailsToolOutputSchema =
+  toolOutputSchema(objectDetailsResultOutputSchema);
 
 const validationResultOutputSchema = z
   .object({

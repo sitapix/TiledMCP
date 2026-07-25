@@ -91,6 +91,21 @@ import {
   type MapService,
 } from "./maps/mapService.js";
 import {
+  DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
+  MAX_TEXT_OBJECT_CONTENT_CODE_POINTS,
+  MAX_TEXT_OBJECT_CONTENT_UTF8_BYTES,
+  MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+  MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS,
+  MAX_TEXT_OBJECT_FONT_FAMILY_UTF8_BYTES,
+  MAX_TEXT_OBJECT_PIXEL_SIZE,
+  MIN_TEXT_OBJECT_PIXEL_SIZE,
+  TEXT_OBJECT_DEFAULTS,
+  TEXT_OBJECT_FIELDS,
+  TEXT_OBJECT_HORIZONTAL_ALIGNMENTS,
+  TEXT_OBJECT_VERTICAL_ALIGNMENTS,
+  measureTextObjectPayloadBytes,
+} from "./maps/textObjects.js";
+import {
   MAX_PREVIEW_ATLASES,
   MAX_PREVIEW_LAYER_LABEL_LENGTH,
   MAX_PREVIEW_LAYERS,
@@ -145,6 +160,7 @@ import {
   listFilesToolOutputSchema,
   mapSummaryToolOutputSchema,
   nativePreviewToolOutputSchema,
+  objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
   rasterMapToolOutputSchema,
   regionToolOutputSchema,
@@ -352,6 +368,53 @@ const layerBlendModeSchema = z.enum([
 const tiledColorSchema = z
   .string()
   .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu);
+type TextObjectField =
+  (typeof TEXT_OBJECT_FIELDS)[number];
+function isValidTextObjectField(
+  field: TextObjectField,
+  value: unknown,
+): boolean {
+  try {
+    measureTextObjectPayloadBytes({ [field]: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const textObjectContentSchema = z
+  .string()
+  .max(MAX_TEXT_OBJECT_CONTENT_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("text", value),
+    {
+      message:
+        "Text must satisfy the advertised Unicode, control-code-point, code-point, and UTF-8 byte limits",
+    },
+  );
+const textObjectFontFamilySchema = z
+  .string()
+  .min(1)
+  .max(MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("fontFamily", value),
+    {
+      message:
+        "fontFamily must satisfy the advertised Unicode, control-code-point, code-point, and UTF-8 byte limits",
+    },
+  );
+const textObjectPixelSizeSchema = z
+  .number()
+  .int()
+  .min(MIN_TEXT_OBJECT_PIXEL_SIZE)
+  .max(MAX_TEXT_OBJECT_PIXEL_SIZE);
+const textObjectHorizontalAlignmentSchema = z.enum(
+  TEXT_OBJECT_HORIZONTAL_ALIGNMENTS,
+);
+const textObjectVerticalAlignmentSchema = z.enum(
+  TEXT_OBJECT_VERTICAL_ALIGNMENTS,
+);
 const tileFindSelectorSchema = z
   .string()
   .min(1)
@@ -797,6 +860,31 @@ const polylineObjectSchema = z
   })
   .strict();
 
+const textObjectSchema = z
+  .object({
+    shape: z.literal("text"),
+    ...objectCommonShape,
+    width: objectExtentSchema.optional(),
+    height: objectExtentSchema.optional(),
+    text: textObjectContentSchema,
+    fontFamily:
+      textObjectFontFamilySchema.optional(),
+    pixelSize:
+      textObjectPixelSizeSchema.optional(),
+    wrap: z.boolean().optional(),
+    color: tiledColorSchema.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strikeout: z.boolean().optional(),
+    kerning: z.boolean().optional(),
+    horizontalAlignment:
+      textObjectHorizontalAlignmentSchema.optional(),
+    verticalAlignment:
+      textObjectVerticalAlignmentSchema.optional(),
+  })
+  .strict();
+
 const createObjectSchema = z
   .object({
     type: z.literal("createObject"),
@@ -808,6 +896,7 @@ const createObjectSchema = z
       capsuleObjectSchema,
       polygonObjectSchema,
       polylineObjectSchema,
+      textObjectSchema,
     ]),
   })
   .strict();
@@ -823,6 +912,22 @@ const objectPatchSchema = z
     rotation: objectCoordinateSchema.optional(),
     visible: z.boolean().optional(),
     opacity: objectOpacitySchema.optional(),
+    text: textObjectContentSchema.optional(),
+    fontFamily:
+      textObjectFontFamilySchema.optional(),
+    pixelSize:
+      textObjectPixelSizeSchema.optional(),
+    wrap: z.boolean().optional(),
+    color: tiledColorSchema.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strikeout: z.boolean().optional(),
+    kerning: z.boolean().optional(),
+    horizontalAlignment:
+      textObjectHorizontalAlignmentSchema.optional(),
+    verticalAlignment:
+      textObjectVerticalAlignmentSchema.optional(),
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
@@ -1019,6 +1124,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_render_tileset_sheet",
     "tiled_render_preview",
     "tiled_list_objects",
+    "tiled_get_object",
     "tiled_validate",
     "tiled_analyze_usage",
     "tiled_create_map",
@@ -1338,6 +1444,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "capsule",
             "polygon",
             "polyline",
+            "text",
           ],
           shapeMutation: false,
           ellipseAndCapsuleDimensions:
@@ -1358,6 +1465,104 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           },
           polygonAndPolylineUpdates:
             "common-fields-only-no-dimensions-or-points",
+          textObject: {
+            wireLayout:
+              "flat-on-create-object-and-update-patch",
+            fields: [
+              "text",
+              "fontFamily",
+              "pixelSize",
+              "wrap",
+              "color",
+              "bold",
+              "italic",
+              "underline",
+              "strikeout",
+              "kerning",
+              "horizontalAlignment",
+              "verticalAlignment",
+            ],
+            dimensions:
+              "optional-nonnegative-default-zero",
+            content: {
+              field: "text",
+              required: true,
+              emptyAllowed: true,
+              lengthUnit: "unicode-code-points",
+              maximum:
+                MAX_TEXT_OBJECT_CONTENT_CODE_POINTS,
+              maximumUtf8Bytes:
+                MAX_TEXT_OBJECT_CONTENT_UTF8_BYTES,
+              unicode:
+                "well-formed-no-unpaired-surrogates",
+              allowedControlCodePoints: [
+                "U+0009",
+                "U+000A",
+                "U+000D",
+              ],
+            },
+            fontFamily: {
+              minimum: 1,
+              maximum:
+                MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS,
+              maximumUtf8Bytes:
+                MAX_TEXT_OBJECT_FONT_FAMILY_UTF8_BYTES,
+              lengthUnit: "unicode-code-points",
+              default:
+                TEXT_OBJECT_DEFAULTS.fontFamily,
+              unicode:
+                "well-formed-no-unpaired-surrogates",
+              allowedControlCodePoints: [],
+            },
+            pixelSize: {
+              integer: true,
+              minimum: MIN_TEXT_OBJECT_PIXEL_SIZE,
+              maximum: MAX_TEXT_OBJECT_PIXEL_SIZE,
+              default:
+                TEXT_OBJECT_DEFAULTS.pixelSize,
+            },
+            color: {
+              formats: ["#RRGGBB", "#AARRGGBB"],
+              default: TEXT_OBJECT_DEFAULTS.color,
+            },
+            horizontalAlignment: {
+              values: [
+                ...TEXT_OBJECT_HORIZONTAL_ALIGNMENTS,
+              ],
+              default:
+                TEXT_OBJECT_DEFAULTS.horizontalAlignment,
+            },
+            verticalAlignment: {
+              values: [
+                ...TEXT_OBJECT_VERTICAL_ALIGNMENTS,
+              ],
+              default:
+                TEXT_OBJECT_DEFAULTS.verticalAlignment,
+            },
+            booleanDefaults: {
+              wrap: TEXT_OBJECT_DEFAULTS.wrap,
+              bold: TEXT_OBJECT_DEFAULTS.bold,
+              italic: TEXT_OBJECT_DEFAULTS.italic,
+              underline:
+                TEXT_OBJECT_DEFAULTS.underline,
+              strikeout:
+                TEXT_OBJECT_DEFAULTS.strikeout,
+              kerning:
+                TEXT_OBJECT_DEFAULTS.kerning,
+            },
+            payloadBudget: {
+              measure:
+                "canonical-json-utf8-bytes",
+              scope:
+                "all-present-flat-text-fields-per-operation-summed",
+              maximumPerChangeSet:
+                MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+            },
+            updates:
+              "common-fields-dimensions-and-partial-flat-text-fields",
+            serialization:
+              "nested-tmj-text-with-tiled-default-elision",
+          },
           sourcePatch:
             "object-layer-objects-member-local",
         },
@@ -1792,6 +1997,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxPendingChangeSetCellWrites: DEFAULT_MAX_PENDING_CELL_WRITES,
           maxPendingObjectShapePoints:
             DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
+          maxPendingTextObjectPayloadBytes:
+            DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
           maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
           maxStampPatternCells:
             MAX_STAMP_PATTERN_CELLS,
@@ -2621,6 +2828,32 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_get_object",
+    {
+      title: "Get map object",
+      description:
+        "Returns one supported object with complete shape-specific geometry and effective text styling. Asset discovery may update project-internal safety metadata.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          objectId: positiveIdSchema,
+        })
+        .strict(),
+      outputSchema: objectDetailsToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ mapPath, objectId }) =>
+      executeTool(() =>
+        maps.getObject({
+          mapPath,
+          objectId,
+        }),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_validate",
     {
       title: "Validate a Tiled map",
@@ -2820,6 +3053,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .max(128)
             .superRefine((operations, context) => {
               let pathPointCount = 0;
+              let textObjectPayloadBytes = 0;
               for (const operation of operations) {
                 if (
                   operation.type ===
@@ -2832,6 +3066,31 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   pathPointCount +=
                     operation.object.points.length;
                 }
+                if (
+                  operation.type ===
+                  "createObject"
+                ) {
+                  try {
+                    textObjectPayloadBytes +=
+                      measureTextObjectPayloadBytes(
+                        operation.object,
+                      );
+                  } catch {
+                    // Nested schemas report invalid text fields.
+                  }
+                } else if (
+                  operation.type ===
+                  "updateObject"
+                ) {
+                  try {
+                    textObjectPayloadBytes +=
+                      measureTextObjectPayloadBytes(
+                        operation.patch,
+                      );
+                  } catch {
+                    // Nested schemas report invalid text fields.
+                  }
+                }
               }
               if (
                 pathPointCount >
@@ -2841,6 +3100,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   code: "custom",
                   message:
                     `Polygon and polyline createObject operations may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+                });
+              }
+              if (
+                textObjectPayloadBytes >
+                MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET
+              ) {
+                context.addIssue({
+                  code: "custom",
+                  message:
+                    `Text object fields may contain at most ${MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET} canonical JSON UTF-8 bytes per change set`,
                 });
               }
             }),

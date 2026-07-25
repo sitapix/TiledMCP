@@ -7,6 +7,17 @@ import {
   MIN_POLYLINE_OBJECT_POINTS,
 } from "../maps/mapService.js";
 import {
+  MAX_TEXT_OBJECT_CONTENT_CODE_POINTS,
+  MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+  MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS,
+  MAX_TEXT_OBJECT_PIXEL_SIZE,
+  MIN_TEXT_OBJECT_PIXEL_SIZE,
+  TEXT_OBJECT_FIELDS,
+  TEXT_OBJECT_HORIZONTAL_ALIGNMENTS,
+  TEXT_OBJECT_VERTICAL_ALIGNMENTS,
+  measureTextObjectPayloadBytes,
+} from "../maps/textObjects.js";
+import {
   MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
 } from "../storage/checkpoints.js";
@@ -51,6 +62,43 @@ const opacityOutputSchema = z.number().min(0).max(1);
 const tiledColorOutputSchema = z
   .string()
   .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu);
+type TextObjectField =
+  (typeof TEXT_OBJECT_FIELDS)[number];
+function isValidTextObjectField(
+  field: TextObjectField,
+  value: unknown,
+): boolean {
+  try {
+    measureTextObjectPayloadBytes({ [field]: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const textObjectContentOutputSchema = z
+  .string()
+  .max(MAX_TEXT_OBJECT_CONTENT_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("text", value),
+  );
+const textObjectFontFamilyOutputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_TEXT_OBJECT_FONT_FAMILY_CODE_POINTS * 2)
+  .refine(
+    (value) =>
+      isValidTextObjectField("fontFamily", value),
+  );
+const textObjectPixelSizeOutputSchema = z
+  .number()
+  .int()
+  .min(MIN_TEXT_OBJECT_PIXEL_SIZE)
+  .max(MAX_TEXT_OBJECT_PIXEL_SIZE);
+const textObjectHorizontalAlignmentOutputSchema =
+  z.enum(TEXT_OBJECT_HORIZONTAL_ALIGNMENTS);
+const textObjectVerticalAlignmentOutputSchema =
+  z.enum(TEXT_OBJECT_VERTICAL_ALIGNMENTS);
 
 const layerTypeOutputSchema = z.enum([
   "tilelayer",
@@ -249,6 +297,30 @@ const polylineObjectDraftOutputSchema = z
       .max(MAX_OBJECT_SHAPE_POINTS),
   })
   .strict();
+const textObjectDraftOutputSchema = z
+  .object({
+    shape: z.literal("text"),
+    ...objectCommonOutputShape,
+    width: objectExtentOutputSchema.optional(),
+    height: objectExtentOutputSchema.optional(),
+    text: textObjectContentOutputSchema,
+    fontFamily:
+      textObjectFontFamilyOutputSchema.optional(),
+    pixelSize:
+      textObjectPixelSizeOutputSchema.optional(),
+    wrap: z.boolean().optional(),
+    color: tiledColorOutputSchema.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strikeout: z.boolean().optional(),
+    kerning: z.boolean().optional(),
+    horizontalAlignment:
+      textObjectHorizontalAlignmentOutputSchema.optional(),
+    verticalAlignment:
+      textObjectVerticalAlignmentOutputSchema.optional(),
+  })
+  .strict();
 const objectPatchOutputSchema = z
   .object({
     x: objectCoordinateOutputSchema.optional(),
@@ -260,8 +332,31 @@ const objectPatchOutputSchema = z
     rotation: objectCoordinateOutputSchema.optional(),
     visible: z.boolean().optional(),
     opacity: opacityOutputSchema.optional(),
+    text: textObjectContentOutputSchema.optional(),
+    fontFamily:
+      textObjectFontFamilyOutputSchema.optional(),
+    pixelSize:
+      textObjectPixelSizeOutputSchema.optional(),
+    wrap: z.boolean().optional(),
+    color: tiledColorOutputSchema.optional(),
+    bold: z.boolean().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    strikeout: z.boolean().optional(),
+    kerning: z.boolean().optional(),
+    horizontalAlignment:
+      textObjectHorizontalAlignmentOutputSchema.optional(),
+    verticalAlignment:
+      textObjectVerticalAlignmentOutputSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (patch) => Object.keys(patch).length > 0,
+    {
+      message:
+        "Object update patch must contain at least one field",
+    },
+  );
 
 const layerDescriptorOutputSchema = z
   .object({
@@ -501,6 +596,14 @@ const createObjectOperationPreviewOutputSchema =
         object: polylineObjectDraftOutputSchema,
       })
       .strict(),
+    z
+      .object({
+        type: z.literal("createObject"),
+        layerId: positiveIdOutputSchema,
+        shape: z.literal("text"),
+        object: textObjectDraftOutputSchema,
+      })
+      .strict(),
   ]);
 
 const updateObjectOperationPreviewOutputSchema = z
@@ -518,6 +621,18 @@ const updateObjectOperationPreviewOutputSchema = z
         "rotation",
         "visible",
         "opacity",
+        "text",
+        "fontFamily",
+        "pixelSize",
+        "wrap",
+        "color",
+        "bold",
+        "italic",
+        "underline",
+        "strikeout",
+        "kerning",
+        "horizontalAlignment",
+        "verticalAlignment",
       ]),
     ),
     patch: objectPatchOutputSchema,
@@ -1412,6 +1527,7 @@ const genericMapEditPreviewOutputSchema = z
       .max(128)
       .superRefine((operations, context) => {
         let pathPointCount = 0;
+        let textObjectPayloadBytes = 0;
         for (const operation of operations) {
           if (
             operation.type === "createObject" &&
@@ -1420,6 +1536,27 @@ const genericMapEditPreviewOutputSchema = z
           ) {
             pathPointCount +=
               operation.object.points.length;
+          }
+          if (operation.type === "createObject") {
+            try {
+              textObjectPayloadBytes +=
+                measureTextObjectPayloadBytes(
+                  operation.object,
+                );
+            } catch {
+              // Nested schemas report invalid text fields.
+            }
+          } else if (
+            operation.type === "updateObject"
+          ) {
+            try {
+              textObjectPayloadBytes +=
+                measureTextObjectPayloadBytes(
+                  operation.patch,
+                );
+            } catch {
+              // Nested schemas report invalid text fields.
+            }
           }
         }
         if (
@@ -1430,6 +1567,16 @@ const genericMapEditPreviewOutputSchema = z
             code: "custom",
             message:
               `Polygon and polyline createObject previews may contain at most ${MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET} total points per change set`,
+          });
+        }
+        if (
+          textObjectPayloadBytes >
+          MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              `Text object fields may contain at most ${MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET} canonical JSON UTF-8 bytes per change set`,
           });
         }
       }),

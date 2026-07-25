@@ -26,6 +26,93 @@ import {
 } from "../src/storage/checkpoints.js";
 import { revisionOf } from "../src/storage/revision.js";
 
+const EXPECTED_TEXT_OBJECT_CAPABILITIES = {
+  wireLayout:
+    "flat-on-create-object-and-update-patch",
+  fields: [
+    "text",
+    "fontFamily",
+    "pixelSize",
+    "wrap",
+    "color",
+    "bold",
+    "italic",
+    "underline",
+    "strikeout",
+    "kerning",
+    "horizontalAlignment",
+    "verticalAlignment",
+  ],
+  dimensions:
+    "optional-nonnegative-default-zero",
+  content: {
+    field: "text",
+    required: true,
+    emptyAllowed: true,
+    lengthUnit: "unicode-code-points",
+    maximum: 4_096,
+    maximumUtf8Bytes: 16_384,
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [
+      "U+0009",
+      "U+000A",
+      "U+000D",
+    ],
+  },
+  fontFamily: {
+    minimum: 1,
+    maximum: 256,
+    maximumUtf8Bytes: 1_024,
+    lengthUnit: "unicode-code-points",
+    default: "sans-serif",
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [],
+  },
+  pixelSize: {
+    integer: true,
+    minimum: 1,
+    maximum: 999,
+    default: 16,
+  },
+  color: {
+    formats: ["#RRGGBB", "#AARRGGBB"],
+    default: "#000000",
+  },
+  horizontalAlignment: {
+    values: [
+      "left",
+      "center",
+      "right",
+      "justify",
+    ],
+    default: "left",
+  },
+  verticalAlignment: {
+    values: ["top", "center", "bottom"],
+    default: "top",
+  },
+  booleanDefaults: {
+    wrap: false,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikeout: false,
+    kerning: true,
+  },
+  payloadBudget: {
+    measure: "canonical-json-utf8-bytes",
+    scope:
+      "all-present-flat-text-fields-per-operation-summed",
+    maximumPerChangeSet: 262_144,
+  },
+  updates:
+    "common-fields-dimensions-and-partial-flat-text-fields",
+  serialization:
+    "nested-tmj-text-with-tiled-default-elision",
+} as const;
+
 it("serves tiled_find_tiles through the production stdio entry point", async () => {
   const temporaryRoot = await mkdtemp(
     join(tmpdir(), "tiledmcp-stdio-test-"),
@@ -85,7 +172,10 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_analyze_usage",
     );
-    expect(tools.tools.length === 23 || tools.tools.length === 24).toBe(
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_get_object",
+    );
+    expect(tools.tools.length === 24 || tools.tools.length === 25).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -298,6 +388,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
           "capsule",
           "polygon",
           "polyline",
+          "text",
         ],
         shapeMutation: false,
         ellipseAndCapsuleDimensions:
@@ -315,6 +406,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         },
         polygonAndPolylineUpdates:
           "common-fields-only-no-dimensions-or-points",
+        textObject:
+          EXPECTED_TEXT_OBJECT_CAPABILITIES,
         sourcePatch: "object-layer-objects-member-local",
       },
       layerOperations: [
@@ -391,6 +484,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
         maxPendingObjectShapePoints: 65_536,
+        maxPendingTextObjectPayloadBytes:
+          2_097_152,
       },
       textContentContract: {
         name: "tiled-mcp-summary",
@@ -470,6 +565,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         "capsule",
         "polygon",
         "polyline",
+        "text",
       ],
       shapeMutation: false,
       ellipseAndCapsuleDimensions:
@@ -487,6 +583,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       },
       polygonAndPolylineUpdates:
         "common-fields-only-no-dimensions-or-points",
+      textObject:
+        EXPECTED_TEXT_OBJECT_CAPABILITIES,
       sourcePatch: "object-layer-objects-member-local",
     });
 
@@ -1301,6 +1399,43 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     if (objectApply === undefined) {
       throw new Error("Expected the ellipse/capsule object apply result.");
     }
+    const objectDetailsResponse =
+      await client.callTool({
+        name: "tiled_get_object",
+        arguments: {
+          mapPath: "created.tmj",
+          objectId: 1,
+        },
+      });
+    expect(
+      objectDetailsResponse.isError,
+    ).not.toBe(true);
+    const objectDetails = (
+      objectDetailsResponse.structuredContent as
+        | {
+            result?: Record<string, unknown>;
+          }
+        | undefined
+    )?.result;
+    expect(objectDetails).toMatchObject({
+      mapPath: "created.tmj",
+      revision: objectApply.revision,
+      object: {
+        id: 1,
+        layerId: 1,
+        layerName: "Objects",
+        name: "Portal",
+        className: "",
+        shape: "ellipse",
+        x: 8,
+        y: 10,
+        width: 0,
+        height: 0,
+        rotation: 0,
+        visible: true,
+        opacity: 1,
+      },
+    });
     const objectMap = JSON.parse(
       await readFile(join(projectRoot, "created.tmj"), "utf8"),
     ) as {
@@ -1485,6 +1620,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:23|24) tools\)/u,
+    /ready for .+ \((?:24|25) tools\)/u,
   );
 });

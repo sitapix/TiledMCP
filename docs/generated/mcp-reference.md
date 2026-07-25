@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 23 tools
-- `with-tmxrasterizer`: 24 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 24 tools
+- `with-tmxrasterizer`: 25 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:e64e12ef1ce396e7951441cac96b52ec7aebe864db869403a52128b8ef1e6de6",
+    "revision": "sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281",
     "serverVersion": "0.0.1",
-    "size": 55150
+    "size": 56737
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 55150,
+  "size": 56737,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 55150 UTF-8 bytes, revision `sha256:e64e12ef1ce396e7951441cac96b52ec7aebe864db869403a52128b8ef1e6de6`.
+Content contract: `text`, 56737 UTF-8 bytes, revision `sha256:12b211dd871a078a15136dd379b18fd3c835a05d7bf2c7065413005732f93281`.
 
 Resource templates: none.
 
@@ -8658,6 +8658,10 @@ Output schema:
                   "const": 65536,
                   "type": "number"
                 },
+                "maxPendingTextObjectPayloadBytes": {
+                  "const": 2097152,
+                  "type": "number"
+                },
                 "maxRasterInputAggregateBytes": {
                   "const": 67108864,
                   "type": "number"
@@ -8856,6 +8860,7 @@ Output schema:
                 "maxChangeSetCellWrites",
                 "maxPendingChangeSetCellWrites",
                 "maxPendingObjectShapePoints",
+                "maxPendingTextObjectPayloadBytes",
                 "maxStampPatternEdge",
                 "maxStampPatternCells",
                 "maxObjectMutationsPerChangeSet",
@@ -9287,6 +9292,10 @@ Output schema:
                     {
                       "const": "polyline",
                       "type": "string"
+                    },
+                    {
+                      "const": "text",
+                      "type": "string"
                     }
                   ],
                   "type": "array"
@@ -9354,6 +9363,382 @@ Output schema:
                 "sourcePatch": {
                   "const": "object-layer-objects-member-local",
                   "type": "string"
+                },
+                "textObject": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "booleanDefaults": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "bold": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "italic": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "kerning": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "strikeout": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "underline": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "wrap": {
+                          "const": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "wrap",
+                        "bold",
+                        "italic",
+                        "underline",
+                        "strikeout",
+                        "kerning"
+                      ],
+                      "type": "object"
+                    },
+                    "color": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "default": {
+                          "const": "#000000",
+                          "type": "string"
+                        },
+                        "formats": {
+                          "items": [
+                            {
+                              "const": "#RRGGBB",
+                              "type": "string"
+                            },
+                            {
+                              "const": "#AARRGGBB",
+                              "type": "string"
+                            }
+                          ],
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "formats",
+                        "default"
+                      ],
+                      "type": "object"
+                    },
+                    "content": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedControlCodePoints": {
+                          "items": [
+                            {
+                              "const": "U+0009",
+                              "type": "string"
+                            },
+                            {
+                              "const": "U+000A",
+                              "type": "string"
+                            },
+                            {
+                              "const": "U+000D",
+                              "type": "string"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "emptyAllowed": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "field": {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        "lengthUnit": {
+                          "const": "unicode-code-points",
+                          "type": "string"
+                        },
+                        "maximum": {
+                          "const": 4096,
+                          "type": "number"
+                        },
+                        "maximumUtf8Bytes": {
+                          "const": 16384,
+                          "type": "number"
+                        },
+                        "required": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "unicode": {
+                          "const": "well-formed-no-unpaired-surrogates",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "required",
+                        "emptyAllowed",
+                        "lengthUnit",
+                        "maximum",
+                        "maximumUtf8Bytes",
+                        "unicode",
+                        "allowedControlCodePoints"
+                      ],
+                      "type": "object"
+                    },
+                    "dimensions": {
+                      "const": "optional-nonnegative-default-zero",
+                      "type": "string"
+                    },
+                    "fields": {
+                      "items": [
+                        {
+                          "const": "text",
+                          "type": "string"
+                        },
+                        {
+                          "const": "fontFamily",
+                          "type": "string"
+                        },
+                        {
+                          "const": "pixelSize",
+                          "type": "string"
+                        },
+                        {
+                          "const": "wrap",
+                          "type": "string"
+                        },
+                        {
+                          "const": "color",
+                          "type": "string"
+                        },
+                        {
+                          "const": "bold",
+                          "type": "string"
+                        },
+                        {
+                          "const": "italic",
+                          "type": "string"
+                        },
+                        {
+                          "const": "underline",
+                          "type": "string"
+                        },
+                        {
+                          "const": "strikeout",
+                          "type": "string"
+                        },
+                        {
+                          "const": "kerning",
+                          "type": "string"
+                        },
+                        {
+                          "const": "horizontalAlignment",
+                          "type": "string"
+                        },
+                        {
+                          "const": "verticalAlignment",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "fontFamily": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedControlCodePoints": {
+                          "items": [],
+                          "type": "array"
+                        },
+                        "default": {
+                          "const": "sans-serif",
+                          "type": "string"
+                        },
+                        "lengthUnit": {
+                          "const": "unicode-code-points",
+                          "type": "string"
+                        },
+                        "maximum": {
+                          "const": 256,
+                          "type": "number"
+                        },
+                        "maximumUtf8Bytes": {
+                          "const": 1024,
+                          "type": "number"
+                        },
+                        "minimum": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "unicode": {
+                          "const": "well-formed-no-unpaired-surrogates",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "minimum",
+                        "maximum",
+                        "maximumUtf8Bytes",
+                        "lengthUnit",
+                        "default",
+                        "unicode",
+                        "allowedControlCodePoints"
+                      ],
+                      "type": "object"
+                    },
+                    "horizontalAlignment": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "default": {
+                          "const": "left",
+                          "type": "string"
+                        },
+                        "values": {
+                          "items": [
+                            {
+                              "const": "left",
+                              "type": "string"
+                            },
+                            {
+                              "const": "center",
+                              "type": "string"
+                            },
+                            {
+                              "const": "right",
+                              "type": "string"
+                            },
+                            {
+                              "const": "justify",
+                              "type": "string"
+                            }
+                          ],
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "values",
+                        "default"
+                      ],
+                      "type": "object"
+                    },
+                    "payloadBudget": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "maximumPerChangeSet": {
+                          "const": 262144,
+                          "type": "number"
+                        },
+                        "measure": {
+                          "const": "canonical-json-utf8-bytes",
+                          "type": "string"
+                        },
+                        "scope": {
+                          "const": "all-present-flat-text-fields-per-operation-summed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "measure",
+                        "scope",
+                        "maximumPerChangeSet"
+                      ],
+                      "type": "object"
+                    },
+                    "pixelSize": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "default": {
+                          "const": 16,
+                          "type": "number"
+                        },
+                        "integer": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "maximum": {
+                          "const": 999,
+                          "type": "number"
+                        },
+                        "minimum": {
+                          "const": 1,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "integer",
+                        "minimum",
+                        "maximum",
+                        "default"
+                      ],
+                      "type": "object"
+                    },
+                    "serialization": {
+                      "const": "nested-tmj-text-with-tiled-default-elision",
+                      "type": "string"
+                    },
+                    "updates": {
+                      "const": "common-fields-dimensions-and-partial-flat-text-fields",
+                      "type": "string"
+                    },
+                    "verticalAlignment": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "default": {
+                          "const": "top",
+                          "type": "string"
+                        },
+                        "values": {
+                          "items": [
+                            {
+                              "const": "top",
+                              "type": "string"
+                            },
+                            {
+                              "const": "center",
+                              "type": "string"
+                            },
+                            {
+                              "const": "bottom",
+                              "type": "string"
+                            }
+                          ],
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "values",
+                        "default"
+                      ],
+                      "type": "object"
+                    },
+                    "wireLayout": {
+                      "const": "flat-on-create-object-and-update-patch",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "wireLayout",
+                    "fields",
+                    "dimensions",
+                    "content",
+                    "fontFamily",
+                    "pixelSize",
+                    "color",
+                    "horizontalAlignment",
+                    "verticalAlignment",
+                    "booleanDefaults",
+                    "payloadBudget",
+                    "updates",
+                    "serialization"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
@@ -9362,6 +9747,7 @@ Output schema:
                 "ellipseAndCapsuleDimensions",
                 "polygonAndPolylinePoints",
                 "polygonAndPolylineUpdates",
+                "textObject",
                 "sourcePatch"
               ],
               "type": "object"
@@ -9487,6 +9873,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_get_object",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_validate",
                       "type": "string"
                     },
@@ -9581,6 +9971,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_list_objects",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_get_object",
                       "type": "string"
                     },
                     {
@@ -11004,6 +11398,1016 @@ Output schema:
                 "details": {
                   "additionalProperties": {
                     "$ref": "#/definitions/__schema1"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_get_object`
+
+Availability: `core`
+
+Returns one supported object with complete shape-specific geometry and effective text styling. Asset discovery may update project-internal safety metadata.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Read local Tiled project data"
+}
+```
+
+Example purpose: 在修改/删除 path 对象或覆盖 text 内容前，读取完整有界语义投影和当前 revisions。
+
+```json
+{
+  "arguments": {
+    "mapPath": "maps/example.tmj",
+    "objectId": 7
+  },
+  "name": "tiled_get_object"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "objectId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "mapPath",
+    "objectId"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "dependencyRevisions": {
+              "additionalProperties": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "propertyNames": {
+                "pattern": "^asset_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "object": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "height": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "rectangle",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "width": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "point",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "height": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "ellipse",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "width": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "height": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "capsule",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "width": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "points": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "maximum": 1000000000,
+                            "minimum": -1000000000,
+                            "type": "number"
+                          },
+                          "y": {
+                            "maximum": 1000000000,
+                            "minimum": -1000000000,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 256,
+                      "minItems": 3,
+                      "type": "array"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "polygon",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "points"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "points": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "maximum": 1000000000,
+                            "minimum": -1000000000,
+                            "type": "number"
+                          },
+                          "y": {
+                            "maximum": 1000000000,
+                            "minimum": -1000000000,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 256,
+                      "minItems": 2,
+                      "type": "array"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "polyline",
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "points"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bold": {
+                      "type": "boolean"
+                    },
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "color": {
+                      "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                      "type": "string"
+                    },
+                    "fontFamily": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "height": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "horizontalAlignment": {
+                      "enum": [
+                        "left",
+                        "center",
+                        "right",
+                        "justify"
+                      ],
+                      "type": "string"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "italic": {
+                      "type": "boolean"
+                    },
+                    "kerning": {
+                      "type": "boolean"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "pixelSize": {
+                      "maximum": 999,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    "strikeout": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "maxLength": 8192,
+                      "type": "string"
+                    },
+                    "underline": {
+                      "type": "boolean"
+                    },
+                    "verticalAlignment": {
+                      "enum": [
+                        "top",
+                        "center",
+                        "bottom"
+                      ],
+                      "type": "string"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "width": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "wrap": {
+                      "type": "boolean"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "shape",
+                    "width",
+                    "height",
+                    "text",
+                    "fontFamily",
+                    "pixelSize",
+                    "wrap",
+                    "color",
+                    "bold",
+                    "italic",
+                    "underline",
+                    "strikeout",
+                    "kerning",
+                    "horizontalAlignment",
+                    "verticalAlignment"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "revision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mapPath",
+            "revision",
+            "dependencyRevisions",
+            "object"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
                   },
                   "propertyNames": {
                     "type": "string"
@@ -15434,7 +16838,7 @@ Annotations:
 }
 ```
 
-Example purpose: 在同一待批准 change set 中预览严格 map 根属性编辑及使用 object-local points 的 polygon/polyline 创建。
+Example purpose: 在同一待批准 change set 中预览严格 map 根属性编辑，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。
 
 ```json
 {
@@ -15496,6 +16900,25 @@ Example purpose: 在同一待批准 change set 中预览严格 map 根属性编�
           "shape": "polyline",
           "x": 48,
           "y": 80
+        },
+        "type": "createObject"
+      },
+      {
+        "layerId": 2,
+        "object": {
+          "bold": true,
+          "color": "#ffd166",
+          "fontFamily": "sans-serif",
+          "height": 48,
+          "horizontalAlignment": "center",
+          "name": "Gate hint",
+          "pixelSize": 18,
+          "shape": "text",
+          "text": "Gate opens\\nafter all switches",
+          "width": 192,
+          "wrap": true,
+          "x": 96,
+          "y": 48
         },
         "type": "createObject"
       }
@@ -16660,6 +18083,116 @@ Input schema:
                       "points"
                     ],
                     "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "bold": {
+                        "type": "boolean"
+                      },
+                      "className": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "color": {
+                        "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                        "type": "string"
+                      },
+                      "fontFamily": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "height": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "horizontalAlignment": {
+                        "enum": [
+                          "left",
+                          "center",
+                          "right",
+                          "justify"
+                        ],
+                        "type": "string"
+                      },
+                      "italic": {
+                        "type": "boolean"
+                      },
+                      "kerning": {
+                        "type": "boolean"
+                      },
+                      "name": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "opacity": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "pixelSize": {
+                        "maximum": 999,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "rotation": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "shape": {
+                        "const": "text",
+                        "type": "string"
+                      },
+                      "strikeout": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "maxLength": 8192,
+                        "type": "string"
+                      },
+                      "underline": {
+                        "type": "boolean"
+                      },
+                      "verticalAlignment": {
+                        "enum": [
+                          "top",
+                          "center",
+                          "bottom"
+                        ],
+                        "type": "string"
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "width": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "wrap": {
+                        "type": "boolean"
+                      },
+                      "x": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "y": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "x",
+                      "y",
+                      "text"
+                    ],
+                    "type": "object"
                   }
                 ]
               },
@@ -16686,14 +18219,41 @@ Input schema:
               "patch": {
                 "additionalProperties": false,
                 "properties": {
+                  "bold": {
+                    "type": "boolean"
+                  },
                   "className": {
                     "maxLength": 1024,
+                    "type": "string"
+                  },
+                  "color": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  },
+                  "fontFamily": {
+                    "maxLength": 512,
+                    "minLength": 1,
                     "type": "string"
                   },
                   "height": {
                     "maximum": 1000000000,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "horizontalAlignment": {
+                    "enum": [
+                      "left",
+                      "center",
+                      "right",
+                      "justify"
+                    ],
+                    "type": "string"
+                  },
+                  "italic": {
+                    "type": "boolean"
+                  },
+                  "kerning": {
+                    "type": "boolean"
                   },
                   "name": {
                     "maxLength": 1024,
@@ -16704,10 +18264,33 @@ Input schema:
                     "minimum": 0,
                     "type": "number"
                   },
+                  "pixelSize": {
+                    "maximum": 999,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "rotation": {
                     "maximum": 1000000000,
                     "minimum": -1000000000,
                     "type": "number"
+                  },
+                  "strikeout": {
+                    "type": "boolean"
+                  },
+                  "text": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "underline": {
+                    "type": "boolean"
+                  },
+                  "verticalAlignment": {
+                    "enum": [
+                      "top",
+                      "center",
+                      "bottom"
+                    ],
+                    "type": "string"
                   },
                   "visible": {
                     "type": "boolean"
@@ -16716,6 +18299,9 @@ Input schema:
                     "maximum": 1000000000,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "wrap": {
+                    "type": "boolean"
                   },
                   "x": {
                     "maximum": 1000000000,
@@ -18315,6 +19901,141 @@ Output schema:
                           "object"
                         ],
                         "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "bold": {
+                                "type": "boolean"
+                              },
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "color": {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              "fontFamily": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "horizontalAlignment": {
+                                "enum": [
+                                  "left",
+                                  "center",
+                                  "right",
+                                  "justify"
+                                ],
+                                "type": "string"
+                              },
+                              "italic": {
+                                "type": "boolean"
+                              },
+                              "kerning": {
+                                "type": "boolean"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "pixelSize": {
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "strikeout": {
+                                "type": "boolean"
+                              },
+                              "text": {
+                                "maxLength": 8192,
+                                "type": "string"
+                              },
+                              "underline": {
+                                "type": "boolean"
+                              },
+                              "verticalAlignment": {
+                                "enum": [
+                                  "top",
+                                  "center",
+                                  "bottom"
+                                ],
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "wrap": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "text"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
                       }
                     ]
                   },
@@ -18332,7 +20053,19 @@ Output schema:
                             "className",
                             "rotation",
                             "visible",
-                            "opacity"
+                            "opacity",
+                            "text",
+                            "fontFamily",
+                            "pixelSize",
+                            "wrap",
+                            "color",
+                            "bold",
+                            "italic",
+                            "underline",
+                            "strikeout",
+                            "kerning",
+                            "horizontalAlignment",
+                            "verticalAlignment"
                           ],
                           "type": "string"
                         },
@@ -18344,8 +20077,20 @@ Output schema:
                       "patch": {
                         "additionalProperties": false,
                         "properties": {
+                          "bold": {
+                            "type": "boolean"
+                          },
                           "className": {
                             "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "color": {
+                            "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                            "type": "string"
+                          },
+                          "fontFamily": {
+                            "maxLength": 512,
+                            "minLength": 1,
                             "type": "string"
                           },
                           "height": {
@@ -18354,6 +20099,21 @@ Output schema:
                                 "$ref": "#/definitions/ChangeSetObjectExtent"
                               }
                             ]
+                          },
+                          "horizontalAlignment": {
+                            "enum": [
+                              "left",
+                              "center",
+                              "right",
+                              "justify"
+                            ],
+                            "type": "string"
+                          },
+                          "italic": {
+                            "type": "boolean"
+                          },
+                          "kerning": {
+                            "type": "boolean"
                           },
                           "name": {
                             "maxLength": 1024,
@@ -18364,12 +20124,35 @@ Output schema:
                             "minimum": 0,
                             "type": "number"
                           },
+                          "pixelSize": {
+                            "maximum": 999,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
                           "rotation": {
                             "allOf": [
                               {
                                 "$ref": "#/definitions/ChangeSetObjectCoordinate"
                               }
                             ]
+                          },
+                          "strikeout": {
+                            "type": "boolean"
+                          },
+                          "text": {
+                            "maxLength": 8192,
+                            "type": "string"
+                          },
+                          "underline": {
+                            "type": "boolean"
+                          },
+                          "verticalAlignment": {
+                            "enum": [
+                              "top",
+                              "center",
+                              "bottom"
+                            ],
+                            "type": "string"
                           },
                           "visible": {
                             "type": "boolean"
@@ -18380,6 +20163,9 @@ Output schema:
                                 "$ref": "#/definitions/ChangeSetObjectExtent"
                               }
                             ]
+                          },
+                          "wrap": {
+                            "type": "boolean"
                           },
                           "x": {
                             "allOf": [

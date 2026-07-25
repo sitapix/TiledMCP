@@ -64,6 +64,10 @@ import {
   GID_HEX_120,
 } from "./maps/gid.js";
 import {
+  DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
+  measureTextObjectPayloadBytes,
+} from "./maps/textObjects.js";
+import {
   MAX_CELL_WRITES,
   MAX_MAP_CLASS_NAME_CODE_POINTS,
   MAX_REMOVE_TILESET_GID_SCANS,
@@ -74,6 +78,9 @@ const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 256;
 export const DEFAULT_MAX_PENDING_CELL_WRITES = 200_000;
 export const DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS = 65_536;
+export {
+  DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
+} from "./maps/textObjects.js";
 const MAP_UPDATE_FIELDS = [
   "renderOrder",
   "backgroundColor",
@@ -136,6 +143,7 @@ export type ChangeSetApplyResult =
 interface ChangeSetEntry {
   id: string;
   plan: ChangeSetPlan;
+  pendingTextObjectPayloadBytes: number;
   createdAt: string;
   expiresAt: number;
   result?: ChangeSetApplyResult;
@@ -683,6 +691,8 @@ export class ChangeSetRegistry {
     private readonly maxPendingCellWrites = DEFAULT_MAX_PENDING_CELL_WRITES,
     private readonly maxPendingObjectShapePoints =
       DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
+    private readonly maxPendingTextObjectPayloadBytes =
+      DEFAULT_MAX_PENDING_TEXT_OBJECT_PAYLOAD_BYTES,
   ) {}
 
   put(plan: ChangeSetPlan): ChangeSetPreview {
@@ -739,11 +749,39 @@ export class ChangeSetRegistry {
         },
       );
     }
+    const pendingTextObjectPayloadBytes =
+      pendingTextObjectPayloadBytesForEntries(
+        this.entries.values(),
+      );
+    const requestedTextObjectPayloadBytes =
+      textObjectPayloadBytesForPlan(plan);
+    const totalTextObjectPayloadBytes =
+      addTextObjectPayloadBytes(
+        pendingTextObjectPayloadBytes,
+        requestedTextObjectPayloadBytes,
+      );
+    if (
+      totalTextObjectPayloadBytes >
+      this.maxPendingTextObjectPayloadBytes
+    ) {
+      throw new TiledMcpError(
+        "CHANGE_SET_LIMIT_EXCEEDED",
+        "Pending change sets exceed the in-memory text-object payload budget. Apply one or wait for expiry.",
+        {
+          limit:
+            this.maxPendingTextObjectPayloadBytes,
+          pendingTextObjectPayloadBytes,
+          requestedTextObjectPayloadBytes,
+        },
+      );
+    }
     const now = Date.now();
     const id = this.nextId();
     const entry: ChangeSetEntry = {
       id,
       plan: structuredClone(plan),
+      pendingTextObjectPayloadBytes:
+        requestedTextObjectPayloadBytes,
       createdAt: new Date(now).toISOString(),
       expiresAt: now + this.ttlMs,
     };
@@ -791,6 +829,7 @@ export class ChangeSetRegistry {
         const issuedResult = { ...result, changeSetId };
         entry.result = issuedResult;
         entry.plan = scrubAppliedPlan(entry.plan);
+        entry.pendingTextObjectPayloadBytes = 0;
         delete entry.inFlight;
         return issuedResult;
       })
@@ -818,6 +857,116 @@ export class ChangeSetRegistry {
     } while (this.entries.has(id));
     return id;
   }
+}
+
+function pendingTextObjectPayloadBytesForEntries(
+  entries: Iterable<ChangeSetEntry>,
+): number {
+  let total = 0;
+  for (const entry of entries) {
+    if (entry.result) {
+      continue;
+    }
+    total = addTextObjectPayloadBytes(
+      total,
+      entry.pendingTextObjectPayloadBytes,
+    );
+  }
+  return total;
+}
+
+function textObjectPayloadBytesForPlan(
+  plan: ChangeSetPlan,
+): number {
+  if (plan.kind !== "mapEdit") {
+    return 0;
+  }
+  if (!Array.isArray(plan.operations)) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "A map edit plan contains malformed operations while measuring text-object payloads.",
+    );
+  }
+  let total = 0;
+  for (
+    let operationIndex = 0;
+    operationIndex < plan.operations.length;
+    operationIndex += 1
+  ) {
+    const operation = plan.operations[
+      operationIndex
+    ] as unknown;
+    if (!isChangeSetRecord(operation)) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "A map edit plan contains a malformed operation while measuring text-object payloads.",
+        { operationIndex },
+      );
+    }
+    let payload: Record<string, unknown> | undefined;
+    if (operation.type === "createObject") {
+      if (!isChangeSetRecord(operation.object)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "A createObject operation contains a malformed object draft.",
+          { operationIndex },
+        );
+      }
+      if (operation.object.shape === "text") {
+        payload = operation.object;
+      }
+    } else if (operation.type === "updateObject") {
+      if (!isChangeSetRecord(operation.patch)) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "An updateObject operation contains a malformed patch.",
+          { operationIndex },
+        );
+      }
+      payload = operation.patch;
+    }
+    if (payload === undefined) {
+      continue;
+    }
+    let measuredBytes: number;
+    try {
+      measuredBytes =
+        measureTextObjectPayloadBytes(payload);
+    } catch {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "A map edit operation contains a malformed text-object payload.",
+        {
+          operationIndex,
+          operationType: operation.type,
+        },
+      );
+    }
+    total = addTextObjectPayloadBytes(
+      total,
+      measuredBytes,
+    );
+  }
+  return total;
+}
+
+function addTextObjectPayloadBytes(
+  total: number,
+  next: number,
+): number {
+  if (
+    !Number.isSafeInteger(total) ||
+    total < 0 ||
+    !Number.isSafeInteger(next) ||
+    next < 0 ||
+    !Number.isSafeInteger(total + next)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "A map edit plan contains too many text-object payload bytes to count safely.",
+    );
+  }
+  return total + next;
 }
 
 function pendingObjectShapePointCount(

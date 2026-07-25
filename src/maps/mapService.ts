@@ -83,6 +83,18 @@ import {
   searchTilesetDocument,
   type TileFindQuery,
 } from "./tileSearch.js";
+import {
+  applyTextObjectFieldsPatch,
+  hasTextObjectFields,
+  MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+  measureTextObjectPayloadBytes,
+  parseTiledTextObjectData,
+  serializeTiledTextObjectData,
+  TEXT_OBJECT_FIELDS,
+  TextObjectValidationError,
+  textObjectFieldsFromFlatInput,
+  type EffectiveTextObjectFields,
+} from "./textObjects.js";
 import type {
   CreatableLayerType,
   Diagnostic,
@@ -109,7 +121,7 @@ const MAX_OBJECT_MUTATIONS = 10_000;
 const MAX_PATCHED_SUBTREES = 128;
 const MAX_OBJECT_LIST_LIMIT = 10_000;
 const MAX_OBJECT_STRING_LENGTH = 1_024;
-const MAX_OBJECT_DISPLAY_STRING_LENGTH = 128;
+export const MAX_OBJECT_DISPLAY_STRING_LENGTH = 128;
 const MAX_LAYER_OPERATION_ID_SAMPLE = 32;
 const MAX_ABSOLUTE_OBJECT_NUMBER = 1_000_000_000;
 export const MIN_POLYGON_OBJECT_POINTS = 3;
@@ -379,7 +391,8 @@ type BasicEditableObjectShape =
   | "ellipse"
   | "capsule"
   | "polygon"
-  | "polyline";
+  | "polyline"
+  | "text";
 
 export interface CreateMapInput {
   mapPath: string;
@@ -403,6 +416,11 @@ export interface ListObjectsInput {
   mapPath: string;
   layerId?: number;
   limit?: number;
+}
+
+export interface GetObjectInput {
+  mapPath: string;
+  objectId: number;
 }
 
 export interface RenderTilesetSheetInput {
@@ -1338,6 +1356,34 @@ export class MapService {
       total: locations.length,
       truncated: locations.length > limit,
       objects: locations.slice(0, limit).map(summarizeObjectLocation),
+    };
+  }
+
+  async getObject(input: GetObjectInput): Promise<Record<string, unknown>> {
+    assertPositiveInteger(input.objectId, "objectId");
+    const context = await this.loadEditableContext(input.mapPath);
+    const location = findObjectLocation(
+      buildObjectEditIndex(
+        context.loaded.document,
+        context.loaded.path,
+      ),
+      input.objectId,
+      context.loaded.path,
+    );
+    const shape = assertBasicEditableObject(
+      location.object,
+      input.objectId,
+      context.loaded.path,
+    );
+    return {
+      mapPath: context.loaded.path,
+      revision: context.loaded.revision,
+      dependencyRevisions: context.dependencyRevisions,
+      object: describeEditableObject(
+        location,
+        shape,
+        context.loaded.path,
+      ),
     };
   }
 
@@ -3465,6 +3511,7 @@ function validateAndSummarizeOperations(
   let tileOperationScans = 0;
   let objectMutations = 0;
   let objectShapePoints = 0;
+  let textObjectPayloadBytes = 0;
   const affectedLayerIds = new Set<number>();
   const affectedTileLayerIds = new Set<number>();
   const affectedObjectLayerIds = new Set<number>();
@@ -4640,6 +4687,15 @@ function validateAndSummarizeOperations(
         `operations[${operationIndex}].object`,
         getObjectIndex(),
       );
+      textObjectPayloadBytes +=
+        measureTextObjectPayloadBytes(
+          operation.object as unknown as Readonly<
+            Record<string, unknown>
+          >,
+        );
+      assertTextObjectPayloadBudget(
+        textObjectPayloadBytes,
+      );
       if (
         operation.object.shape === "polygon" ||
         operation.object.shape === "polyline"
@@ -4680,6 +4736,15 @@ function validateAndSummarizeOperations(
         mapPath,
         `operations[${operationIndex}].patch`,
         getObjectIndex(),
+      );
+      textObjectPayloadBytes +=
+        measureTextObjectPayloadBytes(
+          operation.patch as Readonly<
+            Record<string, unknown>
+          >,
+        );
+      assertTextObjectPayloadBudget(
+        textObjectPayloadBytes,
       );
       affectedLayerIds.add(updated.layer.id);
       affectedObjectLayerIds.add(updated.layer.id);
@@ -8688,7 +8753,8 @@ function createBasicObject(
   const hasDimensions =
     draft.shape === "rectangle" ||
     draft.shape === "ellipse" ||
-    draft.shape === "capsule";
+    draft.shape === "capsule" ||
+    draft.shape === "text";
   const object: JsonObject = {
     height: hasDimensions ? (draft.height ?? 0) : 0,
     id: nextObjectId,
@@ -8705,6 +8771,14 @@ function createBasicObject(
       x: point.x,
       y: point.y,
     }));
+  } else if (draft.shape === "text") {
+    object.text = serializeTiledTextObjectData(
+      textObjectFieldsFromFlatInput(
+        draft as unknown as Readonly<
+          Record<string, unknown>
+        >,
+      ),
+    );
   } else if (draft.shape !== "rectangle") {
     object[draft.shape] = true;
   }
@@ -8731,6 +8805,9 @@ function updateBasicObject(
     throw new TiledMcpError("INVALID_ARGUMENT", `${context} must be an object.`);
   }
   const keys = Object.keys(patch);
+  const textObjectFields = new Set<string>(
+    TEXT_OBJECT_FIELDS,
+  );
   const allowedKeys = new Set([
     "x",
     "y",
@@ -8741,6 +8818,7 @@ function updateBasicObject(
     "rotation",
     "visible",
     "opacity",
+    ...TEXT_OBJECT_FIELDS,
   ]);
   if (keys.length === 0) {
     throw new TiledMcpError(
@@ -8758,6 +8836,16 @@ function updateBasicObject(
 
   const location = findObjectLocation(index, objectId, mapPath);
   const shape = assertBasicEditableObject(location.object, objectId, mapPath);
+  const hasTextPatch = hasTextObjectFields(
+    patch as Readonly<Record<string, unknown>>,
+  );
+  if (hasTextPatch && shape !== "text") {
+    throw new TiledMcpError(
+      "OBJECT_SHAPE_MISMATCH",
+      "Text-specific fields can be updated only on text objects.",
+      { path: mapPath, objectId, shape },
+    );
+  }
   if (
     shape === "point" &&
     (Object.prototype.hasOwnProperty.call(patch, "width") ||
@@ -8782,9 +8870,18 @@ function updateBasicObject(
   }
   assertObjectPatch(patch, context);
 
+  if (hasTextPatch) {
+    location.object.text =
+      applyTextObjectFieldsPatch(
+        location.object.text,
+        patch as Readonly<Record<string, unknown>>,
+      );
+  }
   for (const key of keys) {
     const value = patch[key as keyof typeof patch];
-    if (key === "className") {
+    if (textObjectFields.has(key)) {
+      continue;
+    } else if (key === "className") {
       location.object.type = value as string;
     } else {
       location.object[key] = value as JsonValue;
@@ -8980,15 +9077,22 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     draft.shape !== "ellipse" &&
     draft.shape !== "capsule" &&
     draft.shape !== "polygon" &&
-    draft.shape !== "polyline"
+    draft.shape !== "polyline" &&
+    draft.shape !== "text"
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context}.shape must be rectangle, point, ellipse, capsule, polygon or polyline.`,
+      `${context}.shape must be rectangle, point, ellipse, capsule, polygon, polyline or text.`,
     );
   }
   if (draft.shape === "polygon" || draft.shape === "polyline") {
     commonKeys.add("points");
+  } else if (draft.shape === "text") {
+    commonKeys.add("width");
+    commonKeys.add("height");
+    for (const field of TEXT_OBJECT_FIELDS) {
+      commonKeys.add(field);
+    }
   } else if (draft.shape !== "point") {
     commonKeys.add("width");
     commonKeys.add("height");
@@ -9032,6 +9136,15 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     }
   }
   assertOptionalObjectFields(draft, context);
+  if (draft.shape === "text") {
+    assertTextObjectFlatInput(
+      draft as unknown as Readonly<
+        Record<string, unknown>
+      >,
+      context,
+      true,
+    );
+  }
 }
 
 function assertObjectPathPoints(
@@ -9143,6 +9256,17 @@ function assertObjectPatch(
     assertObjectSize(patch.height, `${context}.height`);
   }
   assertOptionalObjectFields(patch, context);
+  if (
+    hasTextObjectFields(
+      patch as Readonly<Record<string, unknown>>,
+    )
+  ) {
+    assertTextObjectFlatInput(
+      patch as Readonly<Record<string, unknown>>,
+      context,
+      false,
+    );
+  }
 }
 
 function assertOptionalObjectFields(
@@ -9240,6 +9364,71 @@ function assertObjectSize(value: unknown, context: string): void {
   }
 }
 
+function assertTextObjectFlatInput(
+  value: Readonly<Record<string, unknown>>,
+  context: string,
+  requireText: boolean,
+): void {
+  try {
+    if (requireText) {
+      textObjectFieldsFromFlatInput(value);
+    } else {
+      measureTextObjectPayloadBytes(value);
+    }
+  } catch (error) {
+    if (error instanceof TextObjectValidationError) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.${error.field}: ${error.message}`,
+        { field: error.field },
+      );
+    }
+    throw error;
+  }
+}
+
+function assertStoredTextObjectData(
+  value: unknown,
+  objectId: number,
+  mapPath: string,
+): EffectiveTextObjectFields {
+  try {
+    return parseTiledTextObjectData(value);
+  } catch (error) {
+    if (error instanceof TextObjectValidationError) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `Object ${objectId}.text is not in the bounded editable text profile: ${error.message}`,
+        {
+          path: mapPath,
+          objectId,
+          field: error.field,
+        },
+      );
+    }
+    throw error;
+  }
+}
+
+function assertTextObjectPayloadBudget(
+  actual: number,
+): void {
+  if (
+    actual >
+    MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `A change set may contain at most ${MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET} canonical UTF-8 bytes of text-object fields.`,
+      {
+        actual,
+        limit:
+          MAX_TEXT_OBJECT_FIELDS_BYTES_PER_CHANGE_SET,
+      },
+    );
+  }
+}
+
 function assertBasicEditableObject(
   object: JsonObject,
   objectId: number,
@@ -9248,7 +9437,6 @@ function assertBasicEditableObject(
   const unsupportedKeys = [
     "template",
     "gid",
-    "text",
   ];
   const unsupported = unsupportedKeys.find((key) =>
     Object.prototype.hasOwnProperty.call(object, key),
@@ -9256,7 +9444,7 @@ function assertBasicEditableObject(
   if (unsupported !== undefined) {
     throw new TiledMcpError(
       "UNSUPPORTED_OBJECT_PROFILE",
-      `Object ${objectId} uses ${unsupported}, which is outside rectangle/point/ellipse/capsule/polygon/polyline editing.`,
+      `Object ${objectId} uses ${unsupported}, which is outside bounded object editing.`,
       { path: mapPath, objectId, feature: unsupported },
     );
   }
@@ -9266,6 +9454,7 @@ function assertBasicEditableObject(
     "capsule",
     "polygon",
     "polyline",
+    "text",
   ] as const;
   const presentShapeMarkers =
     shapeMarkers.filter((marker) =>
@@ -9275,7 +9464,13 @@ function assertBasicEditableObject(
       ),
     );
   for (const marker of presentShapeMarkers) {
-    if (marker === "polygon" || marker === "polyline") {
+    if (marker === "text") {
+      assertStoredTextObjectData(
+        object.text,
+        objectId,
+        mapPath,
+      );
+    } else if (marker === "polygon" || marker === "polyline") {
       assertObjectPathPoints(
         object[marker],
         marker,
@@ -9303,8 +9498,18 @@ function assertBasicEditableObject(
   }
   const shape =
     presentShapeMarkers[0] ?? "rectangle";
-  assertObjectNumber(object.x, `object ${objectId}.x`);
-  assertObjectNumber(object.y, `object ${objectId}.y`);
+  assertStoredObjectNumber(
+    object.x,
+    `object ${objectId}.x`,
+    mapPath,
+    objectId,
+  );
+  assertStoredObjectNumber(
+    object.y,
+    `object ${objectId}.y`,
+    mapPath,
+    objectId,
+  );
   if (shape === "polygon" || shape === "polyline") {
     for (const field of ["width", "height"] as const) {
       if (
@@ -9324,7 +9529,8 @@ function assertBasicEditableObject(
   } else {
     const dimensionsMayBeOmitted =
       shape === "ellipse" ||
-      shape === "capsule";
+      shape === "capsule" ||
+      shape === "text";
     if (
       !dimensionsMayBeOmitted ||
       Object.prototype.hasOwnProperty.call(
@@ -9332,9 +9538,11 @@ function assertBasicEditableObject(
         "width",
       )
     ) {
-      assertObjectSize(
+      assertStoredObjectSize(
         object.width,
         `object ${objectId}.width`,
+        mapPath,
+        objectId,
       );
     }
     if (
@@ -9344,14 +9552,21 @@ function assertBasicEditableObject(
         "height",
       )
     ) {
-      assertObjectSize(
+      assertStoredObjectSize(
         object.height,
         `object ${objectId}.height`,
+        mapPath,
+        objectId,
       );
     }
   }
   if (object.rotation !== undefined) {
-    assertObjectNumber(object.rotation, `object ${objectId}.rotation`);
+    assertStoredObjectNumber(
+      object.rotation,
+      `object ${objectId}.rotation`,
+      mapPath,
+      objectId,
+    );
   }
   if (object.name !== undefined && typeof object.name !== "string") {
     throw new TiledMcpError(
@@ -9388,6 +9603,46 @@ function assertBasicEditableObject(
     );
   }
   return shape;
+}
+
+function assertStoredObjectNumber(
+  value: unknown,
+  context: string,
+  mapPath: string,
+  objectId: number,
+): asserts value is number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    Math.abs(value) > MAX_ABSOLUTE_OBJECT_NUMBER
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} must be a finite number between -${MAX_ABSOLUTE_OBJECT_NUMBER} and ${MAX_ABSOLUTE_OBJECT_NUMBER}.`,
+      { path: mapPath, objectId },
+    );
+  }
+}
+
+function assertStoredObjectSize(
+  value: unknown,
+  context: string,
+  mapPath: string,
+  objectId: number,
+): asserts value is number {
+  assertStoredObjectNumber(
+    value,
+    context,
+    mapPath,
+    objectId,
+  );
+  if (value < 0) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} must not be negative.`,
+      { path: mapPath, objectId },
+    );
+  }
 }
 
 function assertStoredPathDimension(
@@ -9442,6 +9697,87 @@ function summarizeObjectLocation(
         ? location.object.opacity
         : 1,
   };
+}
+
+function describeEditableObject(
+  location: ObjectLocation,
+  shape: BasicEditableObjectShape,
+  mapPath: string,
+): Record<string, unknown> {
+  const objectId = expectInteger(
+    location.object.id,
+    `${mapPath} object id`,
+  );
+  const name = boundedDisplayString(location.object.name);
+  const className = boundedDisplayString(location.object.type);
+  const layerName = boundedDisplayString(location.layer.name);
+  const common = {
+    id: objectId,
+    layerId: location.layer.id,
+    layerName: layerName.value,
+    ...(layerName.truncated
+      ? { layerNameTruncated: true }
+      : {}),
+    name: name.value,
+    ...(name.truncated ? { nameTruncated: true } : {}),
+    className: className.value,
+    ...(className.truncated
+      ? { classNameTruncated: true }
+      : {}),
+    shape,
+    x: location.object.x as number,
+    y: location.object.y as number,
+    rotation: displayNumber(location.object.rotation, 0),
+    visible: location.object.visible !== false,
+    opacity:
+      typeof location.object.opacity === "number"
+        ? location.object.opacity
+        : 1,
+  };
+
+  if (
+    shape === "rectangle" ||
+    shape === "ellipse" ||
+    shape === "capsule"
+  ) {
+    return {
+      ...common,
+      width: displayNumber(location.object.width, 0),
+      height: displayNumber(location.object.height, 0),
+    };
+  }
+  if (shape === "polygon" || shape === "polyline") {
+    return {
+      ...common,
+      points: expectArray(
+        location.object[shape],
+        `object ${objectId}.${shape}`,
+      ).map((value, pointIndex) => {
+        const point = expectObject(
+          value,
+          `object ${objectId}.${shape}[${pointIndex}]`,
+        );
+        return {
+          x: point.x as number,
+          y: point.y as number,
+        };
+      }),
+    };
+  }
+  if (shape === "text") {
+    const text = assertStoredTextObjectData(
+      location.object.text,
+      objectId,
+      mapPath,
+    );
+    return {
+      ...common,
+      width: displayNumber(location.object.width, 0),
+      height: displayNumber(location.object.height, 0),
+      ...text,
+    };
+  }
+  return common;
 }
 
 function boundedDisplayString(value: JsonValue | undefined): {

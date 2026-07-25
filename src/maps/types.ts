@@ -1,4 +1,8 @@
 import type { TileTransform } from "./gid.js";
+import type {
+  TextObjectHorizontalAlignment,
+  TextObjectVerticalAlignment,
+} from "./textObjects.js";
 
 export interface TileRef {
   tileset: {
@@ -134,6 +138,21 @@ export interface ObjectPathPoint {
   y: number;
 }
 
+export interface ObjectTextFieldsInput {
+  text: string;
+  fontFamily?: string;
+  pixelSize?: number;
+  wrap?: boolean;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikeout?: boolean;
+  kerning?: boolean;
+  horizontalAlignment?: TextObjectHorizontalAlignment;
+  verticalAlignment?: TextObjectVerticalAlignment;
+}
+
 export type ObjectDraft =
   | (ObjectCommonInput & {
       shape: "rectangle";
@@ -159,6 +178,17 @@ export type ObjectDraft =
        * first point unless that duplicate is intentional.
        */
       points: ObjectPathPoint[];
+    })
+  | (ObjectCommonInput &
+      ObjectTextFieldsInput & {
+        shape: "text";
+        /**
+         * Tiled stores a text object's wrapping/clipping box separately from
+         * its content. Omitted dimensions use the TMJ zero defaults; the
+         * service never derives them from platform-dependent font metrics.
+         */
+        width?: number;
+        height?: number;
     });
 
 export interface CreateObjectOperation {
@@ -180,7 +210,7 @@ export interface UpdateObjectOperation {
     rotation?: number;
     visible?: boolean;
     opacity?: number;
-  };
+  } & Partial<ObjectTextFieldsInput>;
 }
 
 export interface DeleteObjectsOperation {

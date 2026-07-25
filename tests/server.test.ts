@@ -68,6 +68,92 @@ const LAYER_ID = 7;
 const OBJECT_LAYER_ID = 8;
 const RECTANGLE_OBJECT_ID = 1;
 const POINT_OBJECT_ID = 2;
+const EXPECTED_TEXT_OBJECT_CAPABILITIES = {
+  wireLayout:
+    "flat-on-create-object-and-update-patch",
+  fields: [
+    "text",
+    "fontFamily",
+    "pixelSize",
+    "wrap",
+    "color",
+    "bold",
+    "italic",
+    "underline",
+    "strikeout",
+    "kerning",
+    "horizontalAlignment",
+    "verticalAlignment",
+  ],
+  dimensions:
+    "optional-nonnegative-default-zero",
+  content: {
+    field: "text",
+    required: true,
+    emptyAllowed: true,
+    lengthUnit: "unicode-code-points",
+    maximum: 4_096,
+    maximumUtf8Bytes: 16_384,
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [
+      "U+0009",
+      "U+000A",
+      "U+000D",
+    ],
+  },
+  fontFamily: {
+    minimum: 1,
+    maximum: 256,
+    maximumUtf8Bytes: 1_024,
+    lengthUnit: "unicode-code-points",
+    default: "sans-serif",
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [],
+  },
+  pixelSize: {
+    integer: true,
+    minimum: 1,
+    maximum: 999,
+    default: 16,
+  },
+  color: {
+    formats: ["#RRGGBB", "#AARRGGBB"],
+    default: "#000000",
+  },
+  horizontalAlignment: {
+    values: [
+      "left",
+      "center",
+      "right",
+      "justify",
+    ],
+    default: "left",
+  },
+  verticalAlignment: {
+    values: ["top", "center", "bottom"],
+    default: "top",
+  },
+  booleanDefaults: {
+    wrap: false,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikeout: false,
+    kerning: true,
+  },
+  payloadBudget: {
+    measure: "canonical-json-utf8-bytes",
+    scope:
+      "all-present-flat-text-fields-per-operation-summed",
+    maximumPerChangeSet: 262_144,
+  },
+  updates:
+    "common-fields-dimensions-and-partial-flat-text-fields",
+  serialization:
+    "nested-tmj-text-with-tiled-default-elision",
+} as const;
 const CORE_TOOLS = [
   "tiled_get_capabilities",
   "tiled_list_files",
@@ -85,6 +171,7 @@ const CORE_TOOLS = [
   "tiled_render_tileset_sheet",
   "tiled_render_preview",
   "tiled_list_objects",
+  "tiled_get_object",
   "tiled_validate",
   "tiled_analyze_usage",
   "tiled_create_map",
@@ -189,7 +276,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the twenty-three core tools with safety annotations", async () => {
+  it("advertises exactly the twenty-four core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -205,6 +292,7 @@ describe("createTiledMcpServer", () => {
       "tiled_render_tileset_sheet",
       "tiled_render_preview",
       "tiled_list_objects",
+      "tiled_get_object",
       "tiled_validate",
       "tiled_analyze_usage",
     ]) {
@@ -2640,6 +2728,8 @@ describe("createTiledMcpServer", () => {
           polylineClosure: string;
         };
         polygonAndPolylineUpdates: string;
+        textObject:
+          typeof EXPECTED_TEXT_OBJECT_CAPABILITIES;
         sourcePatch: string;
       };
       layerOperations: string[];
@@ -2825,6 +2915,7 @@ describe("createTiledMcpServer", () => {
         maxStampPatternEdge: number;
         maxStampPatternCells: number;
         maxPendingObjectShapePoints: number;
+        maxPendingTextObjectPayloadBytes: number;
         maxCreateTileLayerCells: number;
         maxLayerNameLength: number;
         maxNativePreviewBytes: number;
@@ -3230,6 +3321,7 @@ describe("createTiledMcpServer", () => {
           "capsule",
           "polygon",
           "polyline",
+          "text",
         ],
         shapeMutation: false,
         ellipseAndCapsuleDimensions:
@@ -3247,6 +3339,8 @@ describe("createTiledMcpServer", () => {
         },
         polygonAndPolylineUpdates:
           "common-fields-only-no-dimensions-or-points",
+        textObject:
+          EXPECTED_TEXT_OBJECT_CAPABILITIES,
         sourcePatch: "object-layer-objects-member-local",
       },
       layerOperations: [
@@ -3493,6 +3587,8 @@ describe("createTiledMcpServer", () => {
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
         maxPendingObjectShapePoints: 65_536,
+        maxPendingTextObjectPayloadBytes:
+          2_097_152,
         maxCreateTileLayerCells: 100_000,
         maxLayerNameLength: 1_024,
         maxNativePreviewBytes: 8 * 1024 * 1024,
@@ -3531,6 +3627,7 @@ describe("createTiledMcpServer", () => {
         "capsule",
         "polygon",
         "polyline",
+        "text",
       ],
       shapeMutation: false,
       ellipseAndCapsuleDimensions:
@@ -3548,6 +3645,8 @@ describe("createTiledMcpServer", () => {
       },
       polygonAndPolylineUpdates:
         "common-fields-only-no-dimensions-or-points",
+      textObject:
+        EXPECTED_TEXT_OBJECT_CAPABILITIES,
       sourcePatch: "object-layer-objects-member-local",
     });
     expect(
@@ -3666,6 +3765,8 @@ describe("createTiledMcpServer", () => {
 
     const objects = resultOf<{
       revision: string;
+      dependencyRevisions:
+        Record<string, string>;
       total: number;
       truncated: boolean;
       objects: Array<{ id: number; layerId: number }>;
@@ -3680,6 +3781,43 @@ describe("createTiledMcpServer", () => {
       total: 2,
       truncated: true,
       objects: [{ id: RECTANGLE_OBJECT_ID, layerId: OBJECT_LAYER_ID }],
+    });
+
+    const objectDetails = resultOf<{
+      mapPath: string;
+      revision: string;
+      dependencyRevisions:
+        Record<string, string>;
+      object: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_object",
+        arguments: {
+          mapPath: MAP_PATH,
+          objectId: RECTANGLE_OBJECT_ID,
+        },
+      }),
+    );
+    expect(objectDetails).toEqual({
+      mapPath: MAP_PATH,
+      revision: summary.revision,
+      dependencyRevisions:
+        objects.dependencyRevisions,
+      object: {
+        id: RECTANGLE_OBJECT_ID,
+        layerId: OBJECT_LAYER_ID,
+        layerName: "Objects",
+        name: "Crate",
+        className: "",
+        shape: "rectangle",
+        x: 4,
+        y: 5,
+        width: 8,
+        height: 9,
+        rotation: 0,
+        visible: true,
+        opacity: 1,
+      },
     });
 
     const validation = resultOf<{
@@ -9069,6 +9207,140 @@ describe("createTiledMcpServer", () => {
     });
   });
 
+  it("previews, applies and reads a text object with effective defaults", async () => {
+    const summary = resultOf<{
+      revision: string;
+      dependencyRevisions:
+        Record<string, string>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const preview = resultOf<{
+      changeSetId: string;
+      expectedRevision: string;
+      operations: Array<Record<string, unknown>>;
+      summary: {
+        createdObjectIds: number[];
+      };
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_edits",
+        arguments: {
+          mapPath: MAP_PATH,
+          expectedRevision: summary.revision,
+          expectedDependencyRevisions:
+            summary.dependencyRevisions,
+          operations: [
+            {
+              type: "createObject",
+              layerId: OBJECT_LAYER_ID,
+              object: {
+                shape: "text",
+                x: 12,
+                y: 14,
+                width: 80,
+                height: 24,
+                name: "Greeting",
+                className: "Label",
+                text: "Hello\t世界\n",
+              },
+            },
+          ],
+        },
+      }),
+    );
+    expect(preview).toMatchObject({
+      expectedRevision: summary.revision,
+      operations: [
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          shape: "text",
+          object: {
+            shape: "text",
+            x: 12,
+            y: 14,
+            width: 80,
+            height: 24,
+            name: "Greeting",
+            className: "Label",
+            text: "Hello\t世界\n",
+          },
+        },
+      ],
+      summary: {
+        createdObjectIds: [3],
+      },
+    });
+
+    const applied = resultOf<{
+      revision: string;
+      changed: boolean;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      }),
+    );
+    expect(applied.changed).toBe(true);
+
+    const details = resultOf<{
+      mapPath: string;
+      revision: string;
+      dependencyRevisions:
+        Record<string, string>;
+      object: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_object",
+        arguments: {
+          mapPath: MAP_PATH,
+          objectId: 3,
+        },
+      }),
+    );
+    expect(details).toEqual({
+      mapPath: MAP_PATH,
+      revision: applied.revision,
+      dependencyRevisions:
+        summary.dependencyRevisions,
+      object: {
+        id: 3,
+        layerId: OBJECT_LAYER_ID,
+        layerName: "Objects",
+        name: "Greeting",
+        className: "Label",
+        shape: "text",
+        x: 12,
+        y: 14,
+        width: 80,
+        height: 24,
+        rotation: 0,
+        visible: true,
+        opacity: 1,
+        text: "Hello\t世界\n",
+        fontFamily: "sans-serif",
+        pixelSize: 16,
+        wrap: false,
+        color: "#000000",
+        bold: false,
+        italic: false,
+        underline: false,
+        strikeout: false,
+        kerning: true,
+        horizontalAlignment: "left",
+        verticalAlignment: "top",
+      },
+    });
+  });
+
   it("rejects invalid object shapes, empty updates and duplicate deletion IDs in the strict schema", async () => {
     const summary = resultOf<{
       revision: string;
@@ -9228,6 +9500,69 @@ describe("createTiledMcpServer", () => {
           ],
         },
       },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+          text: "\ud800",
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+          text: "bad\u0000text",
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+          text: "hello",
+          fontFamily: "bad\nfamily",
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+          text: "hello",
+          pixelSize: 1_000,
+        },
+      },
+      {
+        type: "createObject",
+        layerId: OBJECT_LAYER_ID,
+        object: {
+          shape: "text",
+          x: 1,
+          y: 2,
+          text: {
+            text: "nested TMJ is not wire format",
+          },
+        },
+      },
     ]) {
       const response = asToolResponse(
         await harness.client.callTool({
@@ -9285,6 +9620,46 @@ describe("createTiledMcpServer", () => {
     ).toBeUndefined();
     expect(
       aggregateOverflow.content[0],
+    ).toMatchObject({
+      type: "text",
+      text: expect.stringContaining(
+        "Input validation error",
+      ),
+    });
+
+    const textPayloadOverflow =
+      asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_preview_edits",
+          arguments: {
+            mapPath: MAP_PATH,
+            expectedRevision: summary.revision,
+            expectedDependencyRevisions:
+              summary.dependencyRevisions,
+            operations: Array.from(
+              { length: 17 },
+              (_, index) => ({
+                type: "createObject",
+                layerId: OBJECT_LAYER_ID,
+                object: {
+                  shape: "text",
+                  x: index,
+                  y: 0,
+                  text: "😀".repeat(4_096),
+                },
+              }),
+            ),
+          },
+        }),
+      );
+    expect(textPayloadOverflow.isError).toBe(
+      true,
+    );
+    expect(
+      textPayloadOverflow.structuredContent,
+    ).toBeUndefined();
+    expect(
+      textPayloadOverflow.content[0],
     ).toMatchObject({
       type: "text",
       text: expect.stringContaining(

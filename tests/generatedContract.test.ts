@@ -48,6 +48,92 @@ const BOOLEAN_ANNOTATION_KEYS = [
   "openWorldHint",
   "readOnlyHint",
 ] as const;
+const EXPECTED_TEXT_OBJECT_CAPABILITIES = {
+  wireLayout:
+    "flat-on-create-object-and-update-patch",
+  fields: [
+    "text",
+    "fontFamily",
+    "pixelSize",
+    "wrap",
+    "color",
+    "bold",
+    "italic",
+    "underline",
+    "strikeout",
+    "kerning",
+    "horizontalAlignment",
+    "verticalAlignment",
+  ],
+  dimensions:
+    "optional-nonnegative-default-zero",
+  content: {
+    field: "text",
+    required: true,
+    emptyAllowed: true,
+    lengthUnit: "unicode-code-points",
+    maximum: 4_096,
+    maximumUtf8Bytes: 16_384,
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [
+      "U+0009",
+      "U+000A",
+      "U+000D",
+    ],
+  },
+  fontFamily: {
+    minimum: 1,
+    maximum: 256,
+    maximumUtf8Bytes: 1_024,
+    lengthUnit: "unicode-code-points",
+    default: "sans-serif",
+    unicode:
+      "well-formed-no-unpaired-surrogates",
+    allowedControlCodePoints: [],
+  },
+  pixelSize: {
+    integer: true,
+    minimum: 1,
+    maximum: 999,
+    default: 16,
+  },
+  color: {
+    formats: ["#RRGGBB", "#AARRGGBB"],
+    default: "#000000",
+  },
+  horizontalAlignment: {
+    values: [
+      "left",
+      "center",
+      "right",
+      "justify",
+    ],
+    default: "left",
+  },
+  verticalAlignment: {
+    values: ["top", "center", "bottom"],
+    default: "top",
+  },
+  booleanDefaults: {
+    wrap: false,
+    bold: false,
+    italic: false,
+    underline: false,
+    strikeout: false,
+    kerning: true,
+  },
+  payloadBudget: {
+    measure: "canonical-json-utf8-bytes",
+    scope:
+      "all-present-flat-text-fields-per-operation-summed",
+    maximumPerChangeSet: 262_144,
+  },
+  updates:
+    "common-fields-dimensions-and-partial-flat-text-fields",
+  serialization:
+    "nested-tmj-text-with-tiled-default-elision",
+} as const;
 
 describe("generated MCP contract", () => {
   let generated: GeneratedMcpContractArtifacts;
@@ -134,10 +220,10 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(23);
-    expect(fullTools).toHaveLength(24);
-    expect(new Set(coreTools).size).toBe(23);
-    expect(new Set(fullTools).size).toBe(24);
+    expect(coreTools).toHaveLength(24);
+    expect(fullTools).toHaveLength(25);
+    expect(new Set(coreTools).size).toBe(24);
+    expect(new Set(fullTools).size).toBe(25);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -160,8 +246,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(24);
-    expect(new Set(toolNames).size).toBe(24);
+    expect(toolDefinitions).toHaveLength(25);
+    expect(new Set(toolNames).size).toBe(25);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );
@@ -313,6 +399,13 @@ describe("generated MCP contract", () => {
         `${capabilitiesLabel} limits`,
       ).const,
     ).toBe(65_536);
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxPendingTextObjectPayloadBytes",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(2_097_152);
 
     const objectShapeCapabilitiesSchema =
       schemaProperty(
@@ -348,6 +441,15 @@ describe("generated MCP contract", () => {
     ).toBe(
       "common-fields-only-no-dimensions-or-points",
     );
+    expectExactLiteralSchema(
+      schemaProperty(
+        objectShapeCapabilitiesSchema,
+        "textObject",
+        `${capabilitiesLabel} objectShapeCapabilities`,
+      ),
+      EXPECTED_TEXT_OBJECT_CAPABILITIES,
+      `${capabilitiesLabel} text object capabilities`,
+    );
 
     const previewEditsIndex =
       toolNames.indexOf("tiled_preview_edits");
@@ -379,6 +481,37 @@ describe("generated MCP contract", () => {
         "polygon",
       ),
     ).toBe(2);
+    expect(
+      countExactConst(
+        previewEditsTool.inputSchema,
+        "text",
+      ),
+    ).toBe(1);
+    expect(
+      countExactConst(
+        previewEditsTool.outputSchema,
+        "text",
+      ),
+    ).toBe(2);
+
+    const getObjectIndex =
+      toolNames.indexOf("tiled_get_object");
+    expect(getObjectIndex).toBeGreaterThanOrEqual(
+      0,
+    );
+    const getObjectTool =
+      toolDefinitions[getObjectIndex];
+    if (getObjectTool === undefined) {
+      throw new Error(
+        "Missing tiled_get_object definition",
+      );
+    }
+    expect(
+      countExactConst(
+        getObjectTool.outputSchema,
+        "text",
+      ),
+    ).toBe(1);
     expect(
       countExactConst(
         previewEditsTool.outputSchema,
@@ -917,9 +1050,26 @@ function expectExactLiteralSchema(
     return;
   }
   if (Array.isArray(expected)) {
-    throw new Error(
-      `${label} does not support array literals`,
+    expect(schema.type, `${label}.type`).toBe(
+      "array",
     );
+    const items = asRecordArray(
+      schema.items,
+      `${label}.items`,
+    );
+    expect(items).toHaveLength(expected.length);
+    for (
+      let index = 0;
+      index < expected.length;
+      index += 1
+    ) {
+      expectExactLiteralSchema(
+        items[index] as Record<string, unknown>,
+        expected[index],
+        `${label}[${index}]`,
+      );
+    }
+    return;
   }
 
   expect(schema.type, `${label}.type`).toBe(
