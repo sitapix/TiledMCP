@@ -8,7 +8,16 @@ import {
   stableJson,
   type JsonValue,
 } from "./formats/json.js";
-import type { CommitResult } from "./storage/documentStore.js";
+import type {
+  CheckpointPruneResult,
+  CommitResult,
+} from "./storage/documentStore.js";
+import {
+  checkpointPruneOperationPreview,
+  type CheckpointPruneOperationPreview,
+  type CheckpointPrunePlan,
+  type CheckpointPruneSummary,
+} from "./storage/checkpointPrune.js";
 import {
   checkpointRestoreOperationPreview,
   type CheckpointRestoreOperationPreview,
@@ -59,15 +68,30 @@ const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 
 export type ChangeSetPlan =
   | MapEditPlan
-  | CheckpointRestorePlan;
+  | CheckpointRestorePlan
+  | CheckpointPrunePlan;
+
+type ChangeSetOperationResult =
+  | (CommitResult & {
+      changeSetId: string;
+    })
+  | CheckpointPruneResult;
+
+export type ChangeSetApplyResult =
+  | (CommitResult & {
+      changeSetId: string;
+    })
+  | (CheckpointPruneResult & {
+      changeSetId: string;
+    });
 
 interface ChangeSetEntry {
   id: string;
   plan: ChangeSetPlan;
   createdAt: string;
   expiresAt: number;
-  result?: CommitResult & { changeSetId: string };
-  inFlight?: Promise<CommitResult & { changeSetId: string }>;
+  result?: ChangeSetApplyResult;
+  inFlight?: Promise<ChangeSetApplyResult>;
 }
 
 interface ChangeSetPreviewCommon {
@@ -109,9 +133,37 @@ export interface CheckpointRestoreChangeSetPreview
   summary: CheckpointRestoreSummary;
 }
 
+export interface CheckpointPruneChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "checkpointPrune";
+  targetPath: string;
+  checkpoint: {
+    id: string;
+    status: "committed";
+    label?: string;
+    createdAt: string;
+    path: string;
+    before:
+      | { existed: false }
+      | {
+          existed: true;
+          revision: string;
+          objectHash: string;
+          size: number;
+        };
+    afterRevision: string;
+  };
+  manifest: {
+    revision: string;
+    size: number;
+  };
+  summary: CheckpointPruneSummary;
+}
+
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
-  | CheckpointRestoreChangeSetPreview;
+  | CheckpointRestoreChangeSetPreview
+  | CheckpointPruneChangeSetPreview;
 
 type OperationPreview =
   | {
@@ -422,7 +474,8 @@ type OperationPreview =
         height: number;
       };
     }
-  | CheckpointRestoreOperationPreview;
+  | CheckpointRestoreOperationPreview
+  | CheckpointPruneOperationPreview;
 
 export class ChangeSetRegistry {
   private readonly entries = new Map<string, ChangeSetEntry>();
@@ -480,8 +533,8 @@ export class ChangeSetRegistry {
     expectedRevision: string,
     operation: (
       plan: ChangeSetPlan,
-    ) => Promise<CommitResult & { changeSetId: string }>,
-  ): Promise<CommitResult & { changeSetId: string }> {
+    ) => Promise<ChangeSetOperationResult>,
+  ): Promise<ChangeSetApplyResult> {
     this.prune();
     const entry = this.entries.get(changeSetId);
     if (!entry) {
@@ -544,6 +597,49 @@ export class ChangeSetRegistry {
 }
 
 function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
+  if (entry.plan.kind === "checkpointPrune") {
+    const plan = entry.plan;
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      targetPath: plan.checkpoint.path,
+      expectedRevision: plan.baseRevision,
+      checkpoint: {
+        id: plan.checkpoint.id,
+        status: plan.checkpoint.status,
+        ...(plan.checkpoint.label === undefined
+          ? {}
+          : {
+              label: plan.checkpoint.label,
+            }),
+        createdAt: plan.checkpoint.createdAt,
+        path: plan.checkpoint.path,
+        before: structuredClone(
+          plan.checkpoint.before,
+        ),
+        afterRevision:
+          plan.checkpoint.afterRevision,
+      },
+      manifest: {
+        revision:
+          plan.checkpoint.manifestRevision,
+        size: plan.checkpoint.manifestSize,
+      },
+      operations: [
+        checkpointPruneOperationPreview(
+          plan,
+        ),
+      ],
+      summary: structuredClone(plan.summary),
+      snapshotConsistency:
+        "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "checkpointRestore") {
     const plan = entry.plan;
     return {

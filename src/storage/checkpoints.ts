@@ -49,7 +49,7 @@ const CHECKPOINT_STORAGE_MUTEX = new KeyedMutex();
 
 export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   name: "tiled-mcp-checkpoint-storage",
-  version: 1,
+  version: 2,
   quotaAccounting:
     "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
   quotaScope:
@@ -60,7 +60,13 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
     "all-valid-prepared-and-committed-manifests",
   garbageCollectionDeletion:
     "unreferenced-canonical-objects-and-private-crash-temporaries-only",
-  validManifestDeletion: "never",
+  validManifestDeletion:
+    "explicit-raw-cas-committed-only",
+  automaticValidManifestPruning: "never",
+  explicitPruneCoordination:
+    "target-lock-then-checkpoint-store-lock",
+  explicitPruneDeletionOrder:
+    "manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
   incompleteInventoryPolicy:
     "block-entire-sweep-before-first-unlink",
   incompleteCapacityInventoryPolicy:
@@ -76,7 +82,7 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   initialManifestPublication:
     "create-if-absent-no-replace",
   quotaExhaustion:
-    "fail-write-before-target-promotion-no-valid-manifest-pruning",
+    "fail-write-before-target-promotion-no-automatic-valid-manifest-pruning",
   targetPromotionBeforeFailure:
     "quota-is-checked-before-checkpoint-publication-and-target-promotion",
 } as const);
@@ -85,6 +91,9 @@ export interface CheckpointStoreObserver {
   afterObjectPublishedBeforeManifest?(context: {
     manifest: CheckpointManifest;
     objectHash: string;
+  }): void | Promise<void>;
+  afterManifestDeletedBeforeGarbageCollection?(context: {
+    checkpointId: string;
   }): void | Promise<void>;
 }
 
@@ -173,6 +182,61 @@ export interface CheckpointManifest {
         size: number;
       };
   afterRevision: string;
+}
+
+export interface CheckpointManifestSnapshot {
+  manifest: CheckpointManifest;
+  manifestRevision: string;
+  manifestSize: number;
+}
+
+export interface CheckpointPruneStorageExpectation {
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: "committed";
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+}
+
+export type CheckpointPruneGarbageCollectionResult =
+  | {
+      status: "completed";
+      deletedBytes: number;
+      deletedEntries: number;
+      deletedObjects: number;
+      deletedTemporaryFiles: number;
+      blockerCount: 0;
+      blockers: [];
+      blockersTruncated: false;
+    }
+  | {
+      status: "blocked";
+      deletedBytes: 0;
+      deletedEntries: 0;
+      deletedObjects: 0;
+      deletedTemporaryFiles: 0;
+      blockerCount: number;
+      blockers: CheckpointGarbageCollectionBlocker[];
+      blockersTruncated: boolean;
+    }
+  | {
+      status: "failed";
+      failureCode: "INTERNAL_ERROR";
+      deletionOutcome:
+        "unknown-partial-or-none";
+    };
+
+export interface CheckpointPruneStorageResult {
+  manifest: CheckpointManifest & {
+    status: "committed";
+  };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointPruneGarbageCollectionResult;
 }
 
 export interface CheckpointListOptions {
@@ -362,6 +426,136 @@ export class CheckpointStore {
     });
   }
 
+  async inspectPrune(
+    id: string,
+  ): Promise<CheckpointManifestSnapshot> {
+    assertCheckpointId(id);
+    return this.runStorageExclusive(async () => {
+      const { checkpoints } =
+        await this.ensureStorageDirectories();
+      return this.readManifestSnapshot(
+        checkpoints,
+        id,
+      );
+    });
+  }
+
+  async pruneCommitted(
+    expected: CheckpointPruneStorageExpectation,
+  ): Promise<CheckpointPruneStorageResult> {
+    assertCheckpointId(expected.id);
+    let deletedManifest:
+      | (CheckpointManifest & {
+          status: "committed";
+        })
+      | undefined;
+    let storeLockReleaseFailed = false;
+    try {
+      const result =
+        await this.runStorageExclusive<CheckpointPruneStorageResult>(
+        async () => {
+          const directories =
+            await this.ensureStorageDirectories();
+          const snapshot =
+            await this.readManifestSnapshot(
+              directories.checkpoints,
+              expected.id,
+            );
+          if (
+            !sameCheckpointPruneExpectation(
+              expected,
+              snapshot,
+            )
+          ) {
+            throw new TiledMcpError(
+              "CHECKPOINT_CHANGED",
+              `Checkpoint ${expected.id} changed after prune inspection.`,
+              {
+                checkpointId: expected.id,
+              },
+            );
+          }
+          const manifest = snapshot.manifest;
+          if (manifest.status !== "committed") {
+            throw new TiledMcpError(
+              "CHECKPOINT_NOT_COMMITTED",
+              `Checkpoint ${expected.id} is still prepared and cannot be pruned.`,
+              {
+                checkpointId: expected.id,
+              },
+            );
+          }
+          const committedManifest =
+            manifest as CheckpointManifest & {
+              status: "committed";
+            };
+
+          await unlink(
+            join(
+              directories.checkpoints,
+              `${expected.id}.json`,
+            ),
+          );
+          deletedManifest = committedManifest;
+
+          try {
+            await syncDirectory(
+              directories.checkpoints,
+            );
+            await this.observer
+              ?.afterManifestDeletedBeforeGarbageCollection?.(
+                {
+                  checkpointId: manifest.id,
+                },
+              );
+            const inventory =
+              await this.inventory(directories);
+            const report =
+              await this.sweepInventory(
+                directories,
+                inventory,
+              );
+            return {
+              manifest: committedManifest,
+              manifestDeleted: true,
+              garbageCollection:
+                checkpointPruneGarbageCollectionResult(
+                  report,
+                ),
+            };
+          } catch {
+            return failedCheckpointPruneResult(
+              committedManifest,
+            );
+          }
+        },
+          () => {
+            storeLockReleaseFailed = true;
+          },
+        );
+      if (
+        storeLockReleaseFailed &&
+        deletedManifest !== undefined
+      ) {
+        return failedCheckpointPruneResult(
+          deletedManifest,
+        );
+      }
+      return result;
+    } catch (error) {
+      // Once unlink has succeeded, even a checkpoint-store lock release
+      // failure must not make the caller believe that no destructive action
+      // occurred. The bounded failed outcome deliberately exposes no raw
+      // filesystem diagnostics.
+      if (deletedManifest !== undefined) {
+        return failedCheckpointPruneResult(
+          deletedManifest,
+        );
+      }
+      throw error;
+    }
+  }
+
   async collectGarbage(): Promise<CheckpointGarbageCollectionReport> {
     return this.runStorageExclusive(async () => {
       const directories =
@@ -377,6 +571,7 @@ export class CheckpointStore {
 
   private async runStorageExclusive<T>(
     operation: () => Promise<T>,
+    onLockReleaseFailure?: () => void,
   ): Promise<T> {
     const mutexKey =
       `${this.resolver.root}\0${CHECKPOINT_STORAGE_LOCK_TARGET}`;
@@ -387,6 +582,12 @@ export class CheckpointStore {
           this.resolver,
           CHECKPOINT_STORAGE_LOCK_TARGET,
           operation,
+          onLockReleaseFailure === undefined
+            ? {}
+            : {
+                onReleaseFailure:
+                  onLockReleaseFailure,
+              },
         ),
     );
   }
@@ -860,9 +1061,22 @@ export class CheckpointStore {
     checkpointsDirectory: string,
     id: string,
   ): Promise<CheckpointManifest> {
+    return (
+      await this.readManifestSnapshot(
+        checkpointsDirectory,
+        id,
+      )
+    ).manifest;
+  }
+
+  private async readManifestSnapshot(
+    checkpointsDirectory: string,
+    id: string,
+  ): Promise<CheckpointManifestSnapshot> {
+    let bytes: Buffer;
     let raw: string;
     try {
-      const bytes = await readBoundedNoFollow(
+      bytes = await readBoundedNoFollow(
         join(checkpointsDirectory, `${id}.json`),
         MAX_MANIFEST_BYTES,
         "checkpoint manifest",
@@ -894,7 +1108,11 @@ export class CheckpointStore {
         { checkpointId: id },
       );
     }
-    return manifest;
+    return {
+      manifest,
+      manifestRevision: revisionOf(bytes),
+      manifestSize: bytes.byteLength,
+    };
   }
 
   async readBefore(manifest: CheckpointManifest): Promise<Buffer | undefined> {
@@ -991,6 +1209,53 @@ function projectedManifestReplacementStorage(
       serializedManifestByteLength(replacement),
     entries: inventory.observedEntries,
   };
+}
+
+function sameCheckpointPruneExpectation(
+  expected: CheckpointPruneStorageExpectation,
+  actual: CheckpointManifestSnapshot,
+): boolean {
+  const manifest = actual.manifest;
+  return (
+    expected.id === manifest.id &&
+    expected.createdAt === manifest.createdAt &&
+    (expected.label ?? "") === manifest.label &&
+    expected.path === manifest.path &&
+    expected.status === manifest.status &&
+    expected.afterRevision ===
+      manifest.afterRevision &&
+    sameCheckpointBefore(
+      expected.before,
+      manifest.before,
+    ) &&
+    expected.manifestRevision ===
+      actual.manifestRevision &&
+    expected.manifestSize ===
+      actual.manifestSize
+  );
+}
+
+function sameCheckpointBefore(
+  expected: CheckpointManifest["before"],
+  actual: CheckpointManifest["before"],
+): boolean {
+  if (
+    expected.existed !== actual.existed
+  ) {
+    return false;
+  }
+  if (
+    !expected.existed ||
+    !actual.existed
+  ) {
+    return true;
+  }
+  return (
+    expected.revision === actual.revision &&
+    expected.objectHash ===
+      actual.objectHash &&
+    expected.size === actual.size
+  );
 }
 
 function serializedManifestByteLength(
@@ -1200,6 +1465,95 @@ function garbageCollectionReport(
     deletedTemporaryFiles,
     blocked: inventory.blockers.length > 0,
     blockers: [...inventory.blockers],
+  };
+}
+
+const CHECKPOINT_PRUNE_BLOCKER_SAMPLE_LIMIT = 32;
+
+function checkpointPruneGarbageCollectionResult(
+  report: CheckpointGarbageCollectionReport,
+): CheckpointPruneGarbageCollectionResult {
+  if (report.blocked) {
+    const blockers = report.blockers
+      .slice(
+        0,
+        CHECKPOINT_PRUNE_BLOCKER_SAMPLE_LIMIT,
+      )
+      .map(sanitizeCheckpointPruneBlocker);
+    return {
+      status: "blocked",
+      deletedBytes: 0,
+      deletedEntries: 0,
+      deletedObjects: 0,
+      deletedTemporaryFiles: 0,
+      blockerCount: report.blockers.length,
+      blockers,
+      blockersTruncated:
+        blockers.length <
+        report.blockers.length,
+    };
+  }
+  return {
+    status: "completed",
+    deletedBytes: report.deletedBytes,
+    deletedEntries: report.deletedEntries,
+    deletedObjects: report.deletedObjects,
+    deletedTemporaryFiles:
+      report.deletedTemporaryFiles,
+    blockerCount: 0,
+    blockers: [],
+    blockersTruncated: false,
+  };
+}
+
+function sanitizeCheckpointPruneBlocker(
+  blocker: CheckpointGarbageCollectionBlocker,
+): CheckpointGarbageCollectionBlocker {
+  const messages: Record<
+    CheckpointGarbageCollectionBlocker["reason"],
+    string
+  > = {
+    "entry-inspection-failed":
+      "Checkpoint storage entry could not be inspected safely.",
+    "byte-accounting-limit-exceeded":
+      "Checkpoint storage exceeds the exact byte-accounting range.",
+    "malformed-manifest":
+      "Checkpoint manifest could not be parsed and validated safely.",
+    "missing-referenced-object":
+      "Checkpoint manifest references a missing content object.",
+    "non-regular-entry":
+      "Checkpoint storage entry is not a regular file.",
+    "scan-limit-exceeded":
+      "Checkpoint storage scan limit was exceeded.",
+    "symbolic-link":
+      "Checkpoint storage entry is a symbolic link.",
+    "unexpected-entry":
+      "Checkpoint storage contains an unexpected entry.",
+  };
+  return {
+    directory: blocker.directory,
+    ...(blocker.fileName === undefined
+      ? {}
+      : { fileName: blocker.fileName }),
+    reason: blocker.reason,
+    message: messages[blocker.reason],
+  };
+}
+
+function failedCheckpointPruneResult(
+  manifest: CheckpointManifest & {
+    status: "committed";
+  },
+): CheckpointPruneStorageResult {
+  return {
+    manifest,
+    manifestDeleted: true,
+    garbageCollection: {
+      status: "failed",
+      failureCode: "INTERNAL_ERROR",
+      deletionOutcome:
+        "unknown-partial-or-none",
+    },
   };
 }
 

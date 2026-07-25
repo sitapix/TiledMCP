@@ -71,6 +71,7 @@ const CORE_TOOLS = [
   "tiled_get_capabilities",
   "tiled_list_files",
   "tiled_list_checkpoints",
+  "tiled_preview_checkpoint_prune",
   "tiled_preview_checkpoint_restore",
   "tiled_get_map_summary",
   "tiled_get_tileset",
@@ -183,7 +184,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the eighteen core tools with safety annotations", async () => {
+  it("advertises exactly the nineteen core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -210,6 +211,7 @@ describe("createTiledMcpServer", () => {
       });
     }
     for (const name of [
+      "tiled_preview_checkpoint_prune",
       "tiled_preview_checkpoint_restore",
       "tiled_preview_edits",
     ]) {
@@ -242,6 +244,16 @@ describe("createTiledMcpServer", () => {
       destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
+    });
+    expect(
+      byName.get("tiled_preview_checkpoint_prune")?.inputSchema,
+    ).toMatchObject({
+      type: "object",
+      properties: {
+        checkpointId: { type: "string" },
+      },
+      required: ["checkpointId"],
+      additionalProperties: false,
     });
     expect(
       byName.get("tiled_preview_checkpoint_restore")?.inputSchema,
@@ -2358,6 +2370,17 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: boolean;
         restoreScope: string;
         restoresReferencedDependencies: boolean;
+        prune: {
+          scope: string;
+          workflow: string;
+          expectedRevision: string;
+          lockOrder: string;
+          commitPoint: string;
+          garbageCollection: string;
+          preparedCheckpoints: string;
+          automaticRetention: string;
+          tombstones: boolean;
+        };
         storagePolicy:
           typeof CHECKPOINT_STORAGE_POLICY & {
             maxBytes: number;
@@ -2730,6 +2753,23 @@ describe("createTiledMcpServer", () => {
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+        prune: {
+          scope:
+            "single-explicit-committed-checkpoint",
+          workflow: "preview-then-apply",
+          expectedRevision:
+            "sha256-of-raw-manifest-bytes",
+          lockOrder:
+            "target-then-checkpoint-store",
+          commitPoint:
+            "manifest-unlink-then-checkpoint-directory-fsync",
+          garbageCollection:
+            "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
+          preparedCheckpoints:
+            "unsupported-reconcile-first",
+          automaticRetention: "unsupported",
+          tombstones: false,
+        },
         storagePolicy: {
           ...CHECKPOINT_STORAGE_POLICY,
           maxBytes:
@@ -2737,7 +2777,7 @@ describe("createTiledMcpServer", () => {
           maxEntries:
             MAX_CHECKPOINT_OBSERVED_ENTRIES,
           garbageCollectionTrigger:
-            "quota-pressure-or-explicit-internal-call",
+            "quota-pressure-approved-checkpoint-prune-or-explicit-internal-call",
           quotaFailureCode:
             "CHECKPOINT_QUOTA_EXCEEDED",
         },
@@ -3932,6 +3972,30 @@ describe("createTiledMcpServer", () => {
         arguments: {
           checkpointId: "00000000-0000-4000-8000-000000000000",
           expectedRevision: `sha256:${"0".repeat(64)}`,
+          unexpected: true,
+        },
+      }),
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.structuredContent).toBeUndefined();
+    expect(response.content).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: expect.stringContaining("Input validation error"),
+      }),
+    ]);
+    expect((response.content[0] as { text: string }).text).toContain(
+      "Unrecognized key",
+    );
+  });
+
+  it("rejects unknown checkpoint prune preview keys through its strict schema", async () => {
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_preview_checkpoint_prune",
+        arguments: {
+          checkpointId: "00000000-0000-4000-8000-000000000000",
           unexpected: true,
         },
       }),
@@ -6428,6 +6492,198 @@ describe("createTiledMcpServer", () => {
     const saved = JSON.parse(await readFile(absoluteMapPath, "utf8")) as JsonObject;
     const layer = (saved.layers as JsonObject[])[0];
     expect(layer?.data).toEqual([1, 2, 0, 0]);
+  });
+
+  it("previews, applies and idempotently replays a committed checkpoint prune", async () => {
+    const absoluteMapPath = join(harness.root, MAP_PATH);
+    const before = await readFile(absoluteMapPath);
+    const proposed = Buffer.concat([
+      before,
+      Buffer.from(" "),
+    ]);
+    const committed = await harness.store.commitBytes(
+      MAP_PATH,
+      revisionOf(before),
+      proposed,
+      "server prune integration",
+    );
+    expect(committed.checkpointId).not.toBeNull();
+    const checkpointId = committed.checkpointId;
+    if (checkpointId === null) {
+      throw new Error(
+        "Expected the changing commit to create a checkpoint.",
+      );
+    }
+
+    const preview = resultOf<{
+      kind: string;
+      changeSetId: string;
+      planDigest: string;
+      targetPath: string;
+      expectedRevision: string;
+      checkpoint: {
+        id: string;
+        status: string;
+        path: string;
+        before: {
+          existed: boolean;
+          revision: string;
+          objectHash: string;
+          size: number;
+        };
+        afterRevision: string;
+      };
+      manifest: {
+        revision: string;
+        size: number;
+      };
+      operations: Array<Record<string, unknown>>;
+      summary: Record<string, unknown>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_preview_checkpoint_prune",
+        arguments: { checkpointId },
+      }),
+    );
+    expect(preview).toMatchObject({
+      kind: "checkpointPrune",
+      changeSetId: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      planDigest: expect.stringMatching(
+        /^changeset:[0-9a-f]{64}$/u,
+      ),
+      targetPath: MAP_PATH,
+      expectedRevision: expect.stringMatching(
+        /^sha256:[0-9a-f]{64}$/u,
+      ),
+      checkpoint: {
+        id: checkpointId,
+        status: "committed",
+        path: MAP_PATH,
+        before: {
+          existed: true,
+          revision: revisionOf(before),
+          objectHash: revisionOf(before).slice(
+            "sha256:".length,
+          ),
+          size: before.byteLength,
+        },
+        afterRevision: revisionOf(proposed),
+      },
+      manifest: {
+        revision: expect.stringMatching(
+          /^sha256:[0-9a-f]{64}$/u,
+        ),
+        size: expect.any(Number),
+      },
+      operations: [
+        {
+          type: "pruneCheckpoint",
+          destructive: true,
+          checkpointId,
+          targetPath: MAP_PATH,
+          status: "committed",
+          manifestRevision:
+            preview.expectedRevision,
+          manifestBytes:
+            preview.manifest.size,
+          removesRecoveryPoint: true,
+          removesProjectAsset: false,
+          garbageCollection:
+            "fail-closed-after-manifest-prune",
+          warning: expect.stringContaining(
+            "permanently removes",
+          ),
+        },
+      ],
+      summary: {
+        operationCount: 1,
+        destructive: true,
+        checkpointId,
+        targetPath: MAP_PATH,
+        status: "committed",
+        manifestRevision:
+          preview.expectedRevision,
+        manifestBytes: preview.manifest.size,
+        removesRecoveryPoint: true,
+        removesProjectAsset: false,
+        garbageCollection:
+          "fail-closed-after-manifest-prune",
+        warning: expect.stringContaining(
+          "permanently removes",
+        ),
+      },
+    });
+    expect(preview.manifest.revision).toBe(
+      preview.expectedRevision,
+    );
+    expect(await readFile(absoluteMapPath)).toEqual(
+      proposed,
+    );
+
+    const firstApply =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    const applied = resultOf<{
+      kind: string;
+      changeSetId: string;
+      checkpoint: {
+        id: string;
+        path: string;
+        status: string;
+      };
+      manifestDeleted: boolean;
+      garbageCollection: {
+        status: string;
+        deletedObjects: number;
+        blockerCount: number;
+        blockers: unknown[];
+        blockersTruncated: boolean;
+      };
+    }>(firstApply);
+    expect(applied).toMatchObject({
+      kind: "checkpointPrune",
+      changeSetId: preview.changeSetId,
+      checkpoint: {
+        id: checkpointId,
+        path: MAP_PATH,
+        status: "committed",
+      },
+      manifestDeleted: true,
+      garbageCollection: {
+        status: "completed",
+        deletedObjects: 1,
+        blockerCount: 0,
+        blockers: [],
+        blockersTruncated: false,
+      },
+    });
+    expect(await readFile(absoluteMapPath)).toEqual(
+      proposed,
+    );
+    expect(
+      (
+        await harness.store.checkpoints.list()
+      ).manifests,
+    ).toEqual([]);
+
+    const secondApply =
+      await harness.client.callTool({
+        name: "tiled_apply_change_set",
+        arguments: {
+          changeSetId: preview.changeSetId,
+          expectedRevision:
+            preview.expectedRevision,
+        },
+      });
+    expect(secondApply).toEqual(firstApply);
   });
 
   it("previews, applies and idempotently replays an exact checkpoint restore", async () => {

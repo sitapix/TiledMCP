@@ -134,10 +134,10 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(18);
-    expect(fullTools).toHaveLength(19);
-    expect(new Set(coreTools).size).toBe(18);
-    expect(new Set(fullTools).size).toBe(19);
+    expect(coreTools).toHaveLength(19);
+    expect(fullTools).toHaveLength(20);
+    expect(new Set(coreTools).size).toBe(19);
+    expect(new Set(fullTools).size).toBe(20);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -160,8 +160,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(19);
-    expect(new Set(toolNames).size).toBe(19);
+    expect(toolDefinitions).toHaveLength(20);
+    expect(new Set(toolNames).size).toBe(20);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );
@@ -325,7 +325,7 @@ describe("generated MCP contract", () => {
     const checkpointStoragePolicyLiterals = {
       ...CHECKPOINT_STORAGE_POLICY,
       garbageCollectionTrigger:
-        "quota-pressure-or-explicit-internal-call",
+        "quota-pressure-approved-checkpoint-prune-or-explicit-internal-call",
       quotaFailureCode:
         "CHECKPOINT_QUOTA_EXCEEDED",
     } as const;

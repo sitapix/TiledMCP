@@ -20,6 +20,10 @@ import type { ProjectPathResolver } from "../project/pathResolver.js";
 import {
   CheckpointStore,
   type CheckpointManifest,
+  type CheckpointManifestSnapshot,
+  type CheckpointPruneGarbageCollectionResult,
+  type CheckpointPruneStorageExpectation,
+  type CheckpointPruneStorageResult,
   type CheckpointStoreOptions,
   type CorruptCheckpointEntry,
 } from "./checkpoints.js";
@@ -33,6 +37,14 @@ import { KeyedMutex } from "./keyedMutex.js";
 import { revisionOf } from "./revision.js";
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 64 * 1024 * 1024;
+const CHECKPOINT_MANIFEST_REVISION_PATTERN =
+  /^sha256:[0-9a-f]{64}$/u;
+const CHECKPOINT_PRUNE_GC_BLOCKED_WARNING =
+  "The checkpoint manifest was deleted, but garbage collection was blocked; unreferenced checkpoint storage was retained.";
+const CHECKPOINT_PRUNE_GC_FAILED_WARNING =
+  "The checkpoint manifest was unlinked, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
+const CHECKPOINT_PRUNE_TARGET_LOCK_WARNING =
+  "Checkpoint pruning completed, but release of its target lock could not be confirmed; inspect the project lock before retrying mutations.";
 
 export interface DocumentSnapshot {
   path: string;
@@ -92,6 +104,42 @@ export interface CheckpointRestoreInspection {
   restoreRevision: string;
   restoreSize: number;
   changed: boolean;
+}
+
+export interface CheckpointPruneExpectation {
+  id: string;
+  createdAt: string;
+  label?: string;
+  path: string;
+  status: "committed";
+  before: CheckpointManifest["before"];
+  afterRevision: string;
+  manifestRevision: string;
+  manifestSize: number;
+}
+
+export interface CheckpointPruneInspection {
+  checkpoint: CheckpointPruneExpectation;
+}
+
+export type CheckpointPruneGarbageCollection =
+  CheckpointPruneGarbageCollectionResult;
+
+export interface CheckpointPruneResult {
+  kind: "checkpointPrune";
+  checkpoint: {
+    id: string;
+    createdAt: string;
+    label?: string;
+    path: string;
+    status: "committed";
+    before: CheckpointManifest["before"];
+    afterRevision: string;
+  };
+  manifestDeleted: true;
+  garbageCollection:
+    CheckpointPruneGarbageCollection;
+  warnings?: string[];
 }
 
 export interface ReconcilePreparedCheckpointsOptions {
@@ -405,6 +453,94 @@ export class DocumentStore {
       scannedEntries: listing.scannedEntries,
       truncated: listing.truncated,
     };
+  }
+
+  async inspectCheckpointPrune(
+    checkpointId: string,
+  ): Promise<CheckpointPruneInspection> {
+    const snapshot =
+      await this.checkpoints.inspectPrune(
+        checkpointId,
+      );
+    if (
+      snapshot.manifest.status !==
+      "committed"
+    ) {
+      throw new TiledMcpError(
+        "CHECKPOINT_NOT_COMMITTED",
+        `Checkpoint ${checkpointId} is still prepared and cannot be pruned.`,
+        { checkpointId },
+      );
+    }
+    return {
+      checkpoint:
+        checkpointPruneExpectation(snapshot),
+    };
+  }
+
+  async pruneCheckpointPlanned(
+    expectedCheckpoint: CheckpointPruneExpectation,
+  ): Promise<CheckpointPruneResult> {
+    const expected = copyCheckpointPruneExpectation(
+      expectedCheckpoint,
+    );
+    assertCheckpointPruneExpectation(expected);
+    const normalized = this.resolver.normalize(
+      expected.path,
+    );
+    let committedResult:
+      | CheckpointPruneResult
+      | undefined;
+    let targetLockReleaseFailed = false;
+    try {
+      const result =
+        await this.mutex.runExclusive(
+        normalized,
+        () =>
+          withProjectFileLock(
+            this.resolver,
+            normalized,
+            async () => {
+              const storageResult =
+                await this.checkpoints.pruneCommitted(
+                  expected,
+                );
+              committedResult =
+                checkpointPruneResult(
+                  storageResult,
+              );
+              return committedResult;
+            },
+            {
+              onReleaseFailure: () => {
+                targetLockReleaseFailed =
+                  true;
+              },
+            },
+          ),
+        );
+      if (
+        targetLockReleaseFailed &&
+        committedResult !== undefined
+      ) {
+        return addCheckpointPruneWarning(
+          committedResult,
+          CHECKPOINT_PRUNE_TARGET_LOCK_WARNING,
+        );
+      }
+      return result;
+    } catch (error) {
+      // The target lock is deliberately outside the checkpoint-store lock.
+      // If releasing it fails after the manifest was deleted, preserve the
+      // destructive success result and surface only a fixed warning.
+      if (committedResult !== undefined) {
+        return addCheckpointPruneWarning(
+          committedResult,
+          CHECKPOINT_PRUNE_TARGET_LOCK_WARNING,
+        );
+      }
+      throw error;
+    }
   }
 
   private async commitContent(
@@ -932,6 +1068,149 @@ function assertExpectedRevision(
       { path: projectPath, expectedRevision, actualRevision },
     );
   }
+}
+
+function checkpointPruneExpectation(
+  snapshot: CheckpointManifestSnapshot,
+): CheckpointPruneExpectation {
+  const manifest = snapshot.manifest;
+  if (manifest.status !== "committed") {
+    throw new TiledMcpError(
+      "CHECKPOINT_NOT_COMMITTED",
+      `Checkpoint ${manifest.id} is still prepared and cannot be pruned.`,
+      { checkpointId: manifest.id },
+    );
+  }
+  return {
+    id: manifest.id,
+    createdAt: manifest.createdAt,
+    ...(manifest.label.length === 0
+      ? {}
+      : { label: manifest.label }),
+    path: manifest.path,
+    status: "committed",
+    before: copyCheckpointBefore(
+      manifest.before,
+    ),
+    afterRevision: manifest.afterRevision,
+    manifestRevision:
+      snapshot.manifestRevision,
+    manifestSize: snapshot.manifestSize,
+  };
+}
+
+function copyCheckpointPruneExpectation(
+  expected: CheckpointPruneExpectation,
+): CheckpointPruneExpectation {
+  return {
+    id: expected.id,
+    createdAt: expected.createdAt,
+    ...(expected.label === undefined
+      ? {}
+      : { label: expected.label }),
+    path: expected.path,
+    status: expected.status,
+    before: copyCheckpointBefore(
+      expected.before,
+    ),
+    afterRevision: expected.afterRevision,
+    manifestRevision:
+      expected.manifestRevision,
+    manifestSize: expected.manifestSize,
+  };
+}
+
+function copyCheckpointBefore(
+  before: CheckpointManifest["before"],
+): CheckpointManifest["before"] {
+  if (!before.existed) {
+    return { existed: false };
+  }
+  return {
+    existed: true,
+    revision: before.revision,
+    objectHash: before.objectHash,
+    size: before.size,
+  };
+}
+
+function assertCheckpointPruneExpectation(
+  expected: CheckpointPruneExpectation,
+): asserts expected is CheckpointPruneStorageExpectation {
+  if (
+    expected.status !== "committed" ||
+    !CHECKPOINT_MANIFEST_REVISION_PATTERN.test(
+      expected.manifestRevision,
+    ) ||
+    !Number.isSafeInteger(
+      expected.manifestSize,
+    ) ||
+    expected.manifestSize < 1
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "Checkpoint prune expectation is invalid.",
+      { checkpointId: expected.id },
+    );
+  }
+}
+
+function checkpointPruneResult(
+  storageResult: CheckpointPruneStorageResult,
+): CheckpointPruneResult {
+  const { manifest } = storageResult;
+  const warnings: string[] = [];
+  if (
+    storageResult.garbageCollection.status ===
+    "blocked"
+  ) {
+    warnings.push(
+      CHECKPOINT_PRUNE_GC_BLOCKED_WARNING,
+    );
+  } else if (
+    storageResult.garbageCollection.status ===
+    "failed"
+  ) {
+    warnings.push(
+      CHECKPOINT_PRUNE_GC_FAILED_WARNING,
+    );
+  }
+  return {
+    kind: "checkpointPrune",
+    checkpoint: {
+      id: manifest.id,
+      createdAt: manifest.createdAt,
+      ...(manifest.label.length === 0
+        ? {}
+        : { label: manifest.label }),
+      path: manifest.path,
+      status: "committed",
+      before: copyCheckpointBefore(
+        manifest.before,
+      ),
+      afterRevision:
+        manifest.afterRevision,
+    },
+    manifestDeleted: true,
+    garbageCollection:
+      storageResult.garbageCollection,
+    ...(warnings.length === 0
+      ? {}
+      : { warnings }),
+  };
+}
+
+function addCheckpointPruneWarning(
+  result: CheckpointPruneResult,
+  warning: string,
+): CheckpointPruneResult {
+  return {
+    ...result,
+    warnings: [
+      ...(result.warnings ?? []),
+      warning,
+    ],
+  };
 }
 
 function reconciliationOutcome(

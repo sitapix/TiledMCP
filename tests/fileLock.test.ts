@@ -1,8 +1,21 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { withProjectFileLock } from "../src/storage/fileLock.js";
@@ -117,5 +130,117 @@ describe("withProjectFileLock", () => {
     expect(JSON.stringify(caught)).not.toContain(
       root,
     );
+  });
+
+  it("reports a release failure without masking the operation error", async () => {
+    const locks =
+      await resolver.ensureInternalDirectory(
+        ".tiledmcp/locks",
+      );
+    const lockPath = join(
+      locks,
+      `${shortHash("map.tmj")}.lock`,
+    );
+    const operationError = new Error(
+      "operation failed before commit",
+    );
+    let releaseFailureObserved = false;
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      await expect(
+        withProjectFileLock(
+          resolver,
+          "map.tmj",
+          async () => {
+            const record = JSON.parse(
+              await readFile(
+                lockPath,
+                "utf8",
+              ),
+            ) as Record<string, unknown>;
+            await writeFile(
+              lockPath,
+              `${JSON.stringify({
+                ...record,
+                token:
+                  "replacement-before-error",
+              })}\n`,
+              "utf8",
+            );
+            throw operationError;
+          },
+          {
+            onReleaseFailure: () => {
+              releaseFailureObserved = true;
+            },
+          },
+        ),
+      ).rejects.toBe(operationError);
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(releaseFailureObserved).toBe(
+      true,
+    );
+  });
+
+  it("reports changed lock ownership while preserving a successful result", async () => {
+    const locks =
+      await resolver.ensureInternalDirectory(
+        ".tiledmcp/locks",
+      );
+    const lockPath = join(
+      locks,
+      `${shortHash("map.tmj")}.lock`,
+    );
+    let releaseFailureObserved = false;
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    let result: string | undefined;
+    try {
+      result = await withProjectFileLock(
+        resolver,
+        "map.tmj",
+        async () => {
+          const record = JSON.parse(
+            await readFile(lockPath, "utf8"),
+          ) as Record<string, unknown>;
+          await writeFile(
+            lockPath,
+            `${JSON.stringify({
+              ...record,
+              token: "replacement-owner",
+            })}\n`,
+            "utf8",
+          );
+          return "committed";
+        },
+        {
+          onReleaseFailure: () => {
+            releaseFailureObserved = true;
+          },
+        },
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(result).toBe("committed");
+    expect(releaseFailureObserved).toBe(
+      true,
+    );
+    expect(
+      JSON.parse(
+        await readFile(lockPath, "utf8"),
+      ),
+    ).toMatchObject({
+      token: "replacement-owner",
+    });
   });
 });

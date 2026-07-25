@@ -27,6 +27,14 @@
       "purpose": "有界列出已提交的恢复 checkpoint，并单独报告损坏条目。"
     },
     {
+      "name": "tiled_preview_checkpoint_prune",
+      "profile": "core",
+      "arguments": {
+        "checkpointId": "00000000-0000-4000-8000-000000000000"
+      },
+      "purpose": "固定一个已提交 checkpoint 的原始 manifest revision，预览永久删除该恢复点但不立即执行。"
+    },
+    {
       "name": "tiled_preview_checkpoint_restore",
       "profile": "core",
       "arguments": {

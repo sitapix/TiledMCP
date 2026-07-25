@@ -62,12 +62,15 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       "tiled_create_layer",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_preview_checkpoint_prune",
+    );
+    expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_restore",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_analyze_usage",
     );
-    expect(tools.tools.length === 18 || tools.tools.length === 19).toBe(
+    expect(tools.tools.length === 19 || tools.tools.length === 20).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -108,6 +111,17 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         previewAndApplyRestore: true,
         restoreScope: "single-existing-json-document",
         restoresReferencedDependencies: false,
+        prune: {
+          scope:
+            "single-explicit-committed-checkpoint",
+          workflow: "preview-then-apply",
+          expectedRevision:
+            "sha256-of-raw-manifest-bytes",
+          preparedCheckpoints:
+            "unsupported-reconcile-first",
+          automaticRetention: "unsupported",
+          tombstones: false,
+        },
       },
       tileFindCapabilities: {
         defaultQueryMode: "all",
@@ -1350,6 +1364,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \(1[89] tools\)/u,
+    /ready for .+ \((?:19|20) tools\)/u,
   );
 });

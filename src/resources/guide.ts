@@ -251,7 +251,7 @@ follows a rename automatically.
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 18 core tools or 19
+operation, not a standalone tool, so the registry remains 19 core tools or 20
 when the rasterizer is available. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
@@ -335,11 +335,11 @@ to the owning object layer's \`objects\` member; creation separately advances
 \`nextobjectid\`. Inspect
 \`objectShapeCapabilities\` for the exact create union, shape-mutation policy,
 dimension rule, and source-patch scope. These operations do not add standalone
-tools, so the registry remains 18 core tools or 19 with the rasterizer.
+tools, so the registry remains 19 core tools or 20 with the rasterizer.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
-registry remains 18 core tools or 19 when the rasterizer is available. The
+registry remains 19 core tools or 20 when the rasterizer is available. The
 strict, non-empty patch may contain:
 
 - \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
@@ -363,7 +363,7 @@ restore the original serialized values produce a file-level exact-byte no-op.
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
 seventh operation in the generic preview union, not a standalone tool, so the
-registry remains 18 core tools or 19 when the rasterizer is available. The
+registry remains 19 core tools or 20 when the rasterizer is available. The
 patch must contain at least one field and may contain only:
 
 - \`name\`, \`className\`, \`visible\`, and \`opacity\`;
@@ -395,7 +395,7 @@ layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
 an existing layer. It is the eighth generic operation, not a standalone tool,
-so the registry remains 18 core tools or 19 with the rasterizer. A
+so the registry remains 19 core tools or 20 with the rasterizer. A
 \`deleteLayer\` change set must contain exactly this one operation; do not mix
 it with tile, object, or layer updates.
 
@@ -422,7 +422,7 @@ revision-pinned approval, checkpoint, and apply flow remains mandatory.
 
 Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
 or move it into or out of a Group. This is the ninth generic operation, not a
-standalone tool, so the registry remains 18 core tools or 19 with the
+standalone tool, so the registry remains 19 core tools or 20 with the
 rasterizer. A move change set must contain exactly one operation and cannot be
 mixed with tile, object, update, delete, or another move.
 
@@ -460,7 +460,7 @@ atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
-operation, not a standalone tool, so the registry remains 18 core tools or 19
+operation, not a standalone tool, so the registry remains 19 core tools or 20
 with the rasterizer. A duplicate change set must contain exactly one operation.
 
 \`destination\` has exactly three branches:
@@ -548,7 +548,7 @@ apply not to rewrite the map.
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
 dense rectangular tile stamp. This is the eleventh generic operation, not a
-standalone tool, so the registry remains 18 core tools or 19 with the
+standalone tool, so the registry remains 19 core tools or 20 with the
 rasterizer. The row-major pattern must be non-empty and rectangular: every
 row is non-empty and has the same width, with no sparse holes or
 \`undefined\`. Width and height are each capped at 256 and the complete
@@ -579,7 +579,7 @@ and revision.
 
 Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
 paint-bucket edit. This is the twelfth generic operation, not a standalone
-tool, so the registry remains 18 core tools or 19 with the rasterizer.
+tool, so the registry remains 19 core tools or 20 with the rasterizer.
 \`x\` and \`y\` are an absolute seed coordinate inside the finite tile
 layer. Connectivity is always four-way; there is no connectivity input and
 diagonal-only cells are not connected.
@@ -616,8 +616,8 @@ revision.
 Use
 \`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}\`
 to copy one complete tile rectangle within the same map. This is the fifteenth
-generic operation, not a standalone tool, so the registry remains 18 core
-tools or 19 with the rasterizer. The operation, source, and destination are
+generic operation, not a standalone tool, so the registry remains 19 core
+tools or 20 with the rasterizer. The operation, source, and destination are
 strict objects and reject extra keys.
 
 Both layer IDs must identify finite orthogonal tile layers with numeric data
@@ -726,6 +726,13 @@ or create a checkpoint. \`tiled_create_map\` instead prepares an
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
 entries without reading the stored document bytes.
 
+To permanently remove one committed recovery point, call
+\`tiled_preview_checkpoint_prune\` with its checkpoint ID. The preview pins
+the SHA-256 revision of the raw manifest bytes without reading the stored
+document blob. Present the destructive warning for approval, then pass the
+returned change-set ID and expected revision to \`tiled_apply_change_set\`.
+Prepared checkpoints must be reconciled first.
+
 Checkpoint storage is bounded before any project-target promotion. The default
 retained quota is 1 GiB with at most 10,000 observed entries, but the byte quota
 is configurable, so use the advertised values. Prepared manifests reserve
@@ -736,9 +743,15 @@ missing-reference, unsafe-byte-accounting, or incomplete scan blocks the entire
 sweep before its first deletion. An incomplete byte or entry inventory also
 fails the write-capacity proof. Initial manifest publication is
 create-if-absent and never replaces an existing recovery point. Valid manifests
-are never pruned automatically. This internal-state contract assumes trusted
-local state and writers that follow the project-wide checkpoint lock; malicious
-same-privilege mutation of \`.tiledmcp\` is outside its guarantee.
+are never pruned automatically; the only deletion path is an approved,
+raw-manifest-CAS prune of one committed checkpoint. Prune apply locks the
+checkpoint target before the store, unlinks the manifest, syncs the checkpoint
+directory, and then runs the same fail-closed orphan sweep. A blocked sweep
+deletes nothing. A failure after manifest unlink is reported as a committed
+prune with bounded diagnostics, not as a retry-safe application failure. This
+internal-state contract assumes trusted local state and writers that follow the
+project-wide checkpoint lock; malicious same-privilege mutation of
+\`.tiledmcp\` is outside its guarantee.
 
 To restore one checkpoint safely:
 
@@ -758,6 +771,11 @@ replaced. A no-op restore does neither. Recoverability also requires an intact
 checkpoint and the filesystem threat model's operational requirements. Restore
 does not include referenced tilesets, images, or other files. A checkpoint
 made before creating a new file cannot be used to delete that file.
+
+Prune does not leave a tombstone: after a successful apply, the checkpoint is
+indistinguishable from an ID that was never present. Automatic retention,
+multi-checkpoint prune, and deletion or adjudication of prepared checkpoints
+are not supported.
 
 ## Conflict and failure handling
 
@@ -779,8 +797,10 @@ made before creating a new file cannot be used to delete that file.
   capacity. Only after an operator independently confirms that entries remain
   within their limit and bytes alone are exhausted may you raise
   \`--checkpoint-bytes\` / \`TILEDMCP_CHECKPOINT_BYTES\` and restart. Raising
-  the byte quota cannot repair an entry-limit or inventory-blocker condition;
-  explicit checkpoint prune/retention is not implemented.
+  the byte quota cannot repair an entry-limit or inventory-blocker condition.
+  An operator may explicitly preview and approve pruning one committed
+  checkpoint; automatic retention and prepared-checkpoint deletion remain
+  unsupported.
 - On validation failure, inspect diagnostics before proposing another change.
 - Do not mutate files outside TiledMCP while relying on a previously observed
   revision. Revisions are SHA-256 identities of the exact bytes that were read.

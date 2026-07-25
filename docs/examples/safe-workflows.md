@@ -17,14 +17,14 @@
    `filesystemThreatModelContract`，以及
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 18 个工具。`tiled_render_map` 只有在
+3. 核心 profile 当前包含 19 个工具。`tiled_render_map` 只有在
    `tmxrasterizer` 探测成功后才会注册，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 18 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 19 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -58,7 +58,8 @@ content-addressed object 或 manifest；error details 是不透明诊断，不�
 动作。检查 capability、内部状态和部署容量后，只有操作者另行确认 entry 维度仍在上限内、
 byte 维度单独超限时，才可提高 `--checkpoint-bytes` /
 `TILEDMCP_CHECKPOINT_BYTES` 并重启；entry 超限或 inventory blocker 不会因提高 byte quota
-消失，当前也没有受支持的显式 prune/retention。
+消失。可以经 preview/批准显式 prune 一个 committed checkpoint；prepared 状态删除与
+自动 retention 仍不受支持。
 
 ## 把 revision 与依赖当成同一个快照传递
 
@@ -129,13 +130,18 @@ revision。只有收到针对该 proposal 的明确批准后，才调用
 
 - `tiled_add_tileset_to_map`
 - `tiled_create_layer`
+- `tiled_preview_checkpoint_prune`
 - `tiled_preview_checkpoint_restore`
 
 checkpoint restore 只恢复 manifest 指向的单个 JSON 文档，不会连带恢复其 tileset、图片
-或其他依赖。提交后重新读取 map summary，并按需要调用 `tiled_validate` 和
+或其他依赖。checkpoint prune 只接受一个 committed checkpoint ID；它绑定 raw manifest
+revision，获批 apply 后永久删除该 manifest，再运行 fail-closed orphan GC，但不会修改
+目标项目资产。提交后重新读取 map summary，并按需要调用 `tiled_validate` 和
 `tiled_render_preview` 检查结构与视觉结果。change set 会过期；map edit proposal 会绑定
 目标 map revision，并在适用时绑定完整 dependency pins，而 checkpoint restore 只绑定
-其单个目标文档的 revision。任一种 proposal 过期或冲突后都必须重新预览和批准。
+其单个目标文档的 revision，checkpoint prune 则绑定 manifest revision。任一种 proposal
+过期或冲突后都必须重新预览和批准；prune 成功后不留 tombstone，不要把 not-found 当成
+可重试信号。
 
 ## `tiled_create_map` 是 no-replace 例外
 

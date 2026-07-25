@@ -22,10 +22,20 @@ interface LockRecord {
 
 const LOCK_RELEASE_RACE_RETRIES = 64;
 
+export interface ProjectFileLockOptions {
+  /**
+   * Called when the helper cannot confirm release of the lock it acquired.
+   * The callback is deliberately diagnostic-only: release errors remain
+   * non-throwing so they cannot mask an operation that already committed.
+   */
+  onReleaseFailure?: () => void;
+}
+
 export async function withProjectFileLock<T>(
   resolver: ProjectPathResolver,
   target: string,
   operation: () => Promise<T>,
+  options: ProjectFileLockOptions = {},
 ): Promise<T> {
   const locksDirectory = await resolver.ensureInternalDirectory(".tiledmcp/locks");
   const lockPath = join(locksDirectory, `${shortHash(target)}.lock`);
@@ -35,7 +45,19 @@ export async function withProjectFileLock<T>(
   try {
     return await operation();
   } finally {
-    await release(lockPath, token);
+    const released = await release(
+      lockPath,
+      token,
+    );
+    if (!released) {
+      try {
+        options.onReleaseFailure?.();
+      } catch {
+        writeLockDiagnostic(
+          "tiled-mcp: lock release failure observer failed\n",
+        );
+      }
+    }
   }
 }
 
@@ -198,16 +220,41 @@ async function readLockRecord(lockPath: string): Promise<LockRecord> {
   return value as LockRecord;
 }
 
-async function release(lockPath: string, token: string): Promise<void> {
+async function release(
+  lockPath: string,
+  token: string,
+): Promise<boolean> {
   try {
     const record = await readLockRecord(lockPath);
     if (record.token === token) {
       await unlink(lockPath);
+      return true;
     }
+    writeLockDiagnostic(
+      `tiled-mcp: lock ownership changed before release ${lockPath}\n`,
+    );
+    return false;
   } catch (error) {
-    if (!hasCode(error, "ENOENT")) {
-      process.stderr.write(`tiled-mcp: could not release lock ${lockPath}: ${String(error)}\n`);
+    if (
+      hasCode(error, "ENOENT") ||
+      isVanishedLockRace(error)
+    ) {
+      return true;
     }
+    writeLockDiagnostic(
+      `tiled-mcp: could not release lock ${lockPath}: ${String(error)}\n`,
+    );
+    return false;
+  }
+}
+
+function writeLockDiagnostic(
+  message: string,
+): void {
+  try {
+    process.stderr.write(message);
+  } catch {
+    // Lock release reporting must never mask the operation outcome.
   }
 }
 

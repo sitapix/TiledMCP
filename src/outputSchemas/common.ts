@@ -140,10 +140,158 @@ export const commitResultOutputSchema = z
   })
   .strict();
 
-export const applyResultOutputSchema =
+export const documentApplyResultOutputSchema =
   commitResultOutputSchema.extend({
     changeSetId: changeSetIdOutputSchema,
   });
+
+const checkpointGarbageCollectionBlockerOutputSchema =
+  z
+    .object({
+      directory: z.enum([
+        "checkpoints",
+        "objects",
+      ]),
+      fileName: z
+        .string()
+        .max(1_024)
+        .optional(),
+      reason: z.enum([
+        "entry-inspection-failed",
+        "byte-accounting-limit-exceeded",
+        "malformed-manifest",
+        "missing-referenced-object",
+        "non-regular-entry",
+        "scan-limit-exceeded",
+        "symbolic-link",
+        "unexpected-entry",
+      ]),
+      message: z.string().max(4_096),
+    })
+    .strict();
+
+const checkpointGarbageCollectionCountOutputSchema =
+  nonnegativeIntegerOutputSchema.max(
+    Number.MAX_SAFE_INTEGER,
+  );
+
+const checkpointPruneGarbageCollectionCompletedOutputSchema =
+  z
+    .object({
+      status: z.literal("completed"),
+      deletedBytes:
+        checkpointGarbageCollectionCountOutputSchema,
+      deletedEntries:
+        checkpointGarbageCollectionCountOutputSchema,
+      deletedObjects:
+        checkpointGarbageCollectionCountOutputSchema,
+      deletedTemporaryFiles:
+        checkpointGarbageCollectionCountOutputSchema,
+      blockerCount: z.literal(0),
+      blockers: z.tuple([]),
+      blockersTruncated: z.literal(false),
+    })
+    .strict();
+
+const checkpointPruneGarbageCollectionBlockedOutputSchema =
+  z
+    .object({
+      status: z.literal("blocked"),
+      deletedBytes: z.literal(0),
+      deletedEntries: z.literal(0),
+      deletedObjects: z.literal(0),
+      deletedTemporaryFiles: z.literal(0),
+      blockerCount:
+        positiveIntegerOutputSchema.max(
+          Number.MAX_SAFE_INTEGER,
+        ),
+      blockers: z
+        .array(
+          checkpointGarbageCollectionBlockerOutputSchema,
+        )
+        .min(1)
+        .max(32),
+      blockersTruncated: z.boolean(),
+    })
+    .strict();
+
+const checkpointPruneGarbageCollectionFailedOutputSchema =
+  z
+    .object({
+      status: z.literal("failed"),
+      failureCode: z.literal(
+        "INTERNAL_ERROR",
+      ),
+      deletionOutcome: z.literal(
+        "unknown-partial-or-none",
+      ),
+    })
+    .strict();
+
+const checkpointPruneBeforeOutputSchema = z.union([
+  z
+    .object({
+      existed: z.literal(false),
+    })
+    .strict(),
+  z
+    .object({
+      existed: z.literal(true),
+      revision: revisionOutputSchema,
+      objectHash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/u),
+      size: nonnegativeIntegerOutputSchema.max(
+        Number.MAX_SAFE_INTEGER,
+      ),
+    })
+    .strict(),
+]);
+
+export const checkpointPruneApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal("checkpointPrune"),
+      changeSetId: changeSetIdOutputSchema,
+      checkpoint: z
+        .object({
+          id: checkpointIdOutputSchema,
+          createdAt:
+            checkpointTimestampOutputSchema,
+          label: z
+            .string()
+            .max(1_024)
+            .optional(),
+          path: projectPathOutputSchema,
+          status: z.literal("committed"),
+          before:
+            checkpointPruneBeforeOutputSchema,
+          afterRevision:
+            revisionOutputSchema,
+        })
+        .strict(),
+      manifestDeleted: z.literal(true),
+      garbageCollection: z.union([
+        checkpointPruneGarbageCollectionCompletedOutputSchema,
+        checkpointPruneGarbageCollectionBlockedOutputSchema,
+        checkpointPruneGarbageCollectionFailedOutputSchema,
+      ]),
+      warnings: z
+        .array(z.string().max(4_096))
+        .max(32)
+        .optional(),
+    })
+    .strict();
+
+/*
+ * Preserve the existing document-commit wire shape exactly. Checkpoint prune
+ * mutates recovery metadata rather than a project document, so it has its own
+ * explicitly discriminated success branch.
+ */
+export const applyResultOutputSchema = z.union([
+  documentApplyResultOutputSchema,
+  checkpointPruneApplyResultOutputSchema,
+]);
 
 export const applicationErrorResultOutputSchema = z
   .object({
