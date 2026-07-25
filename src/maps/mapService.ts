@@ -17,6 +17,14 @@ import {
 } from "../formats/json.js";
 import { revisionOf } from "../storage/revision.js";
 import {
+  transactionPlanId,
+  type ChangeSetPlan,
+  type TransactionApplyOutcome,
+  type TransactionMemberApplyResult,
+  type TransactionPlan,
+} from "../changeSets.js";
+import type { TransactionTargetInput } from "../storage/transactions.js";
+import {
   assertTilesetCreatePlan,
   buildTilesetDocument,
   computeAtlasGrid,
@@ -2389,6 +2397,24 @@ export class MapService {
   ): Promise<
     CommitResult & { changeSetId: string }
   > {
+    const patchedSource =
+      await this.prepareTilesetEditBytes(plan);
+    const result = await this.store.commitBytes(
+      plan.tilesetPath,
+      plan.baseRevision,
+      patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  /**
+   * Replays a tileset edit plan against current project state and returns
+   * the patched TSJ bytes without committing them.
+   */
+  private async prepareTilesetEditBytes(
+    plan: TilesetEditPlan,
+  ): Promise<Buffer> {
     assertTilesetEditPlan(plan);
     const context = await this.loadEditableContext(
       plan.mapPath,
@@ -2439,7 +2465,7 @@ export class MapService {
         "The tileset edit summary does not match its updates.",
       );
     }
-    const patchedSource = patchJsonDocumentSource(
+    return patchJsonDocumentSource(
       loaded.source,
       edited,
       [],
@@ -2449,13 +2475,6 @@ export class MapService {
       applied.patches.deletions,
       [],
     );
-    const result = await this.store.commitBytes(
-      plan.tilesetPath,
-      plan.baseRevision,
-      patchedSource,
-      `apply change set ${plan.id}`,
-    );
-    return { ...result, changeSetId: plan.id };
   }
 
   async planCreateTileset(
@@ -2569,6 +2588,28 @@ export class MapService {
   ): Promise<
     CommitResult & { changeSetId: string }
   > {
+    const { document } =
+      await this.prepareTilesetCreateContent(
+        plan,
+      );
+    const result = await this.store.create(
+      plan.tilesetPath,
+      document,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  /**
+   * Replays a tileset create plan and returns the prospective document
+   * plus its exact serialized bytes without creating the file.
+   */
+  private async prepareTilesetCreateContent(
+    plan: TilesetCreatePlan,
+  ): Promise<{
+    document: JsonObject;
+    content: Buffer;
+  }> {
     assertTilesetCreatePlan(plan);
     const image = await readImageFileSnapshot(
       this.resolver,
@@ -2642,12 +2683,7 @@ export class MapService {
         "The tileset create summary does not match its replayed content.",
       );
     }
-    const result = await this.store.create(
-      plan.tilesetPath,
-      document,
-      `apply change set ${plan.id}`,
-    );
-    return { ...result, changeSetId: plan.id };
+    return { document, content };
   }
 
   async planDeleteFile(input: {
@@ -2705,13 +2741,7 @@ export class MapService {
   ): Promise<
     FileDeleteStoreResult & { changeSetId: string }
   > {
-    assertFileDeletePlan(plan);
-    // References may have appeared since the preview; the scan is fail-closed
-    // evidence, so it re-runs against the current project state.
-    await this.scanDeleteReferences(
-      plan.targetPath,
-      plan.targetKind,
-    );
+    await this.prepareDeleteFile(plan);
     const result =
       await this.store.deleteDocument(
         plan.targetPath,
@@ -2719,6 +2749,221 @@ export class MapService {
         `apply change set ${plan.id}`,
       );
     return { ...result, changeSetId: plan.id };
+  }
+
+  /**
+   * Re-validates a delete plan without unlinking. References may have
+   * appeared since the preview; the scan is fail-closed evidence, so it
+   * re-runs against the current project state.
+   */
+  private async prepareDeleteFile(
+    plan: FileDeletePlan,
+  ): Promise<void> {
+    assertFileDeletePlan(plan);
+    await this.scanDeleteReferences(
+      plan.targetPath,
+      plan.targetKind,
+    );
+  }
+
+  async applyTransaction(
+    plan: TransactionPlan,
+    memberPlans: readonly ChangeSetPlan[],
+  ): Promise<{
+    result: TransactionApplyOutcome;
+    memberResults: Map<
+      string,
+      TransactionMemberApplyResult
+    >;
+  }> {
+    const { id: suppliedId, ...unsigned } = plan;
+    if (
+      suppliedId !== transactionPlanId(unsigned)
+    ) {
+      throw new TiledMcpError(
+        "CHANGE_SET_TAMPERED",
+        "The transaction plan contents do not match its digest. Preview the transaction again.",
+        { suppliedId },
+      );
+    }
+    if (
+      memberPlans.length !== plan.targets.length
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The transaction member plans do not match the approved targets.",
+      );
+    }
+    const targets: TransactionTargetInput[] = [];
+    for (
+      let index = 0;
+      index < plan.targets.length;
+      index += 1
+    ) {
+      const target = plan.targets[index];
+      const memberPlan = memberPlans[index];
+      if (
+        target === undefined ||
+        memberPlan === undefined ||
+        memberPlan.kind !== target.planKind ||
+        memberPlan.id !== target.memberPlanDigest
+      ) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "A transaction member plan does not match the approved target it was locked for.",
+          { index },
+        );
+      }
+      const prepared =
+        await this.prepareTransactionTarget(
+          memberPlan,
+        );
+      if (
+        prepared.path !== target.path ||
+        ("expectedRevision" in prepared
+          ? prepared.expectedRevision
+          : null) !== target.expectedRevision
+      ) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "A prepared transaction target no longer matches its approved path or revision pin.",
+          { index, path: target.path },
+        );
+      }
+      targets.push(prepared);
+    }
+    const commit =
+      await this.store.commitTransaction(
+        targets,
+        `apply transaction change set ${plan.id}`,
+      );
+    const memberResults = new Map<
+      string,
+      TransactionMemberApplyResult
+    >();
+    const results: TransactionMemberApplyResult[] =
+      [];
+    for (
+      let index = 0;
+      index < plan.targets.length;
+      index += 1
+    ) {
+      const target = plan.targets[index];
+      const targetResult = commit.results[index];
+      if (
+        target === undefined ||
+        targetResult === undefined ||
+        targetResult.path !== target.path
+      ) {
+        throw new TiledMcpError(
+          "INTERNAL_ERROR",
+          "The transaction commit results do not line up with the approved targets.",
+        );
+      }
+      let memberResult: TransactionMemberApplyResult;
+      if (targetResult.kind === "delete") {
+        if (targetResult.beforeRevision === null) {
+          throw new TiledMcpError(
+            "INTERNAL_ERROR",
+            "A transaction deletion result is missing its before revision.",
+          );
+        }
+        memberResult = {
+          kind: "fileDelete",
+          path: targetResult.path,
+          beforeRevision:
+            targetResult.beforeRevision,
+          checkpointId: targetResult.checkpointId,
+          deleted: true,
+          changeSetId: target.memberChangeSetId,
+        };
+      } else {
+        if (targetResult.revision === null) {
+          throw new TiledMcpError(
+            "INTERNAL_ERROR",
+            "A transaction commit result is missing its content revision.",
+          );
+        }
+        memberResult = {
+          path: targetResult.path,
+          beforeRevision:
+            targetResult.beforeRevision,
+          revision: targetResult.revision,
+          checkpointId: targetResult.checkpointId,
+          changed: true,
+          changeSetId: target.memberChangeSetId,
+        };
+      }
+      results.push(memberResult);
+      memberResults.set(
+        target.memberChangeSetId,
+        memberResult,
+      );
+    }
+    const result: TransactionApplyOutcome = {
+      kind: "transaction",
+      transactionId: commit.transactionId,
+      results,
+      ...(commit.warnings === undefined
+        ? {}
+        : { warnings: commit.warnings }),
+    };
+    return { result, memberResults };
+  }
+
+  /**
+   * Replays one transaction member plan into the exact bytes-level target
+   * the journaled commit protocol consumes, without touching the store.
+   */
+  private async prepareTransactionTarget(
+    memberPlan: ChangeSetPlan,
+  ): Promise<TransactionTargetInput> {
+    if (memberPlan.kind === "mapEdit") {
+      return {
+        kind: "replace",
+        path: memberPlan.mapPath,
+        expectedRevision: memberPlan.baseRevision,
+        content:
+          await this.prepareMapEditBytes(
+            memberPlan,
+          ),
+      };
+    }
+    if (memberPlan.kind === "tilesetEdit") {
+      return {
+        kind: "replace",
+        path: memberPlan.tilesetPath,
+        expectedRevision: memberPlan.baseRevision,
+        content:
+          await this.prepareTilesetEditBytes(
+            memberPlan,
+          ),
+      };
+    }
+    if (memberPlan.kind === "tilesetCreate") {
+      const { content } =
+        await this.prepareTilesetCreateContent(
+          memberPlan,
+        );
+      return {
+        kind: "create",
+        path: memberPlan.tilesetPath,
+        content,
+      };
+    }
+    if (memberPlan.kind === "fileDelete") {
+      await this.prepareDeleteFile(memberPlan);
+      return {
+        kind: "delete",
+        path: memberPlan.targetPath,
+        expectedRevision: memberPlan.baseRevision,
+      };
+    }
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "A transaction member plan has an unsupported kind.",
+      { kind: memberPlan.kind },
+    );
   }
 
   private async scanDeleteReferences(
@@ -3162,6 +3407,24 @@ export class MapService {
   }
 
   async applyEdits(plan: MapEditPlan): Promise<CommitResult & { changeSetId: string }> {
+    const patchedSource =
+      await this.prepareMapEditBytes(plan);
+    const result = await this.store.commitBytes(
+      plan.mapPath,
+      plan.baseRevision,
+      patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  /**
+   * Replays a map edit plan against current project state and returns the
+   * patched TMJ bytes without committing them.
+   */
+  private async prepareMapEditBytes(
+    plan: MapEditPlan,
+  ): Promise<Buffer> {
     assertPlanShape(plan);
     const { id: suppliedId, ...unsignedPlan } = plan;
     const expectedId = planId(unsignedPlan);
@@ -3367,7 +3630,7 @@ export class MapService {
       appliedSummary.affectedTileLayerIds,
       plan.mapPath,
     );
-    const patchedSource = patchJsonDocumentSource(
+    return patchJsonDocumentSource(
       context.loaded.source,
       edited,
       sourcePatchPathsForSummary(edited, appliedSummary, plan.mapPath),
@@ -3393,13 +3656,6 @@ export class MapService {
         plan.mapPath,
       ),
     );
-    const result = await this.store.commitBytes(
-      plan.mapPath,
-      plan.baseRevision,
-      patchedSource,
-      `apply change set ${plan.id}`,
-    );
-    return { ...result, changeSetId: plan.id };
   }
 
   async assertRenderSafe(

@@ -14,12 +14,12 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 28 tools
-- `with-tmxrasterizer`: 29 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 29 tools
+- `with-tmxrasterizer`: 30 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -29,6 +29,7 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "ASSET_REGISTRY_LIMIT_EXCEEDED",
     "CHANGE_SET_LIMIT_EXCEEDED",
     "CHANGE_SET_NOT_FOUND",
+    "CHANGE_SET_OWNED",
     "CHECKPOINT_CHANGED",
     "CHECKPOINT_CORRUPT",
     "CHECKPOINT_NOT_COMMITTED",
@@ -163,9 +164,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3",
+    "revision": "sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239",
     "serverVersion": "0.0.1",
-    "size": 3928
+    "size": 3952
   },
   "annotations": {
     "audience": [
@@ -177,7 +178,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3928,
+  "size": 3952,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -190,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:644b658fbab477371a2aa07668694b0d8e141151e1baffafca4eef9704c3d1c8",
+    "revision": "sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16",
     "serverVersion": "0.0.1",
-    "size": 75203
+    "size": 76783
   },
   "annotations": {
     "audience": [
@@ -204,15 +205,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 75203,
+  "size": 76783,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
+Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 75203 UTF-8 bytes, revision `sha256:644b658fbab477371a2aa07668694b0d8e141151e1baffafca4eef9704c3d1c8`.
+Content contract: `text`, 76783 UTF-8 bytes, revision `sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16`.
 
 Resource templates: none.
 
@@ -638,6 +639,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -1533,6 +1535,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -1681,7 +1684,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
+Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
 
 Annotations:
 
@@ -2206,6 +2209,480 @@ Output schema:
                 "beforeRevision",
                 "checkpointId",
                 "deleted"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "changeSetId": {
+                  "pattern": "^changeset:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "transaction",
+                  "type": "string"
+                },
+                "results": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "beforeRevision": {
+                            "anyOf": [
+                              {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "changeSetId": {
+                            "pattern": "^changeset:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "changed": {
+                            "type": "boolean"
+                          },
+                          "checkpointId": {
+                            "anyOf": [
+                              {
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "checkpointRetention": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "manifestDeleted": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "policy": {
+                                    "const": "rolling-per-target-count-v1",
+                                    "type": "string"
+                                  },
+                                  "retainCommittedPerTarget": {
+                                    "maximum": 10000,
+                                    "minimum": 2,
+                                    "type": "integer"
+                                  },
+                                  "rollingCommittedCount": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "status": {
+                                    "const": "not-needed",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "policy",
+                                  "retainCommittedPerTarget",
+                                  "status",
+                                  "manifestDeleted",
+                                  "rollingCommittedCount"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "manifestDeleted": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "policy": {
+                                    "const": "rolling-per-target-count-v1",
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "enum": [
+                                      "current-checkpoint-changed",
+                                      "current-not-highest-rolling",
+                                      "incomplete-inventory",
+                                      "object-verification-failed",
+                                      "prepared-checkpoint-present",
+                                      "sequence-state-invalid",
+                                      "target-validation-failed",
+                                      "unsafe-lineage"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "retainCommittedPerTarget": {
+                                    "maximum": 10000,
+                                    "minimum": 2,
+                                    "type": "integer"
+                                  },
+                                  "rollingCommittedCount": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "status": {
+                                    "const": "blocked",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "policy",
+                                  "retainCommittedPerTarget",
+                                  "status",
+                                  "manifestDeleted",
+                                  "reason",
+                                  "rollingCommittedCount"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "deletedCheckpointId": {
+                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                                    "type": "string"
+                                  },
+                                  "garbageCollection": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "blockerCount": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "blockers": {
+                                            "items": [],
+                                            "type": "array"
+                                          },
+                                          "blockersTruncated": {
+                                            "const": false,
+                                            "type": "boolean"
+                                          },
+                                          "deletedBytes": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "deletedEntries": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "deletedObjects": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "deletedTemporaryFiles": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "status": {
+                                            "const": "completed",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "status",
+                                          "deletedBytes",
+                                          "deletedEntries",
+                                          "deletedObjects",
+                                          "deletedTemporaryFiles",
+                                          "blockerCount",
+                                          "blockers",
+                                          "blockersTruncated"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "blockerCount": {
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991,
+                                            "type": "integer"
+                                          },
+                                          "blockers": {
+                                            "items": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "directory": {
+                                                  "enum": [
+                                                    "checkpoints",
+                                                    "objects"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "fileName": {
+                                                  "maxLength": 1024,
+                                                  "type": "string"
+                                                },
+                                                "message": {
+                                                  "maxLength": 4096,
+                                                  "type": "string"
+                                                },
+                                                "reason": {
+                                                  "enum": [
+                                                    "entry-inspection-failed",
+                                                    "byte-accounting-limit-exceeded",
+                                                    "malformed-manifest",
+                                                    "missing-referenced-object",
+                                                    "non-regular-entry",
+                                                    "scan-limit-exceeded",
+                                                    "symbolic-link",
+                                                    "unexpected-entry"
+                                                  ],
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "directory",
+                                                "reason",
+                                                "message"
+                                              ],
+                                              "type": "object"
+                                            },
+                                            "maxItems": 32,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "blockersTruncated": {
+                                            "type": "boolean"
+                                          },
+                                          "deletedBytes": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "deletedEntries": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "deletedObjects": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "deletedTemporaryFiles": {
+                                            "const": 0,
+                                            "type": "number"
+                                          },
+                                          "status": {
+                                            "const": "blocked",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "status",
+                                          "deletedBytes",
+                                          "deletedEntries",
+                                          "deletedObjects",
+                                          "deletedTemporaryFiles",
+                                          "blockerCount",
+                                          "blockers",
+                                          "blockersTruncated"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "deletionOutcome": {
+                                            "const": "unknown-partial-or-none",
+                                            "type": "string"
+                                          },
+                                          "failureCode": {
+                                            "const": "INTERNAL_ERROR",
+                                            "type": "string"
+                                          },
+                                          "status": {
+                                            "const": "failed",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "status",
+                                          "failureCode",
+                                          "deletionOutcome"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "manifestDeleted": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "policy": {
+                                    "const": "rolling-per-target-count-v1",
+                                    "type": "string"
+                                  },
+                                  "retainCommittedPerTarget": {
+                                    "maximum": 10000,
+                                    "minimum": 2,
+                                    "type": "integer"
+                                  },
+                                  "rollingCommittedCountBefore": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "status": {
+                                    "const": "deleted",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "policy",
+                                  "retainCommittedPerTarget",
+                                  "status",
+                                  "manifestDeleted",
+                                  "deletedCheckpointId",
+                                  "rollingCommittedCountBefore",
+                                  "garbageCollection"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "failureCode": {
+                                    "const": "INTERNAL_ERROR",
+                                    "type": "string"
+                                  },
+                                  "manifestDeleted": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "policy": {
+                                    "const": "rolling-per-target-count-v1",
+                                    "type": "string"
+                                  },
+                                  "retainCommittedPerTarget": {
+                                    "maximum": 10000,
+                                    "minimum": 2,
+                                    "type": "integer"
+                                  },
+                                  "status": {
+                                    "const": "failed",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "policy",
+                                  "retainCommittedPerTarget",
+                                  "status",
+                                  "manifestDeleted",
+                                  "failureCode"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "warnings": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "beforeRevision",
+                          "revision",
+                          "checkpointId",
+                          "changed",
+                          "changeSetId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "beforeRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "changeSetId": {
+                            "pattern": "^changeset:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "checkpointId": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          "deleted": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "const": "fileDelete",
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "warnings": {
+                            "items": {
+                              "maxLength": 4096,
+                              "type": "string"
+                            },
+                            "maxItems": 32,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "changeSetId",
+                          "path",
+                          "beforeRevision",
+                          "checkpointId",
+                          "deleted"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 16,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "transactionId": {
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "kind",
+                "changeSetId",
+                "transactionId",
+                "results"
               ],
               "type": "object"
             },
@@ -4062,6 +4539,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -4929,6 +5407,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -5592,6 +6071,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -6216,6 +6696,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -6675,6 +7156,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -7696,6 +8178,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -7959,7 +8442,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3",
+                  "const": "sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -7967,7 +8450,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3928,
+                  "const": 3952,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -11923,6 +12406,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_transaction",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     }
@@ -12037,6 +12524,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_edits",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_transaction",
                       "type": "string"
                     },
                     {
@@ -13220,6 +13711,111 @@ Output schema:
               ],
               "type": "object"
             },
+            "transactionCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "commitPoint": {
+                  "const": "manifest-committed-atomic-rename",
+                  "type": "string"
+                },
+                "crashAfterCommitPoint": {
+                  "const": "rolled-forward-on-startup",
+                  "type": "string"
+                },
+                "crashBeforeCommitPoint": {
+                  "const": "rolled-back-on-startup",
+                  "type": "string"
+                },
+                "divergedTargetRecovery": {
+                  "const": "single-target-conflict-others-roll-forward",
+                  "type": "string"
+                },
+                "expectedRevisionSemantics": {
+                  "const": "sha256-of-ordered-target-pins",
+                  "type": "string"
+                },
+                "form": {
+                  "const": "compose-approved-change-sets",
+                  "type": "string"
+                },
+                "journal": {
+                  "const": "redo-journal-content-addressed-staging",
+                  "type": "string"
+                },
+                "maxMembers": {
+                  "const": 16,
+                  "type": "number"
+                },
+                "maxPendingTransactions": {
+                  "const": 4,
+                  "type": "number"
+                },
+                "maxStagedBytes": {
+                  "const": 67108864,
+                  "type": "number"
+                },
+                "memberKinds": {
+                  "items": [
+                    {
+                      "const": "mapEdit",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tilesetEdit",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tilesetCreate",
+                      "type": "string"
+                    },
+                    {
+                      "const": "fileDelete",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "memberOwnership": {
+                  "const": "locked-against-individual-apply-while-pending",
+                  "type": "string"
+                },
+                "memberTargets": {
+                  "const": "pairwise-distinct-paths",
+                  "type": "string"
+                },
+                "minMembers": {
+                  "const": 2,
+                  "type": "number"
+                },
+                "perTargetCheckpoints": {
+                  "const": "committed-before-promotion",
+                  "type": "string"
+                },
+                "previewTool": {
+                  "const": "tiled_preview_transaction",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "form",
+                "previewTool",
+                "memberKinds",
+                "minMembers",
+                "maxMembers",
+                "maxPendingTransactions",
+                "maxStagedBytes",
+                "memberTargets",
+                "memberOwnership",
+                "expectedRevisionSemantics",
+                "journal",
+                "commitPoint",
+                "crashBeforeCommitPoint",
+                "crashAfterCommitPoint",
+                "divergedTargetRecovery",
+                "perTargetCheckpoints"
+              ],
+              "type": "object"
+            },
             "usageAnalysisCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -13305,6 +13901,7 @@ Output schema:
             "mapCreationCapabilities",
             "tilesetCreationCapabilities",
             "fileDeletionCapabilities",
+            "transactionCapabilities",
             "tileDataReadCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
@@ -13338,6 +13935,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -13913,6 +14511,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -15649,6 +16248,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -16095,6 +16695,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -17392,6 +17993,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -17932,6 +18534,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -18205,6 +18808,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -18598,6 +19202,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -19133,6 +19738,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -19918,6 +20524,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -20417,6 +21024,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -27540,6 +28148,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -28273,6 +28882,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -28984,6 +29594,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -29576,6 +30187,455 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_preview_transaction`
+
+Availability: `core`
+
+Composes between 2 and 16 already previewed, unapplied map edit, tileset edit, tileset creation, or file deletion change sets with pairwise-distinct target paths into one expiring transaction change set, locking each member against individual apply. Applying the transaction commits every member through a crash-recoverable redo journal: all targets land or none do.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: 把 2..16 个已预览未 apply、目标路径两两不同的 change set 组合成一个原子事务 change set；成员被锁定禁止单独 apply，事务 apply 走崩溃可恢复 redo journal，全部落盘或全部不落。
+
+```json
+{
+  "arguments": {
+    "changeSetIds": [
+      "changeset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "changeset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+  },
+  "name": "tiled_preview_transaction"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "changeSetIds": {
+      "items": {
+        "pattern": "^changeset:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  "required": [
+    "changeSetIds"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "transaction",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "destructive": {
+                    "type": "boolean"
+                  },
+                  "expectedRevision": {
+                    "anyOf": [
+                      {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "memberChangeSetId": {
+                    "pattern": "^changeset:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "planKind": {
+                    "enum": [
+                      "mapEdit",
+                      "tilesetEdit",
+                      "tilesetCreate",
+                      "fileDelete"
+                    ],
+                    "type": "string"
+                  },
+                  "targetKind": {
+                    "enum": [
+                      "replace",
+                      "create",
+                      "delete"
+                    ],
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "transactionMember",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "memberChangeSetId",
+                  "planKind",
+                  "targetKind",
+                  "path",
+                  "expectedRevision"
+                ],
+                "type": "object"
+              },
+              "maxItems": 16,
+              "minItems": 2,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "memberCount": {
+                  "maximum": 16,
+                  "minimum": 2,
+                  "type": "integer"
+                },
+                "targets": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expectedRevision": {
+                        "anyOf": [
+                          {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "memberChangeSetId": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "memberPlanDigest": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "planKind": {
+                        "enum": [
+                          "mapEdit",
+                          "tilesetEdit",
+                          "tilesetCreate",
+                          "fileDelete"
+                        ],
+                        "type": "string"
+                      },
+                      "targetKind": {
+                        "enum": [
+                          "replace",
+                          "create",
+                          "delete"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "memberChangeSetId",
+                      "memberPlanDigest",
+                      "planKind",
+                      "targetKind",
+                      "path",
+                      "expectedRevision"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 16,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "wouldChange": {
+                  "const": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "memberCount",
+                "targets",
+                "wouldChange"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "expectedRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -29964,6 +31024,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -31390,6 +32451,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -31994,6 +33056,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -32574,6 +33637,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -33648,6 +34712,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -33955,6 +35020,7 @@ Output schema:
                     "ASSET_REGISTRY_LIMIT_EXCEEDED",
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",

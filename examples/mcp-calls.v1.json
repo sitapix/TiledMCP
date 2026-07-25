@@ -466,6 +466,17 @@
       "purpose": "在同一待批准 change set 中预览严格 map 根属性编辑、已有 path 的完整 points 替换，以及 object-local polygon/polyline 与 bounded flat-wire text 创建。"
     },
     {
+      "name": "tiled_preview_transaction",
+      "profile": "core",
+      "arguments": {
+        "changeSetIds": [
+          "changeset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "changeset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "purpose": "把 2..16 个已预览未 apply、目标路径两两不同的 change set 组合成一个原子事务 change set；成员被锁定禁止单独 apply，事务 apply 走崩溃可恢复 redo journal，全部落盘或全部不落。"
+    },
+    {
       "name": "tiled_apply_change_set",
       "profile": "core",
       "arguments": {

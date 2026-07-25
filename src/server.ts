@@ -18,6 +18,10 @@ import {
   ChangeSetRegistry,
   DEFAULT_MAX_PENDING_CELL_WRITES,
   DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
+  MAX_PENDING_TRANSACTIONS,
+  MAX_TRANSACTION_MEMBERS,
+  MIN_TRANSACTION_MEMBERS,
+  type TransactionPlan,
 } from "./changeSets.js";
 import {
   TILED_MCP_APPLICATION_ERROR_REGISTRY,
@@ -188,6 +192,7 @@ import {
   preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
+  previewTransactionToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -201,6 +206,7 @@ import {
   MAX_DELETE_REFERENCE_SCAN_BYTES,
   MAX_DELETE_REFERRER_SAMPLE,
 } from "./maps/fileDelete.js";
+import { MAX_TRANSACTION_STAGED_BYTES } from "./storage/transactions.js";
 import {
   MAX_DECODED_TILE_DATA_BYTES,
   MAX_TILE_LAYER_CHUNKS,
@@ -1489,6 +1495,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_update_tile",
     "tiled_create_layer",
     "tiled_preview_edits",
+    "tiled_preview_transaction",
     "tiled_apply_change_set",
   ] as const);
 export const TILED_MCP_OPTIONAL_TOOL_NAMES =
@@ -2392,6 +2399,41 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "sha256-of-restorable-content",
           expectedRevisionSemantics:
             "sha256-of-current-target-bytes",
+        },
+        transactionCapabilities: {
+          form: "compose-approved-change-sets",
+          previewTool:
+            "tiled_preview_transaction",
+          memberKinds: [
+            "mapEdit",
+            "tilesetEdit",
+            "tilesetCreate",
+            "fileDelete",
+          ],
+          minMembers: MIN_TRANSACTION_MEMBERS,
+          maxMembers: MAX_TRANSACTION_MEMBERS,
+          maxPendingTransactions:
+            MAX_PENDING_TRANSACTIONS,
+          maxStagedBytes:
+            MAX_TRANSACTION_STAGED_BYTES,
+          memberTargets:
+            "pairwise-distinct-paths",
+          memberOwnership:
+            "locked-against-individual-apply-while-pending",
+          expectedRevisionSemantics:
+            "sha256-of-ordered-target-pins",
+          journal:
+            "redo-journal-content-addressed-staging",
+          commitPoint:
+            "manifest-committed-atomic-rename",
+          crashBeforeCommitPoint:
+            "rolled-back-on-startup",
+          crashAfterCommitPoint:
+            "rolled-forward-on-startup",
+          divergedTargetRecovery:
+            "single-target-conflict-others-roll-forward",
+          perTargetCheckpoints:
+            "committed-before-promotion",
         },
         tileDataReadCapabilities: {
           readTools: [
@@ -4205,11 +4247,80 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_preview_transaction",
+    {
+      title:
+        "Preview an atomic multi-file transaction",
+      description:
+        "Composes between 2 and 16 already previewed, unapplied map edit, tileset edit, tileset creation, or file deletion change sets with pairwise-distinct target paths into one expiring transaction change set, locking each member against individual apply. Applying the transaction commits every member through a crash-recoverable redo journal: all targets land or none do.",
+      inputSchema: z
+        .object({
+          changeSetIds: z
+            .array(
+              z
+                .string()
+                .regex(
+                  /^changeset:[0-9a-f]{64}$/u,
+                ),
+            )
+            .min(MIN_TRANSACTION_MEMBERS)
+            .max(MAX_TRANSACTION_MEMBERS)
+            .superRefine(
+              (changeSetIds, context) => {
+                const seen = new Set<string>();
+                for (const [
+                  index,
+                  changeSetId,
+                ] of changeSetIds.entries()) {
+                  if (seen.has(changeSetId)) {
+                    context.addIssue({
+                      code: "custom",
+                      message: `changeSetIds[${index}] repeats ${changeSetId}`,
+                      path: [index],
+                    });
+                  }
+                  seen.add(changeSetId);
+                }
+              },
+            ),
+        })
+        .strict(),
+      outputSchema:
+        previewTransactionToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({ changeSetIds }) =>
+      executeTool(async () =>
+        changeSets.previewTransaction(
+          changeSetIds,
+        ),
+      ),
+  );
+
+  const applyTransactionChangeSet = async (
+    plan: TransactionPlan,
+  ) => {
+    const memberPlans =
+      changeSets.resolveTransactionMembers(plan);
+    const outcome = await maps.applyTransaction(
+      plan,
+      memberPlans,
+    );
+    changeSets.completeTransactionMembers(
+      plan,
+      outcome.memberResults,
+    );
+    return outcome.result;
+  };
+
+  register(
+    server,
+    registeredTools,
     "tiled_apply_change_set",
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
+        "Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
       inputSchema: z
         .object({
           changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
@@ -4280,9 +4391,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                               ? maps.applyDeleteFile(
                                   plan,
                                 )
-                              : maps.applyEdits(
-                                  plan,
-                                ),
+                              : plan.kind ===
+                                  "transaction"
+                                ? applyTransactionChangeSet(
+                                    plan,
+                                  )
+                                : maps.applyEdits(
+                                    plan,
+                                  ),
         ),
       ),
   );

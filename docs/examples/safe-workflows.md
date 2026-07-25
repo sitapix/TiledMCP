@@ -18,14 +18,14 @@
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
    `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 28 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 29，不能把它当成必备工具。
+3. 核心 profile 当前包含 29 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 30，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 28 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 29 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -531,6 +531,27 @@ checkpoint 再 unlink**，结果里的 `checkpointId` 就是恢复入口：
 3. 批准后 `tiled_apply_change_set` 以 no-replace 方式字节精确重建文件。
 
 期间若有人在原路径重建了文件，restore apply 以 `CHECKPOINT_STATE_CONFLICT` 拒绝。
+
+## 多文件要么全改要么不改：组合事务
+
+需要一批相关变更整体生效时（多张地图各自编辑、地图编辑 + 无关 tileset 编辑、
+删除加新建），不要逐个 apply 再人工补偿失败项，改用事务组合：
+
+1. 用平常的 preview 工具分别取得每个成员 change set（`tiled_preview_edits`、
+   `tiled_update_tile`、`tiled_create_tileset`、`tiled_delete_file`），成员目标
+   路径必须两两不同；
+2. `tiled_preview_transaction({changeSetIds: [/* 2..16 个成员 id */]})`，检查返回
+   的每条 `transactionMember` operation（删除成员带 `destructive:true`）确认组合
+   正确——此刻起成员被锁定，单独 apply 会得到 `CHANGE_SET_OWNED`；
+3. 人工批准后把事务的 `changeSetId` 与聚合 `expectedRevision` 交给
+   `tiled_apply_change_set`。任何一个成员的 revision pin 失效都会让整个事务
+   fail closed，所有文件保持原状；成功则返回
+   `{kind:"transaction", transactionId, results:[...]}`，逐成员结果与它们单独
+   apply 的形状完全一致（含各自的 `checkpointId` 恢复入口）。
+
+事务提交经崩溃可恢复 redo journal：提交点之前进程崩溃，重启对账把所有目标回滚
+到原状；之后崩溃则前滚补完。同时最多 4 个事务 pending；不想继续的事务等它过期
+即可，成员锁自动释放。tileset create + 挂载同一事务的耦合放行尚未开放。
 
 ## Raster 预览是可选能力
 

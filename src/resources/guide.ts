@@ -1294,6 +1294,31 @@ the content itself — and apply recreates the file byte-exactly with
 no-replace semantics. The same missing-target restore works for files
 deleted by external tools. Inspect \`fileDeletionCapabilities\` for the
 frozen policy strings and budgets.
+
+## Atomic multi-file transactions
+
+\`tiled_preview_transaction\` composes between 2 and 16 already previewed,
+unapplied change sets — map edits, tileset edits, tileset creations, and
+file deletions, with pairwise-distinct target paths — into one expiring
+transaction change set. Preview locks every member against individual
+apply (\`CHANGE_SET_OWNED\`); the lock releases if the transaction
+expires. The preview's \`expectedRevision\` is an aggregate digest over
+the ordered member target pins, since a multi-file proposal has no single
+current revision. After approval, pass it with the transaction's
+changeSetId to \`tiled_apply_change_set\`: every member plan is replayed
+against the current project state, all per-target revision pins are
+re-verified under the project file locks, and the targets commit through
+a crash-recoverable redo journal — either every file lands or none does.
+Each target still gets its own before-state checkpoint, so member changes
+stay individually restorable. The result is the discriminated
+\`{kind:"transaction", transactionId, results:[...]}\` branch whose
+per-member entries match the wire shape each member would have returned
+alone. If the process crashes mid-commit, startup recovery rolls the
+transaction back (before the commit point) or forward (after it); a
+target diverged by an outside writer during the crash window is reported
+as a conflict while the remaining targets still roll forward. At most 4
+transactions may be pending, and staged content is bounded at 64 MiB.
+Inspect \`transactionCapabilities\` for the frozen policy strings.
 `;
 
 const guideBytes = Buffer.from(GUIDE_RESOURCE_TEXT, "utf8");

@@ -42,6 +42,10 @@ import {
   MAX_CREATE_TILESET_TILE_EDGE,
 } from "../maps/tilesetCreate.js";
 import {
+  MAX_TRANSACTION_MEMBERS,
+  MIN_TRANSACTION_MEMBERS,
+} from "../changeSets.js";
+import {
   assetIdOutputSchema,
   changeSetIdOutputSchema,
   checkpointIdOutputSchema,
@@ -3003,6 +3007,130 @@ const fileDeletePreviewOutputSchema = z
 export const deleteFilePreviewToolOutputSchema =
   toolOutputSchema(
     fileDeletePreviewOutputSchema,
+  );
+
+const transactionMemberPlanKindOutputSchema =
+  z.enum([
+    "mapEdit",
+    "tilesetEdit",
+    "tilesetCreate",
+    "fileDelete",
+  ]);
+
+const transactionTargetKindOutputSchema = z.enum([
+  "replace",
+  "create",
+  "delete",
+]);
+
+const transactionPlanTargetOutputSchema = z
+  .object({
+    memberChangeSetId: changeSetIdOutputSchema,
+    memberPlanDigest: changeSetIdOutputSchema,
+    planKind:
+      transactionMemberPlanKindOutputSchema,
+    targetKind: transactionTargetKindOutputSchema,
+    path: projectPathOutputSchema,
+    expectedRevision:
+      revisionOutputSchema.nullable(),
+  })
+  .strict()
+  .superRefine((target, context) => {
+    if (
+      (target.expectedRevision === null) !==
+      (target.targetKind === "create")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedRevision"],
+        message:
+          "A transaction target pins a revision exactly when it does not create its file.",
+      });
+    }
+  });
+
+const transactionMemberOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("transactionMember"),
+      destructive: z.boolean(),
+      warning: z.string(),
+      memberChangeSetId: changeSetIdOutputSchema,
+      planKind:
+        transactionMemberPlanKindOutputSchema,
+      targetKind:
+        transactionTargetKindOutputSchema,
+      path: projectPathOutputSchema,
+      expectedRevision:
+        revisionOutputSchema.nullable(),
+    })
+    .strict()
+    .superRefine((operation, context) => {
+      if (
+        operation.destructive !==
+        (operation.targetKind === "delete")
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["destructive"],
+          message:
+            "A transaction member operation is destructive exactly when it deletes its target.",
+        });
+      }
+    });
+
+const transactionSummaryOutputSchema = z
+  .object({
+    memberCount: positiveIntegerOutputSchema
+      .min(MIN_TRANSACTION_MEMBERS)
+      .max(MAX_TRANSACTION_MEMBERS),
+    targets: z
+      .array(transactionPlanTargetOutputSchema)
+      .min(MIN_TRANSACTION_MEMBERS)
+      .max(MAX_TRANSACTION_MEMBERS),
+    wouldChange: z.literal(true),
+  })
+  .strict();
+
+const transactionPreviewOutputSchema = z
+  .object({
+    kind: z.literal("transaction"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        transactionMemberOperationPreviewOutputSchema,
+      )
+      .min(MIN_TRANSACTION_MEMBERS)
+      .max(MAX_TRANSACTION_MEMBERS),
+    summary: transactionSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict()
+  .superRefine((preview, context) => {
+    if (
+      preview.summary.memberCount !==
+        preview.operations.length ||
+      preview.summary.targets.length !==
+        preview.operations.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message:
+          "A transaction preview must describe every member exactly once in both its operations and its summary.",
+      });
+    }
+  });
+
+export const previewTransactionToolOutputSchema =
+  toolOutputSchema(
+    transactionPreviewOutputSchema,
   );
 
 export const createLayerPreviewToolOutputSchema =

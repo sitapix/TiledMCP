@@ -1,7 +1,12 @@
-# 跨文件 WAL 事务设计（M2，待批准）
+# 跨文件 WAL 事务设计（M2）
 
-状态：**设计稿，未实施**。本文对应已批准工作项"跨文件 WAL 事务（先设计后实施）"，
-给出方案对比、推荐设计与需要拍板的决策点。批准后按第 7 节切片实施。
+状态：**S1（存储核心）与 S2（wire 层）已实施**；第 6 节决策点 D1–D5 全部按推荐
+通过。S3（create+attach 耦合放行）待实施，S4 需另行拍板。实现入口：
+`DocumentStore.commitTransaction` / `recoverTransactions`
+（src/storage/documentStore.ts、src/storage/transactions.ts）与
+`ChangeSetRegistry.previewTransaction` + `MapService.applyTransaction`
+（src/changeSets.ts、src/maps/mapService.ts）；测试为
+tests/transactions.test.ts（逐步骤崩溃注入）与 tests/transactionWire.test.ts。
 
 ## 1. 目标与非目标
 

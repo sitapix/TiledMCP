@@ -133,6 +133,7 @@ export type ChangeSetPlan =
   | TilesetEditPlan
   | TilesetCreatePlan
   | FileDeletePlan
+  | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
@@ -147,6 +148,7 @@ type ChangeSetOperationResult =
   | (FileDeleteStoreResult & {
       changeSetId: string;
     })
+  | TransactionApplyOutcome
   | CheckpointPruneResult
   | CheckpointPruneBatchResult
   | PreparedCheckpointCommitResult
@@ -158,6 +160,9 @@ export type ChangeSetApplyResult =
       changeSetId: string;
     })
   | (FileDeleteStoreResult & {
+      changeSetId: string;
+    })
+  | (TransactionApplyOutcome & {
       changeSetId: string;
     })
   | (CheckpointPruneResult & {
@@ -184,6 +189,11 @@ interface ChangeSetEntry {
   expiresAt: number;
   result?: ChangeSetApplyResult;
   inFlight?: Promise<ChangeSetApplyResult>;
+  /**
+   * Transaction change set id that owns this member. Owned members cannot
+   * be applied individually; ownership clears when the owner expires.
+   */
+  ownedBy?: string;
 }
 
 interface ChangeSetPreviewCommon {
@@ -230,6 +240,132 @@ export interface FileDeleteChangeSetPreview
   kind: "fileDelete";
   targetPath: string;
   summary: FileDeletePlan["summary"];
+}
+
+export const MIN_TRANSACTION_MEMBERS = 2;
+export const MAX_TRANSACTION_MEMBERS = 16;
+export const MAX_PENDING_TRANSACTIONS = 4;
+const TRANSACTION_PLAN_HASH_DOMAIN =
+  "tiledmcp/transaction-plan/v1\0";
+export const TRANSACTION_WARNING =
+  "This atomically commits every member change set through a crash-recoverable journal: either all targets land or none do. Members are locked against individual apply while the transaction is pending.";
+
+export type TransactionMemberPlanKind =
+  | "mapEdit"
+  | "tilesetEdit"
+  | "tilesetCreate"
+  | "fileDelete";
+
+export interface TransactionPlanTarget {
+  memberChangeSetId: string;
+  memberPlanDigest: string;
+  planKind: TransactionMemberPlanKind;
+  targetKind: "replace" | "create" | "delete";
+  path: string;
+  expectedRevision: string | null;
+}
+
+export interface TransactionPlan {
+  kind: "transaction";
+  version: 1;
+  id: string;
+  /**
+   * Aggregate digest over the ordered target pins; with multiple member
+   * documents there is no single current revision, so the client echoes
+   * this aggregate as `expectedRevision` (the batch-prune precedent).
+   */
+  baseRevision: string;
+  targets: TransactionPlanTarget[];
+  summary: {
+    memberCount: number;
+    targets: TransactionPlanTarget[];
+    wouldChange: true;
+  };
+}
+
+export interface TransactionChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "transaction";
+  summary: TransactionPlan["summary"];
+}
+
+/**
+ * Per-member commit result inside a transaction apply: the exact wire shape
+ * the member would have returned had it been applied individually.
+ */
+export type TransactionMemberApplyResult =
+  | (CommitResult & { changeSetId: string })
+  | (FileDeleteStoreResult & {
+      changeSetId: string;
+    });
+
+export interface TransactionApplyOutcome {
+  kind: "transaction";
+  transactionId: string;
+  results: TransactionMemberApplyResult[];
+  warnings?: string[];
+}
+
+export function transactionPlanId(
+  value: Omit<TransactionPlan, "id">,
+): string {
+  return `changeset:${createHash("sha256")
+    .update(TRANSACTION_PLAN_HASH_DOMAIN)
+    .update(
+      stableJson(value as unknown as JsonValue),
+    )
+    .digest("hex")}`;
+}
+
+function transactionTargetForPlan(
+  memberChangeSetId: string,
+  plan: ChangeSetPlan,
+): TransactionPlanTarget {
+  if (plan.kind === "mapEdit") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "mapEdit",
+      targetKind: "replace",
+      path: plan.mapPath,
+      expectedRevision: plan.baseRevision,
+    };
+  }
+  if (plan.kind === "tilesetEdit") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "tilesetEdit",
+      targetKind: "replace",
+      path: plan.tilesetPath,
+      expectedRevision: plan.baseRevision,
+    };
+  }
+  if (plan.kind === "tilesetCreate") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "tilesetCreate",
+      targetKind: "create",
+      path: plan.tilesetPath,
+      expectedRevision: null,
+    };
+  }
+  if (plan.kind === "fileDelete") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "fileDelete",
+      targetKind: "delete",
+      path: plan.targetPath,
+      expectedRevision: plan.baseRevision,
+    };
+  }
+  throw new TiledMcpError(
+    "INVALID_ARGUMENT",
+    `Change set kind ${plan.kind} cannot join a transaction; only document-commit change sets can.`,
+    { kind: plan.kind },
+  );
 }
 
 export interface CheckpointRestoreChangeSetPreview
@@ -423,6 +559,7 @@ export type ChangeSetPreview =
   | TilesetEditChangeSetPreview
   | TilesetCreateChangeSetPreview
   | FileDeleteChangeSetPreview
+  | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
@@ -798,6 +935,16 @@ type OperationPreview =
       size: number;
       scan: FileDeletePlan["scan"];
     }
+  | {
+      type: "transactionMember";
+      destructive: boolean;
+      warning: string;
+      memberChangeSetId: string;
+      planKind: TransactionMemberPlanKind;
+      targetKind: "replace" | "create" | "delete";
+      path: string;
+      expectedRevision: string | null;
+    }
   | CheckpointRestoreOperationPreview
   | CheckpointPruneOperationPreview
   | CheckpointPruneBatchOperationPreview
@@ -898,6 +1045,25 @@ export class ChangeSetRegistry {
         },
       );
     }
+    if (plan.kind === "transaction") {
+      const pendingTransactions = [
+        ...this.entries.values(),
+      ].filter(
+        (entry) =>
+          entry.plan.kind === "transaction" &&
+          entry.result === undefined,
+      ).length;
+      if (
+        pendingTransactions >=
+        MAX_PENDING_TRANSACTIONS
+      ) {
+        throw new TiledMcpError(
+          "CHANGE_SET_LIMIT_EXCEEDED",
+          `At most ${MAX_PENDING_TRANSACTIONS} transactions may be pending. Apply one or wait for expiry.`,
+          { limit: MAX_PENDING_TRANSACTIONS },
+        );
+      }
+    }
     const now = Date.now();
     const id = this.nextId();
     const entry: ChangeSetEntry = {
@@ -911,6 +1077,191 @@ export class ChangeSetRegistry {
     const preview = toPreview(entry);
     this.entries.set(id, entry);
     return preview;
+  }
+
+  /**
+   * Builds and registers a transaction change set from already-previewed,
+   * unapplied, unowned member change sets with pairwise-distinct target
+   * paths, then locks each member against individual apply.
+   */
+  previewTransaction(
+    changeSetIds: readonly string[],
+  ): ChangeSetPreview {
+    this.prune();
+    if (
+      !Array.isArray(changeSetIds) ||
+      changeSetIds.length <
+        MIN_TRANSACTION_MEMBERS ||
+      changeSetIds.length >
+        MAX_TRANSACTION_MEMBERS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `A transaction must reference between ${MIN_TRANSACTION_MEMBERS} and ${MAX_TRANSACTION_MEMBERS} member change sets.`,
+        {
+          min: MIN_TRANSACTION_MEMBERS,
+          max: MAX_TRANSACTION_MEMBERS,
+        },
+      );
+    }
+    if (
+      new Set(changeSetIds).size !==
+      changeSetIds.length
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Transaction members must be distinct change sets.",
+        {},
+      );
+    }
+    const targets: TransactionPlanTarget[] = [];
+    const seenPaths = new Set<string>();
+    const members: ChangeSetEntry[] = [];
+    for (const memberId of changeSetIds) {
+      const entry = this.entries.get(memberId);
+      if (entry === undefined) {
+        throw new TiledMcpError(
+          "CHANGE_SET_NOT_FOUND",
+          "A transaction member is missing or expired. Preview it again.",
+          { changeSetId: memberId },
+        );
+      }
+      if (entry.result !== undefined) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "A transaction member has already been applied.",
+          { changeSetId: memberId },
+        );
+      }
+      if (entry.ownedBy !== undefined) {
+        throw new TiledMcpError(
+          "CHANGE_SET_OWNED",
+          "A transaction member already belongs to another pending transaction.",
+          {
+            changeSetId: memberId,
+            ownedBy: entry.ownedBy,
+          },
+        );
+      }
+      const target = transactionTargetForPlan(
+        memberId,
+        entry.plan,
+      );
+      if (seenPaths.has(target.path)) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `Transaction members must target pairwise-distinct paths; ${target.path} appears twice.`,
+          { path: target.path },
+        );
+      }
+      seenPaths.add(target.path);
+      targets.push(target);
+      members.push(entry);
+    }
+    const baseRevision = `sha256:${createHash(
+      "sha256",
+    )
+      .update(
+        stableJson(
+          targets as unknown as JsonValue,
+        ),
+      )
+      .digest("hex")}`;
+    const unsigned: Omit<TransactionPlan, "id"> =
+      {
+        kind: "transaction",
+        version: 1,
+        baseRevision,
+        targets,
+        summary: {
+          memberCount: targets.length,
+          targets: structuredClone(targets),
+          wouldChange: true,
+        },
+      };
+    const plan: TransactionPlan = {
+      ...unsigned,
+      id: transactionPlanId(unsigned),
+    };
+    const preview = this.put(plan);
+    for (const member of members) {
+      member.ownedBy = preview.changeSetId;
+    }
+    return preview;
+  }
+
+  /**
+   * Returns the member plans of a transaction, re-verifying that each
+   * member entry still exists, is unapplied, and still carries the exact
+   * plan digest the transaction was signed over.
+   */
+  resolveTransactionMembers(
+    plan: TransactionPlan,
+  ): ChangeSetPlan[] {
+    const members: ChangeSetPlan[] = [];
+    for (const target of plan.targets) {
+      const entry = this.entries.get(
+        target.memberChangeSetId,
+      );
+      if (
+        entry === undefined ||
+        entry.result !== undefined
+      ) {
+        throw new TiledMcpError(
+          "CHANGE_SET_NOT_FOUND",
+          "A transaction member is missing, expired, or already applied. Preview the transaction again.",
+          {
+            changeSetId:
+              target.memberChangeSetId,
+          },
+        );
+      }
+      if (
+        entry.plan.id !== target.memberPlanDigest
+      ) {
+        throw new TiledMcpError(
+          "CHANGE_SET_TAMPERED",
+          "A transaction member no longer matches the digest the transaction was approved over.",
+          {
+            changeSetId:
+              target.memberChangeSetId,
+          },
+        );
+      }
+      members.push(structuredClone(entry.plan));
+    }
+    return members;
+  }
+
+  /**
+   * Marks every member of a committed transaction as applied with its
+   * faithful per-target result, so member replays return the transaction's
+   * outcome instead of double-committing.
+   */
+  completeTransactionMembers(
+    plan: TransactionPlan,
+    memberResults: ReadonlyMap<
+      string,
+      ChangeSetApplyResult
+    >,
+  ): void {
+    for (const target of plan.targets) {
+      const entry = this.entries.get(
+        target.memberChangeSetId,
+      );
+      if (entry === undefined) {
+        continue;
+      }
+      const result = memberResults.get(
+        target.memberChangeSetId,
+      );
+      if (result !== undefined) {
+        entry.result = result;
+      }
+      entry.plan = scrubAppliedPlan(entry.plan);
+      entry.pendingTextObjectPayloadBytes = 0;
+      delete entry.ownedBy;
+    }
   }
 
   async apply(
@@ -939,6 +1290,28 @@ export class ChangeSetRegistry {
           changeSetRevision: entry.plan.baseRevision,
         },
       );
+    }
+    if (
+      entry.ownedBy !== undefined &&
+      entry.result === undefined
+    ) {
+      const owner = this.entries.get(
+        entry.ownedBy,
+      );
+      if (
+        owner !== undefined &&
+        owner.result === undefined
+      ) {
+        throw new TiledMcpError(
+          "CHANGE_SET_OWNED",
+          "This change set belongs to a pending transaction; apply the transaction instead.",
+          {
+            changeSetId,
+            ownedBy: entry.ownedBy,
+          },
+        );
+      }
+      delete entry.ownedBy;
     }
     if (entry.result) {
       return entry.result;
@@ -969,6 +1342,14 @@ export class ChangeSetRegistry {
     for (const [id, entry] of this.entries) {
       if (entry.expiresAt <= now && !entry.inFlight) {
         this.entries.delete(id);
+      }
+    }
+    for (const entry of this.entries.values()) {
+      if (
+        entry.ownedBy !== undefined &&
+        !this.entries.has(entry.ownedBy)
+      ) {
+        delete entry.ownedBy;
       }
     }
   }
@@ -1578,6 +1959,44 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         (tileUpdate) =>
           updateTileOperationPreview(tileUpdate),
       ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+  if (entry.plan.kind === "transaction") {
+    const plan = entry.plan;
+    const { id: planDigestId, ...unsigned } =
+      plan;
+    if (
+      planDigestId !== transactionPlanId(unsigned)
+    ) {
+      throw new TiledMcpError(
+        "CHANGE_SET_TAMPERED",
+        "The transaction plan contents do not match its digest. Preview the transaction again.",
+      );
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      expectedRevision: plan.baseRevision,
+      operations: plan.targets.map((target) => ({
+        type: "transactionMember" as const,
+        destructive:
+          target.targetKind === "delete",
+        warning: TRANSACTION_WARNING,
+        memberChangeSetId:
+          target.memberChangeSetId,
+        planKind: target.planKind,
+        targetKind: target.targetKind,
+        path: target.path,
+        expectedRevision:
+          target.expectedRevision,
+      })),
       summary: structuredClone(plan.summary),
       snapshotConsistency: "non-atomic-read-set",
       createdAt: entry.createdAt,

@@ -15,6 +15,10 @@ import {
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
   ROLLING_CHECKPOINT_RETENTION_POLICY,
 } from "../storage/checkpoints.js";
+import {
+  MAX_TRANSACTION_MEMBERS,
+  MIN_TRANSACTION_MEMBERS,
+} from "../changeSets.js";
 
 export const revisionOutputSchema = z
   .string()
@@ -1013,9 +1017,36 @@ export const fileDeleteApplyResultOutputSchema =
     })
     .strict();
 
+export const transactionApplyResultOutputSchema =
+  z
+    .object({
+      kind: z.literal("transaction"),
+      changeSetId: changeSetIdOutputSchema,
+      transactionId: z
+        .string()
+        .regex(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        ),
+      results: z
+        .array(
+          z.union([
+            documentApplyResultOutputSchema,
+            fileDeleteApplyResultOutputSchema,
+          ]),
+        )
+        .min(MIN_TRANSACTION_MEMBERS)
+        .max(MAX_TRANSACTION_MEMBERS),
+      warnings: z
+        .array(z.string().max(4_096))
+        .max(32)
+        .optional(),
+    })
+    .strict();
+
 export const applyResultOutputSchema = z.union([
   documentApplyResultOutputSchema,
   fileDeleteApplyResultOutputSchema,
+  transactionApplyResultOutputSchema,
   checkpointPruneApplyResultOutputSchema,
   checkpointPruneBatchApplyResultOutputSchema,
   preparedCheckpointCommitApplyResultOutputSchema,
