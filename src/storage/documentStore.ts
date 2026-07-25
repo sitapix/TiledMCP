@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import {
   link,
   open,
+  readdir,
+  readFile,
   rename,
   stat,
   unlink,
@@ -50,6 +52,22 @@ import {
 } from "./fileIdentity.js";
 import { KeyedMutex } from "./keyedMutex.js";
 import { revisionOf } from "./revision.js";
+import {
+  MAX_TRANSACTION_LABEL_LENGTH,
+  MAX_TRANSACTION_STAGED_BYTES,
+  MAX_TRANSACTION_TARGETS,
+  MIN_TRANSACTION_TARGETS,
+  parseTransactionManifest,
+  serializeTransactionManifest,
+  TRANSACTION_STAGED_DIRECTORY,
+  TRANSACTIONS_DIRECTORY,
+  type TransactionCommitResult,
+  type TransactionManifest,
+  type TransactionManifestEntry,
+  type TransactionTargetInput,
+  type TransactionTargetResult,
+  type TransactionRecoveryReport,
+} from "./transactions.js";
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 64 * 1024 * 1024;
 const CHECKPOINT_MANIFEST_REVISION_PATTERN =
@@ -371,6 +389,11 @@ export class DocumentStore {
     private readonly maxDocumentBytes = DEFAULT_MAX_DOCUMENT_BYTES,
     private readonly writeObserver?: DocumentWriteObserver,
     checkpointOptions: CheckpointStoreOptions = {},
+    private readonly transactionObserver?: {
+      beforeStep?: (
+        step: string,
+      ) => Promise<void> | void;
+    },
   ) {
     this.checkpoints = new CheckpointStore(
       resolver,
@@ -1946,6 +1969,643 @@ export class DocumentStore {
     );
   }
 
+  /**
+   * Atomically commits 2..16 disjoint document targets: per-target CAS,
+   * per-target before-state checkpoints, content-addressed staging, one
+   * single-file commit point, ordered promotions, then cleanup. Crash
+   * recovery (`recoverTransactions`) rolls back before the commit point and
+   * rolls forward after it.
+   */
+  async commitTransaction(
+    targets: readonly TransactionTargetInput[],
+    label = "transaction",
+  ): Promise<TransactionCommitResult> {
+    if (
+      !Array.isArray(targets) ||
+      targets.length < MIN_TRANSACTION_TARGETS ||
+      targets.length > MAX_TRANSACTION_TARGETS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `A transaction must contain between ${MIN_TRANSACTION_TARGETS} and ${MAX_TRANSACTION_TARGETS} targets.`,
+        {
+          min: MIN_TRANSACTION_TARGETS,
+          max: MAX_TRANSACTION_TARGETS,
+          actual: Array.isArray(targets)
+            ? targets.length
+            : null,
+        },
+      );
+    }
+    if (
+      label.length > MAX_TRANSACTION_LABEL_LENGTH
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `Transaction labels may contain at most ${MAX_TRANSACTION_LABEL_LENGTH} characters.`,
+      );
+    }
+    const normalized = targets.map((target) => ({
+      ...target,
+      path: this.resolver.normalize(target.path),
+    }));
+    const paths = normalized.map(
+      ({ path }) => path,
+    );
+    if (new Set(paths).size !== paths.length) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Transaction targets must be pairwise-distinct project paths.",
+        { paths },
+      );
+    }
+    let stagedBytes = 0;
+    for (const target of normalized) {
+      if (target.kind === "delete") {
+        continue;
+      }
+      this.assertSize(
+        target.content,
+        target.path,
+      );
+      parseJsonDocument(
+        decodeUtf8Strict(
+          target.content,
+          target.path,
+        ),
+        target.path,
+      );
+      stagedBytes += target.content.byteLength;
+      if (
+        stagedBytes >
+        MAX_TRANSACTION_STAGED_BYTES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A transaction may stage at most ${MAX_TRANSACTION_STAGED_BYTES} bytes.`,
+          {
+            limit: MAX_TRANSACTION_STAGED_BYTES,
+          },
+        );
+      }
+    }
+    const ordered = [...normalized].sort(
+      (left, right) =>
+        left.path < right.path ? -1 : 1,
+    );
+    const transactionId = randomUUID();
+    const step = async (
+      name: string,
+    ): Promise<void> => {
+      await this.transactionObserver?.beforeStep?.(
+        name,
+      );
+    };
+    const runLocked = async <T>(
+      index: number,
+      operation: () => Promise<T>,
+    ): Promise<T> => {
+      if (index >= ordered.length) {
+        return operation();
+      }
+      const path = ordered[index]!.path;
+      return this.mutex.runExclusive(path, () =>
+        withProjectFileLock(
+          this.resolver,
+          path,
+          () => runLocked(index + 1, operation),
+        ),
+      );
+    };
+    return runLocked(0, async () => {
+      await step("locked");
+      const currentByPath = new Map<
+        string,
+        Buffer | undefined
+      >();
+      for (const target of ordered) {
+        if (target.kind === "create") {
+          const absolutePath =
+            await this.resolver.resolveForCreate(
+              target.path,
+            );
+          try {
+            await stat(absolutePath);
+            throw new TiledMcpError(
+              "FILE_ALREADY_EXISTS",
+              `Refusing to overwrite existing file ${target.path}.`,
+              { path: target.path },
+            );
+          } catch (error) {
+            if (!hasCode(error, "ENOENT")) {
+              throw error;
+            }
+          }
+          currentByPath.set(
+            target.path,
+            undefined,
+          );
+          continue;
+        }
+        const absolutePath =
+          await this.resolver.resolveExisting(
+            target.path,
+          );
+        const current = await this.readBounded(
+          absolutePath,
+          target.path,
+        );
+        assertExpectedRevision(
+          target.path,
+          target.expectedRevision,
+          revisionOf(current),
+        );
+        currentByPath.set(target.path, current);
+      }
+      await step("cas-verified");
+      const entries: TransactionManifestEntry[] =
+        [];
+      for (const target of ordered) {
+        const before = currentByPath.get(
+          target.path,
+        );
+        const afterRevision =
+          target.kind === "delete"
+            ? target.expectedRevision
+            : revisionOf(target.content);
+        const checkpoint =
+          await this.checkpoints.prepare(
+            target.path,
+            before,
+            afterRevision,
+            `transaction ${transactionId}: ${label}`,
+          );
+        if (target.kind === "replace") {
+          entries.push({
+            kind: "replace",
+            path: target.path,
+            expectedRevision:
+              target.expectedRevision,
+            afterRevision,
+            contentObjectHash:
+              afterRevision.slice(7),
+            checkpointId: checkpoint.id,
+          });
+        } else if (target.kind === "create") {
+          entries.push({
+            kind: "create",
+            path: target.path,
+            afterRevision,
+            contentObjectHash:
+              afterRevision.slice(7),
+            checkpointId: checkpoint.id,
+          });
+        } else {
+          entries.push({
+            kind: "delete",
+            path: target.path,
+            expectedRevision:
+              target.expectedRevision,
+            checkpointId: checkpoint.id,
+          });
+        }
+      }
+      await step("checkpoints-prepared");
+      const stagedDirectory =
+        await this.resolver.ensureInternalDirectory(
+          TRANSACTION_STAGED_DIRECTORY,
+        );
+      for (const target of ordered) {
+        if (target.kind === "delete") {
+          continue;
+        }
+        const hash = revisionOf(
+          target.content,
+        ).slice(7);
+        await writeFileDurably(
+          join(stagedDirectory, hash),
+          target.content,
+        );
+      }
+      await step("staged");
+      const manifestDirectory =
+        await this.resolver.ensureInternalDirectory(
+          TRANSACTIONS_DIRECTORY,
+        );
+      const manifestPath = join(
+        manifestDirectory,
+        `${transactionId}.json`,
+      );
+      const manifest: TransactionManifest = {
+        version: 1,
+        id: transactionId,
+        state: "prepared",
+        createdAt: new Date().toISOString(),
+        label,
+        entries,
+      };
+      await writeFileDurably(
+        manifestPath,
+        serializeTransactionManifest(manifest),
+      );
+      await step("manifest-prepared");
+      manifest.state = "committed";
+      await writeFileDurably(
+        manifestPath,
+        serializeTransactionManifest(manifest),
+      );
+      await step("commit-point");
+      const warnings: string[] = [];
+      for (const entry of entries) {
+        try {
+          const checkpointManifest =
+            await this.checkpoints.read(
+              entry.checkpointId,
+            );
+          if (
+            checkpointManifest.status ===
+            "prepared"
+          ) {
+            await this.checkpoints.markCommitted(
+              checkpointManifest,
+            );
+          }
+        } catch {
+          warnings.push(
+            `Transaction checkpoint ${entry.checkpointId} could not be marked committed.`,
+          );
+        }
+      }
+      await step("checkpoints-committed");
+      const results: TransactionTargetResult[] =
+        [];
+      for (const [
+        index,
+        target,
+      ] of ordered.entries()) {
+        const entry = entries[index]!;
+        await step(`promote:${target.path}`);
+        if (target.kind === "delete") {
+          const absolutePath =
+            await this.resolver.resolveExisting(
+              target.path,
+            );
+          await unlink(absolutePath);
+          try {
+            await syncDirectoryBestEffort(
+              dirname(absolutePath),
+            );
+          } catch {
+            warnings.push(
+              `Could not durably sync the parent directory of ${target.path} after deletion.`,
+            );
+          }
+          results.push({
+            kind: "delete",
+            path: target.path,
+            beforeRevision:
+              target.expectedRevision,
+            revision: null,
+            checkpointId: entry.checkpointId,
+            changed: true,
+          });
+          continue;
+        }
+        const absolutePath =
+          target.kind === "create"
+            ? await this.resolver.resolveForCreate(
+                target.path,
+              )
+            : await this.resolver.resolveExisting(
+                target.path,
+              );
+        const promotionWarnings =
+          await this.atomicReplaceConfirmed(
+            absolutePath,
+            target.content,
+            target.kind === "replace"
+              ? target.expectedRevision
+              : undefined,
+            target.path,
+          );
+        warnings.push(...promotionWarnings);
+        results.push({
+          kind: target.kind,
+          path: target.path,
+          beforeRevision:
+            target.kind === "replace"
+              ? target.expectedRevision
+              : null,
+          revision:
+            entry.kind === "delete"
+              ? null
+              : entry.afterRevision,
+          checkpointId: entry.checkpointId,
+          changed: true,
+        });
+      }
+      await step("promoted");
+      await unlink(manifestPath).catch(() => {
+        warnings.push(
+          `Transaction manifest ${transactionId} could not be removed after completion.`,
+        );
+      });
+      for (const entry of entries) {
+        if (entry.kind === "delete") {
+          continue;
+        }
+        await unlink(
+          join(
+            stagedDirectory,
+            entry.contentObjectHash,
+          ),
+        ).catch(() => {});
+      }
+      await step("cleaned");
+      return {
+        transactionId,
+        results,
+        ...(warnings.length === 0
+          ? {}
+          : { warnings }),
+      };
+    });
+  }
+
+  /**
+   * Startup recovery for interrupted transactions: prepared manifests roll
+   * back (targets were never promoted), committed manifests roll forward
+   * target by target, and a target diverged by an outside writer becomes a
+   * reported conflict while the rest still roll forward. Unreferenced
+   * staged objects are swept afterwards.
+   */
+  async recoverTransactions(): Promise<TransactionRecoveryReport> {
+    const report: TransactionRecoveryReport = {
+      scannedManifests: 0,
+      rolledBack: 0,
+      rolledForwardTargets: 0,
+      alreadyCompleteTargets: 0,
+      conflicts: [],
+      corruptManifests: [],
+      sweptStagedObjects: 0,
+      warnings: [],
+    };
+    const manifestDirectory =
+      await this.resolver.ensureInternalDirectory(
+        TRANSACTIONS_DIRECTORY,
+      );
+    const stagedDirectory =
+      await this.resolver.ensureInternalDirectory(
+        TRANSACTION_STAGED_DIRECTORY,
+      );
+    let fileNames: string[];
+    try {
+      fileNames = (
+        await readdir(manifestDirectory)
+      ).filter((name) => name.endsWith(".json"));
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) {
+        return report;
+      }
+      throw error;
+    }
+    fileNames.sort();
+    const liveHashes = new Set<string>();
+    for (const fileName of fileNames) {
+      report.scannedManifests += 1;
+      const manifestPath = join(
+        manifestDirectory,
+        fileName,
+      );
+      let manifest: TransactionManifest;
+      try {
+        manifest = parseTransactionManifest(
+          await readFile(manifestPath, "utf8"),
+          fileName,
+        );
+      } catch {
+        report.corruptManifests.push(fileName);
+        continue;
+      }
+      if (manifest.state === "prepared") {
+        // The commit point was never reached, so no target was promoted;
+        // dropping the manifest rolls the transaction back. Its prepared
+        // checkpoints surface through the normal checkpoint reconciler.
+        await unlink(manifestPath).catch(() => {
+          report.warnings.push(
+            `Could not remove rolled-back transaction manifest ${fileName}.`,
+          );
+        });
+        report.rolledBack += 1;
+        continue;
+      }
+      let unresolvedConflicts = 0;
+      for (const entry of manifest.entries) {
+        const outcome =
+          await this.rollForwardTransactionEntry(
+            manifest,
+            entry,
+            stagedDirectory,
+            report,
+          );
+        if (outcome === "conflict") {
+          unresolvedConflicts += 1;
+        }
+      }
+      if (unresolvedConflicts === 0) {
+        await unlink(manifestPath).catch(() => {
+          report.warnings.push(
+            `Could not remove completed transaction manifest ${fileName}.`,
+          );
+        });
+      } else {
+        for (const entry of manifest.entries) {
+          if (entry.kind !== "delete") {
+            liveHashes.add(
+              entry.contentObjectHash,
+            );
+          }
+        }
+      }
+    }
+    let stagedNames: string[] = [];
+    try {
+      stagedNames = await readdir(
+        stagedDirectory,
+      );
+    } catch (error) {
+      if (!hasCode(error, "ENOENT")) {
+        throw error;
+      }
+    }
+    for (const name of stagedNames) {
+      if (liveHashes.has(name)) {
+        continue;
+      }
+      await unlink(
+        join(stagedDirectory, name),
+      ).catch(() => {
+        report.warnings.push(
+          `Could not sweep staged transaction object ${name}.`,
+        );
+      });
+      report.sweptStagedObjects += 1;
+    }
+    return report;
+  }
+
+  private async rollForwardTransactionEntry(
+    manifest: TransactionManifest,
+    entry: TransactionManifestEntry,
+    stagedDirectory: string,
+    report: TransactionRecoveryReport,
+  ): Promise<"done" | "conflict"> {
+    return this.mutex.runExclusive(
+      entry.path,
+      () =>
+        withProjectFileLock(
+          this.resolver,
+          entry.path,
+          async () => {
+            try {
+              const checkpointManifest =
+                await this.checkpoints.read(
+                  entry.checkpointId,
+                );
+              if (
+                checkpointManifest.status ===
+                "prepared"
+              ) {
+                await this.checkpoints.markCommitted(
+                  checkpointManifest,
+                );
+              }
+            } catch {
+              report.warnings.push(
+                `Transaction checkpoint ${entry.checkpointId} could not be marked committed during recovery.`,
+              );
+            }
+            let currentRevision:
+              | string
+              | undefined;
+            try {
+              const absolutePath =
+                await this.resolver.resolveExisting(
+                  entry.path,
+                );
+              currentRevision = revisionOf(
+                await this.readBounded(
+                  absolutePath,
+                  entry.path,
+                ),
+              );
+            } catch (error) {
+              if (
+                error instanceof TiledMcpError &&
+                error.code === "FILE_NOT_FOUND"
+              ) {
+                currentRevision = undefined;
+              } else {
+                throw error;
+              }
+            }
+            if (entry.kind === "delete") {
+              if (
+                currentRevision === undefined
+              ) {
+                report.alreadyCompleteTargets += 1;
+                return "done";
+              }
+              if (
+                currentRevision ===
+                entry.expectedRevision
+              ) {
+                const absolutePath =
+                  await this.resolver.resolveExisting(
+                    entry.path,
+                  );
+                await unlink(absolutePath);
+                report.rolledForwardTargets += 1;
+                return "done";
+              }
+              report.conflicts.push({
+                transactionId: manifest.id,
+                path: entry.path,
+                reason: "target-diverged",
+              });
+              return "conflict";
+            }
+            if (
+              currentRevision ===
+              entry.afterRevision
+            ) {
+              report.alreadyCompleteTargets += 1;
+              return "done";
+            }
+            const expectedBefore =
+              entry.kind === "replace"
+                ? entry.expectedRevision
+                : undefined;
+            if (
+              currentRevision !== expectedBefore
+            ) {
+              report.conflicts.push({
+                transactionId: manifest.id,
+                path: entry.path,
+                reason: "target-diverged",
+              });
+              return "conflict";
+            }
+            let staged: Buffer;
+            try {
+              staged = await readFile(
+                join(
+                  stagedDirectory,
+                  entry.contentObjectHash,
+                ),
+              );
+            } catch {
+              report.conflicts.push({
+                transactionId: manifest.id,
+                path: entry.path,
+                reason: "staged-object-missing",
+              });
+              return "conflict";
+            }
+            if (
+              revisionOf(staged) !==
+              entry.afterRevision
+            ) {
+              report.conflicts.push({
+                transactionId: manifest.id,
+                path: entry.path,
+                reason: "staged-object-corrupt",
+              });
+              return "conflict";
+            }
+            const absolutePath =
+              entry.kind === "create"
+                ? await this.resolver.resolveForCreate(
+                    entry.path,
+                  )
+                : await this.resolver.resolveExisting(
+                    entry.path,
+                  );
+            const warnings =
+              await this.atomicReplaceConfirmed(
+                absolutePath,
+                staged,
+                expectedBefore,
+                entry.path,
+              );
+            report.warnings.push(...warnings);
+            report.rolledForwardTargets += 1;
+            return "done";
+          },
+        ),
+    );
+  }
+
   private async atomicReplace(
     absolutePath: string,
     content: Buffer,
@@ -3437,6 +4097,28 @@ function compareCanonicalText(
 
 function isMissingCode(code: string): boolean {
   return code === "FILE_NOT_FOUND" || code === "ENOENT";
+}
+
+async function writeFileDurably(
+  path: string,
+  content: Buffer,
+): Promise<void> {
+  const temporaryPath = `${path}.tmp-${randomUUID()}`;
+  const handle = await open(
+    temporaryPath,
+    "wx",
+    0o600,
+  );
+  try {
+    await handle.writeFile(content);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(temporaryPath, path);
+  await syncDirectoryBestEffort(
+    dirname(path),
+  ).catch(() => {});
 }
 
 async function syncDirectoryBestEffort(

@@ -34,6 +34,20 @@ async function main(): Promise<void> {
           }),
     },
   );
+  const transactionReport =
+    await store.recoverTransactions();
+  process.stderr.write(
+    [
+      "tiled-mcp: transaction recovery",
+      `scanned=${transactionReport.scannedManifests}`,
+      `rolledBack=${transactionReport.rolledBack}`,
+      `rolledForward=${transactionReport.rolledForwardTargets}`,
+      `alreadyComplete=${transactionReport.alreadyCompleteTargets}`,
+      `conflicts=${transactionReport.conflicts.length}`,
+      `corrupt=${transactionReport.corruptManifests.length}`,
+      `sweptStaged=${transactionReport.sweptStagedObjects}`,
+    ].join(" ") + "\n",
+  );
   const checkpointReport = await store.reconcilePreparedCheckpoints();
   const reconciliationCounts = {
     reconciled: checkpointReport.outcomes.filter(
