@@ -4,11 +4,20 @@ import {
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECTS,
   MAX_NATIVE_PREVIEW_SCALE,
   NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+  NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+  NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+  NATIVE_PREVIEW_OBJECT_PROFILE,
+  NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+  NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+  NATIVE_PREVIEW_OBJECT_STYLE,
+  NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
 } from "../images/mapPreview.js";
 import {
   DEFAULT_TILE_RENDER_COLUMNS,
@@ -996,6 +1005,90 @@ const positiveNativePreviewTileRectOutputSchema =
       }
     });
 
+const nativePreviewObjectDebugEntryOutputSchema = z
+  .object({
+    sourceIndex:
+      nonnegativeIntegerOutputSchema.max(
+        MAX_NATIVE_PREVIEW_OBJECTS - 1,
+      ),
+    objectId: positiveIntegerOutputSchema.max(
+      Number.MAX_SAFE_INTEGER,
+    ),
+    layerId: positiveIntegerOutputSchema.max(
+      Number.MAX_SAFE_INTEGER,
+    ),
+    shape: z.enum([
+      "rectangle",
+      "point",
+      "polygon",
+      "polyline",
+      "text",
+    ]),
+    representation: z.enum([
+      "geometry-outline",
+      "text-box-only",
+    ]),
+    rendered: z.boolean(),
+    clipped: z.boolean(),
+  })
+  .strict();
+
+const nativePreviewObjectDebugOutputSchema = z
+  .object({
+    profile: z.literal(
+      NATIVE_PREVIEW_OBJECT_PROFILE,
+    ),
+    style: z.literal(
+      NATIVE_PREVIEW_OBJECT_STYLE,
+    ),
+    color: z
+      .object({
+        r: z.literal(
+          NATIVE_PREVIEW_OBJECT_COLOR.r,
+        ),
+        g: z.literal(
+          NATIVE_PREVIEW_OBJECT_COLOR.g,
+        ),
+        b: z.literal(
+          NATIVE_PREVIEW_OBJECT_COLOR.b,
+        ),
+        a: z.literal(
+          NATIVE_PREVIEW_OBJECT_COLOR.a,
+        ),
+      })
+      .strict(),
+    strokeWidth: z.literal(
+      NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+    ),
+    originMarker: z.literal(
+      NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+    ),
+    idLabels: z.literal(false),
+    visibilityPolicy: z.literal(
+      NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+    ),
+    drawOrder: z.literal(
+      NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+    ),
+    quantization: z.literal(
+      NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+    ),
+    selectedObjectCount:
+      nonnegativeIntegerOutputSchema.max(
+        MAX_NATIVE_PREVIEW_OBJECTS,
+      ),
+    renderedObjectCount:
+      nonnegativeIntegerOutputSchema.max(
+        MAX_NATIVE_PREVIEW_OBJECTS,
+      ),
+    entries: z
+      .array(
+        nativePreviewObjectDebugEntryOutputSchema,
+      )
+      .max(MAX_NATIVE_PREVIEW_OBJECTS),
+  })
+  .strict();
+
 const nativePreviewResultOutputSchema = z
   .object({
     mimeType: z.literal("image/png"),
@@ -1092,6 +1185,8 @@ const nativePreviewResultOutputSchema = z
             ),
           })
           .strict(),
+        objectDebug:
+          nativePreviewObjectDebugOutputSchema,
       })
       .strict(),
     renderProfile: z.literal(
@@ -1252,6 +1347,100 @@ const nativePreviewResultOutputSchema = z
           "overlays",
           "highlights",
           "highlightedTileCount",
+        ],
+      });
+    }
+
+    const objectDebug =
+      result.overlays.objectDebug;
+    if (
+      objectDebug.selectedObjectCount !==
+      objectDebug.entries.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "selectedObjectCount must equal object debug entries length",
+        path: [
+          "overlays",
+          "objectDebug",
+          "selectedObjectCount",
+        ],
+      });
+    }
+
+    let renderedObjectCount = 0;
+    const objectIds = new Set<number>();
+    for (
+      const [index, entry] of
+        objectDebug.entries.entries()
+    ) {
+      const entryPath = [
+        "overlays",
+        "objectDebug",
+        "entries",
+        index,
+      ] as const;
+      if (entry.sourceIndex !== index) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Object debug sourceIndex must equal its ordered entry index",
+          path: [...entryPath, "sourceIndex"],
+        });
+      }
+      if (objectIds.has(entry.objectId)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Object debug entries must contain unique object IDs",
+          path: [...entryPath, "objectId"],
+        });
+      }
+      objectIds.add(entry.objectId);
+
+      const expectedRepresentation =
+        entry.shape === "text"
+          ? "text-box-only"
+          : "geometry-outline";
+      if (
+        entry.representation !==
+        expectedRepresentation
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Object debug representation must match the object shape",
+          path: [
+            ...entryPath,
+            "representation",
+          ],
+        });
+      }
+
+      if (entry.rendered) {
+        renderedObjectCount += 1;
+      } else if (!entry.clipped) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "A non-rendered object debug entry must report clipping",
+          path: [...entryPath, "clipped"],
+        });
+      }
+    }
+    if (
+      objectDebug.renderedObjectCount !==
+      renderedObjectCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "renderedObjectCount must equal the number of rendered object debug entries",
+        path: [
+          "overlays",
+          "objectDebug",
+          "renderedObjectCount",
         ],
       });
     }

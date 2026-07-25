@@ -272,9 +272,10 @@ pins；批准前仍检查 preview。text-specific 字段不能打到其他 shape
 12 类 text fields 按每 operation 的 canonical compact JSON UTF-8 合计最多 256 KiB，
 pending registry 合计 2 MiB；后序覆盖或删除不会抵扣预算。
 
-内建 `tiled_render_preview` 的 v1 profile 仍只渲染 tile layers，并会把可见 object
-layers 报告为 omitted；它不能用来视觉确认 text 排版。需要像 Tiled 一样核对字体、
-换行和对齐时，使用 discovery 中实际存在的可选 `tiled_render_map`，或在 Tiled
+内建 `tiled_render_preview` 的基础画面仍只渲染 tile layers，并会把可见 object
+layers 报告为 omitted；但可用 `overlays.objectIds` 显式叠加受支持对象的几何轮廓。
+text 只显示旋转后的 layout box，不能用来确认 glyph、字体、换行或对齐。需要像 Tiled
+一样核对完整排版时，使用 discovery 中实际存在的可选 `tiled_render_map`，或在 Tiled
 1.12.2 中打开项目；字体未安装导致的替换不属于 MCP 的可移植语义。
 
 需要把待核对区域直接标在图片中时，可在 `tiled_render_preview` 传入：
@@ -285,6 +286,7 @@ layers 报告为 omitted；它不能用来视觉确认 text 排版。需要像 T
   "region": { "x": 8, "y": 4, "width": 12, "height": 8 },
   "overlays": {
     "grid": true,
+    "objectIds": [7],
     "highlights": [
       { "x": 10, "y": 6, "width": 3, "height": 2 },
       { "x": 12, "y": 7, "width": 4, "height": 3 }
@@ -298,6 +300,13 @@ layers 报告为 omitted；它不能用来视觉确认 text 排版。需要像 T
 高亮固定为无边框 amber 半透明 fill，重叠格按 tile union 只混合一次。客户端应保留
 entries、`highlightedTileCount`、color、blend/overlap mode 与 PNG hash，不能仅凭图片
 猜回选区。
+
+`objectIds` 是 1–64 个唯一、全图有效的显式 ID，和 tile `layerIds` 无关。rectangle、
+point、polygon、polyline 会绘制固定 cyan 轮廓与原点十字，text 只绘制 layout box；
+完全离区的对象仍在结果中返回 `rendered:false, clipped:true`。显式调试忽略
+visibility/opacity，但拒绝 ellipse/capsule、tile object、template 和带非默认定位变换
+的所选 layer/Group。客户端应逐项核对保序 entry，不能把 geometry-only profile 当成
+完整 object-layer 渲染。
 
 ## 裁决含混的 prepared checkpoint
 
@@ -413,7 +422,8 @@ discard 同样会因 create 目标已存在而拒绝。只有目标当前严格�
 漏项或降低 scale。需要浏览连续 local IDs 时仍用 sheet。随后用 native preview
 完成有限正交地图的常规视觉闭环；native preview
 还能以最多 64 个固定样式的绝对 tile 矩形标出核对区域，其 union fill 与底图共享
-pixel-blend 工作预算。
+pixel-blend 工作预算；`overlays.objectIds` 还能以最多 64 个显式 ID 核对 basic object
+几何与 text box，选中 path points 合计最多 8192，裁剪后的 stroke 同样计入共享预算。
 
 只有当 `tools/list` 包含 `tiled_render_map`，并且 capability 报告 rasterizer
 `available: true` 且带有已探测 version 时，才可调用可选的整图 raster 预览。客户端应按

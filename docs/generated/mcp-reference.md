@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:723f0eb74a5b423725f6670ef475470fd82f303e087c5c410be7c67793c9b81a",
+    "revision": "sha256:279768dc1bdcb90ec63790c702c0aee72e5d3003d2bae3151dcb9b613deae1af",
     "serverVersion": "0.0.1",
-    "size": 57696
+    "size": 59540
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 57696,
+  "size": 59540,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 57696 UTF-8 bytes, revision `sha256:723f0eb74a5b423725f6670ef475470fd82f303e087c5c410be7c67793c9b81a`.
+Content contract: `text`, 59540 UTF-8 bytes, revision `sha256:279768dc1bdcb90ec63790c702c0aee72e5d3003d2bae3151dcb9b613deae1af`.
 
 Resource templates: none.
 
@@ -8622,6 +8622,10 @@ Output schema:
                   "const": 128,
                   "type": "number"
                 },
+                "maxNativePreviewObjects": {
+                  "const": 64,
+                  "type": "number"
+                },
                 "maxNativePreviewOmittedLayers": {
                   "const": 128,
                   "type": "number"
@@ -8950,6 +8954,7 @@ Output schema:
                 "maxNativePreviewPixels",
                 "maxNativePreviewScale",
                 "maxNativePreviewHighlights",
+                "maxNativePreviewObjects",
                 "maxNativePreviewRegionCells",
                 "maxNativePreviewLayers",
                 "maxNativePreviewTileDraws",
@@ -9214,6 +9219,179 @@ Output schema:
                   ],
                   "type": "array"
                 },
+                "objectDebug": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "a": {
+                          "const": 255,
+                          "type": "number"
+                        },
+                        "b": {
+                          "const": 238,
+                          "type": "number"
+                        },
+                        "g": {
+                          "const": 211,
+                          "type": "number"
+                        },
+                        "r": {
+                          "const": 34,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "r",
+                        "g",
+                        "b",
+                        "a"
+                      ],
+                      "type": "object"
+                    },
+                    "drawOrder": {
+                      "const": "after-highlights-and-grid-before-coordinates",
+                      "type": "string"
+                    },
+                    "duplicateObjectIds": {
+                      "const": "reject",
+                      "type": "string"
+                    },
+                    "idLabels": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "limitations": {
+                      "items": [
+                        {
+                          "const": "explicit-selection-only",
+                          "type": "string"
+                        },
+                        {
+                          "const": "ellipse-capsule-and-tile-objects-unsupported",
+                          "type": "string"
+                        },
+                        {
+                          "const": "text-box-only-no-glyph-rendering",
+                          "type": "string"
+                        },
+                        {
+                          "const": "template-objects-unsupported",
+                          "type": "string"
+                        },
+                        {
+                          "const": "non-default-selected-layer-or-ancestor-positioning-unsupported",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "maxAggregatePoints": {
+                      "const": 8192,
+                      "type": "number"
+                    },
+                    "maxObjects": {
+                      "const": 64,
+                      "type": "number"
+                    },
+                    "originMarker": {
+                      "const": "crosshair-5px",
+                      "type": "string"
+                    },
+                    "pointBudget": {
+                      "const": "selected-polygon-and-polyline-points",
+                      "type": "string"
+                    },
+                    "profile": {
+                      "const": "explicit-basic-object-geometry-v1",
+                      "type": "string"
+                    },
+                    "quantization": {
+                      "const": "round-nearest-output-pixel",
+                      "type": "string"
+                    },
+                    "representations": {
+                      "items": [
+                        {
+                          "const": "geometry-outline",
+                          "type": "string"
+                        },
+                        {
+                          "const": "text-box-only",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "selection": {
+                      "const": "explicit-object-ids",
+                      "type": "string"
+                    },
+                    "strokeWidth": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "style": {
+                      "const": "geometry-cyan-v1",
+                      "type": "string"
+                    },
+                    "supportedShapes": {
+                      "items": [
+                        {
+                          "const": "rectangle",
+                          "type": "string"
+                        },
+                        {
+                          "const": "point",
+                          "type": "string"
+                        },
+                        {
+                          "const": "polygon",
+                          "type": "string"
+                        },
+                        {
+                          "const": "polyline",
+                          "type": "string"
+                        },
+                        {
+                          "const": "text",
+                          "type": "string"
+                        }
+                      ],
+                      "type": "array"
+                    },
+                    "visibilityPolicy": {
+                      "const": "explicit-ignore-object-and-layer-visibility-opacity",
+                      "type": "string"
+                    },
+                    "workBudget": {
+                      "const": "included-in-native-preview-pixel-blend-limit",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "selection",
+                    "maxObjects",
+                    "maxAggregatePoints",
+                    "pointBudget",
+                    "duplicateObjectIds",
+                    "supportedShapes",
+                    "representations",
+                    "profile",
+                    "style",
+                    "color",
+                    "strokeWidth",
+                    "originMarker",
+                    "idLabels",
+                    "visibilityPolicy",
+                    "drawOrder",
+                    "quantization",
+                    "workBudget",
+                    "limitations"
+                  ],
+                  "type": "object"
+                },
                 "overlays": {
                   "items": [
                     {
@@ -9226,6 +9404,10 @@ Output schema:
                     },
                     {
                       "const": "highlights",
+                      "type": "string"
+                    },
+                    {
+                      "const": "objectIds",
                       "type": "string"
                     }
                   ],
@@ -9273,6 +9455,7 @@ Output schema:
                 "overlays",
                 "regionCoordinates",
                 "highlightRectangles",
+                "objectDebug",
                 "reportsOmittedVisibleLayers"
               ],
               "type": "object"
@@ -25615,7 +25798,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and reports visible non-tile layers it omits. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
+Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. Object debugging supports rectangles, points, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -25736,6 +25919,17 @@ Input schema:
           "maxItems": 64,
           "minItems": 1,
           "type": "array"
+        },
+        "objectIds": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "type": "object"
@@ -26182,12 +26376,160 @@ Output schema:
                     "overlapMode"
                   ],
                   "type": "object"
+                },
+                "objectDebug": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "a": {
+                          "const": 255,
+                          "type": "number"
+                        },
+                        "b": {
+                          "const": 238,
+                          "type": "number"
+                        },
+                        "g": {
+                          "const": 211,
+                          "type": "number"
+                        },
+                        "r": {
+                          "const": 34,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "r",
+                        "g",
+                        "b",
+                        "a"
+                      ],
+                      "type": "object"
+                    },
+                    "drawOrder": {
+                      "const": "after-highlights-and-grid-before-coordinates",
+                      "type": "string"
+                    },
+                    "entries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "clipped": {
+                            "type": "boolean"
+                          },
+                          "layerId": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "objectId": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "rendered": {
+                            "type": "boolean"
+                          },
+                          "representation": {
+                            "enum": [
+                              "geometry-outline",
+                              "text-box-only"
+                            ],
+                            "type": "string"
+                          },
+                          "shape": {
+                            "enum": [
+                              "rectangle",
+                              "point",
+                              "polygon",
+                              "polyline",
+                              "text"
+                            ],
+                            "type": "string"
+                          },
+                          "sourceIndex": {
+                            "maximum": 63,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "sourceIndex",
+                          "objectId",
+                          "layerId",
+                          "shape",
+                          "representation",
+                          "rendered",
+                          "clipped"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 64,
+                      "type": "array"
+                    },
+                    "idLabels": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "originMarker": {
+                      "const": "crosshair-5px",
+                      "type": "string"
+                    },
+                    "profile": {
+                      "const": "explicit-basic-object-geometry-v1",
+                      "type": "string"
+                    },
+                    "quantization": {
+                      "const": "round-nearest-output-pixel",
+                      "type": "string"
+                    },
+                    "renderedObjectCount": {
+                      "maximum": 64,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "selectedObjectCount": {
+                      "maximum": 64,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "strokeWidth": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "style": {
+                      "const": "geometry-cyan-v1",
+                      "type": "string"
+                    },
+                    "visibilityPolicy": {
+                      "const": "explicit-ignore-object-and-layer-visibility-opacity",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "style",
+                    "color",
+                    "strokeWidth",
+                    "originMarker",
+                    "idLabels",
+                    "visibilityPolicy",
+                    "drawOrder",
+                    "quantization",
+                    "selectedObjectCount",
+                    "renderedObjectCount",
+                    "entries"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
                 "grid",
                 "coordinates",
-                "highlights"
+                "highlights",
+                "objectDebug"
               ],
               "type": "object"
             },

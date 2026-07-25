@@ -383,6 +383,74 @@ describe("generated MCP contract", () => {
     );
     expectExactLiteralSchema(
       schemaProperty(
+        nativePreviewCapabilitiesSchema,
+        "overlays",
+        `${capabilitiesLabel} nativePreviewCapabilities`,
+      ),
+      [
+        "grid",
+        "coordinates",
+        "highlights",
+        "objectIds",
+      ],
+      `${capabilitiesLabel} native preview overlays`,
+    );
+    expectExactLiteralSchema(
+      schemaProperty(
+        nativePreviewCapabilitiesSchema,
+        "objectDebug",
+        `${capabilitiesLabel} nativePreviewCapabilities`,
+      ),
+      {
+        selection: "explicit-object-ids",
+        maxObjects: 64,
+        maxAggregatePoints: 8_192,
+        pointBudget:
+          "selected-polygon-and-polyline-points",
+        duplicateObjectIds: "reject",
+        supportedShapes: [
+          "rectangle",
+          "point",
+          "polygon",
+          "polyline",
+          "text",
+        ],
+        representations: [
+          "geometry-outline",
+          "text-box-only",
+        ],
+        profile:
+          "explicit-basic-object-geometry-v1",
+        style: "geometry-cyan-v1",
+        color: {
+          r: 34,
+          g: 211,
+          b: 238,
+          a: 255,
+        },
+        strokeWidth: 1,
+        originMarker: "crosshair-5px",
+        idLabels: false,
+        visibilityPolicy:
+          "explicit-ignore-object-and-layer-visibility-opacity",
+        drawOrder:
+          "after-highlights-and-grid-before-coordinates",
+        quantization:
+          "round-nearest-output-pixel",
+        workBudget:
+          "included-in-native-preview-pixel-blend-limit",
+        limitations: [
+          "explicit-selection-only",
+          "ellipse-capsule-and-tile-objects-unsupported",
+          "text-box-only-no-glyph-rendering",
+          "template-objects-unsupported",
+          "non-default-selected-layer-or-ancestor-positioning-unsupported",
+        ],
+      },
+      `${capabilitiesLabel} native preview object debug`,
+    );
+    expectExactLiteralSchema(
+      schemaProperty(
         capabilitySuccessSchema,
         "tileRenderCapabilities",
         `${capabilitiesLabel} capability result`,
@@ -426,6 +494,13 @@ describe("generated MCP contract", () => {
       schemaProperty(
         nativePreviewLimitsSchema,
         "maxNativePreviewHighlights",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(64);
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxNativePreviewObjects",
         `${capabilitiesLabel} limits`,
       ).const,
     ).toBe(64);
@@ -907,6 +982,18 @@ describe("generated MCP contract", () => {
       highlightInputSchema.items,
       `${nativePreviewLabel}.inputSchema.overlays.highlights.items`,
     );
+    const objectIdsInputSchema = schemaProperty(
+      schemaProperty(
+        nativePreviewInputSchema,
+        "overlays",
+        `${nativePreviewLabel}.inputSchema`,
+      ),
+      "objectIds",
+      `${nativePreviewLabel}.inputSchema.overlays`,
+    );
+    expect(objectIdsInputSchema.minItems).toBe(1);
+    expect(objectIdsInputSchema.maxItems).toBe(64);
+    expect(objectIdsInputSchema.uniqueItems).toBe(true);
 
     const nativePreviewSuccessSchema =
       findResultBranchWithProperty(
@@ -946,6 +1033,29 @@ describe("generated MCP contract", () => {
       `${nativePreviewLabel} highlight output`,
     );
     expect(highlightEntriesSchema.maxItems).toBe(64);
+    const objectDebugOutputSchema = schemaProperty(
+      schemaProperty(
+        nativePreviewSuccessSchema,
+        "overlays",
+        `${nativePreviewLabel} success result`,
+      ),
+      "objectDebug",
+      `${nativePreviewLabel} success result overlays`,
+    );
+    expectClosedRootObjectSchema(
+      objectDebugOutputSchema,
+      `${nativePreviewLabel} object debug output`,
+    );
+    const objectDebugEntriesSchema = schemaProperty(
+      objectDebugOutputSchema,
+      "entries",
+      `${nativePreviewLabel} object debug output`,
+    );
+    expect(objectDebugEntriesSchema.maxItems).toBe(64);
+    expectClosedRootObjectSchema(
+      objectDebugEntriesSchema.items,
+      `${nativePreviewLabel} object debug output entries`,
+    );
 
     const applicationErrorContractSchema =
       schemaProperty(

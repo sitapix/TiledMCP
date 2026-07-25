@@ -95,6 +95,29 @@ function validOutput(): Record<string, unknown> {
           blendMode: "source-over",
           overlapMode: "tile-union",
         },
+        objectDebug: {
+          profile:
+            "explicit-basic-object-geometry-v1",
+          style: "geometry-cyan-v1",
+          color: {
+            r: 34,
+            g: 211,
+            b: 238,
+            a: 255,
+          },
+          strokeWidth: 1,
+          originMarker: "crosshair-5px",
+          idLabels: false,
+          visibilityPolicy:
+            "explicit-ignore-object-and-layer-visibility-opacity",
+          drawOrder:
+            "after-highlights-and-grid-before-coordinates",
+          quantization:
+            "round-nearest-output-pixel",
+          selectedObjectCount: 0,
+          renderedObjectCount: 0,
+          entries: [],
+        },
       },
       renderProfile:
         "finite-orthogonal-static-atlas-tilelayers-v1",

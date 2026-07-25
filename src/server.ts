@@ -59,6 +59,8 @@ import {
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECTS,
+  MAX_NATIVE_PREVIEW_OBJECT_POINTS,
   MAX_NATIVE_PREVIEW_PIXELS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_SCALE,
@@ -66,6 +68,14 @@ import {
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+  NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+  NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+  NATIVE_PREVIEW_OBJECT_PROFILE,
+  NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+  NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+  NATIVE_PREVIEW_OBJECT_STYLE,
+  NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
 } from "./images/mapPreview.js";
 import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
@@ -337,6 +347,24 @@ const nativePreviewHighlightRectInputSchema = z
           "Highlight rectangle bottom edge must be a safe integer",
         path: ["height"],
       });
+    }
+  });
+const nativePreviewObjectIdsInputSchema = z
+  .array(positiveSafeIntegerSchema)
+  .min(1)
+  .max(MAX_NATIVE_PREVIEW_OBJECTS)
+  .meta({ uniqueItems: true })
+  .superRefine((objectIds, context) => {
+    const seen = new Set<number>();
+    for (const [index, objectId] of objectIds.entries()) {
+      if (seen.has(objectId)) {
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate object id ${objectId}`,
+          path: [index],
+        });
+      }
+      seen.add(objectId);
     }
   });
 const objectCoordinateSchema = z.number().min(-1_000_000_000).max(1_000_000_000);
@@ -1993,7 +2021,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           defaultScale: DEFAULT_NATIVE_PREVIEW_SCALE,
           layerSelection: ["visible", "explicit"],
-          overlays: ["grid", "coordinates", "highlights"],
+          overlays: [
+            "grid",
+            "coordinates",
+            "highlights",
+            "objectIds",
+          ],
           regionCoordinates: "absolute-map-tiles",
           highlightRectangles: {
             coordinateSpace: "absolute-map-tiles",
@@ -2011,6 +2044,49 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "after-tile-layers-before-grid-and-coordinates",
             workBudget:
               "included-in-native-preview-pixel-blend-limit",
+          },
+          objectDebug: {
+            selection: "explicit-object-ids",
+            maxObjects: MAX_NATIVE_PREVIEW_OBJECTS,
+            maxAggregatePoints:
+              MAX_NATIVE_PREVIEW_OBJECT_POINTS,
+            pointBudget:
+              "selected-polygon-and-polyline-points",
+            duplicateObjectIds: "reject",
+            supportedShapes: [
+              "rectangle",
+              "point",
+              "polygon",
+              "polyline",
+              "text",
+            ],
+            representations: [
+              "geometry-outline",
+              "text-box-only",
+            ],
+            profile: NATIVE_PREVIEW_OBJECT_PROFILE,
+            style: NATIVE_PREVIEW_OBJECT_STYLE,
+            color: NATIVE_PREVIEW_OBJECT_COLOR,
+            strokeWidth:
+              NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+            originMarker:
+              NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+            idLabels: false,
+            visibilityPolicy:
+              NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+            drawOrder:
+              NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+            quantization:
+              NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+            workBudget:
+              "included-in-native-preview-pixel-blend-limit",
+            limitations: [
+              "explicit-selection-only",
+              "ellipse-capsule-and-tile-objects-unsupported",
+              "text-box-only-no-glyph-rendering",
+              "template-objects-unsupported",
+              "non-default-selected-layer-or-ancestor-positioning-unsupported",
+            ],
           },
           reportsOmittedVisibleLayers: true,
         },
@@ -2137,6 +2213,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxNativePreviewScale: MAX_NATIVE_PREVIEW_SCALE,
           maxNativePreviewHighlights:
             MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+          maxNativePreviewObjects:
+            MAX_NATIVE_PREVIEW_OBJECTS,
           maxNativePreviewRegionCells: MAX_PREVIEW_REGION_CELLS,
           maxNativePreviewLayers: MAX_PREVIEW_LAYERS,
           maxNativePreviewTileDraws: MAX_PREVIEW_TILE_DRAWS,
@@ -2864,7 +2942,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and reports visible non-tile layers it omits. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.",
+        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. Object debugging supports rectangles, points, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -2914,6 +2992,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
                 )
                 .optional(),
+              objectIds:
+                nativePreviewObjectIdsInputSchema.optional(),
             })
             .strict()
             .optional(),
@@ -2939,6 +3019,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   ...(overlays.highlights === undefined
                     ? {}
                     : { highlights: overlays.highlights }),
+                  ...(overlays.objectIds === undefined
+                    ? {}
+                    : { objectIds: overlays.objectIds }),
                 };
           const rendered = await maps.renderPreview({
             mapPath,

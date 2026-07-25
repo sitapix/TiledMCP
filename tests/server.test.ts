@@ -3581,7 +3581,12 @@ describe("createTiledMcpServer", () => {
         supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
         defaultScale: 2,
         layerSelection: ["visible", "explicit"],
-        overlays: ["grid", "coordinates", "highlights"],
+        overlays: [
+          "grid",
+          "coordinates",
+          "highlights",
+          "objectIds",
+        ],
         regionCoordinates: "absolute-map-tiles",
         highlightRectangles: {
           coordinateSpace: "absolute-map-tiles",

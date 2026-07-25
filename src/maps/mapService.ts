@@ -39,11 +39,14 @@ import {
 import {
   MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
   MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
+  MAX_NATIVE_PREVIEW_OBJECT_POINTS,
+  MAX_NATIVE_PREVIEW_OBJECTS,
   DEFAULT_NATIVE_PREVIEW_SCALE,
   prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
   type NativePreviewHighlightInput,
+  type NativePreviewObjectInput,
 } from "../images/mapPreview.js";
 import {
   parseTransparentColor,
@@ -353,12 +356,14 @@ interface ObjectLayerView {
   id: number;
   name: string;
   objects: JsonValue[];
+  ancestors: readonly JsonObject[];
 }
 
 interface ObjectLocation {
   object: JsonObject;
   objectIndex: number;
   layer: ObjectLayerView;
+  ancestors: readonly JsonObject[];
 }
 
 interface EditableLayerLocation {
@@ -509,6 +514,7 @@ export interface RenderPreviewInput {
     grid?: boolean;
     coordinates?: boolean;
     highlights?: NativePreviewHighlightInput[];
+    objectIds?: number[];
   };
 }
 
@@ -1337,6 +1343,11 @@ export class MapService {
       input.overlays?.highlights,
       scene.region,
     );
+    const objectDebug = prepareNativePreviewObjectDebug(
+      map,
+      context.loaded.path,
+      input.overlays?.objectIds,
+    );
 
     const atlases: NativePreviewAtlas[] = [];
     const sources: Array<Record<string, unknown>> = [];
@@ -1423,6 +1434,9 @@ export class MapService {
       ...(input.overlays?.highlights === undefined
         ? {}
         : { highlights: input.overlays.highlights }),
+      ...(objectDebug === undefined
+        ? {}
+        : { objectDebug }),
     };
     let rendered;
     try {
@@ -1510,6 +1524,8 @@ export class MapService {
           grid: overlays.grid,
           coordinates: overlays.coordinates,
           highlights: rendered.highlightOverlay,
+          objectDebug:
+            rendered.objectDebugOverlay,
         },
         renderProfile:
           "finite-orthogonal-static-atlas-tilelayers-v1",
@@ -6863,6 +6879,7 @@ function findObjectLayer(
         ? located.object.name
         : `Layer ${layerId}`,
     objects: expectArray(located.object.objects, `layer ${layerId}.objects`),
+    ancestors: located.ancestors,
   };
 }
 
@@ -6878,6 +6895,7 @@ function collectObjectLocations(
     locations,
     { count: 0 },
     { count: 0 },
+    [],
   );
   assertUniqueObjectIds(locations, mapPath);
   return locations;
@@ -6901,6 +6919,7 @@ function collectObjectLocationsFromLayer(
     ),
     objectIndex,
     layer,
+    ancestors: layer.ancestors,
   }));
   assertUniqueObjectIds(locations, mapPath);
   return locations;
@@ -6913,6 +6932,7 @@ function collectObjectLocationsRecursive(
   output: ObjectLocation[],
   layerBudget: LayerTraversalBudget,
   objectBudget: { count: number },
+  ancestors: readonly JsonObject[],
   depth = 0,
 ): void {
   assertLayerTraversalBudget(layers.length, depth, layerBudget);
@@ -6927,6 +6947,7 @@ function collectObjectLocationsRecursive(
         output,
         layerBudget,
         objectBudget,
+        [...ancestors, layer],
         depth + 1,
       );
       continue;
@@ -6955,6 +6976,7 @@ function collectObjectLocationsRecursive(
           ? layer.name
           : `Layer ${String(layer.id)}`,
       objects,
+      ancestors,
     };
     for (const [objectIndex, objectValue] of objects.entries()) {
       output.push({
@@ -6964,6 +6986,7 @@ function collectObjectLocationsRecursive(
         ),
         objectIndex,
         layer: layerView,
+        ancestors,
       });
     }
   }
@@ -9024,7 +9047,12 @@ function createBasicObject(
   layer.objects.push(object);
   layer.object.objects = layer.objects;
   map.nextobjectid = nextObjectId + 1;
-  const location = { object, objectIndex: layer.objects.length - 1, layer };
+  const location = {
+    object,
+    objectIndex: layer.objects.length - 1,
+    layer,
+    ancestors: layer.ancestors,
+  };
   index.byId.set(nextObjectId, location);
   index.maximumId = nextObjectId;
   return location;
@@ -9718,6 +9746,279 @@ function assertObjectShapePointBudget(
   }
 }
 
+function prepareNativePreviewObjectDebug(
+  map: JsonObject,
+  mapPath: string,
+  objectIds: readonly number[] | undefined,
+): NativePreviewObjectInput[] | undefined {
+  if (objectIds === undefined) {
+    return undefined;
+  }
+  if (
+    !Array.isArray(objectIds) ||
+    objectIds.length < 1 ||
+    objectIds.length > MAX_NATIVE_PREVIEW_OBJECTS
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `overlays.objectIds must contain between 1 and ${MAX_NATIVE_PREVIEW_OBJECTS} IDs when provided.`,
+      {
+        count: Array.isArray(objectIds)
+          ? objectIds.length
+          : null,
+        min: 1,
+        max: MAX_NATIVE_PREVIEW_OBJECTS,
+      },
+    );
+  }
+  const seen = new Set<number>();
+  for (const [sourceIndex, objectId] of objectIds.entries()) {
+    if (!Number.isSafeInteger(objectId) || objectId <= 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "overlays.objectIds must contain positive safe integers.",
+        { sourceIndex, objectId },
+      );
+    }
+    if (seen.has(objectId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `overlays.objectIds contains duplicate object ID ${objectId}.`,
+        { sourceIndex, objectId },
+      );
+    }
+    seen.add(objectId);
+  }
+
+  const index = buildObjectEditIndex(map, mapPath);
+  const selected: NativePreviewObjectInput[] = [];
+  let pointCount = 0;
+  for (const [sourceIndex, objectId] of objectIds.entries()) {
+    const location = findObjectLocation(
+      index,
+      objectId,
+      mapPath,
+    );
+    const shape = assertBasicEditableObject(
+      location.object,
+      objectId,
+      mapPath,
+    );
+    assertNativePreviewObjectRenderContext(
+      location,
+      objectId,
+      mapPath,
+    );
+    if (shape === "ellipse" || shape === "capsule") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_RENDER_FEATURE",
+        `Native object debug overlay does not support ${shape} objects.`,
+        {
+          path: mapPath,
+          objectId,
+          layerId: location.layer.id,
+          feature: `object-debug-${shape}`,
+        },
+      );
+    }
+
+    const common = {
+      sourceIndex,
+      objectId,
+      layerId: location.layer.id,
+      x: location.object.x as number,
+      y: location.object.y as number,
+      rotation: displayNumber(
+        location.object.rotation,
+        0,
+      ),
+    };
+    if (shape === "rectangle") {
+      selected.push({
+        ...common,
+        shape,
+        representation: "geometry-outline",
+        width: location.object.width as number,
+        height: location.object.height as number,
+      });
+      continue;
+    }
+    if (shape === "text") {
+      selected.push({
+        ...common,
+        shape,
+        representation: "text-box-only",
+        width: displayNumber(location.object.width, 0),
+        height: displayNumber(location.object.height, 0),
+      });
+      continue;
+    }
+    if (shape === "point") {
+      selected.push({
+        ...common,
+        shape,
+        representation: "geometry-outline",
+      });
+      continue;
+    }
+
+    const points = expectArray(
+      location.object[shape],
+      `object ${objectId}.${shape}`,
+    ).map((value, pointIndex) => {
+      const point = expectObject(
+        value,
+        `object ${objectId}.${shape}[${pointIndex}]`,
+      );
+      return {
+        x: point.x as number,
+        y: point.y as number,
+      };
+    });
+    pointCount += points.length;
+    if (
+      !Number.isSafeInteger(pointCount) ||
+      pointCount > MAX_NATIVE_PREVIEW_OBJECT_POINTS
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Native object debug overlay may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_POINTS} polygon/polyline points.`,
+        {
+          actual: pointCount,
+          limit: MAX_NATIVE_PREVIEW_OBJECT_POINTS,
+          sourceIndex,
+          objectId,
+        },
+      );
+    }
+    selected.push({
+      ...common,
+      shape,
+      representation: "geometry-outline",
+      points,
+    });
+  }
+  return selected;
+}
+
+function assertNativePreviewObjectRenderContext(
+  location: ObjectLocation,
+  objectId: number,
+  mapPath: string,
+): void {
+  for (const [ancestorIndex, ancestor] of
+    location.ancestors.entries()) {
+    assertNativePreviewObjectLayerPosition({
+      layer: ancestor,
+      context: `${mapPath} ancestor group ${ancestorIndex}`,
+      objectId,
+      layerId: location.layer.id,
+      role: "group",
+    });
+  }
+  assertNativePreviewObjectLayerPosition({
+    layer: location.layer.object,
+    context: `${mapPath} object layer ${location.layer.id}`,
+    objectId,
+    layerId: location.layer.id,
+    role: "object-layer",
+  });
+}
+
+function assertNativePreviewObjectLayerPosition(input: {
+  layer: JsonObject;
+  context: string;
+  objectId: number;
+  layerId: number;
+  role: "group" | "object-layer";
+}): void {
+  for (const field of ["x", "y"] as const) {
+    const value = input.layer[field] ?? 0;
+    if (
+      typeof value !== "number" ||
+      !Number.isSafeInteger(value)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${input.context}.${field} must be a safe integer.`,
+        {
+          path: input.context,
+          objectId: input.objectId,
+          layerId: input.layerId,
+          field,
+          value,
+        },
+      );
+    }
+    if (value !== 0) {
+      throw unsupportedNativePreviewObjectPosition(
+        input,
+        input.role === "group"
+          ? `group-${field}`
+          : `object-layer-${field}`,
+        field,
+        value,
+      );
+    }
+  }
+  for (const [field, fallback] of [
+    ["offsetx", 0],
+    ["offsety", 0],
+    ["parallaxx", 1],
+    ["parallaxy", 1],
+  ] as const) {
+    const value = input.layer[field] ?? fallback;
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${input.context}.${field} must be a finite number.`,
+        {
+          path: input.context,
+          objectId: input.objectId,
+          layerId: input.layerId,
+          field,
+          value,
+        },
+      );
+    }
+    if (value !== fallback) {
+      throw unsupportedNativePreviewObjectPosition(
+        input,
+        field,
+        field,
+        value,
+      );
+    }
+  }
+}
+
+function unsupportedNativePreviewObjectPosition(
+  input: {
+    context: string;
+    objectId: number;
+    layerId: number;
+    role: "group" | "object-layer";
+  },
+  feature: string,
+  field: string,
+  value: number,
+): TiledMcpError {
+  return new TiledMcpError(
+    "UNSUPPORTED_RENDER_FEATURE",
+    `Native object debug overlay does not support non-default ${input.role} ${field}.`,
+    {
+      path: input.context,
+      objectId: input.objectId,
+      layerId: input.layerId,
+      feature,
+      value,
+    },
+  );
+}
+
 function assertBasicEditableObject(
   object: JsonObject,
   objectId: number,
@@ -10350,12 +10651,21 @@ function findLayerRecursive(
   path: JsonSourcePath,
   depth = 0,
   budget: LayerTraversalBudget = { count: 0 },
-): { object: JsonObject; path: JsonSourcePath } | undefined {
+  ancestors: readonly JsonObject[] = [],
+): {
+  object: JsonObject;
+  path: JsonSourcePath;
+  ancestors: readonly JsonObject[];
+} | undefined {
   assertLayerTraversalBudget(layers.length, depth, budget);
   for (const [index, value] of layers.entries()) {
     const layer = expectObject(value, `${context}[${index}]`);
     if (layer.id === layerId) {
-      return { object: layer, path: [...path, index] };
+      return {
+        object: layer,
+        path: [...path, index],
+        ancestors,
+      };
     }
     if (layer.type === "group" && Array.isArray(layer.layers)) {
       const nested = findLayerRecursive(
@@ -10365,6 +10675,7 @@ function findLayerRecursive(
         [...path, index, "layers"],
         depth + 1,
         budget,
+        [...ancestors, layer],
       );
       if (nested) {
         return nested;

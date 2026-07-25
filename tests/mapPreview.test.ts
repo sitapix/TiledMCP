@@ -5,16 +5,26 @@ import type { AtlasGeometry } from "../src/images/atlas.js";
 import {
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECTS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_PIXELS,
   NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
+  NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+  NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+  NATIVE_PREVIEW_OBJECT_PROFILE,
+  NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+  NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+  NATIVE_PREVIEW_OBJECT_STYLE,
+  NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
   prepareNativePreviewHighlightOverlay,
   renderNativePreview,
   type NativePreviewAtlas,
   type NativePreviewHighlightInput,
+  type NativePreviewObjectInput,
 } from "../src/images/mapPreview.js";
 import {
   GID_DIAGONAL_OR_HEX_60,
@@ -510,6 +520,303 @@ describe("renderNativePreview", () => {
     });
   });
 
+  it("draws ordered basic object geometry after the grid and reports clipped selections", async () => {
+    const objects = [
+      {
+        sourceIndex: 0,
+        objectId: 10,
+        layerId: 2,
+        shape: "rectangle",
+        representation: "geometry-outline",
+        x: 2,
+        y: 2,
+        rotation: 0,
+        width: 6,
+        height: 4,
+      },
+      {
+        sourceIndex: 1,
+        objectId: 11,
+        layerId: 2,
+        shape: "polyline",
+        representation: "geometry-outline",
+        x: 10,
+        y: 10,
+        rotation: 0,
+        points: [
+          { x: 0, y: 0 },
+          { x: 5, y: 0 },
+          { x: 0, y: 5 },
+        ],
+      },
+      {
+        sourceIndex: 2,
+        objectId: 12,
+        layerId: 3,
+        shape: "text",
+        representation: "text-box-only",
+        x: 13,
+        y: 3,
+        rotation: 90,
+        width: 4,
+        height: 3,
+      },
+      {
+        sourceIndex: 3,
+        objectId: 13,
+        layerId: 3,
+        shape: "point",
+        representation: "geometry-outline",
+        x: 20,
+        y: 20,
+        rotation: 45,
+      },
+    ] satisfies NativePreviewObjectInput[];
+    const rendered = await renderNativePreview({
+      tileWidth: 8,
+      tileHeight: 8,
+      region: { x: 0, y: 0, width: 2, height: 2 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: true,
+        coordinates: false,
+        objectDebug: objects,
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+
+    // The rectangle's right edge overwrites the previously drawn grid at x=8.
+    expect(pixel(decoded, 8, 3)).toEqual(cyan);
+    // Positive 90 degrees rotates the text box clockwise in the y-down map.
+    expect(pixel(decoded, 10, 7)).toEqual(cyan);
+    expect(pixel(decoded, 13, 5)).toEqual(cyan);
+    // A polyline stays open; its implicit polygon-closing edge is not drawn.
+    expect(pixel(decoded, 10, 14)).toEqual(TRANSPARENT);
+    expect(pixel(decoded, 11, 14)).toEqual(cyan);
+
+    expect(rendered.objectDebugOverlay).toEqual({
+      profile: NATIVE_PREVIEW_OBJECT_PROFILE,
+      style: NATIVE_PREVIEW_OBJECT_STYLE,
+      color: NATIVE_PREVIEW_OBJECT_COLOR,
+      strokeWidth: NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+      originMarker: NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+      idLabels: false,
+      visibilityPolicy:
+        NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+      drawOrder: NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+      quantization: NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+      selectedObjectCount: 4,
+      renderedObjectCount: 3,
+      entries: [
+        {
+          sourceIndex: 0,
+          objectId: 10,
+          layerId: 2,
+          shape: "rectangle",
+          representation: "geometry-outline",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 1,
+          objectId: 11,
+          layerId: 2,
+          shape: "polyline",
+          representation: "geometry-outline",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 2,
+          objectId: 12,
+          layerId: 3,
+          shape: "text",
+          representation: "text-box-only",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 3,
+          objectId: 13,
+          layerId: 3,
+          shape: "point",
+          representation: "geometry-outline",
+          rendered: false,
+          clipped: true,
+        },
+      ],
+    });
+  });
+
+  it("rotates clockwise around the object anchor and clips huge offscreen segments before rasterizing", async () => {
+    const rendered = await renderNativePreview({
+      tileWidth: 16,
+      tileHeight: 16,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        objectDebug: [
+          {
+            sourceIndex: 0,
+            objectId: 1,
+            layerId: 2,
+            shape: "rectangle",
+            representation: "geometry-outline",
+            x: 8,
+            y: 8,
+            rotation: 90,
+            width: 4,
+            height: 2,
+          },
+          {
+            sourceIndex: 1,
+            objectId: 2,
+            layerId: 2,
+            shape: "polyline",
+            representation: "geometry-outline",
+            x: -999_999_984,
+            y: 4,
+            rotation: 0,
+            points: [
+              { x: 0, y: 0 },
+              { x: 1_000_000_000, y: 0 },
+            ],
+          },
+        ],
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+
+    expect(pixel(decoded, 8, 11)).toEqual(cyan);
+    expect(pixel(decoded, 6, 11)).toEqual(cyan);
+    expect(pixel(decoded, 4, 4)).toEqual(cyan);
+    expect(rendered.objectDebugOverlay.entries).toMatchObject([
+      { rendered: true, clipped: false },
+      { rendered: true, clipped: true },
+    ]);
+
+    const renderRotation = (rotation: number) =>
+      renderNativePreview({
+        tileWidth: 16,
+        tileHeight: 16,
+        region: {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        layers: [],
+        atlases: [],
+        scale: 1,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [
+            {
+              sourceIndex: 0,
+              objectId: 3,
+              layerId: 2,
+              shape: "rectangle",
+              representation:
+                "geometry-outline",
+              x: 8,
+              y: 8,
+              rotation,
+              width: 4,
+              height: 2,
+            },
+          ],
+        },
+      });
+    const hugeRotation =
+      await renderRotation(1_000_000_000);
+    const normalizedRotation =
+      await renderRotation(280);
+    expect(hugeRotation.png).toEqual(
+      normalizedRotation.png,
+    );
+  });
+
+  it("rejects empty, oversized, duplicate and structurally loose object debug inputs", async () => {
+    const base = {
+      tileWidth: 8,
+      tileHeight: 8,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+    } as const;
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: Array.from(
+            { length: MAX_NATIVE_PREVIEW_OBJECTS + 1 },
+            (_, index) => pointDebug(index, index + 1),
+          ),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [
+            pointDebug(0, 1),
+            pointDebug(1, 1),
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [
+            {
+              ...pointDebug(0, 1),
+              label: "not-supported",
+            } as NativePreviewObjectInput,
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+
   it.each([
     [
       "edge",
@@ -690,6 +997,22 @@ function tileLayer(
     height: input.height,
     data: input.data,
     opacity: input.opacity ?? 1,
+  };
+}
+
+function pointDebug(
+  sourceIndex: number,
+  objectId: number,
+): NativePreviewObjectInput {
+  return {
+    sourceIndex,
+    objectId,
+    layerId: 2,
+    shape: "point",
+    representation: "geometry-outline",
+    x: 4,
+    y: 4,
+    rotation: 0,
   };
 }
 

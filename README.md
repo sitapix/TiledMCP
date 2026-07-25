@@ -58,7 +58,8 @@
 - 带 local ID 标注、自动分页和三重 revision 元数据的 atlas tileset PNG sheet；
 - 不依赖 Tiled 进程的有限正交 tile-layer region PNG 预览，支持图层筛选、GID
   H/V/D、opacity、网格、绝对坐标 gutter，以及最多 64 个固定 amber 样式的绝对
-  tile 矩形高亮；
+  tile 矩形高亮；还可按 1–64 个显式 object ID 叠加 rectangle、point、
+  polygon、polyline 几何轮廓或 text layout box；
 - Tiled CLI 能力探测和可选 `tmxrasterizer` PNG 预览，后者返回 map/外部 TSJ
   revision、PNG hash/尺寸、renderer 版本与实际生效选项；
 - 可由 MCP `resources/list` 发现并通过 `resources/read` 读取的
@@ -194,7 +195,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |
 | `tiled_render_tileset_sheet` | 按 `tilesetAssetId` 返回带 local ID 的分页 PNG sheet |
 | `tiled_render_tiles` | 按输入顺序放大并标注 1–64 个显式、稀疏的 atlas local IDs |
-| `tiled_render_preview` | 内建渲染有限正交 tile layer，可选 region、图层、网格、坐标和有界矩形高亮 |
+| `tiled_render_preview` | 内建渲染有限正交 tile layer，可选 region、图层、网格、坐标、有界矩形高亮和显式对象几何调试叠层 |
 | `tiled_list_objects` | 有界列出全部或指定 object layer 的对象 |
 | `tiled_get_object` | 按全图唯一 object ID 读取一个有界、严格判别的可编辑对象详情 |
 | `tiled_validate` | 只读结构与 MVP profile 校验 |
@@ -351,9 +352,13 @@ member；创建时另推进 `nextobjectid`。
 text-specific flat fields 以 canonical compact JSON UTF-8 计费，最多 256 KiB；
 pending registry 合计最多 2 MiB。
 
-内建 `tiled_render_preview` 的 v1 profile 仍只绘制 tile layers；它会报告但不绘制
-object layers，因此不能用于确认 text 字体/换行。需要视觉核对对象时，应使用实际
-discovery 到的可选 `tiled_render_map` 或 Tiled 1.12.2。
+内建 `tiled_render_preview` 的基础画面仍只绘制 tile layers；它会报告但不完整绘制
+object layers。需要核对受支持对象的锚点与几何时，可在 `overlays.objectIds` 显式传入
+1–64 个全图唯一 object ID；这不会受 object/layer visibility 或 opacity 影响。
+rectangle、point、polygon 与 polyline 使用固定 cyan 单像素轮廓和 5px 原点十字，
+text 只画旋转后的 layout box，不渲染 glyph，因此不能用于确认字体、换行或对齐。
+ellipse/capsule、tile object 与 template 会 fail closed。需要完整 Tiled 视觉语义时，
+仍应使用实际 discovery 到的可选 `tiled_render_map` 或 Tiled 1.12.2。
 
 修改已有图层的通用显示/元数据字段时，在同一个 `tiled_preview_edits` 中使用第 7 种
 operation：
@@ -1052,6 +1057,19 @@ checkpoint restore。架构与 roadmap
   重叠或重复矩形按 tile union 每格只混合一次，使输入顺序不影响 PNG。
   结果总是返回保序的 requested/rendered/clipped entries、union 后
   `highlightedTileCount`、固定颜色与 blend/overlap mode；未请求时 entries 为空且计数为 0。
+  `overlays.objectIds` 另接受 1–64 个唯一 positive safe object ID，并严格保留输入顺序；
+  `layerIds` 仍只选择 tile layer，两种选择互不隐含。对象使用 map pixel 坐标，local path
+  point 先围绕 `(x,y)` 按 Tiled 正角顺时针旋转，再映射到输出并裁到
+  `contentPixelRect`。固定 `explicit-basic-object-geometry-v1` 只画 rectangle/point/
+  polygon/polyline 的几何轮廓与 text layout box，并总是画 5px 原点十字；完全位于 region
+  外的对象仍保留 entry，以 `rendered:false, clipped:true` 明示。输出固定返回完整保序
+  entries、selected/rendered count、样式、量化、visibility policy 和 draw order；
+  未请求时返回相同 envelope 的空 entries。所选 path point 合计最多 8192，像素写入计入
+  同一个 3000 万 work budget；不会缩减选择或降低 scale。ellipse/capsule、tile object、
+  template，以及所选 object layer/ancestor 的非默认 x/y、offset 或 parallax 均明确拒绝。
+  这是 pre-Frozen wire clean break：`objectIds` 输入是新增可选字段，但成功结果现在总是
+  带必填的 closed `overlays.objectDebug` envelope，capabilities 也增加对应声明；缓存旧
+  closed schema 的客户端升级后必须重新 discovery，不能继续用旧响应 schema 校验。
   隐式选择会把可见 object/image layer 作为 `omittedLayers` 返回并标记 `partial: true`；
   blend/tint、parallax、非零像素 offset、group opacity、动画 tile、tileoffset 和
   image collection 会稳定报 `UNSUPPORTED_RENDER_FEATURE`/`UNSUPPORTED_TILESET`，

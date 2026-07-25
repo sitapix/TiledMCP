@@ -176,7 +176,9 @@ For an existing map:
 7. Use \`tiled_render_preview\` to inspect the current map or a bounded region.
    Grid and coordinate overlays can make tile positions explicit. Use up to 64
    fixed-style absolute tile rectangles in \`overlays.highlights\` to call out
-   a bounded selection without editing the map.
+   a bounded selection without editing the map. To inspect supported object
+   edits, pass 1 to 64 unique IDs in \`overlays.objectIds\`; this explicit
+   geometry selection is independent of tile \`layerIds\`.
 
 Use \`tiled_analyze_usage\` when you need a read-only inventory of the whole
 map rather than a selected region. It recursively scans every finite tile-layer
@@ -216,9 +218,9 @@ unless the intended edit changes them.
 
 Native preview v1 renders static atlas tile layers. A result with
 \`partial: true\` is not a complete visual representation; inspect
-\`omittedLayers\` and the declared \`renderProfile\`. Object layers and
-unsupported drawing semantics are reported or rejected rather than silently
-rendered incorrectly.
+\`omittedLayers\` and the declared \`renderProfile\`. It does not implicitly
+render complete object layers. Unsupported drawing semantics are reported or
+rejected rather than silently rendered incorrectly.
 
 Each highlight rectangle is strict \`{x,y,width,height}\` in absolute map tile
 coordinates. It must intersect the effective \`tileRegion\`; a partial overlap
@@ -231,6 +233,27 @@ tile union, so their input order cannot change the PNG. The result always
 reports the fixed style/color/modes, bounded entries, and exact
 \`highlightedTileCount\`; without requested highlights those are an empty list
 and zero. Highlight work shares the native preview pixel-blend limit.
+
+\`overlays.objectIds\` is strict, ordered, unique, all-or-error, and limited to
+64 positive safe IDs. The fixed
+\`explicit-basic-object-geometry-v1\` overlay draws rectangle, point, polygon,
+and open polyline geometry in opaque cyan with a one-pixel stroke and 5-pixel
+origin crosshair. Text objects render only their rotated layout box, never
+glyphs. Coordinates are map pixels: local path points rotate clockwise around
+the object's \`x/y\` anchor before scale and region cropping. Fully offscreen
+objects remain in ordered metadata as
+\`rendered:false, clipped:true\`; the service never drops them silently.
+The debug representation includes both the geometry/text-box stroke and origin
+marker: \`rendered\` means at least one pixel from either was written inside the
+content rectangle, while \`clipped\` means any segment or marker arm was partly
+or wholly clipped. Both flags can therefore be true.
+Explicit debug selection ignores object/layer visibility and opacity, as
+reported by \`visibilityPolicy\`. It rejects ellipse, capsule, tile objects,
+templates, and selected layer/group positioning with non-default x/y, offset,
+or parallax. Selected path geometry is capped at 8192 points, and clipped
+stroke work shares the native preview pixel-work limit. Use
+\`tiled_render_map\` or Tiled for full object-layer, font, tile-object, curve,
+and collision rendering.
 
 ## Attach an existing tileset safely
 
@@ -398,9 +421,12 @@ payload is canonical compact JSON UTF-8, capped at 256 KiB per change set and
 2 MiB pending. \`tiled_get_object\` is the bounded read-before-update tool; it
 returns complete path points or effective text defaults, but not raw JSON,
 custom properties, vendor fields, tile objects, or templates. The registry is
-25 core tools or 26 with the rasterizer. The native preview still renders
-tile layers only and reports visible object layers as omitted; use the optional
-rasterizer or Tiled 1.12.2 to inspect font substitution, wrapping, and layout.
+25 core tools or 26 with the rasterizer. The native preview still uses tile
+layers as its base image and reports visible object layers as omitted, but an
+explicit \`overlays.objectIds\` selection can verify supported geometry and
+text layout boxes. Use the optional rasterizer or Tiled 1.12.2 to inspect font
+substitution, wrapping, glyph layout, curves, tile objects, and complete layer
+rendering.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
@@ -778,7 +804,9 @@ After a successful apply:
 2. Call \`tiled_validate\`.
 3. Re-read the affected region or objects.
 4. Call \`tiled_render_preview\` for the affected area and compare it with the
-   intended result. If \`tiled_render_map\` is registered, it may provide a
+   intended result. For supported object edits, include their exact IDs in
+   \`overlays.objectIds\` and inspect each ordered rendered/clipped entry. If
+   \`tiled_render_map\` is registered, it may provide a
    fuller Tiled-rendered check for semantics outside native preview v1. Verify
    that its returned \`map.revision\` is the revision you intended to inspect,
    and retain its PNG \`sha256\`, renderer version, effective options, and

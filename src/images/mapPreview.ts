@@ -21,6 +21,8 @@ export const MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS = 16_000_000;
 export const MAX_NATIVE_PREVIEW_PIXEL_BLENDS = 30_000_000;
 export const MAX_NATIVE_PREVIEW_HIGHLIGHTS = 64;
+export const MAX_NATIVE_PREVIEW_OBJECTS = 64;
+export const MAX_NATIVE_PREVIEW_OBJECT_POINTS = 8_192;
 export const NATIVE_PREVIEW_HIGHLIGHT_STYLE = "selection-amber-v1";
 export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
   Object.freeze({
@@ -31,6 +33,26 @@ export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
   } as const);
 export const NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE = "source-over";
 export const NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE = "tile-union";
+export const NATIVE_PREVIEW_OBJECT_PROFILE =
+  "explicit-basic-object-geometry-v1";
+export const NATIVE_PREVIEW_OBJECT_STYLE =
+  "geometry-cyan-v1";
+export const NATIVE_PREVIEW_OBJECT_COLOR =
+  Object.freeze({
+    r: 34,
+    g: 211,
+    b: 238,
+    a: 255,
+  } as const);
+export const NATIVE_PREVIEW_OBJECT_STROKE_WIDTH = 1;
+export const NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER =
+  "crosshair-5px";
+export const NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY =
+  "explicit-ignore-object-and-layer-visibility-opacity";
+export const NATIVE_PREVIEW_OBJECT_DRAW_ORDER =
+  "after-highlights-and-grid-before-coordinates";
+export const NATIVE_PREVIEW_OBJECT_QUANTIZATION =
+  "round-nearest-output-pixel";
 
 const COORDINATE_GUTTER_PADDING = 2;
 const COORDINATE_GLYPH_WIDTH = 3;
@@ -45,6 +67,15 @@ const HIGHLIGHT_FILL_COLOR: Rgba = [
   NATIVE_PREVIEW_HIGHLIGHT_COLOR.b,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR.a,
 ];
+const OBJECT_DEBUG_COLOR: Rgba = [
+  NATIVE_PREVIEW_OBJECT_COLOR.r,
+  NATIVE_PREVIEW_OBJECT_COLOR.g,
+  NATIVE_PREVIEW_OBJECT_COLOR.b,
+  NATIVE_PREVIEW_OBJECT_COLOR.a,
+];
+const OBJECT_ORIGIN_MARKER_RADIUS = 2;
+const MAX_ABSOLUTE_NATIVE_PREVIEW_OBJECT_NUMBER =
+  1_000_000_000;
 
 const GLYPHS: Readonly<Record<string, readonly string[]>> = {
   "0": ["111", "101", "101", "101", "111"],
@@ -75,6 +106,7 @@ export interface NativePreviewOverlayInput {
   grid: boolean;
   coordinates: boolean;
   highlights?: readonly NativePreviewHighlightInput[];
+  objectDebug?: readonly NativePreviewObjectInput[];
 }
 
 export interface NativePreviewHighlightInput {
@@ -98,6 +130,62 @@ export interface NativePreviewHighlightRenderMetadata {
   overlapMode: typeof NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE;
   highlightedTileCount: number;
   entries: readonly NativePreviewHighlightRenderEntry[];
+}
+
+export type NativePreviewObjectShape =
+  | "rectangle"
+  | "point"
+  | "polygon"
+  | "polyline"
+  | "text";
+
+export type NativePreviewObjectRepresentation =
+  | "geometry-outline"
+  | "text-box-only";
+
+export interface NativePreviewObjectPoint {
+  x: number;
+  y: number;
+}
+
+export interface NativePreviewObjectInput {
+  sourceIndex: number;
+  objectId: number;
+  layerId: number;
+  shape: NativePreviewObjectShape;
+  representation: NativePreviewObjectRepresentation;
+  x: number;
+  y: number;
+  rotation: number;
+  width?: number;
+  height?: number;
+  points?: readonly NativePreviewObjectPoint[];
+}
+
+export interface NativePreviewObjectRenderEntry {
+  sourceIndex: number;
+  objectId: number;
+  layerId: number;
+  shape: NativePreviewObjectShape;
+  representation: NativePreviewObjectRepresentation;
+  rendered: boolean;
+  clipped: boolean;
+}
+
+export interface NativePreviewObjectRenderMetadata {
+  profile: typeof NATIVE_PREVIEW_OBJECT_PROFILE;
+  style: typeof NATIVE_PREVIEW_OBJECT_STYLE;
+  color: typeof NATIVE_PREVIEW_OBJECT_COLOR;
+  strokeWidth: typeof NATIVE_PREVIEW_OBJECT_STROKE_WIDTH;
+  originMarker: typeof NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER;
+  idLabels: false;
+  visibilityPolicy:
+    typeof NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY;
+  drawOrder: typeof NATIVE_PREVIEW_OBJECT_DRAW_ORDER;
+  quantization: typeof NATIVE_PREVIEW_OBJECT_QUANTIZATION;
+  selectedObjectCount: number;
+  renderedObjectCount: number;
+  entries: readonly NativePreviewObjectRenderEntry[];
 }
 
 export interface RenderNativePreviewInput {
@@ -132,6 +220,7 @@ export interface NativePreviewRender {
     pixelsPerTile: { x: number; y: number };
   };
   highlightOverlay: NativePreviewHighlightRenderMetadata;
+  objectDebugOverlay: NativePreviewObjectRenderMetadata;
 }
 
 interface PreviewLayout {
@@ -150,6 +239,22 @@ interface ResolvedNativePreviewHighlights {
   tileMask: Uint8Array;
 }
 
+interface OutputPoint {
+  x: number;
+  y: number;
+}
+
+interface ClippedLine {
+  start: OutputPoint;
+  end: OutputPoint;
+  clipped: boolean;
+}
+
+interface ObjectRenderState {
+  rendered: boolean;
+  clipped: boolean;
+}
+
 export async function renderNativePreview(
   input: RenderNativePreviewInput,
 ): Promise<NativePreviewRender> {
@@ -159,7 +264,10 @@ export async function renderNativePreview(
     input.overlays.highlights,
     input.region,
   );
-  assertPixelBlendBudget(
+  const objectDebug = validateNativePreviewObjectInputs(
+    input.overlays.objectDebug,
+  );
+  const basePixelBlends = assertPixelBlendBudget(
     input,
     layout,
     resolvedHighlights.metadata.highlightedTileCount,
@@ -193,6 +301,13 @@ export async function renderNativePreview(
   if (input.overlays.grid) {
     drawGrid(canvas, layout, input.region);
   }
+  const objectDebugOverlay = renderObjectDebugOverlay(
+    canvas,
+    layout,
+    input,
+    objectDebug,
+    basePixelBlends,
+  );
   if (input.overlays.coordinates) {
     drawCoordinates(canvas, layout, input.region);
   }
@@ -236,6 +351,7 @@ export async function renderNativePreview(
       },
     },
     highlightOverlay: resolvedHighlights.metadata,
+    objectDebugOverlay,
   };
 }
 
@@ -568,6 +684,233 @@ function invalidHighlightRect(
   );
 }
 
+function validateNativePreviewObjectInputs(
+  objects: readonly NativePreviewObjectInput[] | undefined,
+): readonly NativePreviewObjectInput[] {
+  if (objects === undefined) {
+    return [];
+  }
+  if (
+    !Array.isArray(objects) ||
+    objects.length === 0 ||
+    objects.length > MAX_NATIVE_PREVIEW_OBJECTS
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `objectDebug must contain between 1 and ${MAX_NATIVE_PREVIEW_OBJECTS} objects when provided.`,
+      {
+        count: Array.isArray(objects) ? objects.length : null,
+        min: 1,
+        max: MAX_NATIVE_PREVIEW_OBJECTS,
+      },
+    );
+  }
+
+  const seenObjectIds = new Set<number>();
+  let pointCount = 0;
+  for (const [index, object] of objects.entries()) {
+    validateNativePreviewObjectInput(object, index);
+    if (seenObjectIds.has(object.objectId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `objectDebug contains duplicate object ID ${object.objectId}.`,
+        { objectId: object.objectId, sourceIndex: index },
+      );
+    }
+    seenObjectIds.add(object.objectId);
+    pointCount += object.points?.length ?? 0;
+    if (pointCount > MAX_NATIVE_PREVIEW_OBJECT_POINTS) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Object debug geometry may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_POINTS} path points.`,
+        {
+          actual: pointCount,
+          limit: MAX_NATIVE_PREVIEW_OBJECT_POINTS,
+        },
+      );
+    }
+  }
+  return objects;
+}
+
+function validateNativePreviewObjectInput(
+  object: NativePreviewObjectInput,
+  index: number,
+): void {
+  if (
+    typeof object !== "object" ||
+    object === null ||
+    Array.isArray(object)
+  ) {
+    throw invalidObjectDebug(index, "shape", object);
+  }
+  const shapes = [
+    "rectangle",
+    "point",
+    "polygon",
+    "polyline",
+    "text",
+  ] as const;
+  if (
+    typeof object.shape !== "string" ||
+    !shapes.includes(
+      object.shape as (typeof shapes)[number],
+    )
+  ) {
+    throw invalidObjectDebug(index, "shape", object.shape);
+  }
+
+  const commonKeys = [
+    "layerId",
+    "objectId",
+    "representation",
+    "rotation",
+    "shape",
+    "sourceIndex",
+    "x",
+    "y",
+  ];
+  const shapeKeys =
+    object.shape === "rectangle" ||
+    object.shape === "text"
+      ? ["height", "width"]
+      : object.shape === "polygon" ||
+          object.shape === "polyline"
+        ? ["points"]
+        : [];
+  const expectedKeys = [...commonKeys, ...shapeKeys].sort();
+  if (
+    Object.keys(object).sort().join(",") !==
+    expectedKeys.join(",")
+  ) {
+    throw invalidObjectDebug(index, "shape", object);
+  }
+
+  if (
+    !Number.isSafeInteger(object.sourceIndex) ||
+    object.sourceIndex !== index
+  ) {
+    throw invalidObjectDebug(
+      index,
+      "sourceIndex",
+      object.sourceIndex,
+    );
+  }
+  for (const field of ["objectId", "layerId"] as const) {
+    const value = object[field];
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw invalidObjectDebug(index, field, value);
+    }
+  }
+  for (const field of ["x", "y", "rotation"] as const) {
+    validateObjectDebugNumber(object[field], index, field, false);
+  }
+
+  const expectedRepresentation =
+    object.shape === "text"
+      ? "text-box-only"
+      : "geometry-outline";
+  if (object.representation !== expectedRepresentation) {
+    throw invalidObjectDebug(
+      index,
+      "representation",
+      object.representation,
+    );
+  }
+
+  if (
+    object.shape === "rectangle" ||
+    object.shape === "text"
+  ) {
+    validateObjectDebugNumber(
+      object.width,
+      index,
+      "width",
+      true,
+    );
+    validateObjectDebugNumber(
+      object.height,
+      index,
+      "height",
+      true,
+    );
+    return;
+  }
+  if (
+    object.shape !== "polygon" &&
+    object.shape !== "polyline"
+  ) {
+    return;
+  }
+  if (!Array.isArray(object.points)) {
+    throw invalidObjectDebug(index, "points", object.points);
+  }
+  const minimum =
+    object.shape === "polygon" ? 3 : 2;
+  if (
+    object.points.length < minimum ||
+    object.points.length >
+      MAX_NATIVE_PREVIEW_OBJECT_POINTS
+  ) {
+    throw invalidObjectDebug(index, "points", object.points.length);
+  }
+  for (const [pointIndex, point] of object.points.entries()) {
+    if (
+      typeof point !== "object" ||
+      point === null ||
+      Array.isArray(point) ||
+      Object.keys(point).sort().join(",") !== "x,y"
+    ) {
+      throw invalidObjectDebug(
+        index,
+        `points[${pointIndex}]`,
+        point,
+      );
+    }
+    validateObjectDebugNumber(
+      point.x,
+      index,
+      `points[${pointIndex}].x`,
+      false,
+    );
+    validateObjectDebugNumber(
+      point.y,
+      index,
+      `points[${pointIndex}].y`,
+      false,
+    );
+  }
+}
+
+function validateObjectDebugNumber(
+  value: unknown,
+  sourceIndex: number,
+  field: string,
+  nonnegative: boolean,
+): asserts value is number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    Math.abs(value) >
+      MAX_ABSOLUTE_NATIVE_PREVIEW_OBJECT_NUMBER ||
+    (nonnegative && value < 0)
+  ) {
+    throw invalidObjectDebug(sourceIndex, field, value);
+  }
+}
+
+function invalidObjectDebug(
+  sourceIndex: number,
+  field: string,
+  value: unknown,
+): TiledMcpError {
+  return new TiledMcpError(
+    "INVALID_ARGUMENT",
+    `objectDebug[${sourceIndex}] is not a strict supported object geometry.`,
+    { sourceIndex, field, value },
+  );
+}
+
 function computeLayout(input: RenderNativePreviewInput): PreviewLayout {
   const tilePixelWidth = input.tileWidth * input.scale;
   const tilePixelHeight = input.tileHeight * input.scale;
@@ -656,7 +999,7 @@ function assertPixelBlendBudget(
   input: RenderNativePreviewInput,
   layout: PreviewLayout,
   highlightedTileCount: number,
-): void {
+): number {
   const pixelsPerTile =
     layout.tilePixelWidth * layout.tilePixelHeight;
   if (!Number.isSafeInteger(pixelsPerTile) || pixelsPerTile <= 0) {
@@ -720,6 +1063,7 @@ function assertPixelBlendBudget(
       }
     }
   }
+  return tileDraws * pixelsPerTile + highlightPixelBlends;
 }
 
 function previewPixelBlendBudgetExceeded(input: {
@@ -882,6 +1226,379 @@ function renderHighlights(
       );
     }
   }
+}
+
+function renderObjectDebugOverlay(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  input: RenderNativePreviewInput,
+  objects: readonly NativePreviewObjectInput[],
+  basePixelBlends: number,
+): NativePreviewObjectRenderMetadata {
+  if (objects.length === 0) {
+    return emptyObjectDebugMetadata();
+  }
+
+  let objectPixelWrites = 0;
+  const entries: NativePreviewObjectRenderEntry[] = [];
+  const writePixel = (
+    x: number,
+    y: number,
+    state: ObjectRenderState,
+  ): void => {
+    const left = layout.contentLeft;
+    const top = layout.contentTop;
+    const right =
+      layout.contentLeft + layout.contentWidth - 1;
+    const bottom =
+      layout.contentTop + layout.contentHeight - 1;
+    if (
+      x < left ||
+      x > right ||
+      y < top ||
+      y > bottom
+    ) {
+      state.clipped = true;
+      return;
+    }
+    if (
+      basePixelBlends + objectPixelWrites + 1 >
+      MAX_NATIVE_PREVIEW_PIXEL_BLENDS
+    ) {
+      throw objectDebugPixelBudgetExceeded(
+        basePixelBlends,
+        objectPixelWrites + 1,
+      );
+    }
+    objectPixelWrites += 1;
+    state.rendered = true;
+    setPixel(
+      canvas,
+      layout.width,
+      x,
+      y,
+      OBJECT_DEBUG_COLOR,
+    );
+  };
+
+  for (const object of objects) {
+    const state: ObjectRenderState = {
+      rendered: false,
+      clipped: false,
+    };
+    const anchor = mapObjectPointToOutput(
+      object,
+      { x: 0, y: 0 },
+      input,
+      layout,
+    );
+    const localPoints = objectGeometryPoints(object);
+    const transformedPoints = localPoints.map((point) =>
+      mapObjectPointToOutput(
+        object,
+        point,
+        input,
+        layout,
+      ),
+    );
+    const segmentCount =
+      object.shape === "polygon"
+        ? transformedPoints.length
+        : Math.max(0, transformedPoints.length - 1);
+    for (
+      let segmentIndex = 0;
+      segmentIndex < segmentCount;
+      segmentIndex += 1
+    ) {
+      const start = transformedPoints[segmentIndex];
+      const end =
+        transformedPoints[
+          (segmentIndex + 1) %
+            transformedPoints.length
+        ];
+      if (start === undefined || end === undefined) {
+        throw new TiledMcpError(
+          "INTERNAL_ERROR",
+          "Object debug geometry lost a line endpoint.",
+          {
+            objectId: object.objectId,
+            segmentIndex,
+          },
+        );
+      }
+      drawClippedObjectLine(
+        start,
+        end,
+        layout,
+        state,
+        writePixel,
+      );
+    }
+    drawObjectOriginMarker(
+      anchor,
+      state,
+      writePixel,
+    );
+    entries.push({
+      sourceIndex: object.sourceIndex,
+      objectId: object.objectId,
+      layerId: object.layerId,
+      shape: object.shape,
+      representation: object.representation,
+      rendered: state.rendered,
+      clipped: state.clipped,
+    });
+  }
+
+  return {
+    ...objectDebugMetadataBase(),
+    selectedObjectCount: objects.length,
+    renderedObjectCount: entries.filter(
+      (entry) => entry.rendered,
+    ).length,
+    entries,
+  };
+}
+
+function emptyObjectDebugMetadata(): NativePreviewObjectRenderMetadata {
+  return {
+    ...objectDebugMetadataBase(),
+    selectedObjectCount: 0,
+    renderedObjectCount: 0,
+    entries: [],
+  };
+}
+
+function objectDebugMetadataBase(): Omit<
+  NativePreviewObjectRenderMetadata,
+  "selectedObjectCount" | "renderedObjectCount" | "entries"
+> {
+  return {
+    profile: NATIVE_PREVIEW_OBJECT_PROFILE,
+    style: NATIVE_PREVIEW_OBJECT_STYLE,
+    color: NATIVE_PREVIEW_OBJECT_COLOR,
+    strokeWidth: NATIVE_PREVIEW_OBJECT_STROKE_WIDTH,
+    originMarker: NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
+    idLabels: false,
+    visibilityPolicy:
+      NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
+    drawOrder: NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
+    quantization: NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+  };
+}
+
+function objectGeometryPoints(
+  object: NativePreviewObjectInput,
+): readonly NativePreviewObjectPoint[] {
+  if (
+    object.shape === "polygon" ||
+    object.shape === "polyline"
+  ) {
+    return object.points ?? [];
+  }
+  if (
+    object.shape === "rectangle" ||
+    object.shape === "text"
+  ) {
+    const width = object.width ?? 0;
+    const height = object.height ?? 0;
+    return [
+      { x: 0, y: 0 },
+      { x: width, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+      { x: 0, y: 0 },
+    ];
+  }
+  return [];
+}
+
+function mapObjectPointToOutput(
+  object: NativePreviewObjectInput,
+  point: NativePreviewObjectPoint,
+  input: RenderNativePreviewInput,
+  layout: PreviewLayout,
+): OutputPoint {
+  const normalizedRotation =
+    ((object.rotation % 360) + 360) % 360;
+  const radians =
+    (normalizedRotation * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const mapX =
+    object.x +
+    point.x * cosine -
+    point.y * sine;
+  const mapY =
+    object.y +
+    point.x * sine +
+    point.y * cosine;
+  const regionPixelX =
+    input.region.x * input.tileWidth;
+  const regionPixelY =
+    input.region.y * input.tileHeight;
+  const x =
+    layout.contentLeft +
+    (mapX - regionPixelX) * input.scale;
+  const y =
+    layout.contentTop +
+    (mapY - regionPixelY) * input.scale;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `Object ${object.objectId} geometry exceeds finite preview coordinates.`,
+      { objectId: object.objectId },
+    );
+  }
+  return { x, y };
+}
+
+function drawClippedObjectLine(
+  start: OutputPoint,
+  end: OutputPoint,
+  layout: PreviewLayout,
+  state: ObjectRenderState,
+  writePixel: (
+    x: number,
+    y: number,
+    state: ObjectRenderState,
+  ) => void,
+): void {
+  const clipped = clipLineToContent(
+    start,
+    end,
+    layout,
+  );
+  if (clipped === undefined) {
+    state.clipped = true;
+    return;
+  }
+  state.clipped ||= clipped.clipped;
+  let x = Math.round(clipped.start.x);
+  let y = Math.round(clipped.start.y);
+  const endX = Math.round(clipped.end.x);
+  const endY = Math.round(clipped.end.y);
+  const deltaX = Math.abs(endX - x);
+  const stepX = x < endX ? 1 : -1;
+  const deltaY = -Math.abs(endY - y);
+  const stepY = y < endY ? 1 : -1;
+  let error = deltaX + deltaY;
+  while (true) {
+    writePixel(x, y, state);
+    if (x === endX && y === endY) {
+      break;
+    }
+    const doubledError = error * 2;
+    if (doubledError >= deltaY) {
+      error += deltaY;
+      x += stepX;
+    }
+    if (doubledError <= deltaX) {
+      error += deltaX;
+      y += stepY;
+    }
+  }
+}
+
+function clipLineToContent(
+  start: OutputPoint,
+  end: OutputPoint,
+  layout: PreviewLayout,
+): ClippedLine | undefined {
+  const left = layout.contentLeft;
+  const top = layout.contentTop;
+  const right =
+    layout.contentLeft + layout.contentWidth - 1;
+  const bottom =
+    layout.contentTop + layout.contentHeight - 1;
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  let minimum = 0;
+  let maximum = 1;
+  for (const [p, q] of [
+    [-deltaX, start.x - left],
+    [deltaX, right - start.x],
+    [-deltaY, start.y - top],
+    [deltaY, bottom - start.y],
+  ] as const) {
+    if (p === 0) {
+      if (q < 0) {
+        return undefined;
+      }
+      continue;
+    }
+    const ratio = q / p;
+    if (p < 0) {
+      if (ratio > maximum) {
+        return undefined;
+      }
+      minimum = Math.max(minimum, ratio);
+    } else {
+      if (ratio < minimum) {
+        return undefined;
+      }
+      maximum = Math.min(maximum, ratio);
+    }
+  }
+  return {
+    start: {
+      x: start.x + minimum * deltaX,
+      y: start.y + minimum * deltaY,
+    },
+    end: {
+      x: start.x + maximum * deltaX,
+      y: start.y + maximum * deltaY,
+    },
+    clipped: minimum > 0 || maximum < 1,
+  };
+}
+
+function drawObjectOriginMarker(
+  anchor: OutputPoint,
+  state: ObjectRenderState,
+  writePixel: (
+    x: number,
+    y: number,
+    state: ObjectRenderState,
+  ) => void,
+): void {
+  const centerX = Math.round(anchor.x);
+  const centerY = Math.round(anchor.y);
+  for (
+    let delta = -OBJECT_ORIGIN_MARKER_RADIUS;
+    delta <= OBJECT_ORIGIN_MARKER_RADIUS;
+    delta += 1
+  ) {
+    writePixel(
+      centerX + delta,
+      centerY,
+      state,
+    );
+    if (delta !== 0) {
+      writePixel(
+        centerX,
+        centerY + delta,
+        state,
+      );
+    }
+  }
+}
+
+function objectDebugPixelBudgetExceeded(
+  basePixelBlends: number,
+  objectPixelWrites: number,
+): TiledMcpError {
+  return new TiledMcpError(
+    "RESULT_LIMIT_EXCEEDED",
+    `The preview exceeds the ${MAX_NATIVE_PREVIEW_PIXEL_BLENDS} pixel-blend work limit. Reduce region, layers, highlights, objectIds or scale.`,
+    {
+      basePixelBlends,
+      objectPixelWrites,
+      pixelBlends:
+        basePixelBlends + objectPixelWrites,
+      limit: MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
+    },
+  );
 }
 
 function findAtlas(
