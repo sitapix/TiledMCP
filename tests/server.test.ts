@@ -55,6 +55,7 @@ import {
   CHECKPOINT_STORAGE_POLICY,
   DEFAULT_CHECKPOINT_STORAGE_BYTES,
   MAX_CHECKPOINT_OBSERVED_ENTRIES,
+  MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
   type CheckpointStoreOptions,
 } from "../src/storage/checkpoints.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
@@ -357,13 +358,15 @@ describe("createTiledMcpServer", () => {
     });
   });
 
-  it("advertises non-default checkpoint limits through a dynamic registered output schema", async () => {
+  it("advertises non-default checkpoint limits and retention through a dynamic registered output schema", async () => {
     const maxBytes = 12_345;
     const maxEntries = 37;
+    const retainCommittedPerTarget = 23;
     const customHarness = await createHarness({
       checkpointOptions: {
         maxBytes,
         maxEntries,
+        retainCommittedPerTarget,
       },
     });
 
@@ -384,6 +387,11 @@ describe("createTiledMcpServer", () => {
       );
       const capabilities = resultOf<{
         checkpointCapabilities: {
+          retention: {
+            enabled: boolean;
+            retainCommittedPerTarget:
+              number | null;
+          };
           storagePolicy: {
             maxBytes: number;
             maxEntries: number;
@@ -396,6 +404,12 @@ describe("createTiledMcpServer", () => {
       ).toMatchObject({
         maxBytes,
         maxEntries,
+      });
+      expect(
+        capabilities.checkpointCapabilities.retention,
+      ).toMatchObject({
+        enabled: true,
+        retainCommittedPerTarget,
       });
 
       const outputSchema = (
@@ -425,6 +439,11 @@ describe("createTiledMcpServer", () => {
       ) as {
         result: {
           checkpointCapabilities: {
+            retention: {
+              enabled: boolean;
+              retainCommittedPerTarget:
+                number | null;
+            };
             storagePolicy: {
               maxBytes: number;
               maxEntries: number;
@@ -436,6 +455,11 @@ describe("createTiledMcpServer", () => {
         .storagePolicy.maxBytes += 1;
       alternate.result.checkpointCapabilities
         .storagePolicy.maxEntries += 1;
+      alternate.result.checkpointCapabilities
+        .retention.enabled = false;
+      alternate.result.checkpointCapabilities
+        .retention.retainCommittedPerTarget =
+        null;
       expect(outputSchema.parse(alternate)).toEqual(
         alternate,
       );
@@ -862,6 +886,81 @@ describe("createTiledMcpServer", () => {
       scannedEntries: 2,
       truncated: false,
     });
+  });
+
+  it("lists strict v2 protected and rolling checkpoint manifests when retention is enabled", async () => {
+    const retentionHarness =
+      await createHarness({
+        checkpointOptions: {
+          retainCommittedPerTarget: 2,
+        },
+      });
+    try {
+      const before = await readFile(
+        join(retentionHarness.root, MAP_PATH),
+      );
+      const protectedCheckpoint =
+        await retentionHarness.store.checkpoints.markCommitted(
+          await retentionHarness.store.checkpoints.prepare(
+            "maps/future.tmj",
+            undefined,
+            revisionOf(Buffer.from('{"future":true}\n', "utf8")),
+            "protected create",
+          ),
+        );
+      const rollingCheckpoint =
+        await retentionHarness.store.checkpoints.markCommitted(
+          await retentionHarness.store.checkpoints.prepare(
+            MAP_PATH,
+            before,
+            revisionOf(Buffer.from('{"edited":true}\n', "utf8")),
+            "rolling edit",
+          ),
+        );
+
+      const listing = resultOf<{
+        manifests: Array<Record<string, unknown>>;
+        corruptEntries: unknown[];
+      }>(
+        await retentionHarness.client.callTool({
+          name: "tiled_list_checkpoints",
+          arguments: {
+            status: "committed",
+          },
+        }),
+      );
+      expect(listing.corruptEntries).toEqual([]);
+      expect(listing.manifests).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: protectedCheckpoint.id,
+            version: 2,
+            retention: {
+              class: "protected",
+            },
+          }),
+          expect.objectContaining({
+            id: rollingCheckpoint.id,
+            version: 2,
+            retention: {
+              class: "rolling",
+              ordinal: 1,
+            },
+          }),
+        ]),
+      );
+    } finally {
+      await retentionHarness.client
+        .close()
+        .catch(() => undefined);
+      await retentionHarness.server
+        .close()
+        .catch(() => undefined);
+      await rm(retentionHarness.root, {
+        recursive: true,
+        force: true,
+      });
+    }
   });
 
   it("advertises an exact output schema for the optional rasterizer tool", async () => {
@@ -2807,8 +2906,48 @@ describe("createTiledMcpServer", () => {
             "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
           preparedCheckpoints:
             "unsupported-reconcile-first",
-          automaticRetention: "unsupported",
+          automaticRetention:
+            "separate-opt-in-post-commit-policy",
           tombstones: false,
+        },
+        retention: {
+          enabled: false,
+          retainCommittedPerTarget: null,
+          minimumRetainedPerTarget:
+            MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+          mode:
+            "rolling-per-target-count-v1",
+          defaultMode: "disabled",
+          standingApproval:
+            "process-startup-config",
+          eligibleManifests:
+            "v2-rolling-committed-existing-file-only",
+          legacyManifests: "always-retained",
+          protectedManifests: "always-retained",
+          preparedManifests: "always-retained",
+          ordering:
+            "durable-monotonic-ordinal",
+          maxManifestDeletionsPerCommit: 1,
+          backlogConvergence:
+            "one-add-one-delete-does-not-reduce-existing-excess-explicit-prune-required",
+          trigger:
+            "successful-checkpoint-commit-only",
+          targetDurability:
+            "required-no-post-replace-warning",
+          startupSweep: false,
+          periodicSweep: false,
+          lockOrder:
+            "target-then-checkpoint-store",
+          targetValidation:
+            "current-target-equals-newest-rolling-after-revision",
+          incompleteInventory:
+            "block-before-first-manifest-unlink",
+          quotaPressure:
+            "orphan-gc-only-no-valid-manifest-deletion",
+          resultChannel:
+            "commit-result-checkpointRetention",
+          previewLease:
+            "unsupported-apply-may-be-invalidated",
         },
         storagePolicy: {
           ...CHECKPOINT_STORAGE_POLICY,
@@ -2817,7 +2956,7 @@ describe("createTiledMcpServer", () => {
           maxEntries:
             MAX_CHECKPOINT_OBSERVED_ENTRIES,
           garbageCollectionTrigger:
-            "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
+            "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
           quotaFailureCode:
             "CHECKPOINT_QUOTA_EXCEEDED",
         },

@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:1a49016eac12b0eeef764db5c7ce3981e20de06de2365bd8ea7967340e850f08",
+    "revision": "sha256:a36021330cbc4d4d0b68ab5bf009c0ca1dc5d477dbc7102e0d0e118514747ed7",
     "serverVersion": "0.0.1",
-    "size": 46953
+    "size": 48360
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 46953,
+  "size": 48360,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 46953 UTF-8 bytes, revision `sha256:1a49016eac12b0eeef764db5c7ce3981e20de06de2365bd8ea7967340e850f08`.
+Content contract: `text`, 48360 UTF-8 bytes, revision `sha256:a36021330cbc4d4d0b68ab5bf009c0ca1dc5d477dbc7102e0d0e118514747ed7`.
 
 Resource templates: none.
 
@@ -1790,6 +1790,336 @@ Output schema:
                     },
                     {
                       "type": "null"
+                    }
+                  ]
+                },
+                "checkpointRetention": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "manifestDeleted": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "const": "rolling-per-target-count-v1",
+                          "type": "string"
+                        },
+                        "retainCommittedPerTarget": {
+                          "maximum": 10000,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "rollingCommittedCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "const": "not-needed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "retainCommittedPerTarget",
+                        "status",
+                        "manifestDeleted",
+                        "rollingCommittedCount"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "manifestDeleted": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "const": "rolling-per-target-count-v1",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "current-checkpoint-changed",
+                            "current-not-highest-rolling",
+                            "incomplete-inventory",
+                            "object-verification-failed",
+                            "prepared-checkpoint-present",
+                            "sequence-state-invalid",
+                            "target-validation-failed",
+                            "unsafe-lineage"
+                          ],
+                          "type": "string"
+                        },
+                        "retainCommittedPerTarget": {
+                          "maximum": 10000,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "rollingCommittedCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "const": "blocked",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "retainCommittedPerTarget",
+                        "status",
+                        "manifestDeleted",
+                        "reason",
+                        "rollingCommittedCount"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "deletedCheckpointId": {
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                          "type": "string"
+                        },
+                        "garbageCollection": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "blockerCount": {
+                                  "const": 0,
+                                  "type": "number"
+                                },
+                                "blockers": {
+                                  "items": [],
+                                  "type": "array"
+                                },
+                                "blockersTruncated": {
+                                  "const": false,
+                                  "type": "boolean"
+                                },
+                                "deletedBytes": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "deletedEntries": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "deletedObjects": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "deletedTemporaryFiles": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "status": {
+                                  "const": "completed",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "deletedBytes",
+                                "deletedEntries",
+                                "deletedObjects",
+                                "deletedTemporaryFiles",
+                                "blockerCount",
+                                "blockers",
+                                "blockersTruncated"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "blockerCount": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991,
+                                  "type": "integer"
+                                },
+                                "blockers": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "directory": {
+                                        "enum": [
+                                          "checkpoints",
+                                          "objects"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "fileName": {
+                                        "maxLength": 1024,
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "maxLength": 4096,
+                                        "type": "string"
+                                      },
+                                      "reason": {
+                                        "enum": [
+                                          "entry-inspection-failed",
+                                          "byte-accounting-limit-exceeded",
+                                          "malformed-manifest",
+                                          "missing-referenced-object",
+                                          "non-regular-entry",
+                                          "scan-limit-exceeded",
+                                          "symbolic-link",
+                                          "unexpected-entry"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "directory",
+                                      "reason",
+                                      "message"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "maxItems": 32,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "blockersTruncated": {
+                                  "type": "boolean"
+                                },
+                                "deletedBytes": {
+                                  "const": 0,
+                                  "type": "number"
+                                },
+                                "deletedEntries": {
+                                  "const": 0,
+                                  "type": "number"
+                                },
+                                "deletedObjects": {
+                                  "const": 0,
+                                  "type": "number"
+                                },
+                                "deletedTemporaryFiles": {
+                                  "const": 0,
+                                  "type": "number"
+                                },
+                                "status": {
+                                  "const": "blocked",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "deletedBytes",
+                                "deletedEntries",
+                                "deletedObjects",
+                                "deletedTemporaryFiles",
+                                "blockerCount",
+                                "blockers",
+                                "blockersTruncated"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "deletionOutcome": {
+                                  "const": "unknown-partial-or-none",
+                                  "type": "string"
+                                },
+                                "failureCode": {
+                                  "const": "INTERNAL_ERROR",
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "const": "failed",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "failureCode",
+                                "deletionOutcome"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "manifestDeleted": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "const": "rolling-per-target-count-v1",
+                          "type": "string"
+                        },
+                        "retainCommittedPerTarget": {
+                          "maximum": 10000,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "rollingCommittedCountBefore": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "const": "deleted",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "retainCommittedPerTarget",
+                        "status",
+                        "manifestDeleted",
+                        "deletedCheckpointId",
+                        "rollingCommittedCountBefore",
+                        "garbageCollection"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "failureCode": {
+                          "const": "INTERNAL_ERROR",
+                          "type": "string"
+                        },
+                        "manifestDeleted": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "policy": {
+                          "const": "rolling-per-target-count-v1",
+                          "type": "string"
+                        },
+                        "retainCommittedPerTarget": {
+                          "maximum": 10000,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "const": "failed",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "policy",
+                        "retainCommittedPerTarget",
+                        "status",
+                        "manifestDeleted",
+                        "failureCode"
+                      ],
+                      "type": "object"
                     }
                   ]
                 },
@@ -3598,6 +3928,336 @@ Output schema:
                 }
               ]
             },
+            "checkpointRetention": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "manifestDeleted": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "const": "rolling-per-target-count-v1",
+                      "type": "string"
+                    },
+                    "retainCommittedPerTarget": {
+                      "maximum": 10000,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "rollingCommittedCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "not-needed",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "retainCommittedPerTarget",
+                    "status",
+                    "manifestDeleted",
+                    "rollingCommittedCount"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "manifestDeleted": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "const": "rolling-per-target-count-v1",
+                      "type": "string"
+                    },
+                    "reason": {
+                      "enum": [
+                        "current-checkpoint-changed",
+                        "current-not-highest-rolling",
+                        "incomplete-inventory",
+                        "object-verification-failed",
+                        "prepared-checkpoint-present",
+                        "sequence-state-invalid",
+                        "target-validation-failed",
+                        "unsafe-lineage"
+                      ],
+                      "type": "string"
+                    },
+                    "retainCommittedPerTarget": {
+                      "maximum": 10000,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "rollingCommittedCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "blocked",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "retainCommittedPerTarget",
+                    "status",
+                    "manifestDeleted",
+                    "reason",
+                    "rollingCommittedCount"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "deletedCheckpointId": {
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "garbageCollection": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "blockerCount": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "blockers": {
+                              "items": [],
+                              "type": "array"
+                            },
+                            "blockersTruncated": {
+                              "const": false,
+                              "type": "boolean"
+                            },
+                            "deletedBytes": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedEntries": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedObjects": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "deletedTemporaryFiles": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "status": {
+                              "const": "completed",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "deletedBytes",
+                            "deletedEntries",
+                            "deletedObjects",
+                            "deletedTemporaryFiles",
+                            "blockerCount",
+                            "blockers",
+                            "blockersTruncated"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "blockerCount": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "blockers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "directory": {
+                                    "enum": [
+                                      "checkpoints",
+                                      "objects"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "fileName": {
+                                    "maxLength": 1024,
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "enum": [
+                                      "entry-inspection-failed",
+                                      "byte-accounting-limit-exceeded",
+                                      "malformed-manifest",
+                                      "missing-referenced-object",
+                                      "non-regular-entry",
+                                      "scan-limit-exceeded",
+                                      "symbolic-link",
+                                      "unexpected-entry"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "directory",
+                                  "reason",
+                                  "message"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 32,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "blockersTruncated": {
+                              "type": "boolean"
+                            },
+                            "deletedBytes": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedEntries": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedObjects": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "deletedTemporaryFiles": {
+                              "const": 0,
+                              "type": "number"
+                            },
+                            "status": {
+                              "const": "blocked",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "deletedBytes",
+                            "deletedEntries",
+                            "deletedObjects",
+                            "deletedTemporaryFiles",
+                            "blockerCount",
+                            "blockers",
+                            "blockersTruncated"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "deletionOutcome": {
+                              "const": "unknown-partial-or-none",
+                              "type": "string"
+                            },
+                            "failureCode": {
+                              "const": "INTERNAL_ERROR",
+                              "type": "string"
+                            },
+                            "status": {
+                              "const": "failed",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "failureCode",
+                            "deletionOutcome"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "manifestDeleted": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "const": "rolling-per-target-count-v1",
+                      "type": "string"
+                    },
+                    "retainCommittedPerTarget": {
+                      "maximum": 10000,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "rollingCommittedCountBefore": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "deleted",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "retainCommittedPerTarget",
+                    "status",
+                    "manifestDeleted",
+                    "deletedCheckpointId",
+                    "rollingCommittedCountBefore",
+                    "garbageCollection"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "failureCode": {
+                      "const": "INTERNAL_ERROR",
+                      "type": "string"
+                    },
+                    "manifestDeleted": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "const": "rolling-per-target-count-v1",
+                      "type": "string"
+                    },
+                    "retainCommittedPerTarget": {
+                      "maximum": 10000,
+                      "minimum": 2,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "failed",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "policy",
+                    "retainCommittedPerTarget",
+                    "status",
+                    "manifestDeleted",
+                    "failureCode"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
             "path": {
               "minLength": 1,
               "type": "string"
@@ -5197,7 +5857,7 @@ Output schema:
                   "additionalProperties": false,
                   "properties": {
                     "automaticRetention": {
-                      "const": "unsupported",
+                      "const": "separate-opt-in-post-commit-policy",
                       "type": "string"
                     },
                     "commitPoint": {
@@ -5254,6 +5914,136 @@ Output schema:
                   "const": false,
                   "type": "boolean"
                 },
+                "retention": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "backlogConvergence": {
+                      "const": "one-add-one-delete-does-not-reduce-existing-excess-explicit-prune-required",
+                      "type": "string"
+                    },
+                    "defaultMode": {
+                      "const": "disabled",
+                      "type": "string"
+                    },
+                    "eligibleManifests": {
+                      "const": "v2-rolling-committed-existing-file-only",
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "incompleteInventory": {
+                      "const": "block-before-first-manifest-unlink",
+                      "type": "string"
+                    },
+                    "legacyManifests": {
+                      "const": "always-retained",
+                      "type": "string"
+                    },
+                    "lockOrder": {
+                      "const": "target-then-checkpoint-store",
+                      "type": "string"
+                    },
+                    "maxManifestDeletionsPerCommit": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "minimumRetainedPerTarget": {
+                      "const": 2,
+                      "type": "number"
+                    },
+                    "mode": {
+                      "const": "rolling-per-target-count-v1",
+                      "type": "string"
+                    },
+                    "ordering": {
+                      "const": "durable-monotonic-ordinal",
+                      "type": "string"
+                    },
+                    "periodicSweep": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "preparedManifests": {
+                      "const": "always-retained",
+                      "type": "string"
+                    },
+                    "previewLease": {
+                      "const": "unsupported-apply-may-be-invalidated",
+                      "type": "string"
+                    },
+                    "protectedManifests": {
+                      "const": "always-retained",
+                      "type": "string"
+                    },
+                    "quotaPressure": {
+                      "const": "orphan-gc-only-no-valid-manifest-deletion",
+                      "type": "string"
+                    },
+                    "resultChannel": {
+                      "const": "commit-result-checkpointRetention",
+                      "type": "string"
+                    },
+                    "retainCommittedPerTarget": {
+                      "anyOf": [
+                        {
+                          "maximum": 10000,
+                          "minimum": 2,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "standingApproval": {
+                      "const": "process-startup-config",
+                      "type": "string"
+                    },
+                    "startupSweep": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "targetDurability": {
+                      "const": "required-no-post-replace-warning",
+                      "type": "string"
+                    },
+                    "targetValidation": {
+                      "const": "current-target-equals-newest-rolling-after-revision",
+                      "type": "string"
+                    },
+                    "trigger": {
+                      "const": "successful-checkpoint-commit-only",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "retainCommittedPerTarget",
+                    "minimumRetainedPerTarget",
+                    "mode",
+                    "defaultMode",
+                    "standingApproval",
+                    "eligibleManifests",
+                    "legacyManifests",
+                    "protectedManifests",
+                    "preparedManifests",
+                    "ordering",
+                    "maxManifestDeletionsPerCommit",
+                    "backlogConvergence",
+                    "trigger",
+                    "targetDurability",
+                    "startupSweep",
+                    "periodicSweep",
+                    "lockOrder",
+                    "targetValidation",
+                    "incompleteInventory",
+                    "quotaPressure",
+                    "resultChannel",
+                    "previewLease"
+                  ],
+                  "type": "object"
+                },
                 "startupPreparedReconciliation": {
                   "const": true,
                   "type": "boolean"
@@ -5261,8 +6051,44 @@ Output schema:
                 "storagePolicy": {
                   "additionalProperties": false,
                   "properties": {
+                    "automaticRetentionCoordination": {
+                      "const": "caller-held-target-lock-then-checkpoint-store-lock",
+                      "type": "string"
+                    },
+                    "automaticRetentionDeletionLimit": {
+                      "const": "at-most-one-oldest-eligible-rolling-manifest-per-enforcement",
+                      "type": "string"
+                    },
+                    "automaticRetentionDeletionOrder": {
+                      "const": "raw-and-metadata-cas-manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+                      "type": "string"
+                    },
+                    "automaticRetentionOrdering": {
+                      "const": "durable-global-positive-safe-integer-ordinal-only",
+                      "type": "string"
+                    },
+                    "automaticRetentionPreflight": {
+                      "const": "complete-inventory-valid-sequence-safe-independent-rolling-anchors-and-all-root-object-content-verification-before-first-unlink",
+                      "type": "string"
+                    },
+                    "automaticRetentionProtectedRoots": {
+                      "const": "legacy-v1-v2-protected-and-all-prepared-manifests",
+                      "type": "string"
+                    },
+                    "automaticRetentionQuotaPressure": {
+                      "const": "never-delete-valid-manifests-before-or-during-capacity-enforcement",
+                      "type": "string"
+                    },
+                    "automaticRetentionSequenceAccounting": {
+                      "const": "internal-control-file-outside-objects-and-checkpoints-retained-quota",
+                      "type": "string"
+                    },
+                    "automaticRetentionSequenceTemporary": {
+                      "const": "single-fixed-private-crash-temporary-cleaned-under-checkpoint-store-lock",
+                      "type": "string"
+                    },
                     "automaticValidManifestPruning": {
-                      "const": "never",
+                      "const": "explicitly-configured-v2-rolling-committed-manifests-only",
                       "type": "string"
                     },
                     "capacityEnforcement": {
@@ -5302,7 +6128,7 @@ Output schema:
                       "type": "string"
                     },
                     "garbageCollectionTrigger": {
-                      "const": "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
+                      "const": "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
                       "type": "string"
                     },
                     "incompleteCapacityInventoryPolicy": {
@@ -5364,11 +6190,11 @@ Output schema:
                       "type": "string"
                     },
                     "validManifestDeletion": {
-                      "const": "explicit-approved-raw-cas-committed-prune-or-safe-prepared-current-before-discard",
+                      "const": "explicit-approved-raw-cas-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
                       "type": "string"
                     },
                     "version": {
-                      "const": 3,
+                      "const": 4,
                       "type": "number"
                     }
                   },
@@ -5382,6 +6208,15 @@ Output schema:
                     "garbageCollectionDeletion",
                     "validManifestDeletion",
                     "automaticValidManifestPruning",
+                    "automaticRetentionCoordination",
+                    "automaticRetentionOrdering",
+                    "automaticRetentionSequenceAccounting",
+                    "automaticRetentionSequenceTemporary",
+                    "automaticRetentionProtectedRoots",
+                    "automaticRetentionDeletionLimit",
+                    "automaticRetentionPreflight",
+                    "automaticRetentionDeletionOrder",
+                    "automaticRetentionQuotaPressure",
                     "explicitPruneCoordination",
                     "explicitPruneDeletionOrder",
                     "explicitPreparedDiscardEligibility",
@@ -5415,6 +6250,7 @@ Output schema:
                 "restoresReferencedDependencies",
                 "preparedDiscard",
                 "prune",
+                "retention",
                 "storagePolicy"
               ],
               "type": "object"
@@ -10052,97 +10888,231 @@ Output schema:
             },
             "manifests": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "afterRevision": {
-                    "pattern": "^sha256:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "before": {
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "existed": {
-                            "const": false,
-                            "type": "boolean"
-                          }
-                        },
-                        "required": [
-                          "existed"
-                        ],
-                        "type": "object"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "afterRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
                       },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "existed": {
-                            "const": true,
-                            "type": "boolean"
+                      "before": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "existed"
+                            ],
+                            "type": "object"
                           },
-                          "objectHash": {
-                            "pattern": "^[0-9a-f]{64}$",
-                            "type": "string"
-                          },
-                          "revision": {
-                            "pattern": "^sha256:[0-9a-f]{64}$",
-                            "type": "string"
-                          },
-                          "size": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "objectHash": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "existed",
+                              "revision",
+                              "objectHash",
+                              "size"
+                            ],
+                            "type": "object"
                           }
-                        },
-                        "required": [
-                          "existed",
-                          "revision",
-                          "objectHash",
-                          "size"
+                        ]
+                      },
+                      "createdAt": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "prepared",
+                          "committed"
                         ],
-                        "type": "object"
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
                       }
-                    ]
-                  },
-                  "createdAt": {
-                    "maxLength": 64,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "id": {
-                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  },
-                  "path": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "status": {
-                    "enum": [
-                      "prepared",
-                      "committed"
+                    },
+                    "required": [
+                      "version",
+                      "id",
+                      "createdAt",
+                      "label",
+                      "path",
+                      "status",
+                      "before",
+                      "afterRevision"
                     ],
-                    "type": "string"
+                    "type": "object"
                   },
-                  "version": {
-                    "const": 1,
-                    "type": "number"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "afterRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "before": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": false,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "existed"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "existed": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "objectHash": {
+                                "pattern": "^[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              },
+                              "size": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "existed",
+                              "revision",
+                              "objectHash",
+                              "size"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "id": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "retention": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "class": {
+                                "const": "protected",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "class"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "class": {
+                                "const": "rolling",
+                                "type": "string"
+                              },
+                              "ordinal": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "class",
+                              "ordinal"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "prepared",
+                          "committed"
+                        ],
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 2,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "id",
+                      "createdAt",
+                      "label",
+                      "path",
+                      "status",
+                      "before",
+                      "afterRevision",
+                      "retention"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "version",
-                  "id",
-                  "createdAt",
-                  "label",
-                  "path",
-                  "status",
-                  "before",
-                  "afterRevision"
-                ],
-                "type": "object"
+                ]
               },
               "maxItems": 1000,
               "type": "array"

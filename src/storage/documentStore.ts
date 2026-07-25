@@ -19,6 +19,7 @@ import {
 import type { ProjectPathResolver } from "../project/pathResolver.js";
 import {
   CheckpointStore,
+  ROLLING_CHECKPOINT_RETENTION_POLICY,
   type CheckpointManifest,
   type CheckpointManifestSnapshot,
   type CheckpointPruneGarbageCollectionResult,
@@ -28,6 +29,8 @@ import {
   type CorruptCheckpointEntry,
   type PreparedCheckpointDiscardStorageExpectation,
   type PreparedCheckpointDiscardStorageResult,
+  type RollingCheckpointRetentionResult,
+  type RollingCommittedCheckpointManifest,
 } from "./checkpoints.js";
 import { withProjectFileLock } from "./fileLock.js";
 import {
@@ -53,6 +56,14 @@ const PREPARED_CHECKPOINT_DISCARD_GC_FAILED_WARNING =
   "The prepared checkpoint manifest was unlinked, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
 const PREPARED_CHECKPOINT_DISCARD_TARGET_LOCK_WARNING =
   "Prepared checkpoint discard completed, but release of its target lock could not be confirmed; inspect the project lock before retrying mutations.";
+const CHECKPOINT_RETENTION_BLOCKED_WARNING =
+  "The document was committed, but automatic checkpoint retention was blocked; older rolling recovery checkpoints were retained.";
+const CHECKPOINT_RETENTION_FAILED_WARNING =
+  "The document was committed, but automatic checkpoint retention could not be completed; older rolling recovery checkpoints may remain.";
+const CHECKPOINT_RETENTION_GC_BLOCKED_WARNING =
+  "Automatic checkpoint retention removed an older recovery checkpoint, but garbage collection was blocked; unreferenced checkpoint storage was retained.";
+const CHECKPOINT_RETENTION_GC_FAILED_WARNING =
+  "Automatic checkpoint retention unlinked an older recovery checkpoint, but post-delete durability or garbage collection could not be confirmed; unreferenced checkpoint storage may remain.";
 
 export interface DocumentSnapshot {
   path: string;
@@ -89,7 +100,26 @@ export interface CommitResult {
   revision: string;
   checkpointId: string | null;
   changed: boolean;
+  checkpointRetention?: CheckpointRetentionResult;
   warnings?: string[];
+}
+
+export type CheckpointRetentionResult =
+  | RollingCheckpointRetentionResult
+  | {
+      policy:
+        typeof ROLLING_CHECKPOINT_RETENTION_POLICY;
+      retainCommittedPerTarget: number;
+      status: "failed";
+      manifestDeleted: false;
+      failureCode: "INTERNAL_ERROR";
+    };
+
+interface CheckpointFinalizationResult {
+  committed?: CheckpointManifest & {
+    status: "committed";
+  };
+  warnings: string[];
 }
 
 export interface CheckpointRestoreExpectation {
@@ -306,7 +336,13 @@ export class DocumentStore {
           undefined,
           normalized,
         );
-        warnings.push(...(await this.markCheckpointBestEffort(checkpoint)));
+        const finalization =
+          await this.markCheckpointBestEffort(
+            checkpoint,
+          );
+        warnings.push(
+          ...finalization.warnings,
+        );
         return {
           path: normalized,
           beforeRevision: null,
@@ -879,13 +915,45 @@ export class DocumentStore {
           actualRevision,
           normalized,
         );
-        warnings.push(...(await this.markCheckpointBestEffort(checkpoint)));
+        const targetDurabilityConfirmed =
+          warnings.length === 0;
+        const finalization =
+          await this.markCheckpointBestEffort(
+            checkpoint,
+          );
+        warnings.push(
+          ...finalization.warnings,
+        );
+        const retention =
+          targetDurabilityConfirmed &&
+          finalization.committed !==
+            undefined &&
+          isRollingCommittedCheckpoint(
+            finalization.committed,
+          )
+            ? await this.enforcePostCommitRetention(
+                finalization.committed,
+                absolutePath,
+                normalized,
+              )
+            : undefined;
+        if (retention !== undefined) {
+          warnings.push(
+            ...retention.warnings,
+          );
+        }
         return {
           path: normalized,
           beforeRevision: actualRevision,
           revision: afterRevision,
           checkpointId: checkpoint.id,
           changed: true,
+          ...(retention === undefined
+            ? {}
+            : {
+                checkpointRetention:
+                  retention.result,
+              }),
           ...(warnings.length === 0 ? {} : { warnings }),
         };
       }),
@@ -1035,17 +1103,45 @@ export class DocumentStore {
           currentRevision,
           normalized,
         );
-        warnings.push(
-          ...(await this.markCheckpointBestEffort(
+        const targetDurabilityConfirmed =
+          warnings.length === 0;
+        const finalization =
+          await this.markCheckpointBestEffort(
             restoreCheckpoint,
-          )),
+          );
+        warnings.push(
+          ...finalization.warnings,
         );
+        const retention =
+          targetDurabilityConfirmed &&
+          finalization.committed !==
+            undefined &&
+          isRollingCommittedCheckpoint(
+            finalization.committed,
+          )
+            ? await this.enforcePostCommitRetention(
+                finalization.committed,
+                absolutePath,
+                normalized,
+              )
+            : undefined;
+        if (retention !== undefined) {
+          warnings.push(
+            ...retention.warnings,
+          );
+        }
         return {
           path: normalized,
           beforeRevision: currentRevision,
           revision: restoredRevision,
           checkpointId: restoreCheckpoint.id,
           changed: true,
+          ...(retention === undefined
+            ? {}
+            : {
+                checkpointRetention:
+                  retention.result,
+              }),
           ...(warnings.length === 0 ? {} : { warnings }),
         };
       }),
@@ -1190,23 +1286,103 @@ export class DocumentStore {
 
   private async markCheckpointBestEffort(
     checkpoint: CheckpointManifest,
-  ): Promise<string[]> {
+  ): Promise<CheckpointFinalizationResult> {
     try {
-      await this.checkpoints.markCommitted(checkpoint);
-      return [];
+      const committed =
+        await this.checkpoints.markCommitted(
+          checkpoint,
+        );
+      if (committed.status !== "committed") {
+        throw new TiledMcpError(
+          "CHECKPOINT_CHANGED",
+          `Checkpoint ${checkpoint.id} did not reach its committed state.`,
+          { checkpointId: checkpoint.id },
+        );
+      }
+      return {
+        committed:
+          committed as CheckpointManifest & {
+            status: "committed";
+          },
+        warnings: [],
+      };
     } catch (error) {
       const normalized = asTiledMcpError(error);
       process.stderr.write(
         `tiled-mcp: checkpoint ${checkpoint.id} remains prepared: ${normalized.message}\n`,
       );
       if (!checkpoint.before.existed) {
-        return [
-          `Checkpoint ${checkpoint.id} remains prepared; automatic reconciliation cannot prove who created the target, so inspect it manually: ${normalized.message}`,
-        ];
+        return {
+          warnings: [
+            `Checkpoint ${checkpoint.id} remains prepared; automatic reconciliation cannot prove who created the target, so inspect it manually: ${normalized.message}`,
+          ],
+        };
       }
-      return [
-        `Checkpoint ${checkpoint.id} remains prepared and needs reconciliation: ${normalized.message}`,
-      ];
+      return {
+        warnings: [
+          `Checkpoint ${checkpoint.id} remains prepared and needs reconciliation: ${normalized.message}`,
+        ],
+      };
+    }
+  }
+
+  private async enforcePostCommitRetention(
+    committed: RollingCommittedCheckpointManifest,
+    absolutePath: string,
+    projectPath: string,
+  ): Promise<{
+    result: CheckpointRetentionResult;
+    warnings: string[];
+  }> {
+    const retainCommittedPerTarget =
+      this.checkpoints
+        .retainCommittedPerTarget;
+    if (
+      retainCommittedPerTarget ===
+      undefined
+    ) {
+      throw new Error(
+        "Rolling retention cannot run while its policy is disabled.",
+      );
+    }
+    try {
+      const result =
+        await this.checkpoints.enforceRollingRetention(
+          committed,
+          async () => {
+            const current =
+              await this.readBounded(
+                absolutePath,
+                projectPath,
+              );
+            assertExpectedRevision(
+              projectPath,
+              committed.afterRevision,
+              revisionOf(current),
+            );
+          },
+        );
+      return {
+        result,
+        warnings:
+          checkpointRetentionWarnings(
+            result,
+          ),
+      };
+    } catch {
+      return {
+        result: {
+          policy:
+            ROLLING_CHECKPOINT_RETENTION_POLICY,
+          retainCommittedPerTarget,
+          status: "failed",
+          manifestDeleted: false,
+          failureCode: "INTERNAL_ERROR",
+        },
+        warnings: [
+          CHECKPOINT_RETENTION_FAILED_WARNING,
+        ],
+      };
     }
   }
 
@@ -1252,6 +1428,40 @@ export async function readDocumentFileSnapshot(
       observer,
     )
   ).bytes;
+}
+
+function isRollingCommittedCheckpoint(
+  manifest: CheckpointManifest & {
+    status: "committed";
+  },
+): manifest is RollingCommittedCheckpointManifest {
+  return (
+    manifest.version === 2 &&
+    manifest.retention?.class === "rolling"
+  );
+}
+
+function checkpointRetentionWarnings(
+  result: RollingCheckpointRetentionResult,
+): string[] {
+  if (result.status === "blocked") {
+    return [
+      CHECKPOINT_RETENTION_BLOCKED_WARNING,
+    ];
+  }
+  if (
+    result.status !== "deleted" ||
+    result.garbageCollection.status ===
+      "completed"
+  ) {
+    return [];
+  }
+  return [
+    result.garbageCollection.status ===
+    "blocked"
+      ? CHECKPOINT_RETENTION_GC_BLOCKED_WARNING
+      : CHECKPOINT_RETENTION_GC_FAILED_WARNING,
+  ];
 }
 
 interface DocumentFileSnapshot {

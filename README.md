@@ -91,9 +91,12 @@ parent swap 明确属于 unsupported，并附带可机读运维条件；其 scop
 文档目标，明确排除 `.tiledmcp` server-internal state，不再是含糊的 M0 决策项。
 checkpoint store 现有 1 GiB 默认总量配额、10,000 observed-entry quota、项目级协调锁和
 fail-closed orphan GC；已支持经 preview/批准显式 prune 单个 committed manifest，也能
-在机器验证当前目标仍等于写前状态时显式 discard 单个 prepared manifest，但不自动删除
-任何有效 manifest。整体接口仍以 0.0.x Draft 发布；剩余运维缺口是含混 prepared 状态的
-强制人工裁决与自动 retention policy。
+在机器验证当前目标仍等于写前状态时显式 discard 单个 prepared manifest。自动 retention
+是默认关闭的进程启动 opt-in：只对启用后产生、带持久单调 ordinal 的 v2
+`rolling` existing-file committed checkpoint 生效；每次成功提交至多删除该目标最老的
+一个 rolling manifest，并至少保留两个。legacy v1、`protected`、create 与 `prepared`
+manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；剩余高风险运维缺口主要是
+含混 prepared 状态的强制人工裁决和批量 prune。
 当前运行能力仍应以
 `tiled_get_capabilities`、`tools/list` 和 resource discovery 为准。
 
@@ -144,8 +147,11 @@ rasterization，并确认 `tiled_create_map` 产物可由目标版本重新导�
 storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 `TILEDMCP_CHECKPOINT_BYTES` 设置规范十进制 `[1-9][0-9]*` bytes，范围
 `1..9007199254740991`；运行时精确值以
-`checkpointCapabilities.storagePolicy` 为准；同时提供时 CLI 优先于环境变量。一个通用的
-客户端配置为：
+`checkpointCapabilities.storagePolicy` 为准。可选
+`--checkpoint-retain-per-target N` /
+`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N` 显式启用每目标 rolling retention，范围
+`2..10000`，默认关闭；运行策略以 `checkpointCapabilities.retention` 为准。两类配置同时
+提供时都由 CLI 优先于环境变量。一个通用的客户端配置为：
 
 ```json
 {
@@ -638,8 +644,31 @@ manifest + fsync checkpoint 目录”为提交点。提交后运行 fail-closed 
 完整 inventory 时只清理无引用 checkpoint objects 和私有 crash temp；存在 blocker
 时零删除并在成功 prune 结果中报告。提交点后的 GC/fync 诊断不会把已经删除 manifest
 伪装成可重试失败。`prepared` checkpoint 只能先对账，或在满足上述 exact-before
-条件时走独立 discard；自动 retention 与批量 prune 仍未实现。prune/discard 都不留
-tombstone，之后查询与从未存在的 ID 一样返回 not found。
+条件时走独立 discard；批量 prune 仍未实现。prune/discard 都不留 tombstone，之后查询与
+从未存在的 ID 一样返回 not found。
+
+长期编辑可在启动时显式设置
+`--checkpoint-retain-per-target N` 或
+`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N`；CLI 覆盖环境变量，`N` 的范围是
+`2..10000`，未设置即完全关闭。这份启动配置是自动删除 v2 rolling checkpoint 的 standing
+approval，不会追溯改造 legacy manifest，也不会把 label 当作 pin 或顺序依据。启用后，
+existing-file 的新 checkpoint 会从 checkpoint-store lock 串行保护的 durable sequence
+取得唯一正整数 ordinal；create checkpoint 明确标记为 `protected`。成功写入目标且新
+checkpoint 已 durable 标记为 committed 后，仍在同一 target lock 内按
+`target → checkpoint-store` 锁序执行一次有界 retention：完整重扫、校验所有 recovery
+root 的 content object、确认当前目标等于最新 rolling checkpoint 的 `afterRevision`，
+然后按 ordinal 保留最新 N 个并至多删除最老一个。`createdAt`、mtime、UUID 与 label
+只用于展示，绝不参与删除排序。
+
+任一 prepared、损坏/未知/symlink/非普通 entry、缺失或 hash/size 不匹配的 object、
+sequence 重复、低于 live ordinal 的可观测回退、目标漂移或 inventory 截断都会在首次 manifest unlink 前令本次
+retention 零删除。manifest unlink 与 checkpoint 目录 fsync 是删除提交点；之后的 GC 或
+checkpoint-store lock-release 故障通过成功 mutation 的 `checkpointRetention` 结果和固定 warning 报告，
+不会把已经完成的项目写入伪装成可安全重试的失败。retention 不在 `ensureCapacity` 中
+运行，也不会在 quota pressure 下先删恢复点：系统必须先容纳新 checkpoint，容量不足仍在
+目标 promotion 前返回 `CHECKPOINT_QUOTA_EXCEEDED`。一次 retention 最多删一个，因此降低
+N 或一次 blocker 形成的超额 rolling 历史不会被后续“一次新增、一次删除”追平；正常稳态
+会维持 N，既有超额必须由操作者显式 prune（未来批量 prune 才能有界追赶）。
 
 ## 开发与验证
 
@@ -840,13 +869,14 @@ checkpoint restore。架构与 roadmap
   清点无法证明完整时，新写入也会 fail closed。该内部存储边界假设本地状态可信且所有
   写者遵守全局锁；同权限进程恶意篡改 `.tiledmcp` 不在当前保证内。
   超限时只在完整、无损坏、无截断地建立全部 prepared/committed 引用集后回收 orphan
-  objects 和私有 temp，否则首次 unlink 前整体阻断；任何有效 manifest 都不会被自动删除。
+  objects 和私有 temp，否则首次 unlink 前整体阻断；quota-pressure GC 不会删除有效 manifest。
   `CHECKPOINT_QUOTA_EXCEEDED` 会在项目目标 promotion 前拒绝写入。客户端应把 error details
   当成不透明诊断；只有操作者另行确认 byte 维度单独超限时，提高
   `--checkpoint-bytes` / `TILEDMCP_CHECKPOINT_BYTES` 才可能恢复写入，entry 维度超限或
   inventory blocker 不会因提高 byte quota 消失。可以经 preview/批准显式 prune 单个
   committed checkpoint，或 discard 一个目标仍精确等于 before 状态的 prepared
-  checkpoint；长期高频编辑所需自动 retention 与含混 prepared 状态的强制裁决仍未实现。
+  checkpoint；默认关闭的 rolling retention 可由上述启动配置显式启用，但含混 prepared
+  状态的强制裁决仍未实现。
   恢复当前严格限于一个已存在的安全 JSON 文档；
   checkpoint 的 manifest 意图与 blob hash/revision/size 在 apply 时都会复核，唯一允许
   的 manifest 状态变化是 preview 后由 `prepared` 前进到 `committed`。恢复不包含依赖

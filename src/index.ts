@@ -24,7 +24,15 @@ async function main(): Promise<void> {
     resolver,
     undefined,
     undefined,
-    { maxBytes: config.checkpointBytes },
+    {
+      maxBytes: config.checkpointBytes,
+      ...(config.retainCommittedPerTarget === undefined
+        ? {}
+        : {
+            retainCommittedPerTarget:
+              config.retainCommittedPerTarget,
+          }),
+    },
   );
   const checkpointReport = await store.reconcilePreparedCheckpoints();
   const reconciliationCounts = {

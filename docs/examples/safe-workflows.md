@@ -52,15 +52,20 @@ manifest。默认 retained quota 是 1 GiB / 10,000 observed entries，但 byte 
 prepared 与 committed manifest 都是 GC root；prepared 会预留 committed 状态所需 bytes。
 只有完整扫描且没有损坏、symlink、未知/非普通 entry、缺失引用或 scan truncation 时，
 GC 才删除 orphan content object 和私有 crash temp。无法读取条目大小或无法保持
-safe-integer 精确计费时，容量检查本身也会拒绝新写入。它从不自动删除有效 manifest。
+safe-integer 精确计费时，容量检查本身也会拒绝新写入。quota-pressure GC 从不删除有效
+manifest；可选 rolling retention 只在新 checkpoint 成功提交后独立运行。
 收到 `CHECKPOINT_QUOTA_EXCEEDED` 后停止 mutation 和自动重试，不要手工删除
 content-addressed object 或 manifest；error details 是不透明诊断，不要据此自动选择恢复
 动作。检查 capability、内部状态和部署容量后，只有操作者另行确认 entry 维度仍在上限内、
 byte 维度单独超限时，才可提高 `--checkpoint-bytes` /
 `TILEDMCP_CHECKPOINT_BYTES` 并重启；entry 超限或 inventory blocker 不会因提高 byte quota
 消失。可以经 preview/批准显式 prune 一个 committed checkpoint；对于当前目标仍能机器
-验证为 before 状态的 prepared checkpoint，也可经独立 preview/批准显式 discard。含混
-状态的强制裁决与自动 retention 仍不受支持。
+验证为 before 状态的 prepared checkpoint，也可经独立 preview/批准显式 discard。长期
+编辑可由操作者在启动时设置 `--checkpoint-retain-per-target N` 或
+`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N`，显式批准默认关闭的 v2 rolling retention；
+`N` 至少为 2。它只在新 checkpoint 成功 committed 后按 durable ordinal 每次至多删除一个
+旧 rolling checkpoint；legacy、protected/create 与 prepared 永不自动删除，也不会在
+quota failure 前预删恢复点。含混状态的强制裁决仍不受支持。
 
 ## 把 revision 与依赖当成同一个快照传递
 

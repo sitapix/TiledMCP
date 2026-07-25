@@ -1,13 +1,18 @@
 import { resolve } from "node:path";
 
 import { TiledMcpError } from "./errors.js";
-import { DEFAULT_CHECKPOINT_STORAGE_BYTES } from "./storage/checkpoints.js";
+import {
+  DEFAULT_CHECKPOINT_STORAGE_BYTES,
+  MAX_CHECKPOINT_OBSERVED_ENTRIES,
+  MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+} from "./storage/checkpoints.js";
 
 export interface ServerConfig {
   projectDir: string;
   tiledCliPath: string;
   rasterizerPath: string;
   checkpointBytes: number;
+  retainCommittedPerTarget: number | undefined;
 }
 
 export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): ServerConfig {
@@ -30,6 +35,10 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Ser
     checkpointBytes: parseCheckpointBytes(
       options.get("--checkpoint-bytes") ?? env.TILEDMCP_CHECKPOINT_BYTES,
     ),
+    retainCommittedPerTarget: parseCheckpointRetentionCount(
+      options.get("--checkpoint-retain-per-target") ??
+        env.TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET,
+    ),
   };
 }
 
@@ -46,6 +55,19 @@ export function helpText(): string {
       "CLI overrides env)",
     `                              Canonical [1-9][0-9]*, range ` +
       `1..${Number.MAX_SAFE_INTEGER}`,
+    `  --checkpoint-retain-per-target <N>  Enable rolling post-commit retention ` +
+      "for committed existing-file checkpoints per target",
+    `                              Disabled by default; env: ` +
+      "TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET; CLI overrides env",
+    `                              Canonical [1-9][0-9]*, range ` +
+      `${MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT}..${MAX_CHECKPOINT_OBSERVED_ENTRIES}`,
+    "                              This process-startup option is standing approval to delete",
+    "                              at most one oldest eligible rolling checkpoint after each",
+    "                              successful checkpoint commit; results appear in checkpointRetention",
+    "                              Existing excess is not reduced by one-add/one-delete commits;",
+    "                              use explicitly approved prune to clear a retention backlog",
+    "                              Legacy, protected, and prepared manifests are always retained;",
+    "                              startup, periodic, and quota-pressure retention are disabled",
     "  --help                Show this help",
   ].join("\n");
 }
@@ -56,6 +78,7 @@ function parseOptions(argv: readonly string[]): Map<string, string> {
     "--tiled-cli",
     "--rasterizer",
     "--checkpoint-bytes",
+    "--checkpoint-retain-per-target",
   ]);
   const options = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 1) {
@@ -94,6 +117,30 @@ function parseCheckpointBytes(value: string | undefined): number {
       `Checkpoint storage quota must use canonical decimal [1-9][0-9]* ` +
         `in the range 1..${Number.MAX_SAFE_INTEGER}.`,
     );
+  }
+  return parsed;
+}
+
+function parseCheckpointRetentionCount(
+  value: string | undefined,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const message =
+    `Automatic checkpoint retention must use canonical decimal [1-9][0-9]* ` +
+    `in the range ${MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT}..` +
+    `${MAX_CHECKPOINT_OBSERVED_ENTRIES}.`;
+  if (!/^[1-9][0-9]*$/u.test(value)) {
+    throw new TiledMcpError("INVALID_ARGUMENT", message);
+  }
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT ||
+    parsed > MAX_CHECKPOINT_OBSERVED_ENTRIES
+  ) {
+    throw new TiledMcpError("INVALID_ARGUMENT", message);
   }
   return parsed;
 }

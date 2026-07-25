@@ -325,7 +325,7 @@ describe("generated MCP contract", () => {
     const checkpointStoragePolicyLiterals = {
       ...CHECKPOINT_STORAGE_POLICY,
       garbageCollectionTrigger:
-        "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
+        "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
       quotaFailureCode:
         "CHECKPOINT_QUOTA_EXCEEDED",
     } as const;

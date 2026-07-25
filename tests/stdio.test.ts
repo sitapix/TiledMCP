@@ -21,6 +21,9 @@ import {
   GUIDE_RESOURCE_MIME_TYPE,
   GUIDE_RESOURCE_URI,
 } from "../src/resources/guide.js";
+import {
+  MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+} from "../src/storage/checkpoints.js";
 import { revisionOf } from "../src/storage/revision.js";
 
 it("serves tiled_find_tiles through the production stdio entry point", async () => {
@@ -122,8 +125,48 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
             "sha256-of-raw-manifest-bytes",
           preparedCheckpoints:
             "unsupported-reconcile-first",
-          automaticRetention: "unsupported",
+          automaticRetention:
+            "separate-opt-in-post-commit-policy",
           tombstones: false,
+        },
+        retention: {
+          enabled: false,
+          retainCommittedPerTarget: null,
+          minimumRetainedPerTarget:
+            MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+          mode:
+            "rolling-per-target-count-v1",
+          defaultMode: "disabled",
+          standingApproval:
+            "process-startup-config",
+          eligibleManifests:
+            "v2-rolling-committed-existing-file-only",
+          legacyManifests: "always-retained",
+          protectedManifests: "always-retained",
+          preparedManifests: "always-retained",
+          ordering:
+            "durable-monotonic-ordinal",
+          maxManifestDeletionsPerCommit: 1,
+          backlogConvergence:
+            "one-add-one-delete-does-not-reduce-existing-excess-explicit-prune-required",
+          trigger:
+            "successful-checkpoint-commit-only",
+          targetDurability:
+            "required-no-post-replace-warning",
+          startupSweep: false,
+          periodicSweep: false,
+          lockOrder:
+            "target-then-checkpoint-store",
+          targetValidation:
+            "current-target-equals-newest-rolling-after-revision",
+          incompleteInventory:
+            "block-before-first-manifest-unlink",
+          quotaPressure:
+            "orphan-gc-only-no-valid-manifest-deletion",
+          resultChannel:
+            "commit-result-checkpointRetention",
+          previewLease:
+            "unsupported-apply-may-be-invalidated",
         },
       },
       tileFindCapabilities: {

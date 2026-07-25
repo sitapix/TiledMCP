@@ -126,3 +126,25 @@ stale lock 永远 fail closed。手动删除前必须确认原 PID/写者已不�
   registry 属于本 contract 明确排除的 server-internal state；
 - `snapshotConsistency:"non-atomic-read-set"` 继续描述跨文件读取；
 - `applicationErrorContract` 描述应用错误 wire，不扩大本威胁模型的保证。
+
+## 8. 与 checkpoint rolling retention 的关系
+
+checkpoint retention 属于本文明确排除的 `.tiledmcp` internal-state contract，但它删除
+recovery point 前仍依赖本文的合作写者和安全普通目标读取前提。默认不启用；只有
+`--checkpoint-retain-per-target N` /
+`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N` 的进程启动配置才构成 standing approval，
+且 `N` 至少为 2。
+
+启用不会扩大 direct backend 的保证。自动策略只处理带 durable ordinal 的 v2
+`rolling` existing-file committed manifest；legacy、protected/create 与 prepared
+manifest 永远保留。它仍在当前 target lock 内取 checkpoint-store lock，重新读取目标并
+要求 revision 等于最新 rolling checkpoint 的 `afterRevision`。任一非合作目标写入、
+内部状态漂移、完整 inventory 或 object hash/size 校验失败都会令本轮零删除。revision
+仍只是 bytes identity，不是 generation；顺序来自内部 durable ordinal，不从 SHA-256、
+wall clock、mtime、UUID 或 label 推导。
+
+retention 不在 quota-pressure 或 `ensureCapacity()` 中运行。新 checkpoint 必须先完整
+发布且 durable 标记 committed；目标 promotion 有 durability warning 时跳过本轮。这样，
+新写入或配额检查失败不会先删除旧恢复点，也不会引入 `store → target` 反向锁序。manifest
+unlink + checkpoint 目录 fsync 是独立 destructive commit point；其后的 GC/锁故障在成功
+document mutation 的有界结果中报告，不能解释为目标写入可以安全重试。

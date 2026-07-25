@@ -184,6 +184,8 @@ import {
 import {
   CHECKPOINT_ID_PATTERN,
   CHECKPOINT_STORAGE_POLICY,
+  MAX_CHECKPOINT_OBSERVED_ENTRIES,
+  MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
 } from "./storage/checkpoints.js";
 import type { DocumentStore } from "./storage/documentStore.js";
 import { KeyedMutex } from "./storage/keyedMutex.js";
@@ -1361,8 +1363,53 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "post-commit-fail-closed-unreferenced-objects-and-private-crash-temporaries",
             preparedCheckpoints:
               "unsupported-reconcile-first",
-            automaticRetention: "unsupported",
+            automaticRetention:
+              "separate-opt-in-post-commit-policy",
             tombstones: false,
+          },
+          retention: {
+            enabled:
+              store.checkpoints
+                .retainCommittedPerTarget !== undefined,
+            retainCommittedPerTarget:
+              store.checkpoints
+                .retainCommittedPerTarget ?? null,
+            minimumRetainedPerTarget:
+              MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+            mode:
+              "rolling-per-target-count-v1",
+            defaultMode: "disabled",
+            standingApproval:
+              "process-startup-config",
+            eligibleManifests:
+              "v2-rolling-committed-existing-file-only",
+            legacyManifests: "always-retained",
+            protectedManifests:
+              "always-retained",
+            preparedManifests: "always-retained",
+            ordering:
+              "durable-monotonic-ordinal",
+            maxManifestDeletionsPerCommit: 1,
+            backlogConvergence:
+              "one-add-one-delete-does-not-reduce-existing-excess-explicit-prune-required",
+            trigger:
+              "successful-checkpoint-commit-only",
+            targetDurability:
+              "required-no-post-replace-warning",
+            startupSweep: false,
+            periodicSweep: false,
+            lockOrder:
+              "target-then-checkpoint-store",
+            targetValidation:
+              "current-target-equals-newest-rolling-after-revision",
+            incompleteInventory:
+              "block-before-first-manifest-unlink",
+            quotaPressure:
+              "orphan-gc-only-no-valid-manifest-deletion",
+            resultChannel:
+              "commit-result-checkpointRetention",
+            previewLease:
+              "unsupported-apply-may-be-invalidated",
           },
           storagePolicy: {
             ...CHECKPOINT_STORAGE_POLICY,
@@ -1371,7 +1418,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             maxEntries:
               store.checkpoints.maxEntries,
             garbageCollectionTrigger:
-              "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-or-explicit-internal-call",
+              "quota-pressure-approved-checkpoint-prune-approved-prepared-discard-automatic-rolling-post-commit-or-explicit-internal-call",
             quotaFailureCode:
               "CHECKPOINT_QUOTA_EXCEEDED",
           },
@@ -1721,6 +1768,25 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               .int()
               .min(1)
               .max(Number.MAX_SAFE_INTEGER);
+          }
+          if (
+            jsonPointer ===
+            "/checkpointCapabilities/retention/enabled"
+          ) {
+            return z.boolean();
+          }
+          if (
+            jsonPointer ===
+            "/checkpointCapabilities/retention/retainCommittedPerTarget"
+          ) {
+            return z
+              .number()
+              .int()
+              .min(
+                MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+              )
+              .max(MAX_CHECKPOINT_OBSERVED_ENTRIES)
+              .nullable();
           }
           if (jsonPointer === "/cli") {
             return cliCapabilitiesOutputSchema;

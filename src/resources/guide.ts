@@ -757,12 +757,28 @@ and private crash temporaries. Any malformed, unexpected, symlink, non-regular,
 missing-reference, unsafe-byte-accounting, or incomplete scan blocks the entire
 sweep before its first deletion. An incomplete byte or entry inventory also
 fails the write-capacity proof. Initial manifest publication is
-create-if-absent and never replaces an existing recovery point. Valid manifests
-are never pruned automatically. The only deletion paths are an approved,
+create-if-absent and never replaces an existing recovery point. Quota pressure
+never deletes a valid manifest. Explicit deletion paths are an approved,
 raw-manifest-CAS prune of one committed checkpoint and an approved,
-raw-manifest-CAS prepared discard with exact-before target proof. Both apply
-paths lock the checkpoint target before the store, unlink the manifest, sync
-the checkpoint directory, and then run the same fail-closed orphan sweep. A
+raw-manifest-CAS prepared discard with exact-before target proof.
+
+Automatic retention is disabled unless startup explicitly supplies
+\`--checkpoint-retain-per-target N\` or
+\`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N\`, with N from 2 through 10,000.
+That startup configuration is standing approval only for new v2 rolling,
+existing-file committed checkpoints. Legacy v1, protected/create, and prepared
+manifests are always retained. Rolling order comes from a durable monotonic
+ordinal, never timestamps, mtimes, UUIDs, labels, or content revisions.
+After a target and its new checkpoint are durably committed without a target
+durability warning, retention protects the newest N rolling checkpoints and
+deletes at most the oldest one per commit.
+
+Every deletion path locks the checkpoint target before the store, raw-CASes
+the manifest, unlinks it, syncs the checkpoint directory, and then runs the
+same fail-closed orphan sweep. Automatic retention additionally verifies a
+complete inventory, every referenced object's hash and size, the sequence,
+the absence of a prepared checkpoint for that target, and that the current
+target matches the newest rolling after-revision before its first unlink. A
 blocked sweep deletes nothing. A failure after manifest unlink is reported as
 a committed deletion with bounded diagnostics, not as a retry-safe application
 failure. This
@@ -791,9 +807,10 @@ made before creating a new file cannot be used to delete that file.
 
 Prune and prepared discard do not leave a tombstone: after a successful apply,
 the checkpoint is indistinguishable from an ID that was never present.
-Automatic retention,
-multi-checkpoint prune, and forced adjudication of ambiguous prepared
-checkpoints are not supported.
+Retention may likewise invalidate an outstanding restore/prune preview; a
+preview is not a durable lease, so apply must surface not-found/changed and be
+previewed again. Multi-checkpoint prune and forced adjudication of ambiguous
+prepared checkpoints are not supported.
 
 ## Conflict and failure handling
 
@@ -818,8 +835,12 @@ checkpoints are not supported.
   the byte quota cannot repair an entry-limit or inventory-blocker condition.
   An operator may explicitly preview and approve pruning one committed
   checkpoint, or discarding one prepared checkpoint whose current target
-  still exactly matches its pre-write state. Automatic retention and forced
-  ambiguous-state adjudication remain unsupported.
+  still exactly matches its pre-write state. The optional startup retention
+  policy never runs to relieve quota pressure: a new recovery root must fit
+  before target promotion. Normal operation maintains N, but lowering N or a
+  blocked run leaves an excess that later one-add/one-delete commits cannot
+  reduce; an operator must explicitly prune that backlog. Forced
+  ambiguous-state adjudication remains unsupported.
 - On validation failure, inspect diagnostics before proposing another change.
 - Do not mutate files outside TiledMCP while relying on a previously observed
   revision. Revisions are SHA-256 identities of the exact bytes that were read.

@@ -90,19 +90,53 @@ const checkpointBeforeOutputSchema = z.union([
     .strict(),
 ]);
 
-const checkpointManifestOutputSchema = z
-  .object({
-    version: z.literal(1),
-    id: checkpointIdOutputSchema,
-    createdAt:
-      checkpointTimestampOutputSchema,
-    label: z.string(),
-    path: projectPathOutputSchema,
-    status: z.enum(["prepared", "committed"]),
-    before: checkpointBeforeOutputSchema,
-    afterRevision: revisionOutputSchema,
-  })
-  .strict();
+const checkpointManifestBaseOutputShape = {
+  id: checkpointIdOutputSchema,
+  createdAt:
+    checkpointTimestampOutputSchema,
+  label: z.string(),
+  path: projectPathOutputSchema,
+  status: z.enum(["prepared", "committed"]),
+  before: checkpointBeforeOutputSchema,
+  afterRevision: revisionOutputSchema,
+} as const;
+
+const checkpointManifestOutputSchema =
+  z.discriminatedUnion("version", [
+    z
+      .object({
+        version: z.literal(1),
+        ...checkpointManifestBaseOutputShape,
+      })
+      .strict(),
+    z
+      .object({
+        version: z.literal(2),
+        ...checkpointManifestBaseOutputShape,
+        retention: z.discriminatedUnion(
+          "class",
+          [
+            z
+              .object({
+                class: z.literal(
+                  "protected",
+                ),
+              })
+              .strict(),
+            z
+              .object({
+                class: z.literal("rolling"),
+                ordinal:
+                  positiveIntegerOutputSchema.max(
+                    Number.MAX_SAFE_INTEGER,
+                  ),
+              })
+              .strict(),
+          ],
+        ),
+      })
+      .strict(),
+  ]);
 
 const corruptCheckpointOutputSchema = z
   .object({

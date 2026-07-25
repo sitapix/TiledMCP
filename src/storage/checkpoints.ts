@@ -46,10 +46,16 @@ const CHECKPOINT_TEMP_PATTERN =
 const CHECKPOINT_OBJECT_TEMP_PATTERN =
   /^[0-9a-f]{64}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/iu;
 const CHECKPOINT_STORAGE_MUTEX = new KeyedMutex();
+const CHECKPOINT_RETENTION_SEQUENCE_FILE =
+  "checkpoint-retention-sequence.json";
+const CHECKPOINT_RETENTION_SEQUENCE_MAX_BYTES = 1_024;
+export const MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT = 2;
+export const ROLLING_CHECKPOINT_RETENTION_POLICY =
+  "rolling-per-target-count-v1" as const;
 
 export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   name: "tiled-mcp-checkpoint-storage",
-  version: 3,
+  version: 4,
   quotaAccounting:
     "observed-logical-bytes-plus-prepared-commit-reservation-and-entry-count",
   quotaScope:
@@ -61,8 +67,27 @@ export const CHECKPOINT_STORAGE_POLICY = Object.freeze({
   garbageCollectionDeletion:
     "unreferenced-canonical-objects-and-private-crash-temporaries-only",
   validManifestDeletion:
-    "explicit-approved-raw-cas-committed-prune-or-safe-prepared-current-before-discard",
-  automaticValidManifestPruning: "never",
+    "explicit-approved-raw-cas-committed-prune-safe-prepared-current-before-discard-or-opt-in-v2-rolling-post-commit-retention",
+  automaticValidManifestPruning:
+    "explicitly-configured-v2-rolling-committed-manifests-only",
+  automaticRetentionCoordination:
+    "caller-held-target-lock-then-checkpoint-store-lock",
+  automaticRetentionOrdering:
+    "durable-global-positive-safe-integer-ordinal-only",
+  automaticRetentionSequenceAccounting:
+    "internal-control-file-outside-objects-and-checkpoints-retained-quota",
+  automaticRetentionSequenceTemporary:
+    "single-fixed-private-crash-temporary-cleaned-under-checkpoint-store-lock",
+  automaticRetentionProtectedRoots:
+    "legacy-v1-v2-protected-and-all-prepared-manifests",
+  automaticRetentionDeletionLimit:
+    "at-most-one-oldest-eligible-rolling-manifest-per-enforcement",
+  automaticRetentionPreflight:
+    "complete-inventory-valid-sequence-safe-independent-rolling-anchors-and-all-root-object-content-verification-before-first-unlink",
+  automaticRetentionDeletionOrder:
+    "raw-and-metadata-cas-manifest-unlink-checkpoint-directory-fsync-then-fail-closed-orphan-sweep",
+  automaticRetentionQuotaPressure:
+    "never-delete-valid-manifests-before-or-during-capacity-enforcement",
   explicitPruneCoordination:
     "target-lock-then-checkpoint-store-lock",
   explicitPruneDeletionOrder:
@@ -107,6 +132,11 @@ export interface CheckpointStoreOptions {
   maxBytes?: number;
   /** Test and constrained-deployment override; production defaults to 10,000. */
   maxEntries?: number;
+  /**
+   * Opt-in rolling committed checkpoint retention per target. Legacy,
+   * protected, and prepared checkpoints are never counted or deleted.
+   */
+  retainCommittedPerTarget?: number;
   /** Deterministic concurrency/fault-injection seam for storage tests. */
   observer?: CheckpointStoreObserver;
 }
@@ -168,12 +198,13 @@ interface CheckpointStorageInventory {
   objectFileNames: Set<string>;
   manifestSizes: Map<string, number>;
   manifestChargedSizes: Map<string, number>;
+  manifests: CheckpointInventoryManifest[];
   objects: CheckpointStorageEntry[];
   temporaryFiles: CheckpointStorageEntry[];
 }
 
 export interface CheckpointManifest {
-  version: 1;
+  version: 1 | 2;
   id: string;
   createdAt: string;
   label: string;
@@ -188,12 +219,53 @@ export interface CheckpointManifest {
         size: number;
       };
   afterRevision: string;
+  retention?:
+    | {
+        class: "protected";
+      }
+    | {
+        class: "rolling";
+        ordinal: number;
+      };
 }
+
+export type LegacyCheckpointManifest =
+  CheckpointManifest & {
+    version: 1;
+    retention?: never;
+  };
+
+export type ProtectedCheckpointManifest =
+  CheckpointManifest & {
+    version: 2;
+    retention: {
+      class: "protected";
+    };
+  };
+
+export type RollingCheckpointManifest =
+  CheckpointManifest & {
+    version: 2;
+    retention: {
+      class: "rolling";
+      ordinal: number;
+    };
+  };
+
+export type RollingCommittedCheckpointManifest =
+  RollingCheckpointManifest & {
+    status: "committed";
+  };
 
 export interface CheckpointManifestSnapshot {
   manifest: CheckpointManifest;
   manifestRevision: string;
   manifestSize: number;
+}
+
+interface CheckpointInventoryManifest
+  extends CheckpointManifestSnapshot {
+  metadata: BigIntStats;
 }
 
 export interface CheckpointPruneStorageExpectation {
@@ -251,6 +323,43 @@ export type CheckpointManifestDeletionGarbageCollectionResult =
 export type CheckpointPruneGarbageCollectionResult =
   CheckpointManifestDeletionGarbageCollectionResult;
 
+export type RollingCheckpointRetentionBlockedReason =
+  | "current-checkpoint-changed"
+  | "current-not-highest-rolling"
+  | "incomplete-inventory"
+  | "object-verification-failed"
+  | "prepared-checkpoint-present"
+  | "sequence-state-invalid"
+  | "target-validation-failed"
+  | "unsafe-lineage";
+
+interface RollingCheckpointRetentionResultBase {
+  policy: typeof ROLLING_CHECKPOINT_RETENTION_POLICY;
+  retainCommittedPerTarget: number;
+  manifestDeleted: boolean;
+}
+
+export type RollingCheckpointRetentionResult =
+  | (RollingCheckpointRetentionResultBase & {
+      status: "not-needed";
+      manifestDeleted: false;
+      rollingCommittedCount: number;
+    })
+  | (RollingCheckpointRetentionResultBase & {
+      status: "blocked";
+      manifestDeleted: false;
+      reason: RollingCheckpointRetentionBlockedReason;
+      rollingCommittedCount: number;
+    })
+  | (RollingCheckpointRetentionResultBase & {
+      status: "deleted";
+      manifestDeleted: true;
+      deletedCheckpointId: string;
+      rollingCommittedCountBefore: number;
+      garbageCollection:
+        CheckpointManifestDeletionGarbageCollectionResult;
+    });
+
 export interface CheckpointPruneStorageResult {
   manifest: CheckpointManifest & {
     status: "committed";
@@ -294,6 +403,9 @@ export interface CheckpointListResult {
 export class CheckpointStore {
   readonly maxBytes: number;
   readonly maxEntries: number;
+  readonly retainCommittedPerTarget:
+    | number
+    | undefined;
   private readonly observer:
     | CheckpointStoreObserver
     | undefined;
@@ -330,6 +442,28 @@ export class CheckpointStore {
     }
     this.maxBytes = maxBytes;
     this.maxEntries = maxEntries;
+    const retainCommittedPerTarget =
+      options.retainCommittedPerTarget;
+    if (
+      retainCommittedPerTarget !== undefined &&
+      (!Number.isSafeInteger(
+        retainCommittedPerTarget,
+      ) ||
+        retainCommittedPerTarget <
+          MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT ||
+        retainCommittedPerTarget > maxEntries)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `Automatic checkpoint retention must be a safe integer from ${MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT} through maxEntries.`,
+        {
+          retainCommittedPerTarget,
+          maxEntries,
+        },
+      );
+    }
+    this.retainCommittedPerTarget =
+      retainCommittedPerTarget;
     this.observer = options.observer;
   }
 
@@ -377,19 +511,52 @@ export class CheckpointStore {
       };
     }
 
-    const manifest: CheckpointManifest = {
-      version: 1,
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
-      label,
-      path: projectPath,
-      status: "prepared",
-      before: beforeState,
-      afterRevision,
-    };
     return this.runStorageExclusive(async () => {
       const directories =
         await this.ensureStorageDirectories();
+      const manifestBase = {
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+        label,
+        path: projectPath,
+        status: "prepared" as const,
+        before: beforeState,
+        afterRevision,
+      };
+      let manifest: CheckpointManifest;
+      if (
+        this.retainCommittedPerTarget ===
+        undefined
+      ) {
+        manifest = {
+          version: 1,
+          ...manifestBase,
+        };
+      } else if (
+        !beforeState.existed ||
+        beforeState.revision === afterRevision
+      ) {
+        manifest = {
+          version: 2,
+          ...manifestBase,
+          retention: {
+            class: "protected",
+          },
+        };
+      } else {
+        const ordinal =
+          await this.reserveNextRetentionOrdinal(
+            directories,
+          );
+        manifest = {
+          version: 2,
+          ...manifestBase,
+          retention: {
+            class: "rolling",
+            ordinal,
+          },
+        };
+      }
       await this.ensureCapacity(
         directories,
         manifest,
@@ -498,6 +665,301 @@ export class CheckpointStore {
       "prepared",
       validateTarget,
     );
+  }
+
+  /**
+   * Enforces the opt-in rolling retention window while the caller continues
+   * to hold the target's mutation lock. This method acquires the checkpoint
+   * store lock second and deletes at most one manifest.
+   */
+  async enforceRollingRetention(
+    currentCommitted: RollingCommittedCheckpointManifest,
+    validateTarget: (
+      manifest: RollingCommittedCheckpointManifest,
+    ) => Promise<void>,
+  ): Promise<RollingCheckpointRetentionResult> {
+    if (
+      this.retainCommittedPerTarget ===
+      undefined
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Automatic checkpoint retention is disabled.",
+      );
+    }
+    const retainCommittedPerTarget =
+      this.retainCommittedPerTarget;
+    const resultBase = {
+      policy:
+        ROLLING_CHECKPOINT_RETENTION_POLICY,
+      retainCommittedPerTarget,
+    } as const;
+    if (!isRollingManifest(currentCommitted)) {
+      return {
+        ...resultBase,
+        status: "not-needed",
+        manifestDeleted: false,
+        rollingCommittedCount: 0,
+      };
+    }
+
+    let deleted:
+      | RollingCommittedCheckpointManifest
+      | undefined;
+    let rollingCommittedCountBefore = 0;
+    let storeLockReleaseFailed = false;
+    const blocked = (
+      reason: RollingCheckpointRetentionBlockedReason,
+      rollingCommittedCount =
+        rollingCommittedCountBefore,
+    ): RollingCheckpointRetentionResult => ({
+      ...resultBase,
+      status: "blocked",
+      manifestDeleted: false,
+      reason,
+      rollingCommittedCount,
+    });
+    const failedDeleted =
+      (): RollingCheckpointRetentionResult => ({
+        ...resultBase,
+        status: "deleted",
+        manifestDeleted: true,
+        deletedCheckpointId:
+          (deleted as RollingCommittedCheckpointManifest)
+            .id,
+        rollingCommittedCountBefore,
+        garbageCollection: {
+          status: "failed",
+          failureCode: "INTERNAL_ERROR",
+          deletionOutcome:
+            "unknown-partial-or-none",
+        },
+      });
+
+    try {
+      const result =
+        await this.runStorageExclusive<
+          RollingCheckpointRetentionResult
+        >(
+          async () => {
+            let directories: CheckpointStorageDirectories;
+            let inventory: CheckpointStorageInventory;
+            try {
+              directories =
+                await this.ensureStorageDirectories();
+              inventory =
+                await this.inventory(
+                  directories,
+                );
+            } catch {
+              return blocked(
+                "incomplete-inventory",
+              );
+            }
+            const targetRollingCommitted =
+              rollingCommittedManifestsForPath(
+                inventory.manifests,
+                currentCommitted.path,
+              );
+            rollingCommittedCountBefore =
+              targetRollingCommitted.length;
+            if (
+              inventory.blockers.length > 0
+            ) {
+              return blocked(
+                "incomplete-inventory",
+              );
+            }
+            if (
+              inventory.manifests.some(
+                ({ manifest }) =>
+                  manifest.path ===
+                    currentCommitted.path &&
+                  manifest.status ===
+                    "prepared",
+              )
+            ) {
+              return blocked(
+                "prepared-checkpoint-present",
+              );
+            }
+
+            let sequence:
+              | CheckpointRetentionSequence
+              | undefined;
+            try {
+              sequence =
+                await this.readRetentionSequence(
+                  directories,
+                );
+            } catch {
+              return blocked(
+                "sequence-state-invalid",
+              );
+            }
+            const sequenceAnalysis =
+              analyzeRetentionSequence(
+                inventory.manifests,
+                sequence,
+              );
+            if (!sequenceAnalysis.valid) {
+              return blocked(
+                "sequence-state-invalid",
+              );
+            }
+            if (
+              !hasSafeRollingLineage(
+                targetRollingCommitted,
+              )
+            ) {
+              return blocked(
+                "unsafe-lineage",
+              );
+            }
+
+            const currentSnapshot =
+              targetRollingCommitted.at(-1);
+            if (
+              currentSnapshot === undefined ||
+              currentSnapshot.manifest.id !==
+                currentCommitted.id
+            ) {
+              return blocked(
+                "current-not-highest-rolling",
+              );
+            }
+            if (
+              !sameManifestIntent(
+                currentCommitted,
+                currentSnapshot.manifest,
+              ) ||
+              currentSnapshot.manifest.status !==
+                "committed"
+            ) {
+              return blocked(
+                "current-checkpoint-changed",
+              );
+            }
+            if (
+              rollingCommittedCountBefore <=
+              this.retainCommittedPerTarget!
+            ) {
+              return {
+                ...resultBase,
+                status: "not-needed",
+                manifestDeleted: false,
+                rollingCommittedCount:
+                  rollingCommittedCountBefore,
+              };
+            }
+            if (
+              !(await this.verifyInventoryObjects(
+                directories,
+                inventory,
+              ))
+            ) {
+              return blocked(
+                "object-verification-failed",
+              );
+            }
+            try {
+              await validateTarget(
+                currentSnapshot.manifest,
+              );
+            } catch {
+              return blocked(
+                "target-validation-failed",
+              );
+            }
+
+            const candidate =
+              targetRollingCommitted[0];
+            if (
+              candidate === undefined ||
+              !isSafeRollingDeletionCandidate(
+                candidate.manifest,
+              )
+            ) {
+              return blocked(
+                "unsafe-lineage",
+              );
+            }
+            if (
+              !(await this.retentionCandidateMatches(
+                directories,
+                candidate,
+              ))
+            ) {
+              return blocked(
+                "current-checkpoint-changed",
+              );
+            }
+
+            await unlink(
+              join(
+                directories.checkpoints,
+                `${candidate.manifest.id}.json`,
+              ),
+            );
+            deleted = candidate.manifest;
+            try {
+              await syncDirectory(
+                directories.checkpoints,
+              );
+              await this.observer
+                ?.afterManifestDeletedBeforeGarbageCollection?.(
+                  {
+                    checkpointId:
+                      candidate.manifest.id,
+                  },
+                );
+              const afterDeleteInventory =
+                await this.inventory(
+                  directories,
+                );
+              const report =
+                await this.sweepInventory(
+                  directories,
+                  afterDeleteInventory,
+                );
+              return {
+                ...resultBase,
+                status: "deleted",
+                manifestDeleted: true,
+                deletedCheckpointId:
+                  candidate.manifest.id,
+                rollingCommittedCountBefore,
+                garbageCollection:
+                  checkpointManifestDeletionGarbageCollectionResult(
+                    report,
+                  ),
+              };
+            } catch {
+              return failedDeleted();
+            }
+          },
+          () => {
+            storeLockReleaseFailed = true;
+          },
+        );
+      if (
+        storeLockReleaseFailed &&
+        deleted !== undefined
+      ) {
+        return failedDeleted();
+      }
+      if (storeLockReleaseFailed) {
+        return blocked(
+          "incomplete-inventory",
+        );
+      }
+      return result;
+    } catch {
+      if (deleted !== undefined) {
+        return failedDeleted();
+      }
+      return blocked("incomplete-inventory");
+    }
   }
 
   private async deleteManifestPlanned<
@@ -685,6 +1147,237 @@ export class CheckpointStore {
     return { checkpoints, objects };
   }
 
+  private async reserveNextRetentionOrdinal(
+    directories: CheckpointStorageDirectories,
+  ): Promise<number> {
+    const sequencePath = join(
+      dirname(directories.checkpoints),
+      CHECKPOINT_RETENTION_SEQUENCE_FILE,
+    );
+    await removeRetentionSequenceTemporary(
+      sequencePath,
+    );
+    const inventory =
+      await this.inventory(directories);
+    if (inventory.blockers.length > 0) {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        "Automatic checkpoint retention cannot allocate an ordinal from incomplete storage state.",
+      );
+    }
+    const sequence =
+      await this.readRetentionSequence(
+        directories,
+      );
+    const analysis =
+      analyzeRetentionSequence(
+        inventory.manifests,
+        sequence,
+      );
+    if (!analysis.valid) {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        "Automatic checkpoint retention sequence state is ambiguous or unsafe.",
+      );
+    }
+    const lastOrdinal =
+      sequence?.lastOrdinal ?? 0;
+    if (
+      lastOrdinal >=
+      Number.MAX_SAFE_INTEGER
+    ) {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        "Automatic checkpoint retention ordinal space is exhausted.",
+      );
+    }
+    const nextOrdinal = lastOrdinal + 1;
+    const nextSequence: CheckpointRetentionSequence =
+      {
+        version: 1,
+        lastOrdinal: nextOrdinal,
+      };
+    if (sequence === undefined) {
+      await atomicCreateRetentionSequence(
+        sequencePath,
+        nextSequence,
+      );
+    } else {
+      await atomicWriteRetentionSequence(
+        sequencePath,
+        nextSequence,
+      );
+    }
+    return nextOrdinal;
+  }
+
+  private async readRetentionSequence(
+    directories: CheckpointStorageDirectories,
+  ): Promise<
+    CheckpointRetentionSequence | undefined
+  > {
+    const path = join(
+      dirname(directories.checkpoints),
+      CHECKPOINT_RETENTION_SEQUENCE_FILE,
+    );
+    let content: Buffer;
+    try {
+      content = await readBoundedNoFollow(
+        path,
+        CHECKPOINT_RETENTION_SEQUENCE_MAX_BYTES,
+        "checkpoint retention sequence",
+      );
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) {
+        return undefined;
+      }
+      throw error;
+    }
+    const raw = decodeUtf8Strict(
+      content,
+      "checkpoint retention sequence",
+    );
+    let value: unknown;
+    try {
+      value = parseJsonDocument(
+        raw,
+        `.tiledmcp/${CHECKPOINT_RETENTION_SEQUENCE_FILE}`,
+      );
+    } catch {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        "Checkpoint retention sequence is not valid safe JSON.",
+      );
+    }
+    if (
+      !isRecord(value) ||
+      !hasExactKeys(value, [
+        "lastOrdinal",
+        "version",
+      ]) ||
+      value.version !== 1 ||
+      typeof value.lastOrdinal !==
+        "number" ||
+      !Number.isSafeInteger(
+        value.lastOrdinal,
+      ) ||
+      value.lastOrdinal < 1
+    ) {
+      throw new TiledMcpError(
+        "CHECKPOINT_CORRUPT",
+        "Checkpoint retention sequence has an invalid record.",
+      );
+    }
+    return value as unknown as CheckpointRetentionSequence;
+  }
+
+  private async verifyInventoryObjects(
+    directories: CheckpointStorageDirectories,
+    inventory: CheckpointStorageInventory,
+  ): Promise<boolean> {
+    const expectedSizes = new Map<
+      string,
+      number
+    >();
+    for (const { manifest } of inventory.manifests) {
+      if (!manifest.before.existed) {
+        continue;
+      }
+      const prior = expectedSizes.get(
+        manifest.before.objectHash,
+      );
+      if (
+        prior !== undefined &&
+        prior !== manifest.before.size
+      ) {
+        return false;
+      }
+      expectedSizes.set(
+        manifest.before.objectHash,
+        manifest.before.size,
+      );
+    }
+    try {
+      for (const [
+        objectHash,
+        expectedSize,
+      ] of expectedSizes) {
+        const content =
+          await readBoundedNoFollow(
+            join(
+              directories.objects,
+              objectHash,
+            ),
+            MAX_CHECKPOINT_OBJECT_BYTES,
+            "checkpoint retention root object",
+          );
+        if (
+          content.byteLength !==
+            expectedSize ||
+          createHash("sha256")
+            .update(content)
+            .digest("hex") !== objectHash
+        ) {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async retentionCandidateMatches(
+    directories: CheckpointStorageDirectories,
+    candidate: CheckpointInventoryManifest & {
+      manifest: RollingCommittedCheckpointManifest;
+    },
+  ): Promise<boolean> {
+    const path = join(
+      directories.checkpoints,
+      `${candidate.manifest.id}.json`,
+    );
+    try {
+      const before = await lstat(path, {
+        bigint: true,
+      });
+      if (
+        !sameFileSnapshot(
+          candidate.metadata,
+          before,
+        )
+      ) {
+        return false;
+      }
+      const actual =
+        await this.readManifestSnapshot(
+          directories.checkpoints,
+          candidate.manifest.id,
+        );
+      const after = await lstat(path, {
+        bigint: true,
+      });
+      return (
+        sameFileSnapshot(before, after) &&
+        actual.manifestRevision ===
+          candidate.manifestRevision &&
+        actual.manifestSize ===
+          candidate.manifestSize &&
+        actual.manifest.status ===
+          "committed" &&
+        isRollingManifest(
+          actual.manifest,
+        ) &&
+        sameManifestIntent(
+          candidate.manifest,
+          actual.manifest,
+        )
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private async ensureCapacity(
     directories: CheckpointStorageDirectories,
     manifest: CheckpointManifest,
@@ -809,6 +1502,7 @@ export class CheckpointStore {
       objectFileNames: new Set(),
       manifestSizes: new Map(),
       manifestChargedSizes: new Map(),
+      manifests: [],
       objects: [],
       temporaryFiles: [],
     };
@@ -864,7 +1558,12 @@ export class CheckpointStore {
       "checkpoints",
       inventory,
       this.maxEntries,
-      async (entry, entryPath, size) => {
+      async (
+        entry,
+        entryPath,
+        size,
+        metadata,
+      ) => {
         if (CHECKPOINT_TEMP_PATTERN.test(entry.name)) {
           inventory.temporaryFiles.push({
             directory: "checkpoints",
@@ -890,12 +1589,30 @@ export class CheckpointStore {
         }
 
         const id = match[1] as string;
-        let manifest: CheckpointManifest;
+        let snapshot: CheckpointManifestSnapshot;
         try {
-          manifest = await this.readManifest(
+          snapshot =
+            await this.readManifestSnapshot(
             checkpointsDirectory,
             id,
           );
+          const afterReadMetadata =
+            await lstat(entryPath, {
+              bigint: true,
+            });
+          if (
+            !sameFileSnapshot(
+              metadata,
+              afterReadMetadata,
+            ) ||
+            snapshot.manifestSize !== size
+          ) {
+            throw new TiledMcpError(
+              "CHECKPOINT_CORRUPT",
+              `Checkpoint ${id} changed while storage inventory was being captured.`,
+              { checkpointId: id },
+            );
+          }
         } catch (error) {
           inventory.blockers.push({
             directory: "checkpoints",
@@ -908,6 +1625,11 @@ export class CheckpointStore {
           });
           return;
         }
+        const manifest = snapshot.manifest;
+        inventory.manifests.push({
+          ...snapshot,
+          metadata,
+        });
         inventory.manifestSizes.set(id, size);
         const chargedSize =
           manifest.status === "prepared"
@@ -1235,6 +1957,113 @@ interface CheckpointStorageProjection {
   entries: number;
 }
 
+interface CheckpointRetentionSequence {
+  version: 1;
+  lastOrdinal: number;
+}
+
+function isRollingManifest(
+  manifest: CheckpointManifest,
+): manifest is RollingCheckpointManifest {
+  return (
+    manifest.version === 2 &&
+    manifest.retention?.class ===
+      "rolling"
+  );
+}
+
+function rollingCommittedManifestsForPath(
+  manifests: readonly CheckpointInventoryManifest[],
+  path: string,
+): Array<
+  CheckpointInventoryManifest & {
+    manifest: RollingCommittedCheckpointManifest;
+  }
+> {
+  const rolling = manifests.filter(
+    (
+      snapshot,
+    ): snapshot is CheckpointInventoryManifest & {
+      manifest: RollingCommittedCheckpointManifest;
+    } =>
+      snapshot.manifest.path === path &&
+      snapshot.manifest.status ===
+        "committed" &&
+      isRollingManifest(snapshot.manifest),
+  );
+  rolling.sort(
+    (left, right) =>
+      left.manifest.retention.ordinal -
+      right.manifest.retention.ordinal,
+  );
+  return rolling;
+}
+
+function analyzeRetentionSequence(
+  manifests: readonly CheckpointInventoryManifest[],
+  sequence:
+    | CheckpointRetentionSequence
+    | undefined,
+): { valid: boolean } {
+  const seen = new Set<number>();
+  let maximum = 0;
+  for (const { manifest } of manifests) {
+    if (!isRollingManifest(manifest)) {
+      continue;
+    }
+    const ordinal =
+      manifest.retention.ordinal;
+    if (seen.has(ordinal)) {
+      return { valid: false };
+    }
+    seen.add(ordinal);
+    maximum = Math.max(maximum, ordinal);
+  }
+  if (sequence === undefined) {
+    return { valid: seen.size === 0 };
+  }
+  return {
+    valid:
+      sequence.lastOrdinal <
+        Number.MAX_SAFE_INTEGER &&
+      maximum <= sequence.lastOrdinal,
+  };
+}
+
+function isSafeRollingDeletionCandidate(
+  manifest: CheckpointManifest,
+): manifest is RollingCommittedCheckpointManifest {
+  return (
+    manifest.status === "committed" &&
+    isRollingManifest(manifest) &&
+    manifest.before.existed &&
+    manifest.before.revision !==
+      manifest.afterRevision
+  );
+}
+
+function hasSafeRollingLineage(
+  manifests: ReadonlyArray<
+    CheckpointInventoryManifest & {
+      manifest: RollingCommittedCheckpointManifest;
+    }
+  >,
+): boolean {
+  // Every recovery point is independently rooted by its own before object.
+  // A gap can be legitimate after an approved explicit prune, a failed
+  // prepare that consumed an ordinal, or a protected/legacy checkpoint while
+  // retention was disabled. Never infer adjacency from revisions: an A→B→A
+  // byte cycle is valid, and explicit prune intentionally leaves no
+  // tombstone. Eligibility therefore requires each live rolling manifest to
+  // be an existing-file, non-no-op recovery point, while ordinal uniqueness
+  // and the current highest checkpoint are validated separately.
+  return manifests.every(({ manifest }) =>
+    isSafeRollingDeletionCandidate(
+      manifest,
+    ),
+  );
+}
+
 interface CheckpointManifestDeletionStorageExpectation<
   TStatus extends CheckpointManifest["status"],
 > {
@@ -1429,6 +2258,7 @@ async function scanStorageDirectory(
     entry: Dirent,
     entryPath: string,
     size: number,
+    metadata: BigIntStats,
   ) => void | Promise<void>,
 ): Promise<void> {
   const handle = await opendir(directoryPath);
@@ -1532,6 +2362,7 @@ async function scanStorageDirectory(
         entry,
         entryPath,
         entrySize,
+        entryStat,
       );
     }
   } finally {
@@ -1812,10 +2643,130 @@ async function atomicWriteJson(path: string, value: CheckpointManifest): Promise
   }
 }
 
+async function atomicCreateRetentionSequence(
+  path: string,
+  value: CheckpointRetentionSequence,
+): Promise<void> {
+  const temporaryPath =
+    retentionSequenceTemporaryPath(path);
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryCreated = false;
+  try {
+    temporaryHandle = await open(
+      temporaryPath,
+      "wx",
+      0o600,
+    );
+    temporaryCreated = true;
+    await temporaryHandle.writeFile(
+      serializeRetentionSequence(value),
+      "utf8",
+    );
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
+    try {
+      await link(temporaryPath, path);
+    } catch (error) {
+      if (hasCode(error, "EEXIST")) {
+        throw new TiledMcpError(
+          "CHECKPOINT_CORRUPT",
+          "Checkpoint retention sequence appeared while its initial state was being published.",
+        );
+      }
+      throw error;
+    }
+    await syncDirectory(dirname(path));
+  } finally {
+    await temporaryHandle
+      ?.close()
+      .catch(() => undefined);
+    if (temporaryCreated) {
+      await unlink(temporaryPath).catch(
+        () => undefined,
+      );
+    }
+  }
+}
+
+async function atomicWriteRetentionSequence(
+  path: string,
+  value: CheckpointRetentionSequence,
+): Promise<void> {
+  const temporaryPath =
+    retentionSequenceTemporaryPath(path);
+  let temporaryHandle: FileHandle | undefined;
+  let temporaryCreated = false;
+  try {
+    temporaryHandle = await open(
+      temporaryPath,
+      "wx",
+      0o600,
+    );
+    temporaryCreated = true;
+    await temporaryHandle.writeFile(
+      serializeRetentionSequence(value),
+      "utf8",
+    );
+    await temporaryHandle.sync();
+    await temporaryHandle.close();
+    temporaryHandle = undefined;
+    await rename(temporaryPath, path);
+    await syncDirectory(dirname(path));
+  } finally {
+    await temporaryHandle
+      ?.close()
+      .catch(() => undefined);
+    if (temporaryCreated) {
+      await unlink(temporaryPath).catch(
+        () => undefined,
+      );
+    }
+  }
+}
+
 function serializeManifest(
   value: CheckpointManifest,
 ): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function serializeRetentionSequence(
+  value: CheckpointRetentionSequence,
+): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function retentionSequenceTemporaryPath(
+  path: string,
+): string {
+  return `${path}.tmp`;
+}
+
+async function removeRetentionSequenceTemporary(
+  path: string,
+): Promise<void> {
+  const temporaryPath =
+    retentionSequenceTemporaryPath(path);
+  let metadata: BigIntStats;
+  try {
+    metadata = await lstat(temporaryPath, {
+      bigint: true,
+    });
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) {
+      return;
+    }
+    throw error;
+  }
+  if (!metadata.isFile()) {
+    throw new TiledMcpError(
+      "CHECKPOINT_CORRUPT",
+      "Checkpoint retention sequence temporary state is not a regular file.",
+    );
+  }
+  await unlink(temporaryPath);
+  await syncDirectory(dirname(path));
 }
 
 async function syncDirectory(path: string): Promise<void> {
@@ -1865,19 +2816,45 @@ function parseManifest(raw: string, expectedId: string): CheckpointManifest {
         Number.isSafeInteger(before.size) &&
         before.size >= 0 &&
         before.size <= MAX_CHECKPOINT_OBJECT_BYTES));
+  const commonKeys = [
+    "afterRevision",
+    "before",
+    "createdAt",
+    "id",
+    "label",
+    "path",
+    "status",
+    "version",
+  ];
+  const validVersionShape =
+    (value.version === 1 &&
+      hasExactKeys(value, commonKeys)) ||
+    (value.version === 2 &&
+      hasExactKeys(value, [
+        ...commonKeys,
+        "retention",
+      ]) &&
+      isRecord(value.retention) &&
+      ((value.retention.class ===
+        "protected" &&
+        hasExactKeys(value.retention, [
+          "class",
+        ])) ||
+        (value.retention.class ===
+          "rolling" &&
+          hasExactKeys(value.retention, [
+            "class",
+            "ordinal",
+          ]) &&
+          typeof value.retention.ordinal ===
+            "number" &&
+          Number.isSafeInteger(
+            value.retention.ordinal,
+          ) &&
+          value.retention.ordinal > 0)));
   if (
-    !hasExactKeys(value, [
-      "afterRevision",
-      "before",
-      "createdAt",
-      "id",
-      "label",
-      "path",
-      "status",
-      "version",
-    ]) ||
+    !validVersionShape ||
     value.id !== expectedId ||
-    value.version !== 1 ||
     typeof value.createdAt !== "string" ||
     value.createdAt.length > MAX_CHECKPOINT_TIMESTAMP_LENGTH ||
     !Number.isFinite(Date.parse(value.createdAt)) ||
@@ -1913,7 +2890,11 @@ function sameManifestIntent(
     expected.label !== actual.label ||
     expected.path !== actual.path ||
     expected.afterRevision !== actual.afterRevision ||
-    expected.before.existed !== actual.before.existed
+    expected.before.existed !== actual.before.existed ||
+    !sameManifestRetention(
+      expected,
+      actual,
+    )
   ) {
     return false;
   }
@@ -1924,6 +2905,46 @@ function sameManifestIntent(
     expected.before.revision === actual.before.revision &&
     expected.before.objectHash === actual.before.objectHash &&
     expected.before.size === actual.before.size
+  );
+}
+
+function sameManifestRetention(
+  expected: CheckpointManifest,
+  actual: CheckpointManifest,
+): boolean {
+  if (
+    expected.version !== actual.version
+  ) {
+    return false;
+  }
+  if (
+    expected.version === 1 ||
+    actual.version === 1
+  ) {
+    return (
+      expected.version === 1 &&
+      actual.version === 1
+    );
+  }
+  const expectedRetention =
+    expected.retention;
+  const actualRetention =
+    actual.retention;
+  if (
+    expectedRetention === undefined ||
+    actualRetention === undefined ||
+    expectedRetention.class !==
+      actualRetention.class
+  ) {
+    return false;
+  }
+  return (
+    expectedRetention.class ===
+      "protected" ||
+    (actualRetention.class ===
+      "rolling" &&
+      expectedRetention.ordinal ===
+        actualRetention.ordinal)
   );
 }
 

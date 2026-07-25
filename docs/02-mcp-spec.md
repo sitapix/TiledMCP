@@ -63,11 +63,12 @@ direct additive no-preview 例外，固定 Tiled 1.12.2 的不可跳过集成门
 direct filesystem 的 non-cooperative external-writer CAS、hostile parent swap、锁作用域
 和部署前提已经由 `filesystemThreatModelContract` v1 冻结为明确 guarantee/unsupported/
 operational requirements。checkpoint store 已接入版本化 storage policy、可配置总量配额、
-生产 CLI 默认 10,000 的 entry 上限、项目级锁和 fail-closed orphan GC；它不自动 prune
-有效 manifest，但已支持经批准显式 prune 单个 committed manifest，也能在机器验证当前
-目标仍等于写前状态时显式 discard 单个 prepared manifest。嵌入式实例的 entry 上限可能
-不同，运行值以 capability 为准。本文仍是 Draft，因为含混 prepared 状态的强制人工裁决
-与自动 retention 等其余运维冻结门槛尚未完成；运行时应以
+生产 CLI 默认 10,000 的 entry 上限、项目级锁和 fail-closed orphan GC；已支持经批准显式
+prune 单个 committed manifest，也能在机器验证当前目标仍等于写前状态时显式 discard
+单个 prepared manifest。默认关闭的 v2 rolling retention 可由启动配置显式启用；legacy、
+protected 与 prepared checkpoint 永久排除。嵌入式实例的 entry 上限可能不同，运行值以
+capability 为准。本文仍是 Draft，因为含混 prepared 状态的强制人工裁决等高风险运维门槛
+尚未完成；运行时应以
 `tiled_get_capabilities`、`tools/list`、`resources/list` 与
 `resources/templates/list` 为准。
 
@@ -495,23 +496,24 @@ no-op restore 不替换目标，也不创建新 checkpoint。
 目标即使精确等于 `afterRevision` 也不能证明创建者；启动对账固定报告
 `CHECKPOINT_STATE_CONFLICT` 并保留 manifest，不会仅凭 hash 自动标记 committed。
 
-`checkpointCapabilities.storagePolicy` v3 固定 checkpoint-store 边界：默认
+`checkpointCapabilities.storagePolicy` v4 固定 checkpoint-store 边界：默认
 `maxBytes:1073741824`，`maxEntries:10000`，其中 bytes 是 `.tiledmcp/objects` 与
 `.tiledmcp/checkpoints` 下 observed logical file bytes 加 prepared→committed reservation，
 entries 包含 canonical objects/manifests、崩溃 temp 和未知项。每次 prepare 在项目级
 进程内 mutex 与跨进程 checkpoint-store lock 下完成 inventory、必要 GC、object/manifest
 发布；manifest 首次发布是 no-replace。任何 `lstat`/扫描失败或超出 safe-integer 精确计费
 范围都会使容量证明失败；配额仍不足或无法证明时，在项目目标 promotion 前返回
-`CHECKPOINT_QUOTA_EXCEEDED`。v3 假设 `.tiledmcp` 是可信本地状态且所有内部写者遵守同一
+`CHECKPOINT_QUOTA_EXCEEDED`。v4 假设 `.tiledmcp` 是可信本地状态且所有内部写者遵守同一
 checkpoint-store lock；不承诺抵御同权限非合作进程对内部目录的主动替换。
 
 GC 的 root set 同时包含全部有效 `prepared` 与 `committed` manifest。只有完整扫描且没有
 malformed/unexpected/symlink/非普通 entry、缺失引用、无法精确计费或 entry-limit
 truncation 时，才删除无引用 canonical object 和严格识别的私有 crash temp；任一 blocker
-都在首次 unlink 前阻断整个 sweep。v3 永不自动删除有效 manifest，因此配额保证有界存储，
-不保证无限期持续写入；允许的有效 manifest 删除只有两种：经 preview/apply 批准并执行
-raw-manifest CAS 的单个 `committed` checkpoint prune，以及同样获批且机器证明当前目标
-仍等于 checkpoint before 状态的单个 `prepared` checkpoint discard。
+都在首次 unlink 前阻断整个 sweep。配额保证有界存储，不保证无限期持续写入；quota
+pressure 只触发 orphan GC，绝不删除有效 manifest。有效 manifest 删除路径有三种：经
+preview/apply 批准并执行 raw-manifest CAS 的单个 `committed` checkpoint prune；同样获批
+且机器证明当前目标仍等于 checkpoint before 状态的单个 `prepared` checkpoint discard；
+以及下述由启动配置授予 standing approval 的 v2 rolling post-commit retention。
 
 prepared-discard preview 只接受 UUID `checkpointId`，且不读取 stored-before blob。它先
 以无 store lock 的有界读取取得 manifest 路径作为 routing hint，再按
@@ -546,8 +548,56 @@ manifest 后 fsync checkpoint 目录；此后该 recovery point 已永久删除�
 随后运行与配额压力相同的完整 fail-closed mark/sweep：inventory 有 blocker 时零删除并
 报告 blocked，完整时只删除无引用 canonical object 与私有 crash temp。commit point
 后的 fsync/GC 异常以净化 warning 和 failed/unknown deletion outcome 返回在成功 prune
-结果中，不能变成暗示可安全重试的整体 apply error。自动 retention、批量 prune 和
-含混 `prepared` 状态的强制人工裁决仍未实现。
+结果中，不能变成暗示可安全重试的整体 apply error。批量 prune 和含混 `prepared`
+状态的强制人工裁决仍未实现。
+
+自动 retention 默认关闭。只有显式启动参数
+`--checkpoint-retain-per-target N` 或环境变量
+`TILEDMCP_CHECKPOINT_RETAIN_PER_TARGET=N` 才授予本进程 standing approval；CLI 优先，
+`N` 必须是 `2..10000` 的 canonical decimal。启用时，existing-file 的新 checkpoint
+写为 v2 `rolling` manifest，并在 checkpoint-store lock 下从 durable global sequence
+取得唯一正安全整数 ordinal；create checkpoint 写为 v2 `protected`。禁用时继续写 v1
+manifest。legacy v1、`protected`、create 和任何 `prepared` manifest 都不计入 rolling
+窗口且永不自动删除，label 也不是 pin。旧 manifest 不迁移，重新启用时只继续已有 durable
+sequence。
+
+retention 只在一次 net-changing 项目写入已完成 target promotion、目录 durability 且新
+checkpoint 已成功 durable 标记为 committed 后触发；此时调用方仍持该目标锁，再取
+checkpoint-store lock，固定顺序是 `target → store`。不做 startup sweep、后台 timer、
+TTL、全局 LRU 或 quota emergency replacement，也不从 `ensureCapacity` 进入 retention。
+因此新 recovery root 必须先容纳，空间不足仍在 target promotion 前返回
+`CHECKPOINT_QUOTA_EXCEEDED`，不会为了让一次可能失败的新写入成功而先牺牲旧恢复点。
+
+每轮在首次有效 manifest unlink 前完成全量 inventory，并按每个 referenced object
+至多一次读取验证实际 hash；所有引用同一 object 的 manifest size 必须一致。malformed、
+unknown、symlink、非普通 entry、missing/corrupt object、scan/byte-accounting
+不完整、同目标存在 prepared、ordinal 重复、sequence 低于 live ordinal 的可观测回退或
+溢出、不安全 rolling manifest，或当前普通目标不精确等于该目标最高 rolling ordinal 的
+`afterRevision`，都使本轮零删除。通过后只按 ordinal 降序保留最新 N 个 rolling committed
+checkpoint；`createdAt`、mtime、UUID、revision cycle 与 label 不参与顺序。每次 commit
+最多删除 ordinal 最小的一个，因此 N 是无 blocker 正常运行时的 steady-state floor，不是
+同步 hard cap。降低 N 或某轮 blocker 留下的超额数量不会被后续“一次新增、一次删除”降低；
+操作者必须显式逐项 prune，直至未来另行冻结批量追赶能力。
+
+删除前重读 candidate raw manifest 并复核 revision、size 和全部 metadata。unlink
+manifest 后 fsync checkpoint 目录是 destructive commit point，随后才按剩余全部
+prepared/committed roots运行 fail-closed orphan GC。commit point 前失败不删除 manifest；
+之后的 fsync、observer、GC 或锁释放失败必须保留 document mutation 成功，并在
+`CommitResult.checkpointRetention` 中报告 `manifestDeleted:true`、有界 GC outcome 与固定
+warning，不能伪装为可安全重试的工具错误。显式 restore/prune preview 不是 durable lease：
+如果获批计划中的 rolling checkpoint 先被 retention 删除，apply 稳定返回
+not-found/changed，客户端必须重新检查而不能盲重试。
+
+ordinal gap 本身合法：sequence 可以在 manifest 发布前的失败中先 durable 前进；显式 prune
+不留 tombstone；retention 关闭期间也可能插入 protected legacy recovery point。每个 rolling
+checkpoint 由自己的 before object 独立形成恢复锚，因而不要求相邻 live rolling
+manifest 的 `before.revision` 与 `afterRevision` 连成无缺口链，只要求每项都是
+existing-file、非 no-op、object 已验证的 committed recovery point。支持部署中的 durable
+sequence 不复用 gap；若同权限进程在没有更高 live ordinal 证据时主动回滚 control file，
+实现无法从剩余 manifests 证明历史 high-water mark，这属于可信 `.tiledmcp` 边界之外的
+直接内部状态篡改。sequence control file 位于 retained quota 的 objects/checkpoints
+范围之外；原子更新只使用一个固定命名的 private temp，下一次 ordinal allocation 在
+store lock 下只清理该安全普通 crash temp，避免随机 control temp 无界积累。
 
 `operations` 只允许当前版本列出的 tile/layer/object/map/tileset-reference 纯文档编辑，不允许嵌套 operations、
 删除文件、恢复快照、转换、导出、AutoMapping、任意工具调用或 CLI 副作用。不得退回接受

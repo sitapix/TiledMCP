@@ -4,7 +4,10 @@ import { TILED_MCP_APPLICATION_ERROR_CODES } from "../errorRegistry.js";
 import type { JsonValue } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
+  MAX_CHECKPOINT_OBSERVED_ENTRIES,
   MAX_CHECKPOINT_TIMESTAMP_LENGTH,
+  MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+  ROLLING_CHECKPOINT_RETENTION_POLICY,
 } from "../storage/checkpoints.js";
 
 export const revisionOutputSchema = z
@@ -127,24 +130,6 @@ export const diagnosticOutputSchema = z
   })
   .strict();
 
-export const commitResultOutputSchema = z
-  .object({
-    path: projectPathOutputSchema,
-    beforeRevision:
-      revisionOutputSchema.nullable(),
-    revision: revisionOutputSchema,
-    checkpointId:
-      checkpointIdOutputSchema.nullable(),
-    changed: z.boolean(),
-    warnings: z.array(z.string()).optional(),
-  })
-  .strict();
-
-export const documentApplyResultOutputSchema =
-  commitResultOutputSchema.extend({
-    changeSetId: changeSetIdOutputSchema,
-  });
-
 const checkpointGarbageCollectionBlockerOutputSchema =
   z
     .object({
@@ -254,6 +239,94 @@ export const checkpointGarbageCollectionOutputSchema =
     checkpointGarbageCollectionBlockedOutputSchema,
     checkpointGarbageCollectionFailedOutputSchema,
   ]);
+
+const checkpointRetentionBaseOutputShape = {
+  policy: z.literal(
+    ROLLING_CHECKPOINT_RETENTION_POLICY,
+  ),
+  retainCommittedPerTarget: positiveIntegerOutputSchema
+    .min(
+      MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT,
+    )
+    .max(MAX_CHECKPOINT_OBSERVED_ENTRIES),
+};
+
+export const checkpointRetentionOutputSchema =
+  z.discriminatedUnion("status", [
+    z
+      .object({
+        ...checkpointRetentionBaseOutputShape,
+        status: z.literal("not-needed"),
+        manifestDeleted: z.literal(false),
+        rollingCommittedCount:
+          checkpointGarbageCollectionCountOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...checkpointRetentionBaseOutputShape,
+        status: z.literal("blocked"),
+        manifestDeleted: z.literal(false),
+        reason: z.enum([
+          "current-checkpoint-changed",
+          "current-not-highest-rolling",
+          "incomplete-inventory",
+          "object-verification-failed",
+          "prepared-checkpoint-present",
+          "sequence-state-invalid",
+          "target-validation-failed",
+          "unsafe-lineage",
+        ]),
+        rollingCommittedCount:
+          checkpointGarbageCollectionCountOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...checkpointRetentionBaseOutputShape,
+        status: z.literal("deleted"),
+        manifestDeleted: z.literal(true),
+        deletedCheckpointId:
+          checkpointIdOutputSchema,
+        rollingCommittedCountBefore:
+          positiveIntegerOutputSchema.max(
+            Number.MAX_SAFE_INTEGER,
+          ),
+        garbageCollection:
+          checkpointGarbageCollectionOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...checkpointRetentionBaseOutputShape,
+        status: z.literal("failed"),
+        manifestDeleted: z.literal(false),
+        failureCode: z.literal(
+          "INTERNAL_ERROR",
+        ),
+      })
+      .strict(),
+  ]);
+
+export const commitResultOutputSchema = z
+  .object({
+    path: projectPathOutputSchema,
+    beforeRevision:
+      revisionOutputSchema.nullable(),
+    revision: revisionOutputSchema,
+    checkpointId:
+      checkpointIdOutputSchema.nullable(),
+    changed: z.boolean(),
+    checkpointRetention:
+      checkpointRetentionOutputSchema.optional(),
+    warnings: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export const documentApplyResultOutputSchema =
+  commitResultOutputSchema.extend({
+    changeSetId: changeSetIdOutputSchema,
+  });
 
 export const checkpointPruneApplyResultOutputSchema =
   z
