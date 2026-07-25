@@ -202,6 +202,10 @@ import {
   MAX_DELETE_REFERRER_SAMPLE,
 } from "./maps/fileDelete.js";
 import {
+  MAX_DECODED_TILE_DATA_BYTES,
+  TILE_DATA_READ_COMPRESSIONS,
+} from "./maps/tileData.js";
+import {
   MAX_TILE_ANIMATION_FRAME_DURATION_MS,
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
   MAX_TILE_CLASS_NAME_CODE_POINTS,
@@ -2271,6 +2275,31 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "sha256-of-restorable-content",
           expectedRevisionSemantics:
             "sha256-of-current-target-bytes",
+        },
+        tileDataReadCapabilities: {
+          readTools: [
+            "tiled_get_region",
+            "tiled_render_preview",
+            "tiled_analyze_usage",
+            "tiled_render_map",
+          ],
+          arrayEncoding: "csv-or-absent",
+          encodedEncoding: "base64",
+          compressions: [
+            ...TILE_DATA_READ_COMPRESSIONS,
+          ],
+          base64: "strict-canonical",
+          decodedSize:
+            "exact-width-height-4-bytes",
+          cellLayout:
+            "little-endian-uint32-row-major",
+          maxDecodedBytesPerLayer:
+            MAX_DECODED_TILE_DATA_BYTES,
+          chunkedLayers: "fail-closed",
+          writeProfile:
+            "plain-array-only-fail-closed",
+          validateDiagnostics:
+            "encoded-data-still-reported-as-uneditable",
         },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],

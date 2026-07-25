@@ -43,6 +43,18 @@ point, ellipse, Tiled 1.12 capsule, bounded polygon/polyline, and bounded text
 objects.
 Unsupported Tiled semantics fail closed instead of being approximated.
 
+Read tools go one step wider: \`tiled_get_region\`,
+\`tiled_render_preview\`, \`tiled_analyze_usage\`, and \`tiled_render_map\`
+also decode finite tile layers stored as \`encoding:"base64"\` with
+optional gzip, zlib, or zstd compression, following the exact Tiled 1.12.2
+reader (strict canonical base64, decompression capped at exactly
+width × height × 4 bytes, little-endian uint32 cells, at most 64 MiB
+decoded per layer). Chunked infinite layers stay rejected, every edit path
+still fails closed on encoded data — the write profile is unchanged — and
+\`tiled_validate\` keeps reporting encoded layers as outside the editable
+profile. Inspect \`tileDataReadCapabilities\` for the frozen policy
+strings.
+
 ## Filesystem threat model
 
 The direct filesystem backend protects existing-target commits against

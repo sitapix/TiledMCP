@@ -34,6 +34,7 @@ import {
   type FileDeletePlan,
   type FileDeleteScanSummary,
 } from "./fileDelete.js";
+import { resolveTileLayerCells } from "./tileData.js";
 import {
   patchJsonDocumentSource,
   type JsonArrayDeletion,
@@ -1815,7 +1816,12 @@ export class MapService {
     }
 
     const context = await this.loadEditableContext(input.mapPath);
-    const layer = findTileLayer(context.loaded.document, input.layerId, input.mapPath);
+    const layer = findTileLayer(
+      context.loaded.document,
+      input.layerId,
+      input.mapPath,
+      "read",
+    );
     assertRegionInsideLayer(layer, input.x, input.y, input.width, input.height);
 
     const rows: Array<Array<TileRef | null>> = [];
@@ -4522,6 +4528,7 @@ export class MapService {
           { layers },
           expectInteger(layer.id, `${mapPath}.layers[${index}].id`),
           mapPath,
+          "read",
         );
         continue;
       }
@@ -8432,7 +8439,12 @@ function gidToTileRef(
   };
 }
 
-function findTileLayer(map: JsonObject, layerId: number, mapPath: string): TileLayerView {
+function findTileLayer(
+  map: JsonObject,
+  layerId: number,
+  mapPath: string,
+  mode: "read" | "edit" = "edit",
+): TileLayerView {
   const layers = expectArray(map.layers, `${mapPath}.layers`);
   const located = findLayerRecursive(
     layers,
@@ -8453,18 +8465,18 @@ function findTileLayer(map: JsonObject, layerId: number, mapPath: string): TileL
       layerId,
     });
   }
-  if ("chunks" in found || typeof found.data === "string") {
-    throw new TiledMcpError(
-      "UNSUPPORTED_TILE_ENCODING",
-      "MVP editing supports only finite JSON tile layers with numeric data arrays.",
-      { path: mapPath, layerId },
-    );
-  }
-  const data = expectArray(found.data, `layer ${layerId}.data`);
   const width = expectInteger(found.width, `layer ${layerId}.width`);
   const height = expectInteger(found.height, `layer ${layerId}.height`);
   assertPositiveInteger(width, `layer ${layerId}.width`);
   assertPositiveInteger(height, `layer ${layerId}.height`);
+  const data = resolveTileLayerCells(
+    found,
+    layerId,
+    mapPath,
+    width * height,
+    mode,
+    "MVP editing supports only finite JSON tile layers with numeric data arrays.",
+  );
   if (data.length !== width * height) {
     throw new TiledMcpError(
       "INVALID_TILE_DATA",
@@ -13976,13 +13988,6 @@ function analyzeUsageDocument(input: {
       }
 
       tileLayerCount += 1;
-      if ("chunks" in layer || typeof layer.data === "string") {
-        throw new TiledMcpError(
-          "UNSUPPORTED_TILE_ENCODING",
-          "Usage analysis supports only finite JSON tile layers with numeric data arrays.",
-          { path: input.mapPath, layerId },
-        );
-      }
       const width = expectInteger(
         layer.width,
         `${layerContext}.width`,
@@ -14004,14 +14009,22 @@ function analyzeUsageDocument(input: {
         0,
       );
       const cellCount = width * height;
-      const data = expectArray(
-        layer.data,
-        `${layerContext}.data`,
+      if (!Number.isSafeInteger(cellCount)) {
+        throw new TiledMcpError(
+          "INVALID_TILE_DATA",
+          `Layer ${layerId} dimensions overflow the cell count.`,
+          { layerId },
+        );
+      }
+      const data = resolveTileLayerCells(
+        layer,
+        layerId,
+        input.mapPath,
+        cellCount,
+        "read",
+        "Usage analysis supports only finite JSON tile layers with numeric data arrays.",
       );
-      if (
-        !Number.isSafeInteger(cellCount) ||
-        data.length !== cellCount
-      ) {
+      if (data.length !== cellCount) {
         throw new TiledMcpError(
           "INVALID_TILE_DATA",
           `Layer ${layerId} data length does not match width × height.`,

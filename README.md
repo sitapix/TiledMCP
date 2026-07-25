@@ -78,8 +78,14 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-无限地图、压缩 tile data、内嵌/图片集合 tileset、tile object 的创建/语义编辑、
+无限地图、内嵌/图片集合 tileset、tile object 的创建/语义编辑、
 模板和跨文件事务尚未实现；对应的不支持操作会被明确拒绝，不会静默降级。
+压缩/base64 tile data 已获得**只读**支持（M2 第一步）：`tiled_get_region`、
+`tiled_render_preview`、`tiled_analyze_usage` 与 `tiled_render_map` 按 Tiled
+1.12.2 读取器语义解码 `encoding:"base64"` + gzip/zlib/zstd 的有限 tile layer
+（严格 canonical base64、解压钉死在 width×height×4 精确字节、LE uint32、单层解
+码上限 64 MiB 防解压炸弹）；所有编辑路径对 encoded data 继续 fail closed，写入
+面零变化，`tileDataReadCapabilities` 公布策略。
 已存在的 tile object 仍会在受支持工作流中被校验、引用扫描并原样保留，并可在
 native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试，或再以 opt-in 方式叠加
 该 tile 的碰撞形状轮廓（均不渲染 tile 图像）。

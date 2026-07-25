@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:14497a723105eeb7fee53df769a4cdae3d90709ac9cbd3b21a677e256f6c7974",
+    "revision": "sha256:a0f3f9853d9bc33e87210d20b3559f768bdb0f69d27fff265766cf59de5f1bcd",
     "serverVersion": "0.0.1",
-    "size": 70899
+    "size": 71597
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 70899,
+  "size": 71597,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 70899 UTF-8 bytes, revision `sha256:14497a723105eeb7fee53df769a4cdae3d90709ac9cbd3b21a677e256f6c7974`.
+Content contract: `text`, 71597 UTF-8 bytes, revision `sha256:a0f3f9853d9bc33e87210d20b3559f768bdb0f69d27fff265766cf59de5f1bcd`.
 
 Resource templates: none.
 
@@ -12216,6 +12216,99 @@ Output schema:
               ],
               "type": "object"
             },
+            "tileDataReadCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "arrayEncoding": {
+                  "const": "csv-or-absent",
+                  "type": "string"
+                },
+                "base64": {
+                  "const": "strict-canonical",
+                  "type": "string"
+                },
+                "cellLayout": {
+                  "const": "little-endian-uint32-row-major",
+                  "type": "string"
+                },
+                "chunkedLayers": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "compressions": {
+                  "items": [
+                    {
+                      "const": "gzip",
+                      "type": "string"
+                    },
+                    {
+                      "const": "zlib",
+                      "type": "string"
+                    },
+                    {
+                      "const": "zstd",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "decodedSize": {
+                  "const": "exact-width-height-4-bytes",
+                  "type": "string"
+                },
+                "encodedEncoding": {
+                  "const": "base64",
+                  "type": "string"
+                },
+                "maxDecodedBytesPerLayer": {
+                  "const": 67108864,
+                  "type": "number"
+                },
+                "readTools": {
+                  "items": [
+                    {
+                      "const": "tiled_get_region",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_render_preview",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_analyze_usage",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_render_map",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "validateDiagnostics": {
+                  "const": "encoded-data-still-reported-as-uneditable",
+                  "type": "string"
+                },
+                "writeProfile": {
+                  "const": "plain-array-only-fail-closed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "readTools",
+                "arrayEncoding",
+                "encodedEncoding",
+                "compressions",
+                "base64",
+                "decodedSize",
+                "cellLayout",
+                "maxDecodedBytesPerLayer",
+                "chunkedLayers",
+                "writeProfile",
+                "validateDiagnostics"
+              ],
+              "type": "object"
+            },
             "tileFindCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -13103,6 +13196,7 @@ Output schema:
             "mapCreationCapabilities",
             "tilesetCreationCapabilities",
             "fileDeletionCapabilities",
+            "tileDataReadCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
             "tilesetDetailCapabilities",

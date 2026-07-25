@@ -1434,6 +1434,22 @@ tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区
 - 同时限制单文档字节数、单层 cell 数、单请求编辑 cell 数和总解压字节数。
 - 不因保存其他字段而重新压缩未触及 layer；显式转码工具才允许改变 compression。
 
+### 7.4 已实现：encoded tile data 只读支持（M2 第一步）
+
+`src/maps/tileData.ts` 落地了上述压缩安全的读取侧：`resolveTileLayerCells` 以
+read/edit 双模式服务所有 tile-layer 消费方——read 模式（`tiled_get_region`、
+`tiled_render_preview`、`tiled_analyze_usage`、`tiled_render_map` 的 profile
+校验）按 Tiled 1.12.2 读取器逐条对齐的语义解码 `encoding:"base64"` +
+gzip/zlib/zstd（Node 内建 `node:zlib`，含 `zstdDecompressSync`），edit 模式
+（全部 mutation planner/apply 路径）继续对任何非纯数组 data fail closed，写入面
+零变化。解码约束：严格 canonical base64（比 Qt 的宽松 `fromBase64` 更严——
+fail closed 而非近似）、`maxOutputLength` 钉在精确的 `width×height×4`、解码字节
+数必须精确相等（对应 Tiled 的 `CorruptLayerData`）、单层解码上限 64 MiB
+（`MAX_DECODED_TILE_DATA_BYTES`，防解压炸弹）、cells 按 little-endian uint32
+读出后流入既有的逐格 GID fail-closed 校验。chunked（infinite）layer 在两种模式
+下都拒绝；`validate` 继续把 encoded data 报告为可编辑 profile 诊断（该地图仍不可
+编辑，这是准确的）。能力经 `tileDataReadCapabilities` 公布。
+
 ## 8. Revision、锁与提交
 
 ### 8.1 Revision 与 CAS

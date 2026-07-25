@@ -7,6 +7,7 @@ import {
   type JsonValue,
 } from "../formats/json.js";
 import { decodeGid } from "./gid.js";
+import { resolveTileLayerCells } from "./tileData.js";
 
 export const MAX_PREVIEW_REGION_CELLS = 20_000;
 export const MAX_PREVIEW_LAYERS = 128;
@@ -406,13 +407,6 @@ function readPreviewTileLayer(
 ): PreviewTileLayer {
   const layer = located.object;
   assertLeafRenderProperties(layer, located.path, located.id);
-  if ("chunks" in layer || typeof layer.data === "string") {
-    throw new TiledMcpError(
-      "UNSUPPORTED_TILE_ENCODING",
-      "Native preview v1 supports only finite JSON tile layers with numeric data arrays.",
-      { layerId: located.id },
-    );
-  }
   const width = expectInteger(layer.width, `${located.path}.width`);
   const height = expectInteger(layer.height, `${located.path}.height`);
   if (width <= 0 || height <= 0) {
@@ -422,7 +416,14 @@ function readPreviewTileLayer(
       { layerId: located.id, width, height },
     );
   }
-  const dataValues = expectArray(layer.data, `${located.path}.data`);
+  const dataValues = resolveTileLayerCells(
+    layer,
+    located.id,
+    located.path,
+    width * height,
+    "read",
+    "Native preview v1 supports only finite JSON tile layers with numeric data arrays.",
+  );
   if (dataValues.length !== width * height) {
     throw new TiledMcpError(
       "INVALID_TILE_DATA",

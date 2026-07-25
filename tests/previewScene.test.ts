@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -205,7 +207,15 @@ describe("buildPreviewScene", () => {
   });
 
   it.each([
-    ["base64/string", { data: "AAAA" }],
+    ["undeclared string", { data: "AAAA" }],
+    [
+      "unsupported compression",
+      {
+        data: "AAAA",
+        encoding: "base64",
+        compression: "snappy",
+      },
+    ],
     ["chunks", { chunks: [], data: [1] }],
   ] satisfies Array<[string, JsonObject]>)(
     "rejects unsupported %s tile encoding",
@@ -215,11 +225,34 @@ describe("buildPreviewScene", () => {
       ).toThrowError(
         expect.objectContaining({
           code: "UNSUPPORTED_TILE_ENCODING",
-          details: { layerId: 1 },
+          details: expect.objectContaining({
+            layerId: 1,
+          }),
         }),
       );
     },
   );
+
+  it("decodes base64 zlib tile data for previews", () => {
+    const bytes = Buffer.alloc(4);
+    bytes.writeUInt32LE(1, 0);
+    const scene = build(
+      map([
+        tileLayer(1, [], {
+          data: deflateSync(bytes).toString(
+            "base64",
+          ),
+          encoding: "base64",
+          compression: "zlib",
+          width: 1,
+          height: 1,
+        }),
+      ]),
+      1,
+      1,
+    );
+    expect(scene.layers).toHaveLength(1);
+  });
 
   it("rejects a GID that falls outside every tileset range", () => {
     expect(() =>
