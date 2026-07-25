@@ -1349,7 +1349,16 @@ set/remove：可写类型与搜索侧可比较集合对称（string/int/float/bo
 closed）、既有条目原位更新保留未知成员，class/enum/list/object 目标以
 `UNSUPPORTED_PROPERTY_WRITE` fail closed 而未触碰的复杂条目保留；整组编辑是
 tiles 条目的单个 `properties` member patch，清空后移除该成员并联动 only-id 条目
-删除。碰撞形状与 image-collection tileset 编辑仍是后续候选。
+删除。
+
+per-tile 碰撞形状编辑复用同一 `tilesetEdit` 通道：`collision` patch 对
+`objectgroup` 做单成员整体替换（`null` 移除），语义逐条对齐 Tiled 1.12.2
+collision dock 源码——dock 打开时以 `highestObjectId()+1` 播种 dummy map 的
+nextObjectId，因此"全删重画"的新对象 id 恰好从旧最大值之后连续分配，本实现的
+确定性编号与之完全一致；dock 强制 `IndexOrder`，因此新容器写
+`draworder:"index"`；清空即撤销整个成员（`applyChanges` 对空组传 null）。对象
+成员集沿用 `createObject` 的冻结字母序形态。既有容器仅替换 `objects` 成员，其
+余成员（含未知成员）逐字保留。image-collection tileset 编辑仍是后续候选。
 
 ### 6.18 Map object 标量属性编辑（共享 property 核心）
 

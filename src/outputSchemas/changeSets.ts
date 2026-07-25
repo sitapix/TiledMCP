@@ -26,6 +26,7 @@ import {
 } from "../storage/checkpoints.js";
 import {
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
+  MAX_TILE_COLLISION_SHAPES_PER_TILE,
   MAX_TILE_PROPERTY_REMOVES_PER_TILE,
   MAX_TILE_PROPERTY_SETS_PER_TILE,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
@@ -2734,6 +2735,7 @@ const tilePatchFieldOutputSchema = z.enum([
   "probability",
   "className",
   "animation",
+  "collision",
   "properties",
 ]);
 const tileEntryActionOutputSchema = z.enum([
@@ -2750,10 +2752,10 @@ const tileUpdateAccountingShape = {
   requestedFields: z
     .array(tilePatchFieldOutputSchema)
     .min(1)
-    .max(4),
+    .max(5),
   changedFields: z
     .array(tilePatchFieldOutputSchema)
-    .max(4),
+    .max(5),
   wouldChange: z.boolean(),
   previousAnimationFrameCount:
     nonnegativeIntegerOutputSchema.optional(),
@@ -2767,6 +2769,12 @@ const tileUpdateAccountingShape = {
   propertiesRemoved:
     nonnegativeIntegerOutputSchema
       .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
+      .optional(),
+  previousCollisionShapeCount:
+    nonnegativeIntegerOutputSchema.optional(),
+  collisionShapeCount:
+    nonnegativeIntegerOutputSchema
+      .max(MAX_TILE_COLLISION_SHAPES_PER_TILE)
       .optional(),
 } as const;
 

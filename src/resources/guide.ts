@@ -367,7 +367,8 @@ sets pinned to the old tileset revision will conflict afterwards and must be
 re-previewed.
 
 One call carries 1–64 unique \`tileId\` updates, each patching any of
-\`probability\`, \`className\`, and \`animation\`. Setting \`probability\` to
+\`probability\`, \`className\`, \`animation\`, \`collision\`, and
+\`properties\`. Setting \`probability\` to
 \`null\` or the Tiled default \`1\` removes the serialized member. \`className\`
 updates an existing \`class\` member and otherwise writes the Tiled 1.12.2
 canonical \`type\` member; a tile carrying both members fails closed as
@@ -393,8 +394,22 @@ A tile whose entry does not exist yet gets a new entry inserted in ascending
 id order; an entry reduced to only its \`id\` is removed, matching how Tiled
 omits metadata-free tiles. An update that inserts or removes an entry must be
 the only update in its change set, and a \`tiles\` array that is not sorted by
-ascending id fails closed for insertions. Tile geometry, the atlas image,
-GID layout, and collision shapes are outside this tool. Before writing
+ascending id fails closed for insertions.
+
+\`collision\` replaces the tile's collision \`objectgroup.objects\` array
+wholly with 1–128 bounded basic shapes (rectangle, point, ellipse, Tiled
+1.12 capsule, polygon, polyline — each with optional rotation, name, and
+className; polygon/polyline points are tile-local pixels, at most 256 per
+shape and 8,192 per change set), and \`null\` removes the member exactly
+like clearing Tiled's collision editor. Semantics follow the Tiled 1.12.2
+collision dock: replacement object ids continue after the existing group's
+highest id, an existing container's other members are preserved verbatim,
+and a new container is written with canonical \`draworder:"index"\`
+members. Whole replacement discards the previous objects including any
+custom properties they carried; read the current shapes first via the
+native preview's \`overlays.tileObjectCollision\` outlines when in doubt.
+Tile geometry, the atlas image, and GID layout stay outside this tool.
+Before writing
 properties, read them back with \`tiled_get_tileset\`: each paged tile
 entry lists its scalar custom-property values verbatim in document order,
 while class, enum (\`propertytype\`), list, object, and oversized entries

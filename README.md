@@ -218,7 +218,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_create_tileset` | 预览从项目图片新建 external atlas TSJ；不直接写盘，apply 绝不覆盖已有文件 |
 | `tiled_delete_file` | 预览删除一个 TMJ/TSJ；引用扫描 fail closed，apply 先提交 checkpoint 再删除（可恢复） |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
-| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性元数据更新；不直接写盘 |
+| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性/碰撞形状元数据更新；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune |
@@ -681,7 +681,12 @@ fail closed），`null` 移除；`animation` 以 `{tileId, durationMs}` 帧数�
 `tiles` 根成员按需插入/移除——与 Tiled 的省略语义一致；**创建或删除条目的更新必须
 独占整个 change set**。`properties` 另支持有界标量 set/remove（string/int/float/
 bool/color/file，与搜索侧可比较类型对称；class/enum/list/object 目标 fail
-closed，未触碰的复杂条目保留；新属性按名字典序插入）。返回的 `tilesetEdit` change set 以 **TSJ revision** 作为
+closed，未触碰的复杂条目保留；新属性按名字典序插入）。`collision` 以 1..128 个
+有界基础形状（六类几何，polygon/polyline 每形状 ≤256 点、单 change set 合计
+≤8,192 点）整体替换 tile 的 `objectgroup.objects`，`null` 整体移除该成员——语义
+对齐 Tiled 1.12.2 碰撞编辑器：新对象 id 从既有最大 id 之后连续分配、既有容器其余
+成员逐字保留、新容器写 canonical `draworder:"index"`；整体替换会丢弃旧对象携带的
+自定义属性。返回的 `tilesetEdit` change set 以 **TSJ revision** 作为
 `expectedRevision`，apply 只提交 TSJ；map 不被改写，但 pin 旧 tileset revision 的
 待批 map change set 会随之冲突。未触及的条目、未知成员与 version 戳保持原 bytes。
 

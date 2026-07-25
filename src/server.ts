@@ -209,6 +209,12 @@ import {
   MAX_TILE_ANIMATION_FRAME_DURATION_MS,
   MAX_TILE_ANIMATION_FRAMES_PER_TILE,
   MAX_TILE_CLASS_NAME_CODE_POINTS,
+  MAX_TILE_COLLISION_COORDINATE,
+  MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET,
+  MAX_TILE_COLLISION_SHAPE_POINTS,
+  MAX_TILE_COLLISION_SHAPES_PER_TILE,
+  MIN_TILE_COLLISION_POLYGON_POINTS,
+  MIN_TILE_COLLISION_POLYLINE_POINTS,
   MAX_TILE_PROBABILITY,
   MAX_TILE_PROPERTIES_PER_TILE,
   MAX_TILE_PROPERTY_NAME_CODE_POINTS,
@@ -1298,6 +1304,87 @@ const tileAnimationFrameSchema = z
   })
   .strict();
 
+const tileCollisionCoordinateSchema = z
+  .number()
+  .finite()
+  .min(-MAX_TILE_COLLISION_COORDINATE)
+  .max(MAX_TILE_COLLISION_COORDINATE);
+const tileCollisionExtentSchema = z
+  .number()
+  .finite()
+  .min(0)
+  .max(MAX_TILE_COLLISION_COORDINATE);
+const tileCollisionNameSchema = z
+  .string()
+  .max(MAX_TILE_CLASS_NAME_CODE_POINTS * 2);
+const tileCollisionShapeCommon = {
+  x: tileCollisionCoordinateSchema,
+  y: tileCollisionCoordinateSchema,
+  rotation:
+    tileCollisionCoordinateSchema.optional(),
+  name: tileCollisionNameSchema.optional(),
+  className: tileCollisionNameSchema.optional(),
+} as const;
+const tileCollisionPointSchema = z
+  .object({
+    x: tileCollisionCoordinateSchema,
+    y: tileCollisionCoordinateSchema,
+  })
+  .strict();
+const tileCollisionShapeSchema =
+  z.discriminatedUnion("shape", [
+    z
+      .object({
+        shape: z.enum([
+          "rectangle",
+          "ellipse",
+          "capsule",
+        ]),
+        ...tileCollisionShapeCommon,
+        width:
+          tileCollisionExtentSchema.optional(),
+        height:
+          tileCollisionExtentSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        shape: z.literal("point"),
+        ...tileCollisionShapeCommon,
+      })
+      .strict(),
+    z
+      .object({
+        shape: z.literal("polygon"),
+        ...tileCollisionShapeCommon,
+        points: z
+          .array(tileCollisionPointSchema)
+          .min(MIN_TILE_COLLISION_POLYGON_POINTS)
+          .max(MAX_TILE_COLLISION_SHAPE_POINTS),
+      })
+      .strict(),
+    z
+      .object({
+        shape: z.literal("polyline"),
+        ...tileCollisionShapeCommon,
+        points: z
+          .array(tileCollisionPointSchema)
+          .min(
+            MIN_TILE_COLLISION_POLYLINE_POINTS,
+          )
+          .max(MAX_TILE_COLLISION_SHAPE_POINTS),
+      })
+      .strict(),
+  ]);
+const tileCollisionPatchSchema = z
+  .object({
+    shapes: z
+      .array(tileCollisionShapeSchema)
+      .min(1)
+      .max(MAX_TILE_COLLISION_SHAPES_PER_TILE),
+  })
+  .strict();
+
 const tileMetadataPatchSchema = z
   .object({
     probability: z
@@ -1317,6 +1404,9 @@ const tileMetadataPatchSchema = z
       .array(tileAnimationFrameSchema)
       .min(1)
       .max(MAX_TILE_ANIMATION_FRAMES_PER_TILE)
+      .nullable()
+      .optional(),
+    collision: tileCollisionPatchSchema
       .nullable()
       .optional(),
     properties:
@@ -1651,8 +1741,27 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "probability",
             "className",
             "animation",
+            "collision",
             "properties",
           ],
+          collisionShapes: [
+            "rectangle",
+            "point",
+            "ellipse",
+            "capsule",
+            "polygon",
+            "polyline",
+          ],
+          collisionReplacement:
+            "whole-objects-array-null-removes-member",
+          collisionContainer:
+            "preserve-existing-members-create-canonical-index-draworder",
+          collisionIds:
+            "continue-after-existing-maximum",
+          maxCollisionShapesPerTile:
+            MAX_TILE_COLLISION_SHAPES_PER_TILE,
+          maxCollisionPointsPerChangeSet:
+            MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET,
           propertyWriteTypes: [
             ...TILE_PROPERTY_WRITE_TYPES,
           ],
@@ -3830,7 +3939,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview per-tile metadata updates",
       description:
-        "Validates bounded probability, class, and animation updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Tile geometry, the atlas image, GID layout, and referencing maps are never touched.",
+        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, the atlas image, GID layout, and referencing maps are never touched.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

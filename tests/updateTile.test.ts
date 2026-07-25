@@ -778,6 +778,312 @@ describe("updateTile", () => {
     ).toEqual(before);
   });
 
+  it("creates, replaces, and removes collision shapes with Tiled dock id semantics", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [
+        {
+          id: 1,
+          objectgroup: {
+            draworder: "index",
+            id: 2,
+            name: "",
+            objects: [
+              {
+                height: 8,
+                id: 5,
+                name: "old",
+                rotation: 0,
+                type: "",
+                visible: true,
+                width: 8,
+                x: 0,
+                y: 0,
+              },
+            ],
+            opacity: 1,
+            type: "objectgroup",
+            vendorGroupExtension: { keep: true },
+            visible: true,
+            x: 0,
+            y: 0,
+          },
+        },
+        { id: 3, type: "Rock" },
+      ],
+    });
+
+    const replacePlan = await plan_(harness, [
+      {
+        tileId: 1,
+        patch: {
+          collision: {
+            shapes: [
+              {
+                shape: "rectangle",
+                x: 1,
+                y: 2,
+                width: 10,
+                height: 6,
+                className: "solid",
+              },
+              {
+                shape: "polygon",
+                x: 0,
+                y: 0,
+                rotation: 45,
+                points: [
+                  { x: 0, y: 0 },
+                  { x: 8, y: 0 },
+                  { x: 4, y: 8 },
+                ],
+              },
+              {
+                shape: "ellipse",
+                x: 3,
+                y: 3,
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    expect(
+      replacePlan.summary.tileUpdates[0],
+    ).toMatchObject({
+      requestedFields: ["collision"],
+      changedFields: ["collision"],
+      previousCollisionShapeCount: 1,
+      collisionShapeCount: 3,
+      wouldChange: true,
+    });
+    await harness.service.applyTilesetEdit(
+      replacePlan,
+    );
+    let written = await readTileset(harness.root);
+    let entry = (
+      written.tiles as JsonObject[]
+    ).find((tile) => tile.id === 1)!;
+    const group = entry.objectgroup as JsonObject;
+    expect(group).toMatchObject({
+      draworder: "index",
+      id: 2,
+      type: "objectgroup",
+      vendorGroupExtension: { keep: true },
+    });
+    expect(group.objects).toEqual([
+      {
+        height: 6,
+        id: 6,
+        name: "",
+        rotation: 0,
+        type: "solid",
+        visible: true,
+        width: 10,
+        x: 1,
+        y: 2,
+      },
+      {
+        height: 0,
+        id: 7,
+        name: "",
+        rotation: 45,
+        type: "",
+        visible: true,
+        width: 0,
+        x: 0,
+        y: 0,
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 8, y: 0 },
+          { x: 4, y: 8 },
+        ],
+      },
+      {
+        height: 0,
+        id: 8,
+        name: "",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 0,
+        x: 3,
+        y: 3,
+        ellipse: true,
+      },
+    ]);
+
+    const createPlan = await plan_(harness, [
+      {
+        tileId: 3,
+        patch: {
+          collision: {
+            shapes: [
+              {
+                shape: "point",
+                x: 4,
+                y: 4,
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    await harness.service.applyTilesetEdit(
+      createPlan,
+    );
+    written = await readTileset(harness.root);
+    entry = (written.tiles as JsonObject[]).find(
+      (tile) => tile.id === 3,
+    )!;
+    expect(entry.objectgroup).toEqual({
+      draworder: "index",
+      name: "",
+      objects: [
+        {
+          height: 0,
+          id: 1,
+          name: "",
+          point: true,
+          rotation: 0,
+          type: "",
+          visible: true,
+          width: 0,
+          x: 4,
+          y: 4,
+        },
+      ],
+      opacity: 1,
+      type: "objectgroup",
+      visible: true,
+      x: 0,
+      y: 0,
+    });
+
+    const removePlan = await plan_(harness, [
+      {
+        tileId: 3,
+        patch: { collision: null },
+      },
+    ]);
+    expect(
+      removePlan.summary.tileUpdates[0],
+    ).toMatchObject({
+      entryAction: "update",
+      previousCollisionShapeCount: 1,
+      collisionShapeCount: 0,
+    });
+    await harness.service.applyTilesetEdit(
+      removePlan,
+    );
+    written = await readTileset(harness.root);
+    entry = (written.tiles as JsonObject[]).find(
+      (tile) => tile.id === 3,
+    )!;
+    expect(entry).toEqual({
+      id: 3,
+      type: "Rock",
+    });
+  });
+
+  it("fails closed on malformed collision patches and budget overruns", async () => {
+    const harness = await createHarness(roots, {
+      tiles: [{ id: 1, probability: 0.5 }],
+    });
+
+    await expect(
+      plan_(harness, [
+        {
+          tileId: 1,
+          patch: {
+            collision: { shapes: [] },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+
+    await expect(
+      plan_(harness, [
+        {
+          tileId: 1,
+          patch: {
+            collision: {
+              shapes: [
+                {
+                  shape: "polygon",
+                  x: 0,
+                  y: 0,
+                  points: [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 1 },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      message: expect.stringContaining(
+        "between 3 and 256 points",
+      ),
+    });
+
+    await expect(
+      plan_(harness, [
+        {
+          tileId: 1,
+          patch: {
+            collision: {
+              shapes: [
+                {
+                  shape: "point",
+                  x: 0,
+                  y: 0,
+                  width: 4,
+                } as never,
+              ],
+            },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+
+    const manyPoints = Array.from(
+      { length: 256 },
+      (_, index) => ({ x: index, y: index }),
+    );
+    await expect(
+      plan_(harness, [
+        {
+          tileId: 1,
+          patch: {
+            collision: {
+              shapes: Array.from(
+                { length: 33 },
+                () => ({
+                  shape: "polyline" as const,
+                  x: 0,
+                  y: 0,
+                  points: manyPoints,
+                }),
+              ),
+            },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: expect.objectContaining({
+        limit: 8_192,
+      }),
+    });
+  });
+
   it("survives a real Tiled 1.12 tileset export round-trip when the CLI is available", async () => {
     const harness = await createHarness(roots, {});
     const plan = await plan_(harness, [
@@ -796,6 +1102,28 @@ describe("updateTile", () => {
                 name: "walkable",
                 type: "bool",
                 value: true,
+              },
+            ],
+          },
+          collision: {
+            shapes: [
+              {
+                shape: "rectangle",
+                x: 1,
+                y: 1,
+                width: 14,
+                height: 14,
+                className: "solid",
+              },
+              {
+                shape: "polygon",
+                x: 0,
+                y: 16,
+                points: [
+                  { x: 0, y: 0 },
+                  { x: 16, y: 0 },
+                  { x: 8, y: -8 },
+                ],
               },
             ],
           },
@@ -847,6 +1175,27 @@ describe("updateTile", () => {
     expect(entry).toMatchObject({
       probability: 0.25,
       type: "Grass",
+      objectgroup: {
+        draworder: "index",
+        objects: [
+          expect.objectContaining({
+            x: 1,
+            y: 1,
+            width: 14,
+            height: 14,
+            type: "solid",
+          }),
+          expect.objectContaining({
+            x: 0,
+            y: 16,
+            polygon: [
+              { x: 0, y: 0 },
+              { x: 16, y: 0 },
+              { x: 8, y: -8 },
+            ],
+          }),
+        ],
+      },
       animation: [
         { tileid: 2, duration: 150 },
         { tileid: 3, duration: 250 },

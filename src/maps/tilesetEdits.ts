@@ -24,6 +24,20 @@ export const MAX_TILE_CLASS_NAME_CODE_POINTS = 1_024;
 export const MAX_TILE_ANIMATION_FRAMES_PER_TILE = 256;
 export const MAX_TILE_ANIMATION_FRAME_DURATION_MS = 1_000_000_000;
 export const MAX_TILE_PROBABILITY = 1_000_000_000;
+export const MAX_TILE_COLLISION_SHAPES_PER_TILE = 128;
+export const MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET = 8_192;
+export const MAX_TILE_COLLISION_COORDINATE = 1_000_000_000;
+export const MIN_TILE_COLLISION_POLYGON_POINTS = 3;
+export const MIN_TILE_COLLISION_POLYLINE_POINTS = 2;
+export const MAX_TILE_COLLISION_SHAPE_POINTS = 256;
+export const TILE_COLLISION_SHAPE_KINDS = [
+  "rectangle",
+  "point",
+  "ellipse",
+  "capsule",
+  "polygon",
+  "polyline",
+] as const;
 
 export {
   MAX_PROPERTY_SETS_PER_TARGET as MAX_TILE_PROPERTY_SETS_PER_TILE,
@@ -49,6 +63,27 @@ export interface TileAnimationFrameInput {
   durationMs: number;
 }
 
+export type TileCollisionShapeKind =
+  (typeof TILE_COLLISION_SHAPE_KINDS)[number];
+
+export interface TileCollisionShapeInput {
+  shape: TileCollisionShapeKind;
+  x: number;
+  y: number;
+  width?: number | undefined;
+  height?: number | undefined;
+  rotation?: number | undefined;
+  name?: string | undefined;
+  className?: string | undefined;
+  points?:
+    | Array<{ x: number; y: number }>
+    | undefined;
+}
+
+export interface TileCollisionPatch {
+  shapes: TileCollisionShapeInput[];
+}
+
 export interface TileMetadataPatch {
   /**
    * `null` or the Tiled default `1` removes the serialized member.
@@ -64,6 +99,14 @@ export interface TileMetadataPatch {
    * `null` removes the member.
    */
   animation?: TileAnimationFrameInput[] | null | undefined;
+  /**
+   * Whole replacement of the tile collision `objectgroup.objects` array
+   * with bounded basic shapes (Tiled 1.12.2 collision editor semantics:
+   * ids continue after the existing maximum, an existing container's other
+   * members are preserved, a new container gets canonical index draworder,
+   * and `null` removes the member like clearing the collision editor).
+   */
+  collision?: TileCollisionPatch | null | undefined;
   /**
    * Bounded scalar-only set/remove operations on the tile's `properties`
    * array. Targeting a class, enum, list, or object property fails closed;
@@ -94,6 +137,8 @@ export interface TileUpdateSummary {
   newAnimationFrameCount?: number;
   propertiesSet?: number;
   propertiesRemoved?: number;
+  previousCollisionShapeCount?: number;
+  collisionShapeCount?: number;
 }
 
 export type TilesMemberAction =
@@ -139,6 +184,8 @@ export interface UpdateTileOperationPreview {
   newAnimationFrameCount?: number;
   propertiesSet?: number;
   propertiesRemoved?: number;
+  previousCollisionShapeCount?: number;
+  collisionShapeCount?: number;
 }
 
 export interface TilesetEditSourcePatches {
@@ -151,6 +198,7 @@ const PATCH_FIELDS = [
   "probability",
   "className",
   "animation",
+  "collision",
   "properties",
 ] as const;
 type TilePatchField = (typeof PATCH_FIELDS)[number];
@@ -188,6 +236,7 @@ export function applyTileMetadataUpdates(
     );
   }
   const seenTileIds = new Set<number>();
+  let collisionPoints = 0;
   for (const [updateIndex, update] of updates.entries()) {
     assertExactKeys(
       update as unknown as Record<string, unknown>,
@@ -228,6 +277,23 @@ export function applyTileMetadataUpdates(
       tileCount,
       `updates[${updateIndex}].patch`,
     );
+    collisionPoints += tileCollisionPointCount(
+      update.patch.collision,
+    );
+    if (
+      collisionPoints >
+      MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET
+    ) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Collision shapes may contain at most ${MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET} total polygon and polyline points per change set.`,
+        {
+          limit:
+            MAX_TILE_COLLISION_POINTS_PER_CHANGE_SET,
+          actual: collisionPoints,
+        },
+      );
+    }
   }
 
   const hadTilesMember = document.tiles !== undefined;
@@ -400,6 +466,12 @@ function applyOneTileUpdate(
   let propertyCounts:
     | { propertiesSet: number; propertiesRemoved: number }
     | undefined;
+  let collisionCounts:
+    | {
+        previousCollisionShapeCount: number;
+        collisionShapeCount: number;
+      }
+    | undefined;
   for (const field of requestedFields) {
     const change = applyTilePatchField(
       target,
@@ -413,6 +485,15 @@ function applyOneTileUpdate(
         propertiesSet: change.propertiesSet ?? 0,
         propertiesRemoved:
           change.propertiesRemoved ?? 0,
+      };
+    }
+    if (field === "collision") {
+      collisionCounts = {
+        previousCollisionShapeCount:
+          change.previousCollisionShapeCount ??
+          0,
+        collisionShapeCount:
+          change.collisionShapeCount ?? 0,
       };
     }
     if (change.changed) {
@@ -453,7 +534,8 @@ function applyOneTileUpdate(
           changedFields,
           wouldChange: false,
           ...animationCounts,
-        ...propertyCounts,
+          ...propertyCounts,
+          ...collisionCounts,
         },
         structuralIndex: 0,
         touchedMemberKeys,
@@ -485,6 +567,7 @@ function applyOneTileUpdate(
         wouldChange: true,
         ...animationCounts,
         ...propertyCounts,
+        ...collisionCounts,
       },
       structuralIndex: insertAt,
       touchedMemberKeys,
@@ -508,6 +591,7 @@ function applyOneTileUpdate(
         wouldChange: true,
         ...animationCounts,
         ...propertyCounts,
+        ...collisionCounts,
       },
       structuralIndex: existingIndex,
       touchedMemberKeys,
@@ -522,7 +606,8 @@ function applyOneTileUpdate(
       changedFields,
       wouldChange: changedFields.length > 0,
       ...animationCounts,
-        ...propertyCounts,
+      ...propertyCounts,
+      ...collisionCounts,
     },
     structuralIndex: existingIndex,
     touchedMemberKeys,
@@ -540,7 +625,17 @@ function applyTilePatchField(
   memberKeys: string[];
   propertiesSet?: number;
   propertiesRemoved?: number;
+  previousCollisionShapeCount?: number;
+  collisionShapeCount?: number;
 } {
+  if (field === "collision") {
+    return applyTileCollisionPatch(
+      target,
+      value as TileCollisionPatch | null,
+      tilesetPath,
+      tileId,
+    );
+  }
   if (field === "properties") {
     return applyPropertiesPatch(
       target,
@@ -693,12 +788,404 @@ function validateTilePatch(
       `${context}.animation`,
     );
   }
+  if (
+    patch.collision !== undefined &&
+    patch.collision !== null
+  ) {
+    validateTileCollisionPatch(
+      patch.collision,
+      `${context}.collision`,
+    );
+  }
   if (patch.properties !== undefined) {
     validatePropertiesPatch(
       patch.properties,
       `${context}.properties`,
     );
   }
+}
+
+function tileCollisionPointCount(
+  collision:
+    | TileCollisionPatch
+    | null
+    | undefined,
+): number {
+  if (
+    collision === undefined ||
+    collision === null ||
+    !Array.isArray(collision.shapes)
+  ) {
+    return 0;
+  }
+  let total = 0;
+  for (const shape of collision.shapes) {
+    if (Array.isArray(shape?.points)) {
+      total += shape.points.length;
+    }
+  }
+  return total;
+}
+
+function validateTileCollisionPatch(
+  collision: TileCollisionPatch,
+  context: string,
+): void {
+  assertExactKeys(
+    collision as unknown as Record<
+      string,
+      unknown
+    >,
+    ["shapes"],
+    context,
+  );
+  if (
+    !Array.isArray(collision.shapes) ||
+    collision.shapes.length === 0 ||
+    collision.shapes.length >
+      MAX_TILE_COLLISION_SHAPES_PER_TILE
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}.shapes must contain between 1 and ${MAX_TILE_COLLISION_SHAPES_PER_TILE} shapes; null removes the collision group.`,
+      {
+        min: 1,
+        max: MAX_TILE_COLLISION_SHAPES_PER_TILE,
+        actual: Array.isArray(collision.shapes)
+          ? collision.shapes.length
+          : null,
+      },
+    );
+  }
+  for (const [
+    index,
+    shape,
+  ] of collision.shapes.entries()) {
+    validateTileCollisionShape(
+      shape,
+      `${context}.shapes[${index}]`,
+    );
+  }
+}
+
+function validateTileCollisionShape(
+  shape: TileCollisionShapeInput,
+  context: string,
+): void {
+  if (
+    typeof shape !== "object" ||
+    shape === null ||
+    Array.isArray(shape)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} must be an object.`,
+    );
+  }
+  const kind = shape.shape;
+  if (
+    !(
+      TILE_COLLISION_SHAPE_KINDS as readonly string[]
+    ).includes(kind)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}.shape must be one of ${TILE_COLLISION_SHAPE_KINDS.join(", ")}.`,
+    );
+  }
+  const hasDimensions =
+    kind === "rectangle" ||
+    kind === "ellipse" ||
+    kind === "capsule";
+  const hasPoints =
+    kind === "polygon" || kind === "polyline";
+  assertExactKeys(
+    shape as unknown as Record<string, unknown>,
+    [
+      "className",
+      "name",
+      "rotation",
+      "shape",
+      "x",
+      "y",
+      ...(hasDimensions
+        ? ["height", "width"]
+        : []),
+      ...(hasPoints ? ["points"] : []),
+    ].sort(),
+    context,
+    true,
+  );
+  const assertCoordinate = (
+    value: unknown,
+    field: string,
+  ): void => {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      Math.abs(value) >
+        MAX_TILE_COLLISION_COORDINATE
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.${field} must be a finite number within ±${MAX_TILE_COLLISION_COORDINATE}.`,
+      );
+    }
+  };
+  assertCoordinate(shape.x, "x");
+  assertCoordinate(shape.y, "y");
+  if (shape.rotation !== undefined) {
+    assertCoordinate(shape.rotation, "rotation");
+  }
+  if (hasDimensions) {
+    for (const field of [
+      "width",
+      "height",
+    ] as const) {
+      const value = shape[field];
+      if (value === undefined) {
+        continue;
+      }
+      if (
+        typeof value !== "number" ||
+        !Number.isFinite(value) ||
+        value < 0 ||
+        value > MAX_TILE_COLLISION_COORDINATE
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${context}.${field} must be a nonnegative finite number within ${MAX_TILE_COLLISION_COORDINATE}.`,
+        );
+      }
+    }
+  }
+  if (hasPoints) {
+    const minimum =
+      kind === "polygon"
+        ? MIN_TILE_COLLISION_POLYGON_POINTS
+        : MIN_TILE_COLLISION_POLYLINE_POINTS;
+    if (
+      !Array.isArray(shape.points) ||
+      shape.points.length < minimum ||
+      shape.points.length >
+        MAX_TILE_COLLISION_SHAPE_POINTS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.points must contain between ${minimum} and ${MAX_TILE_COLLISION_SHAPE_POINTS} points.`,
+        {
+          min: minimum,
+          max: MAX_TILE_COLLISION_SHAPE_POINTS,
+          actual: Array.isArray(shape.points)
+            ? shape.points.length
+            : null,
+        },
+      );
+    }
+    for (const [
+      pointIndex,
+      point,
+    ] of shape.points.entries()) {
+      assertExactKeys(
+        point as unknown as Record<
+          string,
+          unknown
+        >,
+        ["x", "y"],
+        `${context}.points[${pointIndex}]`,
+      );
+      assertCoordinate(
+        point.x,
+        `points[${pointIndex}].x`,
+      );
+      assertCoordinate(
+        point.y,
+        `points[${pointIndex}].y`,
+      );
+    }
+  }
+  for (const field of [
+    "name",
+    "className",
+  ] as const) {
+    const value = shape[field];
+    if (value === undefined) {
+      continue;
+    }
+    if (
+      typeof value !== "string" ||
+      !hasAtMostCodePoints(
+        value,
+        MAX_TILE_CLASS_NAME_CODE_POINTS,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.${field} must be a string of at most ${MAX_TILE_CLASS_NAME_CODE_POINTS} Unicode code points.`,
+      );
+    }
+  }
+}
+
+function applyTileCollisionPatch(
+  target: JsonObject,
+  collision: TileCollisionPatch | null,
+  tilesetPath: string,
+  tileId: number,
+): {
+  changed: boolean;
+  memberKeys: string[];
+  previousCollisionShapeCount: number;
+  collisionShapeCount: number;
+} {
+  const context = `${tilesetPath} tile ${tileId}.objectgroup`;
+  const before = target.objectgroup;
+  const beforeSnapshot = stableJson(
+    (before ?? null) as JsonValue,
+  );
+  let previousObjects: JsonValue[] = [];
+  let existingGroup: JsonObject | undefined;
+  if (before !== undefined) {
+    if (
+      typeof before !== "object" ||
+      before === null ||
+      Array.isArray(before) ||
+      (before as JsonObject).type !==
+        "objectgroup"
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context} must be an objectgroup object.`,
+        { path: tilesetPath, tileId },
+      );
+    }
+    existingGroup = before as JsonObject;
+    const objects = existingGroup.objects;
+    if (
+      objects !== undefined &&
+      !Array.isArray(objects)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.objects must be an array.`,
+        { path: tilesetPath, tileId },
+      );
+    }
+    previousObjects = Array.isArray(objects)
+      ? objects
+      : [];
+  }
+  if (collision === null) {
+    const changed = before !== undefined;
+    delete target.objectgroup;
+    return {
+      changed,
+      memberKeys: ["objectgroup"],
+      previousCollisionShapeCount:
+        previousObjects.length,
+      collisionShapeCount: 0,
+    };
+  }
+  let maximumId = 0;
+  for (const [
+    index,
+    value,
+  ] of previousObjects.entries()) {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.objects[${index}] must be an object.`,
+        { path: tilesetPath, tileId, index },
+      );
+    }
+    const id = (value as JsonObject).id;
+    if (id === undefined) {
+      continue;
+    }
+    if (
+      typeof id !== "number" ||
+      !Number.isSafeInteger(id) ||
+      id < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.objects[${index}].id must be a nonnegative integer.`,
+        { path: tilesetPath, tileId, index },
+      );
+    }
+    if (id > maximumId) {
+      maximumId = id;
+    }
+  }
+  // Tiled's collision editor seeds the dummy map's nextObjectId with the
+  // existing group's highest id + 1, so replacement ids continue after it.
+  const objects = collision.shapes.map(
+    (shape, index) => {
+      const hasDimensions =
+        shape.shape === "rectangle" ||
+        shape.shape === "ellipse" ||
+        shape.shape === "capsule";
+      const object: JsonObject = {
+        height: hasDimensions
+          ? (shape.height ?? 0)
+          : 0,
+        id: maximumId + 1 + index,
+        name: shape.name ?? "",
+        rotation: shape.rotation ?? 0,
+        type: shape.className ?? "",
+        visible: true,
+        width: hasDimensions
+          ? (shape.width ?? 0)
+          : 0,
+        x: shape.x,
+        y: shape.y,
+      };
+      if (
+        shape.shape === "polygon" ||
+        shape.shape === "polyline"
+      ) {
+        object[shape.shape] = (
+          shape.points ?? []
+        ).map((point) => ({
+          x: point.x,
+          y: point.y,
+        }));
+      } else if (shape.shape !== "rectangle") {
+        object[shape.shape] = true;
+      }
+      return object;
+    },
+  );
+  if (existingGroup !== undefined) {
+    existingGroup.objects = objects;
+  } else {
+    target.objectgroup = {
+      draworder: "index",
+      name: "",
+      objects,
+      opacity: 1,
+      type: "objectgroup",
+      visible: true,
+      x: 0,
+      y: 0,
+    };
+  }
+  const changed =
+    beforeSnapshot !==
+    stableJson(
+      (target.objectgroup ?? null) as JsonValue,
+    );
+  return {
+    changed,
+    memberKeys: ["objectgroup"],
+    previousCollisionShapeCount:
+      previousObjects.length,
+    collisionShapeCount: objects.length,
+  };
 }
 
 function validateAnimationFrames(

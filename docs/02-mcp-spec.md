@@ -1327,7 +1327,7 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 | `tiled_create_tileset` | **已实现（preview→apply）。** 从项目内图集图片规划一个新 external `.tsj`：按 Tiled 1.12.2 网格公式算 columns/rows/tilecount，返回 `tilesetCreate` change set；`expectedRevision` 是**批准内容本身的 SHA-256**（无既有文件），apply 走 no-replace 创建、`beforeRevision:null`。direct 创建特例条款保持仅 `tiled_create_map` | `tilesetPath`, `imagePath`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?`, `className?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，完全不写盘（asset identity contract v2：读/预览路径无锁且零副作用） | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
-| `tiled_update_tile` | **已实现专用 preview 工具**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性元数据，走独立 `tilesetEdit` change set；碰撞形状编辑仍是后续候选 | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
+| `tiled_update_tile` | **已实现专用 preview 工具**：批量更新单个已引用 external atlas TSJ 的 per-tile probability/class/动画/标量自定义属性/碰撞形状元数据，走独立 `tilesetEdit` change set | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `updates: [{tileId, patch}]` |
 | `tiled_find_tiles` | **已实现有界基础版。** 以 map + opaque asset id 选择一个当前引用的 external atlas TSJ，只搜索显式稀疏 `tiles[]` metadata；按 class、property 存在性或内建标量 property 值做大小写敏感精确匹配，返回按 local ID 分页的完整 `TileRef` | `mapPath`, `tilesetAssetId`, `query`, `startTileId?`, `limit?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 
 `tiled_add_tileset_to_map` 是专用 preview 入口，不把 `addTileset` 扩进通用
@@ -1372,6 +1372,16 @@ revision 的待批 map change set 会在 apply 后冲突。字段语义按 Tiled
 - `animation`：`{tileId, durationMs}` 帧数组全量替换，序列化为 Tiled 的
   `[{tileid, duration}]`；每 tile 最多 256 帧，帧 id 必须落在 tilecount 内
   （`TILE_ID_OUT_OF_RANGE`），duration 为 1..1e9 的整数；`null` 移除成员。
+- `collision`：以 1..128 个有界基础形状（rectangle/point/ellipse/capsule/
+  polygon/polyline，均可带 rotation/name/className；polygon ≥3、polyline ≥2、
+  每形状 ≤256 点，单 change set 合计 ≤8,192 点）**整体替换** tile 碰撞
+  `objectgroup.objects` 数组；`null` 整体移除该成员，等价 Tiled 碰撞编辑器清空。
+  语义对齐 1.12.2 collision dock：新对象 id 从既有最大 id 之后连续分配（dock 以
+  `highestObjectId()+1` 播种 dummy map），既有容器的其余成员逐字保留，新容器写
+  canonical `draworder:"index"` 成员集，对象成员集与 `createObject` 的冻结形态一致
+  （`{height,id,name,rotation,type,visible,width,x,y}` + 形状标记）。整体替换会丢弃
+  旧对象携带的自定义属性；summary 回显 `previousCollisionShapeCount` 与
+  `collisionShapeCount`。
 - `properties`：对 tile 自定义属性做有界标量 set/remove（每 tile 最多 32 set +
   32 remove，结果最多 128 条）。可写类型为 string/int/float/bool/color/file——与
   `tiled_find_tiles` 的可比较标量集合完全对称；写入总是带显式 `type` 成员（Tiled
