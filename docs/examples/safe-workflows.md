@@ -18,14 +18,14 @@
    `checkpointCapabilities.storagePolicy` 的实际 quota/GC 边界和
    `checkpointCapabilities.preparedAdjudication` 的权限模型；不要从旧会话或文档
    推断当前能力。
-3. 核心 profile 当前包含 24 个工具；`tmxrasterizer` 探测成功后才注册
-   `tiled_render_map`，总数为 25，不能把它当成必备工具。
+3. 核心 profile 当前包含 25 个工具；`tmxrasterizer` 探测成功后才注册
+   `tiled_render_map`，总数为 26，不能把它当成必备工具。
 4. 确认 `resources/list` 中存在 `tiled://application-errors`，需要完整 code allowlist
    时用 `resources/read` 读取；其内容与仓库的
    [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
    相同。
 
-能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 24 个核心工具
+能力发现也应在服务器升级、重新连接或运行环境变化后重做。示例清单覆盖 25 个核心工具
 各一次，并额外给出一次可选 raster 调用；它不表示可选工具必然存在。
 
 ## 先满足文件系统运维条件
@@ -405,8 +405,13 @@ discard 同样会因 create 目标已存在而拒绝。只有目标当前严格�
 
 ## Raster 预览是可选能力
 
-`tiled_render_preview` 与 `tiled_render_tileset_sheet` 是核心内建渲染能力，不依赖 Tiled
-GUI 或 `tmxrasterizer`。优先用它们完成有限正交地图的常规视觉闭环；native preview
+`tiled_render_preview`、`tiled_render_tileset_sheet` 与 `tiled_render_tiles` 是核心
+内建渲染能力，不依赖 Tiled GUI 或 `tmxrasterizer`。先用
+`tiled_find_tiles` 找到语义候选，再把返回的非连续 local IDs 和 revision pins 原样交给
+`tiled_render_tiles`；它按输入顺序返回带标签的 static raw atlas cells，便于在不翻阅
+连续 atlas 页面的情况下比较候选。选集必须有 1–64 个唯一 ID，放不下时整体失败，不会
+漏项或降低 scale。需要浏览连续 local IDs 时仍用 sheet。随后用 native preview
+完成有限正交地图的常规视觉闭环；native preview
 还能以最多 64 个固定样式的绝对 tile 矩形标出核对区域，其 union fill 与底图共享
 pixel-blend 工作预算。
 

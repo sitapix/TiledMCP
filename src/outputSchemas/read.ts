@@ -11,6 +11,13 @@ import {
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
 } from "../images/mapPreview.js";
 import {
+  DEFAULT_TILE_RENDER_COLUMNS,
+  MAX_TILE_RENDER_BYTES,
+  MAX_TILE_RENDER_COLUMNS,
+  MAX_TILE_RENDER_EDGE,
+  MAX_TILE_RENDER_LOCAL_IDS,
+  MAX_TILE_RENDER_PIXELS,
+  MAX_TILE_RENDER_SCALE,
   MAX_TILESET_SHEET_BYTES,
   MAX_TILESET_SHEET_COLUMNS,
   MAX_TILESET_SHEET_EDGE,
@@ -686,6 +693,234 @@ const tilesetSheetResultOutputSchema = z
 export const tilesetSheetToolOutputSchema =
   toolOutputSchema(
     tilesetSheetResultOutputSchema,
+  );
+
+const tileRenderSelectionOutputSchema = z
+  .object({
+    localIds: z
+      .array(
+        nonnegativeIntegerOutputSchema.max(
+          0x0fffffff,
+        ),
+      )
+      .min(1)
+      .max(MAX_TILE_RENDER_LOCAL_IDS)
+      .meta({ uniqueItems: true }),
+    count: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_LOCAL_IDS,
+    ),
+    order: z.literal("input"),
+    labels: z.literal("local-id"),
+    layout: z
+      .object({
+        kind: z.literal("row-major"),
+        requestedColumns:
+          positiveIntegerOutputSchema.max(
+            MAX_TILE_RENDER_COLUMNS,
+          ),
+        columns:
+          positiveIntegerOutputSchema.max(
+            MAX_TILE_RENDER_COLUMNS,
+          ),
+        rows: positiveIntegerOutputSchema.max(
+          MAX_TILE_RENDER_LOCAL_IDS,
+        ),
+        adjusted: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict()
+  .describe(
+    `Runtime-enforced cross-field invariants: count equals localIds.length; layout.rows equals ceil(count / layout.columns); layout.adjusted exactly reports an automatic reduction from the omitted-input default of ${DEFAULT_TILE_RENDER_COLUMNS} columns, and adjusted=true requires requestedColumns=${DEFAULT_TILE_RENDER_COLUMNS}.`,
+  )
+  .superRefine((selection, context) => {
+    const seen = new Set<number>();
+    for (const [
+      index,
+      localId,
+    ] of selection.localIds.entries()) {
+      if (seen.has(localId)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Rendered local tile IDs must be unique",
+          path: ["localIds", index],
+        });
+      }
+      seen.add(localId);
+    }
+    if (
+      selection.count !==
+      selection.localIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Rendered tile count must equal localIds length",
+        path: ["count"],
+      });
+    }
+    const maximumEffectiveColumns = Math.min(
+      selection.layout.requestedColumns,
+      selection.count,
+    );
+    if (
+      selection.layout.columns >
+      maximumEffectiveColumns
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Rendered tile columns must not exceed the requested columns or selection count",
+        path: ["layout", "columns"],
+      });
+    }
+    const expectedRows = Math.ceil(
+      selection.count /
+        selection.layout.columns,
+    );
+    if (selection.layout.rows !== expectedRows) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Rendered tile rows must match the row-major selection layout",
+        path: ["layout", "rows"],
+      });
+    }
+    const expectedAdjusted =
+      selection.layout.columns <
+      maximumEffectiveColumns;
+    if (
+      selection.layout.adjusted !==
+      expectedAdjusted
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Rendered tile layout adjusted flag must exactly report a reduced column count",
+        path: ["layout", "adjusted"],
+      });
+    }
+    if (
+      selection.layout.adjusted &&
+      selection.layout.requestedColumns !==
+        DEFAULT_TILE_RENDER_COLUMNS
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "An adjusted tile layout must report the omitted-input default requested column count",
+        path: ["layout", "requestedColumns"],
+      });
+    }
+  });
+
+const tileRenderResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize: z
+      .object({
+        width:
+          positiveIntegerOutputSchema.max(
+            MAX_TILE_RENDER_EDGE,
+          ),
+        height:
+          positiveIntegerOutputSchema.max(
+            MAX_TILE_RENDER_EDGE,
+          ),
+      })
+      .strict()
+      .describe(
+        `Rendered PNG dimensions. Runtime enforces width * height <= ${MAX_TILE_RENDER_PIXELS}; this multiplicative invariant is not expressible in the published Draft-07 schema.`,
+      )
+      .refine(
+        ({ width, height }) =>
+          width * height <=
+          MAX_TILE_RENDER_PIXELS,
+        {
+          message:
+            "Rendered tile selection exceeds the output pixel budget",
+        },
+      ),
+    byteLength: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_BYTES,
+    ),
+    sha256: revisionOutputSchema,
+    map: mapSnapshotOutputSchema,
+    source: z
+      .object({
+        assetId: assetIdOutputSchema,
+        revision: revisionOutputSchema,
+      })
+      .strict(),
+    image: renderedImageSourceOutputSchema,
+    tileset: z
+      .object({
+        path: projectPathOutputSchema,
+        name: displayStringOutputSchema,
+        nameTruncated:
+          truncatedMarkerOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        tileSize: z
+          .object({
+            width:
+              positiveIntegerOutputSchema,
+            height:
+              positiveIntegerOutputSchema,
+          })
+          .strict(),
+        atlas: z
+          .object({
+            columns:
+              positiveIntegerOutputSchema,
+            margin:
+              nonnegativeIntegerOutputSchema,
+            spacing:
+              nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    renderProfile: z.literal(
+      "explicit-local-id-atlas-selection-v1",
+    ),
+    selection:
+      tileRenderSelectionOutputSchema,
+    scale: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_SCALE,
+    ),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    truncated: z.literal(false),
+  })
+  .strict()
+  .describe(
+    "Runtime enforces every selection.localIds entry is less than tileset.tileCount; this dynamic cross-field invariant is not expressible in the published Draft-07 schema.",
+  )
+  .superRefine((result, context) => {
+    for (const [
+      index,
+      localId,
+    ] of result.selection.localIds.entries()) {
+      if (localId >= result.tileset.tileCount) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Rendered local tile ID must be inside the tileset tileCount",
+          path: [
+            "selection",
+            "localIds",
+            index,
+          ],
+        });
+      }
+    }
+  });
+
+export const tileRenderToolOutputSchema =
+  toolOutputSchema(
+    tileRenderResultOutputSchema,
   );
 
 const nativePreviewSourceOutputSchema = z

@@ -161,14 +161,19 @@ For an existing map:
    \`expectedTilesetRevision\` fields unchanged with the same query and
    limit. Search does not return property values or resolve inherited
    properties, Wang assignments, or image-derived semantics.
-4. Use \`tiled_get_region\` for a bounded tile rectangle and
+4. When search returns a sparse candidate set, call \`tiled_render_tiles\`
+   with 1 to 64 unique local IDs in the desired comparison order. Pass the
+   optional map and selected-tileset revision pins from the search response
+   unchanged. The result labels static raw atlas cells in that same order;
+   it never sorts, deduplicates, lowers scale, or drops selected IDs.
+5. Use \`tiled_get_region\` for a bounded tile rectangle and
    \`tiled_list_objects\` for bounded object discovery. Before replacing points
    or deleting a polygon/polyline, or replacing text content/style, call
    \`tiled_get_object\` with the listed object ID to obtain its complete
    bounded semantic projection and current map/dependency revisions.
-5. Use \`tiled_render_tileset_sheet\` with that \`mapPath\` and
-   \`tilesetAssetId\` to see local tile IDs. Pages are zero-based.
-6. Use \`tiled_render_preview\` to inspect the current map or a bounded region.
+6. Use \`tiled_render_tileset_sheet\` with that \`mapPath\` and
+   \`tilesetAssetId\` to browse consecutive local tile IDs. Pages are zero-based.
+7. Use \`tiled_render_preview\` to inspect the current map or a bounded region.
    Grid and coordinate overlays can make tile positions explicit. Use up to 64
    fixed-style absolute tile rectangles in \`overlays.highlights\` to call out
    a bounded selection without editing the map.
@@ -272,7 +277,7 @@ follows a rename automatically.
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 24 core tools or 25
+operation, not a standalone tool, so the registry remains 25 core tools or 26
 when the rasterizer is available. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
@@ -393,13 +398,13 @@ payload is canonical compact JSON UTF-8, capped at 256 KiB per change set and
 2 MiB pending. \`tiled_get_object\` is the bounded read-before-update tool; it
 returns complete path points or effective text defaults, but not raw JSON,
 custom properties, vendor fields, tile objects, or templates. The registry is
-24 core tools or 25 with the rasterizer. The native preview still renders
+25 core tools or 26 with the rasterizer. The native preview still renders
 tile layers only and reports visible object layers as omitted; use the optional
 rasterizer or Tiled 1.12.2 to inspect font substitution, wrapping, and layout.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
-registry remains 24 core tools or 25 when the rasterizer is available. The
+registry remains 25 core tools or 26 when the rasterizer is available. The
 strict, non-empty patch may contain:
 
 - \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
@@ -423,7 +428,7 @@ restore the original serialized values produce a file-level exact-byte no-op.
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
 seventh operation in the generic preview union, not a standalone tool, so the
-registry remains 24 core tools or 25 when the rasterizer is available. The
+registry remains 25 core tools or 26 when the rasterizer is available. The
 patch must contain at least one field and may contain only:
 
 - \`name\`, \`className\`, \`visible\`, and \`opacity\`;
@@ -455,7 +460,7 @@ layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
 an existing layer. It is the eighth generic operation, not a standalone tool,
-so the registry remains 24 core tools or 25 with the rasterizer. A
+so the registry remains 25 core tools or 26 with the rasterizer. A
 \`deleteLayer\` change set must contain exactly this one operation; do not mix
 it with tile, object, or layer updates.
 
@@ -482,7 +487,7 @@ revision-pinned approval, checkpoint, and apply flow remains mandatory.
 
 Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
 or move it into or out of a Group. This is the ninth generic operation, not a
-standalone tool, so the registry remains 24 core tools or 25 with the
+standalone tool, so the registry remains 25 core tools or 26 with the
 rasterizer. A move change set must contain exactly one operation and cannot be
 mixed with tile, object, update, delete, or another move.
 
@@ -520,7 +525,7 @@ atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
-operation, not a standalone tool, so the registry remains 24 core tools or 25
+operation, not a standalone tool, so the registry remains 25 core tools or 26
 with the rasterizer. A duplicate change set must contain exactly one operation.
 
 \`destination\` has exactly three branches:
@@ -608,7 +613,7 @@ apply not to rewrite the map.
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
 dense rectangular tile stamp. This is the eleventh generic operation, not a
-standalone tool, so the registry remains 24 core tools or 25 with the
+standalone tool, so the registry remains 25 core tools or 26 with the
 rasterizer. The row-major pattern must be non-empty and rectangular: every
 row is non-empty and has the same width, with no sparse holes or
 \`undefined\`. Width and height are each capped at 256 and the complete
@@ -639,7 +644,7 @@ and revision.
 
 Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
 paint-bucket edit. This is the twelfth generic operation, not a standalone
-tool, so the registry remains 24 core tools or 25 with the rasterizer.
+tool, so the registry remains 25 core tools or 26 with the rasterizer.
 \`x\` and \`y\` are an absolute seed coordinate inside the finite tile
 layer. Connectivity is always four-way; there is no connectivity input and
 diagonal-only cells are not connected.
@@ -676,8 +681,8 @@ revision.
 Use
 \`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}\`
 to copy one complete tile rectangle within the same map. This is the fifteenth
-generic operation, not a standalone tool, so the registry remains 24 core
-tools or 25 with the rasterizer. The operation, source, and destination are
+generic operation, not a standalone tool, so the registry remains 25 core
+tools or 26 with the rasterizer. The operation, source, and destination are
 strict objects and reject extra keys.
 
 Both layer IDs must identify finite orthogonal tile layers with numeric data

@@ -1632,6 +1632,442 @@ describe("MapService", () => {
     expect(secondResult.sha256).not.toBe(firstResult.sha256);
   });
 
+  it("renders sparse local IDs in input order as static atlas cells and revisions changed image bytes", async () => {
+    const tilesetDocument = baseTileset();
+    tilesetDocument.tiles = [
+      {
+        id: 3,
+        animation: [
+          { tileid: 0, duration: 100 },
+          { tileid: 1, duration: 100 },
+        ],
+      },
+    ];
+    await writeJson(
+      join(harness.root, TILESET_PATH),
+      tilesetDocument,
+    );
+    const imagePath = join(
+      harness.root,
+      "tiles",
+      "terrain.png",
+    );
+    const firstImage = await terrainPng("#4f8f4f");
+    await writeFile(imagePath, firstImage);
+    const summary =
+      await harness.service.getSummary(MAP_PATH);
+    const tileset = (
+      summary.tilesets as SummaryTileset[]
+    )[0];
+    expect(tileset).toBeDefined();
+
+    const localIds = [3, 0, 2];
+    const first =
+      await harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId:
+          tileset?.assetId ?? "",
+        localIds,
+        columns: 2,
+        scale: 2,
+        expectedMapRevision:
+          summary.revision as string,
+        expectedTilesetRevision:
+          tileset?.revision ?? "",
+      });
+    const firstResult = first.result as {
+      mimeType: string;
+      pixelSize: {
+        width: number;
+        height: number;
+      };
+      byteLength: number;
+      sha256: string;
+      map: {
+        path: string;
+        revision: string;
+      };
+      source: {
+        assetId: string;
+        revision: string;
+      };
+      image: {
+        path: string;
+        revision: string;
+        format: string;
+      };
+      renderProfile: string;
+      selection: {
+        localIds: number[];
+        count: number;
+        order: string;
+        labels: string;
+        layout: {
+          kind: string;
+          requestedColumns: number;
+          columns: number;
+          rows: number;
+          adjusted: boolean;
+        };
+      };
+      scale: number;
+      snapshotConsistency: string;
+      truncated: boolean;
+    };
+    expect(first.png.subarray(0, 8)).toEqual(
+      Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a,
+        0x1a, 0x0a,
+      ]),
+    );
+    expect(firstResult).toMatchObject({
+      mimeType: "image/png",
+      byteLength: first.png.byteLength,
+      sha256: revisionOf(first.png),
+      map: {
+        path: MAP_PATH,
+        revision: summary.revision,
+      },
+      source: {
+        assetId: tileset?.assetId,
+        revision: tileset?.revision,
+      },
+      image: {
+        path: "tiles/terrain.png",
+        revision: revisionOf(firstImage),
+        format: "png",
+      },
+      renderProfile:
+        "explicit-local-id-atlas-selection-v1",
+      selection: {
+        localIds,
+        count: 3,
+        order: "input",
+        labels: "local-id",
+        layout: {
+          kind: "row-major",
+          requestedColumns: 2,
+          columns: 2,
+          rows: 2,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+      snapshotConsistency:
+        "non-atomic-read-set",
+      truncated: false,
+    });
+    expect(firstResult).not.toHaveProperty("page");
+
+    const secondImage =
+      await terrainPng("#ff0000");
+    await writeFile(imagePath, secondImage);
+    const second =
+      await harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId:
+          tileset?.assetId ?? "",
+        localIds,
+        columns: 2,
+        scale: 2,
+      });
+    const secondResult = second.result as {
+      sha256: string;
+      source: { revision: string };
+      image: { revision: string };
+      selection: { localIds: number[] };
+    };
+    expect(secondResult.source.revision).toBe(
+      firstResult.source.revision,
+    );
+    expect(secondResult.image.revision).toBe(
+      revisionOf(secondImage),
+    );
+    expect(secondResult.image.revision).not.toBe(
+      firstResult.image.revision,
+    );
+    expect(secondResult.sha256).not.toBe(
+      firstResult.sha256,
+    );
+    expect(secondResult.selection.localIds).toEqual(
+      localIds,
+    );
+  });
+
+  it("prioritizes independent stale render pins over malformed replacement bytes", async () => {
+    const assetId =
+      await getAssetId(harness.service);
+    const mapBefore = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    const tilesetBefore = await readFile(
+      join(harness.root, TILESET_PATH),
+    );
+
+    const malformedMap = Buffer.from(
+      '{"type":',
+      "utf8",
+    );
+    await writeFile(
+      join(harness.root, MAP_PATH),
+      malformedMap,
+    );
+    await expect(
+      harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: assetId,
+        localIds: [0],
+        expectedMapRevision:
+          revisionOf(mapBefore),
+      }),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+      details: {
+        path: MAP_PATH,
+        expectedRevision: revisionOf(mapBefore),
+        actualRevision: revisionOf(malformedMap),
+      },
+    });
+
+    await writeFile(
+      join(harness.root, MAP_PATH),
+      mapBefore,
+    );
+    const malformedTileset = Buffer.from(
+      '{"type":',
+      "utf8",
+    );
+    await writeFile(
+      join(harness.root, TILESET_PATH),
+      malformedTileset,
+    );
+    await expect(
+      harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: assetId,
+        localIds: [0],
+        expectedTilesetRevision:
+          revisionOf(tilesetBefore),
+      }),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_REVISION_CONFLICT",
+      details: {
+        assetId,
+        expectedRevision:
+          revisionOf(tilesetBefore),
+        actualRevision:
+          revisionOf(malformedTileset),
+      },
+    });
+  });
+
+  it("compares the selected TSJ raw revision before parsing a malformed post-binding replacement", async () => {
+    const assetId =
+      await getAssetId(harness.service);
+    const tilesetBefore = await readFile(
+      join(harness.root, TILESET_PATH),
+    );
+    const malformedTileset = Buffer.from(
+      '{"type":',
+      "utf8",
+    );
+    let injectedWrites = 0;
+    const service = await createServiceWithReadHook(
+      harness.root,
+      async ({ path, readCount }) => {
+        if (
+          path === TILESET_PATH &&
+          readCount === 1
+        ) {
+          injectedWrites += 1;
+          await writeFile(
+            join(harness.root, TILESET_PATH),
+            malformedTileset,
+          );
+        }
+      },
+    );
+
+    await expect(
+      service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: assetId,
+        localIds: [0],
+      }),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_REVISION_CONFLICT",
+      details: {
+        assetId,
+        expectedRevision:
+          revisionOf(tilesetBefore),
+        actualRevision:
+          revisionOf(malformedTileset),
+      },
+    });
+    expect(injectedWrites).toBe(1);
+  });
+
+  it("rejects a selected TSJ change after its render snapshot", async () => {
+    await writeFile(
+      join(harness.root, "tiles", "terrain.png"),
+      await terrainPng("#4f8f4f"),
+    );
+    const assetId =
+      await getAssetId(harness.service);
+    const tilesetBefore = await readFile(
+      join(harness.root, TILESET_PATH),
+    );
+    const changedTileset = baseTileset();
+    changedTileset.vendorTilesetExtension = {
+      changedDuringExplicitTileRender: true,
+    };
+    const changedBytes =
+      serializeJsonDocument(changedTileset);
+    let injectedWrites = 0;
+    const service = await createServiceWithReadHook(
+      harness.root,
+      async ({ path, readCount }) => {
+        if (
+          path === TILESET_PATH &&
+          readCount === 2
+        ) {
+          injectedWrites += 1;
+          await writeFile(
+            join(harness.root, TILESET_PATH),
+            changedBytes,
+          );
+        }
+      },
+    );
+
+    await expect(
+      service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: assetId,
+        localIds: [3, 0, 2],
+      }),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_REVISION_CONFLICT",
+      details: {
+        assetId,
+        expectedRevision:
+          revisionOf(tilesetBefore),
+        actualRevision:
+          revisionOf(changedBytes),
+      },
+    });
+    expect(injectedWrites).toBe(1);
+  });
+
+  it("rejects a map change after its explicit tile render snapshot", async () => {
+    await writeFile(
+      join(harness.root, "tiles", "terrain.png"),
+      await terrainPng("#4f8f4f"),
+    );
+    const assetId =
+      await getAssetId(harness.service);
+    const mapBefore = await readFile(
+      join(harness.root, MAP_PATH),
+    );
+    const changedMap = baseMap();
+    changedMap.vendorExtension = {
+      changedDuringExplicitTileRender: true,
+    };
+    const changedBytes =
+      serializeJsonDocument(changedMap);
+    let injectedWrites = 0;
+    const service = await createServiceWithReadHook(
+      harness.root,
+      async ({ path, readCount }) => {
+        if (
+          path === MAP_PATH &&
+          readCount === 1
+        ) {
+          injectedWrites += 1;
+          await writeFile(
+            join(harness.root, MAP_PATH),
+            changedBytes,
+          );
+        }
+      },
+    );
+
+    await expect(
+      service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: assetId,
+        localIds: [3, 0, 2],
+      }),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+      details: {
+        path: MAP_PATH,
+        expectedRevision: revisionOf(mapBefore),
+        actualRevision:
+          revisionOf(changedBytes),
+      },
+    });
+    expect(injectedWrites).toBe(1);
+  });
+
+  it.each([
+    "image",
+    "imagewidth",
+    "imageheight",
+    "x",
+    "y",
+    "width",
+    "height",
+  ])(
+    "rejects per-tile %s overrides in both atlas render tools",
+    async (field) => {
+      const tilesetDocument = baseTileset();
+      tilesetDocument.tiles = [
+        {
+          id: 0,
+          [field]:
+            field === "image"
+              ? "override.png"
+              : 1,
+        },
+      ];
+      await writeJson(
+        join(harness.root, TILESET_PATH),
+        tilesetDocument,
+      );
+      const assetId =
+        await getAssetId(harness.service);
+
+      await expect(
+        harness.service.renderTiles({
+          mapPath: MAP_PATH,
+          tilesetAssetId: assetId,
+          localIds: [0],
+        }),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_TILESET",
+        details: {
+          path: TILESET_PATH,
+          localId: 0,
+          field,
+        },
+      });
+      await expect(
+        harness.service.renderTilesetSheet({
+          mapPath: MAP_PATH,
+          tilesetAssetId: assetId,
+        }),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_TILESET",
+        details: {
+          path: TILESET_PATH,
+          localId: 0,
+          field,
+        },
+      });
+    },
+  );
+
   it("renders a native map region from exact map, TSJ and image snapshots", async () => {
     const imagePath = join(harness.root, "tiles", "terrain.png");
     await writeFile(imagePath, await terrainPng("#4f8f4f"));

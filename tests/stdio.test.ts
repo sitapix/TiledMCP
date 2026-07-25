@@ -175,7 +175,10 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_get_object",
     );
-    expect(tools.tools.length === 24 || tools.tools.length === 25).toBe(
+    expect(tools.tools.map(({ name }) => name)).toContain(
+      "tiled_render_tiles",
+    );
+    expect(tools.tools.length === 25 || tools.tools.length === 26).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -297,6 +300,27 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         defaultQueryMode: "all",
         nextPageIncludesRevisionPins: true,
         inputRevisionPins: "optional",
+      },
+      tileRenderCapabilities: {
+        locator:
+          "map-path-plus-tileset-asset-id",
+        renderProfile:
+          "explicit-local-id-atlas-selection-v1",
+        atlasProfile:
+          "root-atlas-no-per-tile-images",
+        selection: "explicit-local-ids",
+        localIdOrder: "input-preserved",
+        duplicateLocalIds: "reject",
+        selectionReduction: "never",
+        layout: "row-major",
+        columnsSemantics: "maximum-per-row",
+        labels: "local-id",
+        defaultColumns: 8,
+        defaultScale: 2,
+        revisionPins: "independent-optional",
+        animation: false,
+        wangGrouping: false,
+        semanticNames: false,
       },
       usageAnalysisCapabilities: {
         includesTileLayerCells: true,
@@ -486,6 +510,12 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
+        maxTileRenderLocalIds: 64,
+        maxTileRenderColumns: 32,
+        maxTileRenderScale: 4,
+        maxTileRenderBytes: 8 * 1024 * 1024,
+        maxTileRenderEdge: 2_048,
+        maxTileRenderPixels: 1_500_000,
         maxPendingObjectShapePoints: 65_536,
         maxPendingTextObjectPayloadBytes:
           2_097_152,
@@ -621,6 +651,126 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     if (summary === undefined || tileset === undefined) {
       throw new Error("Expected the stdio fixture summary.");
     }
+
+    const selectedTileResponse =
+      await client.callTool({
+        name: "tiled_render_tiles",
+        arguments: {
+          mapPath: "basic.tmj",
+          tilesetAssetId: tileset.assetId,
+          localIds: [3, 0, 2],
+          columns: 2,
+          scale: 2,
+          expectedMapRevision:
+            summary.revision,
+          expectedTilesetRevision:
+            tileset.revision,
+        },
+      });
+    expect(
+      selectedTileResponse.isError,
+    ).not.toBe(true);
+    const selectedTileContent = (
+      selectedTileResponse as {
+        content: Array<{
+          type: string;
+          data?: string;
+          mimeType?: string;
+        }>;
+      }
+    ).content;
+    const selectedTileImage =
+      selectedTileContent.find(
+        (block) => block.type === "image",
+      );
+    expect(selectedTileImage).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+      data: expect.any(String),
+    });
+    const selectedTilePng = Buffer.from(
+      selectedTileImage?.data ?? "",
+      "base64",
+    );
+    const selectedTileResult = (
+      selectedTileResponse.structuredContent as {
+        result: {
+          mimeType: string;
+          pixelSize: {
+            width: number;
+            height: number;
+          };
+          byteLength: number;
+          sha256: string;
+          map: {
+            path: string;
+            revision: string;
+          };
+          source: {
+            assetId: string;
+            revision: string;
+          };
+          renderProfile: string;
+          selection: {
+            localIds: number[];
+            count: number;
+            order: string;
+            labels: string;
+            layout: {
+              kind: string;
+              requestedColumns: number;
+              columns: number;
+              rows: number;
+              adjusted: boolean;
+            };
+          };
+          scale: number;
+          snapshotConsistency: string;
+          truncated: boolean;
+        };
+      }
+    ).result;
+    expect(selectedTileResult).toMatchObject({
+      mimeType: "image/png",
+      byteLength: selectedTilePng.byteLength,
+      sha256: revisionOf(selectedTilePng),
+      map: {
+        path: "basic.tmj",
+        revision: summary.revision,
+      },
+      source: {
+        assetId: tileset.assetId,
+        revision: tileset.revision,
+      },
+      renderProfile:
+        "explicit-local-id-atlas-selection-v1",
+      selection: {
+        localIds: [3, 0, 2],
+        count: 3,
+        order: "input",
+        labels: "local-id",
+        layout: {
+          kind: "row-major",
+          requestedColumns: 2,
+          columns: 2,
+          rows: 2,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+      snapshotConsistency:
+        "non-atomic-read-set",
+      truncated: false,
+    });
+    expect(
+      await sharp(selectedTilePng).metadata(),
+    ).toMatchObject({
+      format: "png",
+      width:
+        selectedTileResult.pixelSize.width,
+      height:
+        selectedTileResult.pixelSize.height,
+    });
 
     if (
       tools.tools.some(
@@ -1715,6 +1865,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:24|25) tools\)/u,
+    /ready for .+ \((?:25|26) tools\)/u,
   );
 });

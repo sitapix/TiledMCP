@@ -29,9 +29,11 @@ import {
 import {
   DEFAULT_TILESET_SHEET_PAGE_SIZE,
   DEFAULT_TILESET_SHEET_SCALE,
+  MAX_TILE_RENDER_LOCAL_IDS,
   MAX_TILESET_IMAGE_BYTES,
   MAX_TILESET_INPUT_EDGE,
   MAX_TILESET_INPUT_PIXELS,
+  renderTilesetTiles,
   renderTilesetSheet,
 } from "../images/tilesetSheet.js";
 import {
@@ -72,6 +74,7 @@ import {
   type PreviewRegion,
 } from "./previewScene.js";
 import {
+  assertAtlasTileDefinition,
   assertTilesetDetailResultSize,
   DEFAULT_TILESET_METADATA_LIMIT,
   MAX_TILESET_METADATA_ENTRIES,
@@ -433,6 +436,16 @@ export interface RenderTilesetSheetInput {
   scale?: number;
 }
 
+export interface RenderTilesInput {
+  mapPath: string;
+  tilesetAssetId: string;
+  localIds: readonly number[];
+  columns?: number;
+  scale?: number;
+  expectedMapRevision?: string;
+  expectedTilesetRevision?: string;
+}
+
 export interface GetTilesetInput {
   mapPath: string;
   tilesetAssetId: string;
@@ -478,6 +491,11 @@ export interface PlanCreateLayerInput {
 }
 
 export interface RenderTilesetSheetResult {
+  png: Buffer;
+  result: Record<string, unknown>;
+}
+
+export interface RenderTilesResult {
   png: Buffer;
   result: Record<string, unknown>;
 }
@@ -907,18 +925,21 @@ export class MapService {
       input.tilesetAssetId,
     );
 
-    const tileset = await this.store.read(binding.path);
-    if (tileset.revision !== binding.revision) {
+    const tilesetSnapshot =
+      await this.store.readSnapshot(binding.path);
+    if (tilesetSnapshot.revision !== binding.revision) {
       throw new TiledMcpError(
         "DEPENDENCY_REVISION_CONFLICT",
         `${binding.path} changed while the tileset sheet was being prepared.`,
         {
           assetId: binding.assetId,
           expectedRevision: binding.revision,
-          actualRevision: tileset.revision,
+          actualRevision: tilesetSnapshot.revision,
         },
       );
     }
+    const tileset =
+      this.store.parseSnapshot(tilesetSnapshot);
     const document = tileset.document;
     if (typeof document.image !== "string") {
       throw new TiledMcpError(
@@ -927,18 +948,11 @@ export class MapService {
         { path: binding.path },
       );
     }
-    if (
-      Array.isArray(document.tiles) &&
-      document.tiles.some(
-        (value) => isJsonObject(value) && typeof value.image === "string",
-      )
-    ) {
-      throw new TiledMcpError(
-        "UNSUPPORTED_TILESET",
-        "Hybrid and image-collection tilesets are not supported by the atlas sheet renderer.",
-        { path: binding.path },
-      );
-    }
+    assertRootAtlasTileDefinitions(
+      document,
+      binding.path,
+      binding.tileCount,
+    );
 
     const imagePath = await this.resolver.resolveReference(
       binding.path,
@@ -1060,6 +1074,231 @@ export class MapService {
         },
         page: rendered.page,
         scale: rendered.scale,
+        truncated: false,
+      },
+    };
+  }
+
+  async renderTiles(
+    input: RenderTilesInput,
+  ): Promise<RenderTilesResult> {
+    assertOptionalRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    assertOptionalRevision(
+      input.expectedTilesetRevision,
+      "expectedTilesetRevision",
+    );
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        ...(input.expectedMapRevision === undefined
+          ? {}
+          : {
+              expectedMapRevision:
+                input.expectedMapRevision,
+            }),
+        ...(input.expectedTilesetRevision ===
+        undefined
+          ? {}
+          : {
+              selectedTileset: {
+                assetId: input.tilesetAssetId,
+                expectedRevision:
+                  input.expectedTilesetRevision,
+              },
+            }),
+      },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      input.tilesetAssetId,
+    );
+
+    const tilesetSnapshot =
+      await this.store.readSnapshot(binding.path);
+    if (
+      tilesetSnapshot.revision !==
+      binding.revision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} changed while the explicit tile selection was being prepared.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision: binding.revision,
+          actualRevision:
+            tilesetSnapshot.revision,
+        },
+      );
+    }
+    const tileset =
+      this.store.parseSnapshot(tilesetSnapshot);
+    const document = tileset.document;
+    if (typeof document.image !== "string") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        "Explicit tile rendering requires a root atlas image.",
+        {
+          path: binding.path,
+          assetId: binding.assetId,
+        },
+      );
+    }
+
+    const tileCount = expectInteger(
+      document.tilecount,
+      `${binding.path}.tilecount`,
+    );
+    assertRootAtlasTileDefinitions(
+      document,
+      binding.path,
+      tileCount,
+    );
+    assertSelectedLocalIds(
+      input.localIds,
+      tileCount,
+      binding.path,
+    );
+
+    const imagePath =
+      await this.resolver.resolveReference(
+        binding.path,
+        document.image,
+      );
+    const image = await readImageFileSnapshot(
+      this.resolver,
+      imagePath,
+      MAX_TILESET_IMAGE_BYTES,
+    );
+    const tileWidth = expectInteger(
+      document.tilewidth,
+      `${binding.path}.tilewidth`,
+    );
+    const tileHeight = expectInteger(
+      document.tileheight,
+      `${binding.path}.tileheight`,
+    );
+    const atlasColumns = expectInteger(
+      document.columns,
+      `${binding.path}.columns`,
+    );
+    const margin = expectInteger(
+      document.margin ?? 0,
+      `${binding.path}.margin`,
+    );
+    const spacing = expectInteger(
+      document.spacing ?? 0,
+      `${binding.path}.spacing`,
+    );
+    const declaredImageWidth = expectInteger(
+      document.imagewidth,
+      `${binding.path}.imagewidth`,
+    );
+    const declaredImageHeight = expectInteger(
+      document.imageheight,
+      `${binding.path}.imageheight`,
+    );
+    const transparentColor =
+      document.transparentcolor === undefined
+        ? undefined
+        : expectString(
+            document.transparentcolor,
+            `${binding.path}.transparentcolor`,
+          );
+
+    const rendered = await renderTilesetTiles({
+      imageBytes: image.bytes,
+      imagePath: image.path,
+      imageWidth: declaredImageWidth,
+      imageHeight: declaredImageHeight,
+      tileWidth,
+      tileHeight,
+      tileCount,
+      atlasColumns,
+      margin,
+      spacing,
+      localIds: input.localIds,
+      ...(input.columns === undefined
+        ? {}
+        : { columns: input.columns }),
+      ...(input.scale === undefined
+        ? {}
+        : { scale: input.scale }),
+      ...(transparentColor === undefined
+        ? {}
+        : { transparentColor }),
+    });
+
+    await this.assertDependenciesUnchanged([
+      binding,
+    ]);
+    const currentMapRevision =
+      await this.store.readRevision(
+        context.loaded.path,
+      );
+    if (
+      currentMapRevision !==
+      context.loaded.revision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${context.loaded.path} changed while the explicit tile selection was rendered.`,
+        {
+          path: context.loaded.path,
+          expectedRevision:
+            context.loaded.revision,
+          actualRevision: currentMapRevision,
+        },
+      );
+    }
+
+    return {
+      png: rendered.png,
+      result: {
+        mimeType: rendered.mimeType,
+        pixelSize: rendered.pixelSize,
+        byteLength: rendered.byteLength,
+        sha256: rendered.sha256,
+        map: {
+          path: context.loaded.path,
+          revision: context.loaded.revision,
+        },
+        source: {
+          assetId: binding.assetId,
+          revision: binding.revision,
+        },
+        image: {
+          path: image.path,
+          revision: image.revision,
+          format: rendered.image.format,
+          pixelSize:
+            rendered.image.pixelSize,
+        },
+        tileset: {
+          path: binding.path,
+          name: binding.name,
+          ...(binding.nameTruncated
+            ? { nameTruncated: true }
+            : {}),
+          tileCount,
+          tileSize: {
+            width: tileWidth,
+            height: tileHeight,
+          },
+          atlas: {
+            columns: atlasColumns,
+            margin,
+            spacing,
+          },
+        },
+        renderProfile:
+          "explicit-local-id-atlas-selection-v1",
+        selection: rendered.selection,
+        scale: rendered.scale,
+        snapshotConsistency:
+          "non-atomic-read-set",
         truncated: false,
       },
     };
@@ -10481,6 +10720,109 @@ function assertDependencyRevisions(
         differences: dependencyDifferenceSample(expected, actual),
       },
     );
+  }
+}
+
+function assertRootAtlasTileDefinitions(
+  document: JsonObject,
+  path: string,
+  tileCount: number,
+): void {
+  if (document.tiles === undefined) {
+    return;
+  }
+  const entries = expectArray(
+    document.tiles,
+    `${path}.tiles`,
+  );
+  const seenLocalIds = new Set<number>();
+  for (const [index, value] of entries.entries()) {
+    const tile = expectObject(
+      value,
+      `${path}.tiles[${index}]`,
+    );
+    const localId = expectInteger(
+      tile.id,
+      `${path}.tiles[${index}].id`,
+    );
+    if (localId < 0 || localId >= tileCount) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${path}.tiles[${index}].id is outside the tileset local ID range.`,
+        {
+          path,
+          sourceIndex: index,
+          localId,
+          tileCount,
+        },
+      );
+    }
+    if (seenLocalIds.has(localId)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${path} contains duplicate tile metadata for local ID ${localId}.`,
+        { path, localId },
+      );
+    }
+    seenLocalIds.add(localId);
+    assertAtlasTileDefinition(
+      tile,
+      path,
+      localId,
+    );
+  }
+}
+
+function assertSelectedLocalIds(
+  localIds: readonly number[],
+  tileCount: number,
+  path: string,
+): void {
+  if (
+    !Array.isArray(localIds) ||
+    localIds.length < 1 ||
+    localIds.length > MAX_TILE_RENDER_LOCAL_IDS
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} entries.`,
+      {
+        actual: Array.isArray(localIds)
+          ? localIds.length
+          : null,
+        limit: MAX_TILE_RENDER_LOCAL_IDS,
+      },
+    );
+  }
+  const seen = new Set<number>();
+  for (const [index, localId] of localIds.entries()) {
+    if (!Number.isSafeInteger(localId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `localIds[${index}] must be a safe integer.`,
+        { index, localId },
+      );
+    }
+    if (localId < 0 || localId >= tileCount) {
+      throw new TiledMcpError(
+        "TILE_ID_OUT_OF_RANGE",
+        `Tile ${localId} is outside ${path}.`,
+        {
+          path,
+          index,
+          localId,
+          tileCount,
+        },
+      );
+    }
+    if (seen.has(localId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `localIds contains duplicate tile ID ${localId}.`,
+        { index, localId },
+      );
+    }
+    seen.add(localId);
   }
 }
 

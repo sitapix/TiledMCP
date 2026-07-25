@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -220,10 +222,10 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(24);
-    expect(fullTools).toHaveLength(25);
-    expect(new Set(coreTools).size).toBe(24);
-    expect(new Set(fullTools).size).toBe(25);
+    expect(coreTools).toHaveLength(25);
+    expect(fullTools).toHaveLength(26);
+    expect(new Set(coreTools).size).toBe(25);
+    expect(new Set(fullTools).size).toBe(26);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -246,8 +248,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(25);
-    expect(new Set(toolNames).size).toBe(25);
+    expect(toolDefinitions).toHaveLength(26);
+    expect(new Set(toolNames).size).toBe(26);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );
@@ -379,6 +381,41 @@ describe("generated MCP contract", () => {
       },
       `${capabilitiesLabel} native preview highlights`,
     );
+    expectExactLiteralSchema(
+      schemaProperty(
+        capabilitySuccessSchema,
+        "tileRenderCapabilities",
+        `${capabilitiesLabel} capability result`,
+      ),
+      {
+        locator:
+          "map-path-plus-tileset-asset-id",
+        renderProfile:
+          "explicit-local-id-atlas-selection-v1",
+        atlasProfile:
+          "root-atlas-no-per-tile-images",
+        supportedFormats: [
+          "png",
+          "jpeg",
+          "webp",
+          "simple-svg",
+        ],
+        selection: "explicit-local-ids",
+        localIdOrder: "input-preserved",
+        duplicateLocalIds: "reject",
+        selectionReduction: "never",
+        layout: "row-major",
+        columnsSemantics: "maximum-per-row",
+        labels: "local-id",
+        defaultColumns: 8,
+        defaultScale: 2,
+        revisionPins: "independent-optional",
+        animation: false,
+        wangGrouping: false,
+        semanticNames: false,
+      },
+      `${capabilitiesLabel} selected tile renderer`,
+    );
     const nativePreviewLimitsSchema =
       schemaProperty(
         capabilitySuccessSchema,
@@ -406,6 +443,22 @@ describe("generated MCP contract", () => {
         `${capabilitiesLabel} limits`,
       ).const,
     ).toBe(2_097_152);
+    for (const [name, expected] of [
+      ["maxTileRenderLocalIds", 64],
+      ["maxTileRenderColumns", 32],
+      ["maxTileRenderScale", 4],
+      ["maxTileRenderBytes", 8 * 1024 * 1024],
+      ["maxTileRenderEdge", 2_048],
+      ["maxTileRenderPixels", 1_500_000],
+    ] as const) {
+      expect(
+        schemaProperty(
+          nativePreviewLimitsSchema,
+          name,
+          `${capabilitiesLabel} limits`,
+        ).const,
+      ).toBe(expected);
+    }
 
     const objectShapeCapabilitiesSchema =
       schemaProperty(
@@ -597,6 +650,229 @@ describe("generated MCP contract", () => {
         "polyline",
       ),
     ).toBe(2);
+
+    const tileRenderIndex =
+      toolNames.indexOf("tiled_render_tiles");
+    expect(tileRenderIndex).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(
+      fullTools.indexOf("tiled_render_tiles"),
+    ).toBe(
+      fullTools.indexOf(
+        "tiled_render_tileset_sheet",
+      ) + 1,
+    );
+    const tileRenderTool =
+      toolDefinitions[tileRenderIndex];
+    if (tileRenderTool === undefined) {
+      throw new Error(
+        "Missing tiled_render_tiles definition",
+      );
+    }
+    const tileRenderLabel =
+      `contract.toolDefinitions[${tileRenderIndex}]`;
+    const tileRenderInput = asRecord(
+      tileRenderTool.inputSchema,
+      `${tileRenderLabel}.inputSchema`,
+    );
+    const localIdsInput = schemaProperty(
+      tileRenderInput,
+      "localIds",
+      `${tileRenderLabel}.inputSchema`,
+    );
+    expect(localIdsInput.type).toBe("array");
+    expect(localIdsInput.minItems).toBe(1);
+    expect(localIdsInput.maxItems).toBe(64);
+    expect(localIdsInput.uniqueItems).toBe(true);
+    expect(
+      asRecord(
+        localIdsInput.items,
+        `${tileRenderLabel}.inputSchema.localIds.items`,
+      ),
+    ).toMatchObject({
+      type: "integer",
+      minimum: 0,
+      maximum: 0x0fffffff,
+    });
+    expect(
+      schemaProperty(
+        tileRenderInput,
+        "columns",
+        `${tileRenderLabel}.inputSchema`,
+      ),
+    ).toMatchObject({
+      type: "integer",
+      minimum: 1,
+      maximum: 32,
+    });
+    expect(
+      schemaProperty(
+        tileRenderInput,
+        "scale",
+        `${tileRenderLabel}.inputSchema`,
+      ),
+    ).toMatchObject({
+      type: "integer",
+      minimum: 1,
+      maximum: 4,
+      default: 2,
+    });
+    expect(
+      asStringArray(
+        tileRenderInput.required,
+        `${tileRenderLabel}.inputSchema.required`,
+      ).sort(),
+    ).toEqual(
+      [
+        "localIds",
+        "mapPath",
+        "tilesetAssetId",
+      ].sort(),
+    );
+
+    const tileRenderSuccess =
+      findResultBranchWithProperty(
+        tileRenderTool.outputSchema,
+        "renderProfile",
+        `${tileRenderLabel}.outputSchema`,
+      );
+    expect(
+      schemaProperty(
+        tileRenderSuccess,
+        "renderProfile",
+        `${tileRenderLabel} success result`,
+      ).const,
+    ).toBe(
+      "explicit-local-id-atlas-selection-v1",
+    );
+    expect(
+      schemaProperty(
+        tileRenderSuccess,
+        "snapshotConsistency",
+        `${tileRenderLabel} success result`,
+      ).const,
+    ).toBe("non-atomic-read-set");
+    expect(
+      schemaProperty(
+        tileRenderSuccess,
+        "truncated",
+        `${tileRenderLabel} success result`,
+      ).const,
+    ).toBe(false);
+    expect(
+      asRecord(
+        tileRenderSuccess.properties,
+        `${tileRenderLabel} success properties`,
+      ),
+    ).not.toHaveProperty("page");
+    const selectionSchema = schemaProperty(
+      tileRenderSuccess,
+      "selection",
+      `${tileRenderLabel} success result`,
+    );
+    const selectionDescription = asString(
+      selectionSchema.description,
+      `${tileRenderLabel} selection description`,
+    );
+    for (const invariant of [
+      "count equals localIds.length",
+      "layout.rows equals ceil(count / layout.columns)",
+      "layout.adjusted exactly reports",
+      "adjusted=true requires requestedColumns=8",
+    ]) {
+      expect(selectionDescription).toContain(
+        invariant,
+      );
+    }
+    expect(
+      Object.keys(
+        asRecord(
+          selectionSchema.properties,
+          `${tileRenderLabel} selection properties`,
+        ),
+      ).sort(),
+    ).toEqual(
+      [
+        "count",
+        "labels",
+        "layout",
+        "localIds",
+        "order",
+      ].sort(),
+    );
+    const layoutSchema = schemaProperty(
+      selectionSchema,
+      "layout",
+      `${tileRenderLabel} selection`,
+    );
+    const selectionLocalIdsSchema =
+      schemaProperty(
+        selectionSchema,
+        "localIds",
+        `${tileRenderLabel} selection`,
+      );
+    expect(
+      selectionLocalIdsSchema.uniqueItems,
+    ).toBe(true);
+    expect(
+      Object.keys(
+        asRecord(
+          layoutSchema.properties,
+          `${tileRenderLabel} layout properties`,
+        ),
+      ).sort(),
+    ).toEqual(
+      [
+        "adjusted",
+        "columns",
+        "kind",
+        "requestedColumns",
+        "rows",
+      ].sort(),
+    );
+    expect(
+      asString(
+        schemaProperty(
+          tileRenderSuccess,
+          "pixelSize",
+          `${tileRenderLabel} success result`,
+        ).description,
+        `${tileRenderLabel} pixelSize description`,
+      ),
+    ).toContain(
+      "width * height <= 1500000",
+    );
+    expect(
+      asString(
+        tileRenderSuccess.description,
+        `${tileRenderLabel} success description`,
+      ),
+    ).toContain(
+      "selection.localIds entry is less than tileset.tileCount",
+    );
+
+    const inputValidator =
+      new AjvJsonSchemaValidator().getValidator(
+        tileRenderTool.inputSchema as JsonSchemaType,
+      );
+    expect(
+      inputValidator({
+        mapPath: "maps/example.tmj",
+        tilesetAssetId:
+          "asset_0123456789abcdef01234567",
+        localIds: [1, 1],
+      }).valid,
+    ).toBe(false);
+    const outputValidator =
+      new AjvJsonSchemaValidator().getValidator(
+        tileRenderTool.outputSchema as JsonSchemaType,
+      );
+    expect(
+      outputValidator(
+        tileRenderOutputEnvelope([1, 1]),
+      ).valid,
+    ).toBe(false);
 
     const nativePreviewIndex =
       toolNames.indexOf("tiled_render_preview");
@@ -1420,6 +1696,75 @@ function expectClosedSchemaTree(
   };
 
   visit(schema, label);
+}
+
+function tileRenderOutputEnvelope(
+  localIds: number[],
+): Record<string, unknown> {
+  const revision =
+    `sha256:${"0".repeat(64)}`;
+  return {
+    result: {
+      mimeType: "image/png",
+      pixelSize: {
+        width: 100,
+        height: 100,
+      },
+      byteLength: 100,
+      sha256: revision,
+      map: {
+        path: "maps/example.tmj",
+        revision,
+      },
+      source: {
+        assetId:
+          "asset_0123456789abcdef01234567",
+        revision,
+      },
+      image: {
+        path: "tiles/example.png",
+        revision,
+        format: "png",
+        pixelSize: {
+          width: 32,
+          height: 32,
+        },
+      },
+      tileset: {
+        path: "tiles/example.tsj",
+        name: "Example",
+        tileCount: 4,
+        tileSize: {
+          width: 16,
+          height: 16,
+        },
+        atlas: {
+          columns: 2,
+          margin: 0,
+          spacing: 0,
+        },
+      },
+      renderProfile:
+        "explicit-local-id-atlas-selection-v1",
+      selection: {
+        localIds,
+        count: localIds.length,
+        order: "input",
+        labels: "local-id",
+        layout: {
+          kind: "row-major",
+          requestedColumns: 2,
+          columns: 2,
+          rows: 1,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+      snapshotConsistency:
+        "non-atomic-read-set",
+      truncated: false,
+    },
+  };
 }
 
 function asRecord(

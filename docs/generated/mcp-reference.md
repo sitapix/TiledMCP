@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 24 tools
-- `with-tmxrasterizer`: 25 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 25 tools
+- `with-tmxrasterizer`: 26 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d",
+    "revision": "sha256:723f0eb74a5b423725f6670ef475470fd82f303e087c5c410be7c67793c9b81a",
     "serverVersion": "0.0.1",
-    "size": 57312
+    "size": 57696
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 57312,
+  "size": 57696,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 57312 UTF-8 bytes, revision `sha256:a22098db3322176cb760a9cf9afe3f95d243bdca91d6071eb8c5e8a4a509175d`.
+Content contract: `text`, 57696 UTF-8 bytes, revision `sha256:723f0eb74a5b423725f6670ef475470fd82f303e087c5c410be7c67793c9b81a`.
 
 Resource templates: none.
 
@@ -8746,6 +8746,30 @@ Output schema:
                   "const": 1000000,
                   "type": "number"
                 },
+                "maxTileRenderBytes": {
+                  "const": 8388608,
+                  "type": "number"
+                },
+                "maxTileRenderColumns": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "maxTileRenderEdge": {
+                  "const": 2048,
+                  "type": "number"
+                },
+                "maxTileRenderLocalIds": {
+                  "const": 64,
+                  "type": "number"
+                },
+                "maxTileRenderPixels": {
+                  "const": 1500000,
+                  "type": "number"
+                },
+                "maxTileRenderScale": {
+                  "const": 4,
+                  "type": "number"
+                },
                 "maxTilesetAnimationFrameSample": {
                   "const": 16,
                   "type": "number"
@@ -8882,6 +8906,12 @@ Output schema:
                 "maxTilesetSheetPageSize",
                 "maxTilesetSheetColumns",
                 "maxTilesetSheetScale",
+                "maxTileRenderLocalIds",
+                "maxTileRenderColumns",
+                "maxTileRenderScale",
+                "maxTileRenderBytes",
+                "maxTileRenderEdge",
+                "maxTileRenderPixels",
                 "maxTilesetMetadataLimit",
                 "maxTilesetMetadataEntries",
                 "maxTilesetAnimationFrames",
@@ -9875,6 +9905,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_render_tiles",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_render_preview",
                       "type": "string"
                     },
@@ -9973,6 +10007,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_render_tileset_sheet",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_render_tiles",
                       "type": "string"
                     },
                     {
@@ -10395,6 +10433,116 @@ Output schema:
               ],
               "type": "array"
             },
+            "tileRenderCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "animation": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "atlasProfile": {
+                  "const": "root-atlas-no-per-tile-images",
+                  "type": "string"
+                },
+                "columnsSemantics": {
+                  "const": "maximum-per-row",
+                  "type": "string"
+                },
+                "defaultColumns": {
+                  "const": 8,
+                  "type": "number"
+                },
+                "defaultScale": {
+                  "const": 2,
+                  "type": "number"
+                },
+                "duplicateLocalIds": {
+                  "const": "reject",
+                  "type": "string"
+                },
+                "labels": {
+                  "const": "local-id",
+                  "type": "string"
+                },
+                "layout": {
+                  "const": "row-major",
+                  "type": "string"
+                },
+                "localIdOrder": {
+                  "const": "input-preserved",
+                  "type": "string"
+                },
+                "locator": {
+                  "const": "map-path-plus-tileset-asset-id",
+                  "type": "string"
+                },
+                "renderProfile": {
+                  "const": "explicit-local-id-atlas-selection-v1",
+                  "type": "string"
+                },
+                "revisionPins": {
+                  "const": "independent-optional",
+                  "type": "string"
+                },
+                "selection": {
+                  "const": "explicit-local-ids",
+                  "type": "string"
+                },
+                "selectionReduction": {
+                  "const": "never",
+                  "type": "string"
+                },
+                "semanticNames": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "supportedFormats": {
+                  "items": [
+                    {
+                      "const": "png",
+                      "type": "string"
+                    },
+                    {
+                      "const": "jpeg",
+                      "type": "string"
+                    },
+                    {
+                      "const": "webp",
+                      "type": "string"
+                    },
+                    {
+                      "const": "simple-svg",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "wangGrouping": {
+                  "const": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "locator",
+                "renderProfile",
+                "atlasProfile",
+                "supportedFormats",
+                "selection",
+                "localIdOrder",
+                "duplicateLocalIds",
+                "selectionReduction",
+                "layout",
+                "columnsSemantics",
+                "labels",
+                "defaultColumns",
+                "defaultScale",
+                "revisionPins",
+                "animation",
+                "wangGrouping",
+                "semanticNames"
+              ],
+              "type": "object"
+            },
             "tileReplacementCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -10728,6 +10876,7 @@ Output schema:
             "checkpointCapabilities",
             "mapCreationCapabilities",
             "tilesetSheetCapabilities",
+            "tileRenderCapabilities",
             "tilesetDetailCapabilities",
             "tileFindCapabilities",
             "usageAnalysisCapabilities",
@@ -26226,6 +26375,605 @@ Output schema:
             "scale",
             "overlays",
             "renderProfile",
+            "truncated"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_render_tiles`
+
+Availability: `core`
+
+Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated. Asset discovery may update project-internal safety metadata.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Read local Tiled project data"
+}
+```
+
+Example purpose: 按输入顺序放大并标注一组显式、稀疏的 local tile IDs。
+
+```json
+{
+  "arguments": {
+    "columns": 3,
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "localIds": [
+      17,
+      3,
+      42
+    ],
+    "mapPath": "maps/example.tmj",
+    "scale": 4,
+    "tilesetAssetId": "asset_0123456789abcdef01234567"
+  },
+  "name": "tiled_render_tiles"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "columns": {
+      "description": "Maximum tile columns per row; defaults to 8 when omitted",
+      "maximum": 32,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedTilesetRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "localIds": {
+      "items": {
+        "maximum": 268435455,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "scale": {
+      "default": 2,
+      "maximum": 4,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "tilesetAssetId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "tilesetAssetId",
+    "localIds"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "Runtime enforces every selection.localIds entry is less than tileset.tileCount; this dynamic cross-field invariant is not expressible in the published Draft-07 schema.",
+          "properties": {
+            "byteLength": {
+              "exclusiveMinimum": 0,
+              "maximum": 8388608,
+              "type": "integer"
+            },
+            "image": {
+              "additionalProperties": false,
+              "properties": {
+                "format": {
+                  "enum": [
+                    "jpeg",
+                    "png",
+                    "svg",
+                    "webp"
+                  ],
+                  "type": "string"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pixelSize": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "revision",
+                "format",
+                "pixelSize"
+              ],
+              "type": "object"
+            },
+            "map": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "revision"
+              ],
+              "type": "object"
+            },
+            "mimeType": {
+              "const": "image/png",
+              "type": "string"
+            },
+            "pixelSize": {
+              "additionalProperties": false,
+              "description": "Rendered PNG dimensions. Runtime enforces width * height <= 1500000; this multiplicative invariant is not expressible in the published Draft-07 schema.",
+              "properties": {
+                "height": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 2048,
+                  "type": "integer"
+                },
+                "width": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 2048,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "width",
+                "height"
+              ],
+              "type": "object"
+            },
+            "renderProfile": {
+              "const": "explicit-local-id-atlas-selection-v1",
+              "type": "string"
+            },
+            "scale": {
+              "exclusiveMinimum": 0,
+              "maximum": 4,
+              "type": "integer"
+            },
+            "selection": {
+              "additionalProperties": false,
+              "description": "Runtime-enforced cross-field invariants: count equals localIds.length; layout.rows equals ceil(count / layout.columns); layout.adjusted exactly reports an automatic reduction from the omitted-input default of 8 columns, and adjusted=true requires requestedColumns=8.",
+              "properties": {
+                "count": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 64,
+                  "type": "integer"
+                },
+                "labels": {
+                  "const": "local-id",
+                  "type": "string"
+                },
+                "layout": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "adjusted": {
+                      "type": "boolean"
+                    },
+                    "columns": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 32,
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "const": "row-major",
+                      "type": "string"
+                    },
+                    "requestedColumns": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 32,
+                      "type": "integer"
+                    },
+                    "rows": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 64,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "requestedColumns",
+                    "columns",
+                    "rows",
+                    "adjusted"
+                  ],
+                  "type": "object"
+                },
+                "localIds": {
+                  "items": {
+                    "maximum": 268435455,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "maxItems": 64,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "order": {
+                  "const": "input",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "localIds",
+                "count",
+                "order",
+                "labels",
+                "layout"
+              ],
+              "type": "object"
+            },
+            "sha256": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "source": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "pattern": "^asset_[0-9a-f]{24}$",
+                  "type": "string"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "assetId",
+                "revision"
+              ],
+              "type": "object"
+            },
+            "tileset": {
+              "additionalProperties": false,
+              "properties": {
+                "atlas": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "columns": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "margin": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "spacing": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "columns",
+                    "margin",
+                    "spacing"
+                  ],
+                  "type": "object"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nameTruncated": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "tileCount": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "tileSize": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "path",
+                "name",
+                "tileCount",
+                "tileSize",
+                "atlas"
+              ],
+              "type": "object"
+            },
+            "truncated": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "mimeType",
+            "pixelSize",
+            "byteLength",
+            "sha256",
+            "map",
+            "source",
+            "image",
+            "tileset",
+            "renderProfile",
+            "selection",
+            "scale",
+            "snapshotConsistency",
             "truncated"
           ],
           "type": "object"

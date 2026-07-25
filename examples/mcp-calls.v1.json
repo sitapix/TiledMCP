@@ -146,6 +146,24 @@
       "purpose": "渲染带 local tile ID 标注的有界 atlas 分页图。"
     },
     {
+      "name": "tiled_render_tiles",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "localIds": [
+          17,
+          3,
+          42
+        ],
+        "columns": 3,
+        "scale": 4,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "purpose": "按输入顺序放大并标注一组显式、稀疏的 local tile IDs。"
+    },
+    {
       "name": "tiled_render_preview",
       "profile": "core",
       "arguments": {

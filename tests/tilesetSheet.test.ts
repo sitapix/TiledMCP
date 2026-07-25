@@ -5,8 +5,18 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_TILE_RENDER_COLUMNS,
+  DEFAULT_TILE_RENDER_SCALE,
+  MAX_TILE_RENDER_BYTES,
+  MAX_TILE_RENDER_COLUMNS,
+  MAX_TILE_RENDER_EDGE,
+  MAX_TILE_RENDER_LOCAL_IDS,
+  MAX_TILE_RENDER_PIXELS,
+  MAX_TILE_RENDER_SCALE,
   renderTilesetSheet,
+  renderTilesetTiles,
   type TilesetSheetInput,
+  type TilesetTilesInput,
 } from "../src/images/tilesetSheet.js";
 
 const FIXTURE_PATH = "fixtures/mvp/tiles.svg";
@@ -442,6 +452,317 @@ describe("renderTilesetSheet", () => {
   });
 });
 
+describe("renderTilesetTiles", () => {
+  it("exports the frozen explicit-selection limits and defaults", () => {
+    expect({
+      maxLocalIds: MAX_TILE_RENDER_LOCAL_IDS,
+      defaultColumns: DEFAULT_TILE_RENDER_COLUMNS,
+      maxColumns: MAX_TILE_RENDER_COLUMNS,
+      defaultScale: DEFAULT_TILE_RENDER_SCALE,
+      maxScale: MAX_TILE_RENDER_SCALE,
+      maxBytes: MAX_TILE_RENDER_BYTES,
+      maxEdge: MAX_TILE_RENDER_EDGE,
+      maxPixels: MAX_TILE_RENDER_PIXELS,
+    }).toEqual({
+      maxLocalIds: 64,
+      defaultColumns: 8,
+      maxColumns: 32,
+      defaultScale: 2,
+      maxScale: 4,
+      maxBytes: 8 * 1024 * 1024,
+      maxEdge: 2_048,
+      maxPixels: 1_500_000,
+    });
+  });
+
+  it("renders non-consecutive local IDs in exact input row-major order", async () => {
+    const imageBytes = await readFile(FIXTURE_PATH);
+    const rendered = await renderTilesetTiles({
+      ...baseTilesInput(imageBytes),
+      localIds: [3, 0, 2],
+      columns: 2,
+    });
+
+    expect(rendered).toMatchObject({
+      mimeType: "image/png",
+      pixelSize: { width: 96, height: 124 },
+      image: {
+        format: "svg",
+        pixelSize: { width: 32, height: 32 },
+      },
+      selection: {
+        localIds: [3, 0, 2],
+        count: 3,
+        order: "input",
+        labels: "local-id",
+        layout: {
+          kind: "row-major",
+          requestedColumns: 2,
+          columns: 2,
+          rows: 2,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+    });
+    expect(rendered.byteLength).toBe(rendered.png.byteLength);
+    expect(rendered.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+
+    const decoded = await decodeRgba(rendered.png);
+    expect(pixel(decoded, 28, 28)).toEqual([210, 191, 114, 255]);
+    expect(pixel(decoded, 68, 28)).toEqual([79, 143, 79, 255]);
+    expect(pixel(decoded, 28, 82)).toEqual([70, 122, 163, 255]);
+  });
+
+  it("expands default layout values and accepts both selection size boundaries", async () => {
+    const imageBytes = await readFile(FIXTURE_PATH);
+    const single = await renderTilesetTiles({
+      ...baseTilesInput(imageBytes),
+      localIds: [0],
+    });
+    expect(single.selection).toEqual({
+      localIds: [0],
+      count: 1,
+      order: "input",
+      labels: "local-id",
+      layout: {
+        kind: "row-major",
+        requestedColumns: 8,
+        columns: 1,
+        rows: 1,
+        adjusted: false,
+      },
+    });
+    expect(single.scale).toBe(2);
+
+    const source = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#336699"/></svg>',
+      "utf8",
+    );
+    const localIds = Array.from(
+      { length: MAX_TILE_RENDER_LOCAL_IDS },
+      (_, index) => index,
+    );
+    const maximum = await renderTilesetTiles({
+      imageBytes: source,
+      imagePath: "tiles/sixty-four.svg",
+      imageWidth: 8,
+      imageHeight: 8,
+      tileWidth: 1,
+      tileHeight: 1,
+      tileCount: 64,
+      atlasColumns: 8,
+      margin: 0,
+      spacing: 0,
+      localIds,
+    });
+    expect(maximum.selection).toEqual({
+      localIds,
+      count: 64,
+      order: "input",
+      labels: "local-id",
+      layout: {
+        kind: "row-major",
+        requestedColumns: 8,
+        columns: 8,
+        rows: 8,
+        adjusted: false,
+      },
+    });
+    expect(maximum.pixelSize.width).toBeLessThanOrEqual(
+      MAX_TILE_RENDER_EDGE,
+    );
+    expect(
+      maximum.pixelSize.width * maximum.pixelSize.height,
+    ).toBeLessThanOrEqual(MAX_TILE_RENDER_PIXELS);
+  });
+
+  it("rejects empty, oversized, unsafe and duplicate local-ID selections", async () => {
+    const imageBytes = await readFile(FIXTURE_PATH);
+    const input = baseTilesInput(imageBytes);
+    await expect(
+      renderTilesetTiles({ ...input, localIds: [] }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderTilesetTiles({
+        ...input,
+        localIds: Array.from({ length: 65 }, (_, index) => index),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderTilesetTiles({ ...input, localIds: [-1] }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderTilesetTiles({
+        ...input,
+        localIds: [Number.MAX_SAFE_INTEGER + 1],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderTilesetTiles({ ...input, localIds: [2, 0, 2] }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: {
+        localId: 2,
+        firstIndex: 0,
+        duplicateIndex: 2,
+      },
+    });
+  });
+
+  it("reports a valid integer outside tileCount as TILE_ID_OUT_OF_RANGE", async () => {
+    const imageBytes = await readFile(FIXTURE_PATH);
+    await expect(
+      renderTilesetTiles({
+        ...baseTilesInput(imageBytes),
+        localIds: [4],
+      }),
+    ).rejects.toMatchObject({
+      code: "TILE_ID_OUT_OF_RANGE",
+      details: {
+        path: FIXTURE_PATH,
+        localId: 4,
+        tileCount: 4,
+        index: 0,
+      },
+    });
+  });
+
+  it("automatically narrows omitted columns but rejects the same explicit over-budget columns", async () => {
+    const source = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="100"><rect width="2400" height="100" fill="#336699"/></svg>',
+      "utf8",
+    );
+    const input: TilesetTilesInput = {
+      imageBytes: source,
+      imagePath: "tiles/wide.svg",
+      imageWidth: 2_400,
+      imageHeight: 100,
+      tileWidth: 300,
+      tileHeight: 100,
+      tileCount: 8,
+      atlasColumns: 8,
+      margin: 0,
+      spacing: 0,
+      localIds: [0, 1, 2, 3, 4, 5, 6, 7],
+      scale: 1,
+    };
+    const rendered = await renderTilesetTiles(input);
+    expect(rendered.selection.layout).toEqual({
+      kind: "row-major",
+      requestedColumns: 8,
+      columns: 6,
+      rows: 2,
+      adjusted: true,
+    });
+    expect(rendered.scale).toBe(1);
+
+    await expect(
+      renderTilesetTiles({ ...input, columns: 8 }),
+    ).rejects.toMatchObject({
+      code: "IMAGE_DIMENSIONS_EXCEEDED",
+      details: {
+        requestedColumns: 8,
+        effectiveRequestedColumns: 8,
+        maximumColumns: 6,
+      },
+    });
+  });
+
+  it("searches narrower implicit columns when a partial final row exceeds the total pixel budget", async () => {
+    const source = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="574" height="1869"><rect width="574" height="1869" fill="#336699"/></svg>',
+      "utf8",
+    );
+    const localIds = Array.from({ length: 49 }, (_, index) => index);
+    const input: TilesetTilesInput = {
+      imageBytes: source,
+      imagePath: "tiles/partial-final-row.svg",
+      imageWidth: 574,
+      imageHeight: 1_869,
+      tileWidth: 82,
+      tileHeight: 267,
+      tileCount: 49,
+      atlasColumns: 7,
+      margin: 0,
+      spacing: 0,
+      localIds,
+      scale: 1,
+    };
+
+    const rendered = await renderTilesetTiles(input);
+    expect(rendered.pixelSize).toEqual({
+      width: 646,
+      height: 2_039,
+    });
+    expect(rendered.selection.layout).toEqual({
+      kind: "row-major",
+      requestedColumns: 8,
+      columns: 7,
+      rows: 7,
+      adjusted: true,
+    });
+    expect(
+      rendered.pixelSize.width * rendered.pixelSize.height,
+    ).toBeLessThanOrEqual(MAX_TILE_RENDER_PIXELS);
+
+    await expect(
+      renderTilesetTiles({ ...input, columns: 8 }),
+    ).rejects.toMatchObject({
+      code: "IMAGE_DIMENSIONS_EXCEEDED",
+      details: {
+        width: 736,
+        height: 2_039,
+        maxPixels: MAX_TILE_RENDER_PIXELS,
+      },
+    });
+  });
+
+  it("fails the whole selection when every requested tile cannot fit", async () => {
+    const source = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1000"><rect width="2000" height="1000" fill="#336699"/></svg>',
+      "utf8",
+    );
+    await expect(
+      renderTilesetTiles({
+        imageBytes: source,
+        imagePath: "tiles/too-tall.svg",
+        imageWidth: 2_000,
+        imageHeight: 1_000,
+        tileWidth: 1_000,
+        tileHeight: 1_000,
+        tileCount: 2,
+        atlasColumns: 2,
+        margin: 0,
+        spacing: 0,
+        localIds: [0, 1],
+        scale: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "IMAGE_DIMENSIONS_EXCEEDED",
+    });
+  });
+
+  it("rejects columns and scale outside their frozen bounds", async () => {
+    const imageBytes = await readFile(FIXTURE_PATH);
+    const input = baseTilesInput(imageBytes);
+    await expect(
+      renderTilesetTiles({
+        ...input,
+        localIds: [0],
+        columns: MAX_TILE_RENDER_COLUMNS + 1,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderTilesetTiles({
+        ...input,
+        localIds: [0],
+        scale: MAX_TILE_RENDER_SCALE + 1,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+});
+
 function baseInput(imageBytes: Buffer): TilesetSheetInput {
   return {
     imageBytes,
@@ -457,6 +778,24 @@ function baseInput(imageBytes: Buffer): TilesetSheetInput {
     page: 0,
     pageSize: 64,
     scale: 2,
+  };
+}
+
+function baseTilesInput(imageBytes: Buffer): Omit<
+  TilesetTilesInput,
+  "localIds"
+> {
+  return {
+    imageBytes,
+    imagePath: FIXTURE_PATH,
+    imageWidth: 32,
+    imageHeight: 32,
+    tileWidth: 16,
+    tileHeight: 16,
+    tileCount: 4,
+    atlasColumns: 2,
+    margin: 0,
+    spacing: 0,
   };
 }
 

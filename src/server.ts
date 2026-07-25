@@ -31,8 +31,16 @@ import {
 } from "./filesystemThreatModelContract.js";
 import type { JsonValue } from "./formats/json.js";
 import {
+  DEFAULT_TILE_RENDER_COLUMNS,
+  DEFAULT_TILE_RENDER_SCALE,
   DEFAULT_TILESET_SHEET_PAGE_SIZE,
   DEFAULT_TILESET_SHEET_SCALE,
+  MAX_TILE_RENDER_BYTES,
+  MAX_TILE_RENDER_COLUMNS,
+  MAX_TILE_RENDER_EDGE,
+  MAX_TILE_RENDER_LOCAL_IDS,
+  MAX_TILE_RENDER_PIXELS,
+  MAX_TILE_RENDER_SCALE,
   MAX_TILESET_IMAGE_BYTES,
   MAX_TILESET_INPUT_EDGE,
   MAX_TILESET_INPUT_PIXELS,
@@ -164,6 +172,7 @@ import {
   objectListToolOutputSchema,
   rasterMapToolOutputSchema,
   regionToolOutputSchema,
+  tileRenderToolOutputSchema,
   tilesetSheetToolOutputSchema,
   validationToolOutputSchema,
 } from "./outputSchemas/read.js";
@@ -1127,6 +1136,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_find_tiles",
     "tiled_get_region",
     "tiled_render_tileset_sheet",
+    "tiled_render_tiles",
     "tiled_render_preview",
     "tiled_list_objects",
     "tiled_get_object",
@@ -1878,6 +1888,34 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           consecutiveLocalIds: true,
           semanticNames: false,
         },
+        tileRenderCapabilities: {
+          locator:
+            "map-path-plus-tileset-asset-id",
+          renderProfile:
+            "explicit-local-id-atlas-selection-v1",
+          atlasProfile:
+            "root-atlas-no-per-tile-images",
+          supportedFormats: [
+            "png",
+            "jpeg",
+            "webp",
+            "simple-svg",
+          ],
+          selection: "explicit-local-ids",
+          localIdOrder: "input-preserved",
+          duplicateLocalIds: "reject",
+          selectionReduction: "never",
+          layout: "row-major",
+          columnsSemantics: "maximum-per-row",
+          labels: "local-id",
+          defaultColumns:
+            DEFAULT_TILE_RENDER_COLUMNS,
+          defaultScale: DEFAULT_TILE_RENDER_SCALE,
+          revisionPins: "independent-optional",
+          animation: false,
+          wangGrouping: false,
+          semanticNames: false,
+        },
         tilesetDetailCapabilities: {
           locator: "map-path-plus-tileset-asset-id",
           tileMetadataOrder: "local-id",
@@ -2034,6 +2072,17 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxTilesetSheetPageSize: MAX_TILESET_SHEET_PAGE_SIZE,
           maxTilesetSheetColumns: MAX_TILESET_SHEET_COLUMNS,
           maxTilesetSheetScale: MAX_TILESET_SHEET_SCALE,
+          maxTileRenderLocalIds:
+            MAX_TILE_RENDER_LOCAL_IDS,
+          maxTileRenderColumns:
+            MAX_TILE_RENDER_COLUMNS,
+          maxTileRenderScale:
+            MAX_TILE_RENDER_SCALE,
+          maxTileRenderBytes:
+            MAX_TILE_RENDER_BYTES,
+          maxTileRenderEdge: MAX_TILE_RENDER_EDGE,
+          maxTileRenderPixels:
+            MAX_TILE_RENDER_PIXELS,
           maxTilesetMetadataLimit: MAX_TILESET_METADATA_LIMIT,
           maxTilesetMetadataEntries: MAX_TILESET_METADATA_ENTRIES,
           maxTilesetAnimationFrames: MAX_TILESET_ANIMATION_FRAMES,
@@ -2704,6 +2753,108 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           return toolError(error);
         }
       }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_render_tiles",
+    {
+      title: "Render selected tiles",
+      description:
+        "Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated. Asset discovery may update project-internal safety metadata.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          tilesetAssetId: z.string().min(1).max(128),
+          localIds: z
+            .array(
+              z
+                .number()
+                .int()
+                .min(0)
+                .max(0x0fffffff),
+            )
+            .min(1)
+            .max(MAX_TILE_RENDER_LOCAL_IDS)
+            .meta({ uniqueItems: true })
+            .superRefine((localIds, context) => {
+              const seen = new Set<number>();
+              for (const [
+                index,
+                localId,
+              ] of localIds.entries()) {
+                if (seen.has(localId)) {
+                  context.addIssue({
+                    code: "custom",
+                    message: `Duplicate local tile ID ${localId}`,
+                    path: [index],
+                  });
+                }
+                seen.add(localId);
+              }
+            }),
+          columns: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_TILE_RENDER_COLUMNS)
+            .describe(
+              `Maximum tile columns per row; defaults to ${DEFAULT_TILE_RENDER_COLUMNS} when omitted`,
+            )
+            .optional(),
+          scale: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_TILE_RENDER_SCALE)
+            .default(DEFAULT_TILE_RENDER_SCALE),
+          expectedMapRevision:
+            revisionSchema.optional(),
+          expectedTilesetRevision:
+            revisionSchema.optional(),
+        })
+        .strict(),
+      outputSchema: tileRenderToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({
+      mapPath,
+      tilesetAssetId,
+      localIds,
+      columns,
+      scale,
+      expectedMapRevision,
+      expectedTilesetRevision,
+    }) =>
+      renderMutex.runExclusive(
+        "sharp-render",
+        async () => {
+          try {
+            const rendered = await maps.renderTiles({
+              mapPath,
+              tilesetAssetId,
+              localIds,
+              scale,
+              ...(columns === undefined
+                ? {}
+                : { columns }),
+              ...(expectedMapRevision === undefined
+                ? {}
+                : { expectedMapRevision }),
+              ...(expectedTilesetRevision === undefined
+                ? {}
+                : { expectedTilesetRevision }),
+            });
+            return imageToolResult(
+              rendered.result,
+              rendered.png,
+            );
+          } catch (error) {
+            return toolError(error);
+          }
+        },
+      ),
   );
 
   register(

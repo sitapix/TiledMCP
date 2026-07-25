@@ -32,6 +32,9 @@ import {
 } from "../src/filesystemThreatModelContract.js";
 import { serializeJsonDocument, type JsonObject } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
+import {
+  tileRenderToolOutputSchema,
+} from "../src/outputSchemas/read.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
   APPLICATION_ERROR_RESOURCE_META,
@@ -169,6 +172,7 @@ const CORE_TOOLS = [
   "tiled_find_tiles",
   "tiled_get_region",
   "tiled_render_tileset_sheet",
+  "tiled_render_tiles",
   "tiled_render_preview",
   "tiled_list_objects",
   "tiled_get_object",
@@ -276,7 +280,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the twenty-four core tools with safety annotations", async () => {
+  it("advertises exactly the twenty-five core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -290,6 +294,7 @@ describe("createTiledMcpServer", () => {
       "tiled_find_tiles",
       "tiled_get_region",
       "tiled_render_tileset_sheet",
+      "tiled_render_tiles",
       "tiled_render_preview",
       "tiled_list_objects",
       "tiled_get_object",
@@ -2781,6 +2786,25 @@ describe("createTiledMcpServer", () => {
         consecutiveLocalIds: boolean;
         semanticNames: boolean;
       };
+      tileRenderCapabilities: {
+        locator: string;
+        renderProfile: string;
+        atlasProfile: string;
+        supportedFormats: string[];
+        selection: string;
+        localIdOrder: string;
+        duplicateLocalIds: string;
+        selectionReduction: string;
+        layout: string;
+        columnsSemantics: string;
+        labels: string;
+        defaultColumns: number;
+        defaultScale: number;
+        revisionPins: string;
+        animation: boolean;
+        wangGrouping: boolean;
+        semanticNames: boolean;
+      };
       tilesetDetailCapabilities: {
         locator: string;
         tileMetadataOrder: string;
@@ -2881,6 +2905,12 @@ describe("createTiledMcpServer", () => {
         maxTilesetSheetPageSize: number;
         maxTilesetSheetColumns: number;
         maxTilesetSheetScale: number;
+        maxTileRenderLocalIds: number;
+        maxTileRenderColumns: number;
+        maxTileRenderScale: number;
+        maxTileRenderBytes: number;
+        maxTileRenderEdge: number;
+        maxTileRenderPixels: number;
         maxTilesetMetadataLimit: number;
         maxTilesetMetadataEntries: number;
         maxTilesetAnimationFrames: number;
@@ -3441,6 +3471,33 @@ describe("createTiledMcpServer", () => {
         consecutiveLocalIds: true,
         semanticNames: false,
       },
+      tileRenderCapabilities: {
+        locator:
+          "map-path-plus-tileset-asset-id",
+        renderProfile:
+          "explicit-local-id-atlas-selection-v1",
+        atlasProfile:
+          "root-atlas-no-per-tile-images",
+        supportedFormats: [
+          "png",
+          "jpeg",
+          "webp",
+          "simple-svg",
+        ],
+        selection: "explicit-local-ids",
+        localIdOrder: "input-preserved",
+        duplicateLocalIds: "reject",
+        selectionReduction: "never",
+        layout: "row-major",
+        columnsSemantics: "maximum-per-row",
+        labels: "local-id",
+        defaultColumns: 8,
+        defaultScale: 2,
+        revisionPins: "independent-optional",
+        animation: false,
+        wangGrouping: false,
+        semanticNames: false,
+      },
       tilesetDetailCapabilities: {
         locator: "map-path-plus-tileset-asset-id",
         tileMetadataOrder: "local-id",
@@ -3556,6 +3613,12 @@ describe("createTiledMcpServer", () => {
         maxTilesetSheetPageSize: 256,
         maxTilesetSheetColumns: 32,
         maxTilesetSheetScale: 4,
+        maxTileRenderLocalIds: 64,
+        maxTileRenderColumns: 32,
+        maxTileRenderScale: 4,
+        maxTileRenderBytes: 8 * 1024 * 1024,
+        maxTileRenderEdge: 2_048,
+        maxTileRenderPixels: 1_500_000,
         maxTilesetMetadataLimit: 128,
         maxTilesetMetadataEntries: 100_000,
         maxTilesetAnimationFrames: 100_000,
@@ -4321,6 +4384,366 @@ describe("createTiledMcpServer", () => {
       truncated: false,
     });
   });
+
+  it("renders an explicit sparse tile selection in input order without page metadata", async () => {
+    const summary = resultOf<{
+      revision: string;
+      tilesets: Array<{
+        assetId: string;
+        revision: string;
+      }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const tileset = summary.tilesets[0];
+    expect(tileset).toBeDefined();
+
+    const localIds = [3, 0, 2];
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_render_tiles",
+        arguments: {
+          mapPath: MAP_PATH,
+          tilesetAssetId: tileset?.assetId,
+          localIds,
+          columns: 2,
+          scale: 2,
+          expectedMapRevision:
+            summary.revision,
+          expectedTilesetRevision:
+            tileset?.revision,
+        },
+      }),
+    );
+    expect(response.isError).not.toBe(true);
+    expect(
+      response.content.map((block) => block.type),
+    ).toEqual(["text", "image"]);
+    const imageBlock = response.content[1];
+    expect(imageBlock).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+      data: expect.any(String),
+    });
+    const png = Buffer.from(
+      imageBlock?.data ?? "",
+      "base64",
+    );
+    expect(png.subarray(0, 8)).toEqual(
+      Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a,
+        0x1a, 0x0a,
+      ]),
+    );
+    expect(
+      textSummaryOf(response, true).image,
+    ).toEqual({
+      mimeType: "image/png",
+      bytes: png.byteLength,
+    });
+
+    const result = (
+      response.structuredContent as {
+        result: {
+          mimeType: string;
+          byteLength: number;
+          sha256: string;
+          map: {
+            path: string;
+            revision: string;
+          };
+          source: {
+            assetId: string;
+            revision: string;
+          };
+          image: {
+            path: string;
+            revision: string;
+            format: string;
+          };
+          renderProfile: string;
+          selection: {
+            localIds: number[];
+            count: number;
+            order: string;
+            labels: string;
+            layout: {
+              kind: string;
+              requestedColumns: number;
+              columns: number;
+              rows: number;
+              adjusted: boolean;
+            };
+          };
+          scale: number;
+          snapshotConsistency: string;
+          truncated: boolean;
+        };
+      }
+    ).result;
+    expect(result).toMatchObject({
+      mimeType: "image/png",
+      byteLength: png.byteLength,
+      sha256: revisionOf(png),
+      map: {
+        path: MAP_PATH,
+        revision: summary.revision,
+      },
+      source: {
+        assetId: tileset?.assetId,
+        revision: tileset?.revision,
+      },
+      image: {
+        path: "tiles/terrain.png",
+        revision: expect.stringMatching(
+          /^sha256:[0-9a-f]{64}$/u,
+        ),
+        format: "png",
+      },
+      renderProfile:
+        "explicit-local-id-atlas-selection-v1",
+      selection: {
+        localIds,
+        count: 3,
+        order: "input",
+        labels: "local-id",
+        layout: {
+          kind: "row-major",
+          requestedColumns: 2,
+          columns: 2,
+          rows: 2,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+      snapshotConsistency:
+        "non-atomic-read-set",
+      truncated: false,
+    });
+    expect(result).not.toHaveProperty("page");
+
+    const defaults = resultOf<{
+      selection: {
+        localIds: number[];
+        layout: {
+          requestedColumns: number;
+          columns: number;
+          rows: number;
+          adjusted: boolean;
+        };
+      };
+      scale: number;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_render_tiles",
+        arguments: {
+          mapPath: MAP_PATH,
+          tilesetAssetId: tileset?.assetId,
+          localIds: [1],
+        },
+      }),
+    );
+    expect(defaults).toMatchObject({
+      selection: {
+        localIds: [1],
+        layout: {
+          requestedColumns: 8,
+          columns: 1,
+          rows: 1,
+          adjusted: false,
+        },
+      },
+      scale: 2,
+    });
+  });
+
+  it("rejects forged tile render cross-field relationships at the runtime output boundary", async () => {
+    const summary = resultOf<{
+      tilesets: Array<{
+        assetId: string;
+      }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_get_map_summary",
+        arguments: { mapPath: MAP_PATH },
+      }),
+    );
+    const tileset = summary.tilesets[0];
+    expect(tileset).toBeDefined();
+    const response = asToolResponse(
+      await harness.client.callTool({
+        name: "tiled_render_tiles",
+        arguments: {
+          mapPath: MAP_PATH,
+          tilesetAssetId: tileset?.assetId,
+          localIds: [3, 0, 2],
+          columns: 2,
+          scale: 2,
+        },
+      }),
+    );
+    expect(response.isError).not.toBe(true);
+    expect(
+      tileRenderToolOutputSchema.safeParse(
+        response.structuredContent,
+      ).success,
+    ).toBe(true);
+    if (response.structuredContent === undefined) {
+      throw new Error(
+        "Expected structured tile render output.",
+      );
+    }
+
+    type MutableTileRenderEnvelope = {
+      result: {
+        pixelSize: {
+          width: number;
+          height: number;
+        };
+        tileset: {
+          tileCount: number;
+        };
+        selection: {
+          localIds: number[];
+          count: number;
+          layout: {
+            requestedColumns: number;
+            columns: number;
+            rows: number;
+            adjusted: boolean;
+          };
+          forgedExtra?: boolean;
+        };
+      };
+    };
+    const forge = (
+      mutate: (
+        result:
+          MutableTileRenderEnvelope["result"],
+      ) => void,
+    ): MutableTileRenderEnvelope => {
+      const candidate = structuredClone(
+        response.structuredContent,
+      ) as unknown as MutableTileRenderEnvelope;
+      mutate(candidate.result);
+      return candidate;
+    };
+
+    const forgedOutputs = [
+      [
+        "duplicate local IDs",
+        forge((candidate) => {
+          candidate.selection.localIds = [
+            3, 3, 2,
+          ];
+        }),
+      ],
+      [
+        "count mismatch",
+        forge((candidate) => {
+          candidate.selection.count = 2;
+        }),
+      ],
+      [
+        "row mismatch",
+        forge((candidate) => {
+          candidate.selection.layout.rows = 1;
+        }),
+      ],
+      [
+        "adjusted explicit columns",
+        forge((candidate) => {
+          candidate.selection.layout.requestedColumns =
+            7;
+          candidate.selection.layout.columns = 2;
+          candidate.selection.layout.rows = 2;
+          candidate.selection.layout.adjusted = true;
+        }),
+      ],
+      [
+        "out-of-range local ID",
+        forge((candidate) => {
+          candidate.selection.localIds[0] =
+            candidate.tileset.tileCount;
+        }),
+      ],
+      [
+        "pixel product overflow",
+        forge((candidate) => {
+          candidate.pixelSize = {
+            width: 2_048,
+            height: 2_048,
+          };
+        }),
+      ],
+      [
+        "unknown selection field",
+        forge((candidate) => {
+          candidate.selection.forgedExtra = true;
+        }),
+      ],
+    ] as const;
+    for (const [name, candidate] of forgedOutputs) {
+      expect(
+        tileRenderToolOutputSchema.safeParse(
+          candidate,
+        ).success,
+        name,
+      ).toBe(false);
+    }
+  });
+
+  it.each([
+    {
+      name: "empty local ID selection",
+      localIds: [] as number[],
+    },
+    {
+      name: "duplicate local IDs",
+      localIds: [1, 1],
+    },
+    {
+      name: "more than 64 local IDs",
+      localIds: Array.from(
+        { length: 65 },
+        (_, index) => index,
+      ),
+    },
+  ])(
+    "rejects a tile render $name at the strict input boundary",
+    async ({ localIds }) => {
+      const response = asToolResponse(
+        await harness.client.callTool({
+          name: "tiled_render_tiles",
+          arguments: {
+            mapPath: MAP_PATH,
+            tilesetAssetId: "asset_input_only",
+            localIds,
+          },
+        }),
+      );
+      expect(response.isError).toBe(true);
+      expect(
+        response.structuredContent,
+      ).toBeUndefined();
+      expect(
+        response.content.every(
+          (block) => block.type !== "image",
+        ),
+      ).toBe(true);
+      expect(response.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining(
+            "Input validation error",
+          ),
+        }),
+      ]);
+    },
+  );
 
   it("returns a bounded native map preview with explicit coordinate metadata", async () => {
     const summary = resultOf<{

@@ -5,10 +5,12 @@ import {
   parseTransparentColor,
   validateAtlasGeometry,
   type AtlasGeometry,
+  type RgbColor,
 } from "./atlas.js";
 import {
   decodeSafeImage,
   encodeRgbaPng,
+  type DecodedSafeImage,
 } from "./safeImage.js";
 
 export { MAX_SIMPLE_SVG_BYTES } from "./safeImage.js";
@@ -24,6 +26,15 @@ export const DEFAULT_TILESET_SHEET_PAGE_SIZE = 64;
 export const MAX_TILESET_SHEET_COLUMNS = 32;
 export const MAX_TILESET_SHEET_SCALE = 4;
 export const DEFAULT_TILESET_SHEET_SCALE = 2;
+
+export const MAX_TILE_RENDER_LOCAL_IDS = 64;
+export const DEFAULT_TILE_RENDER_COLUMNS = 8;
+export const MAX_TILE_RENDER_COLUMNS = MAX_TILESET_SHEET_COLUMNS;
+export const DEFAULT_TILE_RENDER_SCALE = DEFAULT_TILESET_SHEET_SCALE;
+export const MAX_TILE_RENDER_SCALE = MAX_TILESET_SHEET_SCALE;
+export const MAX_TILE_RENDER_BYTES = MAX_TILESET_SHEET_BYTES;
+export const MAX_TILE_RENDER_EDGE = MAX_TILESET_SHEET_EDGE;
+export const MAX_TILE_RENDER_PIXELS = MAX_TILESET_SHEET_PIXELS;
 
 const OUTER_PADDING = 8;
 const TILE_PADDING = 4;
@@ -47,7 +58,7 @@ const DIGIT_GLYPHS: Readonly<Record<string, readonly string[]>> = {
   "9": ["111", "101", "111", "001", "111"],
 };
 
-export interface TilesetSheetInput {
+interface TilesetAtlasSourceInput {
   imageBytes: Buffer;
   imagePath: string;
   imageWidth: number;
@@ -59,10 +70,19 @@ export interface TilesetSheetInput {
   margin: number;
   spacing: number;
   transparentColor?: string;
+}
+
+export interface TilesetSheetInput extends TilesetAtlasSourceInput {
   page: number;
   pageSize: number;
   sheetColumns?: number;
   scale: number;
+}
+
+export interface TilesetTilesInput extends TilesetAtlasSourceInput {
+  localIds: readonly number[];
+  columns?: number;
+  scale?: number;
 }
 
 export interface TilesetSheetPage {
@@ -100,6 +120,40 @@ export interface TilesetSheetRender {
   scale: number;
 }
 
+export interface TilesetTilesSelection {
+  localIds: number[];
+  count: number;
+  order: "input";
+  labels: "local-id";
+  layout: {
+    kind: "row-major";
+    requestedColumns: number;
+    columns: number;
+    rows: number;
+    adjusted: boolean;
+  };
+}
+
+export interface TilesetTilesRender {
+  png: Buffer;
+  mimeType: "image/png";
+  pixelSize: {
+    width: number;
+    height: number;
+  };
+  byteLength: number;
+  sha256: string;
+  image: {
+    format: "jpeg" | "png" | "svg" | "webp";
+    pixelSize: {
+      width: number;
+      height: number;
+    };
+  };
+  selection: TilesetTilesSelection;
+  scale: number;
+}
+
 interface SheetLayout {
   cellWidth: number;
   cellHeight: number;
@@ -110,10 +164,169 @@ interface SheetLayout {
   effectivePageSize: number;
 }
 
+interface TilesLayout {
+  cellWidth: number;
+  cellHeight: number;
+  requestedColumns: number;
+  columns: number;
+  rows: number;
+  adjusted: boolean;
+}
+
+interface DecodedTilesetAtlas {
+  decoded: DecodedSafeImage;
+  atlas: AtlasGeometry;
+  transparentColor?: RgbColor;
+}
+
+interface LabeledAtlasGridRender {
+  png: Buffer;
+  mimeType: "image/png";
+  pixelSize: {
+    width: number;
+    height: number;
+  };
+  byteLength: number;
+  sha256: string;
+  image: {
+    format: "jpeg" | "png" | "svg" | "webp";
+    pixelSize: {
+      width: number;
+      height: number;
+    };
+  };
+}
+
+interface ValidatedTilesInput {
+  localIds: number[];
+  requestedColumns: number;
+  columnsExplicit: boolean;
+  scale: number;
+}
+
 export async function renderTilesetSheet(
   input: TilesetSheetInput,
 ): Promise<TilesetSheetRender> {
   validateInputIntegers(input);
+  const source = await decodeTilesetAtlas(input);
+  const layout = computeSheetLayout(input);
+  const pageCount = Math.ceil(input.tileCount / layout.effectivePageSize);
+  if (input.page >= pageCount) {
+    throw new TiledMcpError(
+      "PAGE_OUT_OF_RANGE",
+      `Page ${input.page} is outside the tileset sheet range 0..${pageCount - 1}.`,
+      { page: input.page, pageCount },
+    );
+  }
+  const firstLocalId = input.page * layout.effectivePageSize;
+  const lastLocalId = Math.min(
+    input.tileCount - 1,
+    firstLocalId + layout.effectivePageSize - 1,
+  );
+  const pageTileCount = lastLocalId - firstLocalId + 1;
+  const pageColumns = Math.min(layout.columns, pageTileCount);
+  const pageRows = Math.ceil(pageTileCount / pageColumns);
+  const localIds = Array.from(
+    { length: pageTileCount },
+    (_, offset) => firstLocalId + offset,
+  );
+  const rendered = await renderLabeledAtlasGrid({
+    ...source,
+    localIds,
+    columns: pageColumns,
+    cellWidth: layout.cellWidth,
+    cellHeight: layout.cellHeight,
+    scale: input.scale,
+    encodeDescription: "The tileset sheet",
+  });
+
+  if (rendered.byteLength > MAX_TILESET_SHEET_BYTES) {
+    throw new TiledMcpError(
+      "IMAGE_TOO_LARGE",
+      `The rendered sheet is ${rendered.byteLength} bytes; the inline limit is ${MAX_TILESET_SHEET_BYTES}. Reduce pageSize or scale.`,
+      {
+        bytes: rendered.byteLength,
+        limit: MAX_TILESET_SHEET_BYTES,
+        pageSize: layout.effectivePageSize,
+        scale: input.scale,
+      },
+    );
+  }
+
+  return {
+    ...rendered,
+    page: {
+      index: input.page,
+      count: pageCount,
+      requestedSize: input.pageSize,
+      size: layout.effectivePageSize,
+      adjusted: layout.effectivePageSize !== input.pageSize,
+      tileCount: pageTileCount,
+      localIdRange: { first: firstLocalId, last: lastLocalId },
+      columns: pageColumns,
+      rows: pageRows,
+    },
+    scale: input.scale,
+  };
+}
+
+export async function renderTilesetTiles(
+  input: TilesetTilesInput,
+): Promise<TilesetTilesRender> {
+  const validated = validateTilesInput(input);
+  const source = await decodeTilesetAtlas(input);
+  const layout = computeTilesLayout(
+    input,
+    validated.localIds.length,
+    validated.requestedColumns,
+    validated.columnsExplicit,
+    validated.scale,
+  );
+  const rendered = await renderLabeledAtlasGrid({
+    ...source,
+    localIds: validated.localIds,
+    columns: layout.columns,
+    cellWidth: layout.cellWidth,
+    cellHeight: layout.cellHeight,
+    scale: validated.scale,
+    encodeDescription: "The selected tileset tiles",
+  });
+
+  if (rendered.byteLength > MAX_TILE_RENDER_BYTES) {
+    throw new TiledMcpError(
+      "IMAGE_TOO_LARGE",
+      `The rendered tile selection is ${rendered.byteLength} bytes; the inline limit is ${MAX_TILE_RENDER_BYTES}. Reduce localIds or scale.`,
+      {
+        bytes: rendered.byteLength,
+        limit: MAX_TILE_RENDER_BYTES,
+        localIdCount: validated.localIds.length,
+        scale: validated.scale,
+      },
+    );
+  }
+
+  return {
+    ...rendered,
+    selection: {
+      localIds: validated.localIds,
+      count: validated.localIds.length,
+      order: "input",
+      labels: "local-id",
+      layout: {
+        kind: "row-major",
+        requestedColumns: layout.requestedColumns,
+        columns: layout.columns,
+        rows: layout.rows,
+        adjusted: layout.adjusted,
+      },
+    },
+    scale: validated.scale,
+  };
+}
+
+async function decodeTilesetAtlas(
+  input: TilesetAtlasSourceInput,
+): Promise<DecodedTilesetAtlas> {
   const decoded = await decodeSafeImage({
     bytes: input.imageBytes,
     path: input.imagePath,
@@ -139,54 +352,55 @@ export async function renderTilesetSheet(
     spacing: input.spacing,
   };
   validateAtlasGeometry(atlas);
+  const transparentColor =
+    input.transparentColor === undefined
+      ? undefined
+      : parseTransparentColor(input.transparentColor);
+  return {
+    decoded,
+    atlas,
+    ...(transparentColor === undefined ? {} : { transparentColor }),
+  };
+}
 
-  const layout = computeSheetLayout(input);
-  const pageCount = Math.ceil(input.tileCount / layout.effectivePageSize);
-  if (input.page >= pageCount) {
-    throw new TiledMcpError(
-      "PAGE_OUT_OF_RANGE",
-      `Page ${input.page} is outside the tileset sheet range 0..${pageCount - 1}.`,
-      { page: input.page, pageCount },
-    );
-  }
-  const firstLocalId = input.page * layout.effectivePageSize;
-  const lastLocalId = Math.min(
-    input.tileCount - 1,
-    firstLocalId + layout.effectivePageSize - 1,
-  );
-  const pageTileCount = lastLocalId - firstLocalId + 1;
-  const pageColumns = Math.min(layout.columns, pageTileCount);
-  const pageRows = Math.ceil(pageTileCount / pageColumns);
-  const outputWidth = 2 * OUTER_PADDING + pageColumns * layout.cellWidth;
-  const outputHeight = 2 * OUTER_PADDING + pageRows * layout.cellHeight;
+async function renderLabeledAtlasGrid(
+  input: DecodedTilesetAtlas & {
+    localIds: readonly number[];
+    columns: number;
+    cellWidth: number;
+    cellHeight: number;
+    scale: number;
+    encodeDescription: string;
+  },
+): Promise<LabeledAtlasGridRender> {
+  const outputWidth =
+    2 * OUTER_PADDING + input.columns * input.cellWidth;
+  const rows = Math.ceil(input.localIds.length / input.columns);
+  const outputHeight =
+    2 * OUTER_PADDING + rows * input.cellHeight;
   assertOutputBudget(outputWidth, outputHeight);
 
   const canvas = Buffer.alloc(outputWidth * outputHeight * 4);
   fillRect(canvas, outputWidth, 0, 0, outputWidth, outputHeight, [17, 24, 39, 255]);
 
-  const transparentColor =
-    input.transparentColor === undefined
-      ? undefined
-      : parseTransparentColor(input.transparentColor);
-  for (let offset = 0; offset < pageTileCount; offset += 1) {
-    const localId = firstLocalId + offset;
-    const column = offset % pageColumns;
-    const row = Math.floor(offset / pageColumns);
-    const cellLeft = OUTER_PADDING + column * layout.cellWidth;
-    const cellTop = OUTER_PADDING + row * layout.cellHeight;
+  for (const [offset, localId] of input.localIds.entries()) {
+    const column = offset % input.columns;
+    const row = Math.floor(offset / input.columns);
+    const cellLeft = OUTER_PADDING + column * input.cellWidth;
+    const cellTop = OUTER_PADDING + row * input.cellHeight;
     drawCell(
       canvas,
       outputWidth,
       cellLeft,
       cellTop,
-      layout.cellWidth,
-      layout.cellHeight,
+      input.cellWidth,
+      input.cellHeight,
     );
 
-    const tilePixelWidth = input.tileWidth * input.scale;
-    const tilePixelHeight = input.tileHeight * input.scale;
+    const tilePixelWidth = input.atlas.tileWidth * input.scale;
+    const tilePixelHeight = input.atlas.tileHeight * input.scale;
     const tileLeft =
-      cellLeft + Math.floor((layout.cellWidth - tilePixelWidth) / 2);
+      cellLeft + Math.floor((input.cellWidth - tilePixelWidth) / 2);
     const tileTop = cellTop + TILE_PADDING;
     drawCheckerboard(
       canvas,
@@ -198,21 +412,24 @@ export async function renderTilesetSheet(
     );
 
     blitAtlasTile({
-      sourceRgba: decoded.rgba,
-      sourceWidth: imageWidth,
-      atlas,
+      sourceRgba: input.decoded.rgba,
+      sourceWidth: input.decoded.pixelSize.width,
+      atlas: input.atlas,
       localId,
       destinationRgba: canvas,
       destinationWidth: outputWidth,
       destinationLeft: tileLeft,
       destinationTop: tileTop,
       scale: input.scale,
-      ...(transparentColor === undefined ? {} : { transparentColor }),
+      ...(input.transparentColor === undefined
+        ? {}
+        : { transparentColor: input.transparentColor }),
     });
 
     const label = String(localId);
     const labelWidth = digitStringWidth(label);
-    const labelLeft = cellLeft + Math.floor((layout.cellWidth - labelWidth) / 2);
+    const labelLeft =
+      cellLeft + Math.floor((input.cellWidth - labelWidth) / 2);
     const labelTop = tileTop + tilePixelHeight + LABEL_GAP;
     drawDigitString(
       canvas,
@@ -228,20 +445,8 @@ export async function renderTilesetSheet(
     canvas,
     outputWidth,
     outputHeight,
-    "The tileset sheet",
+    input.encodeDescription,
   );
-  if (encoded.byteLength > MAX_TILESET_SHEET_BYTES) {
-    throw new TiledMcpError(
-      "IMAGE_TOO_LARGE",
-      `The rendered sheet is ${encoded.byteLength} bytes; the inline limit is ${MAX_TILESET_SHEET_BYTES}. Reduce pageSize or scale.`,
-      {
-        bytes: encoded.byteLength,
-        limit: MAX_TILESET_SHEET_BYTES,
-        pageSize: layout.effectivePageSize,
-        scale: input.scale,
-      },
-    );
-  }
 
   return {
     png: encoded,
@@ -250,33 +455,17 @@ export async function renderTilesetSheet(
     byteLength: encoded.byteLength,
     sha256: revisionOf(encoded),
     image: {
-      format: decoded.format,
-      pixelSize: { width: imageWidth, height: imageHeight },
+      format: input.decoded.format,
+      pixelSize: {
+        width: input.decoded.pixelSize.width,
+        height: input.decoded.pixelSize.height,
+      },
     },
-    page: {
-      index: input.page,
-      count: pageCount,
-      requestedSize: input.pageSize,
-      size: layout.effectivePageSize,
-      adjusted: layout.effectivePageSize !== input.pageSize,
-      tileCount: pageTileCount,
-      localIdRange: { first: firstLocalId, last: lastLocalId },
-      columns: pageColumns,
-      rows: pageRows,
-    },
-    scale: input.scale,
   };
 }
 
 function validateInputIntegers(input: TilesetSheetInput): void {
-  requirePositiveSafeInteger(input.imageWidth, "imageWidth");
-  requirePositiveSafeInteger(input.imageHeight, "imageHeight");
-  requirePositiveSafeInteger(input.tileWidth, "tileWidth");
-  requirePositiveSafeInteger(input.tileHeight, "tileHeight");
-  requirePositiveSafeInteger(input.tileCount, "tileCount");
-  requirePositiveSafeInteger(input.atlasColumns, "atlasColumns");
-  requireNonNegativeSafeInteger(input.margin, "margin");
-  requireNonNegativeSafeInteger(input.spacing, "spacing");
+  validateAtlasSourceInput(input);
   requireNonNegativeSafeInteger(input.page, "page");
   requirePositiveSafeInteger(input.pageSize, "pageSize");
   requirePositiveSafeInteger(input.scale, "scale");
@@ -298,6 +487,17 @@ function validateInputIntegers(input: TilesetSheetInput): void {
       );
     }
   }
+}
+
+function validateAtlasSourceInput(input: TilesetAtlasSourceInput): void {
+  requirePositiveSafeInteger(input.imageWidth, "imageWidth");
+  requirePositiveSafeInteger(input.imageHeight, "imageHeight");
+  requirePositiveSafeInteger(input.tileWidth, "tileWidth");
+  requirePositiveSafeInteger(input.tileHeight, "tileHeight");
+  requirePositiveSafeInteger(input.tileCount, "tileCount");
+  requirePositiveSafeInteger(input.atlasColumns, "atlasColumns");
+  requireNonNegativeSafeInteger(input.margin, "margin");
+  requireNonNegativeSafeInteger(input.spacing, "spacing");
   if (
     input.transparentColor !== undefined &&
     !/^#[0-9a-f]{6}$/iu.test(input.transparentColor)
@@ -308,6 +508,79 @@ function validateInputIntegers(input: TilesetSheetInput): void {
       { transparentColor: input.transparentColor },
     );
   }
+}
+
+function validateTilesInput(
+  input: TilesetTilesInput,
+): ValidatedTilesInput {
+  validateAtlasSourceInput(input);
+  const scale = input.scale ?? DEFAULT_TILE_RENDER_SCALE;
+  requirePositiveSafeInteger(scale, "scale");
+  if (scale > MAX_TILE_RENDER_SCALE) {
+    throw invalidArgument(
+      `scale must not exceed ${MAX_TILE_RENDER_SCALE}.`,
+    );
+  }
+
+  const requestedColumns =
+    input.columns ?? DEFAULT_TILE_RENDER_COLUMNS;
+  requirePositiveSafeInteger(requestedColumns, "columns");
+  if (requestedColumns > MAX_TILE_RENDER_COLUMNS) {
+    throw invalidArgument(
+      `columns must not exceed ${MAX_TILE_RENDER_COLUMNS}.`,
+    );
+  }
+
+  if (
+    !Array.isArray(input.localIds) ||
+    input.localIds.length < 1 ||
+    input.localIds.length > MAX_TILE_RENDER_LOCAL_IDS
+  ) {
+    throw invalidArgument(
+      `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} IDs.`,
+    );
+  }
+  const localIds: number[] = [];
+  const firstIndexByLocalId = new Map<number, number>();
+  for (const [index, localId] of input.localIds.entries()) {
+    if (!Number.isSafeInteger(localId) || localId < 0) {
+      throw invalidArgument(
+        "localIds must contain non-negative safe integers.",
+      );
+    }
+    if (localId >= input.tileCount) {
+      throw new TiledMcpError(
+        "TILE_ID_OUT_OF_RANGE",
+        `Tile ${localId} is outside ${input.imagePath}.`,
+        {
+          path: input.imagePath,
+          localId,
+          tileCount: input.tileCount,
+          index,
+        },
+      );
+    }
+    const firstIndex = firstIndexByLocalId.get(localId);
+    if (firstIndex !== undefined) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `localIds contains duplicate local ID ${localId}.`,
+        {
+          localId,
+          firstIndex,
+          duplicateIndex: index,
+        },
+      );
+    }
+    firstIndexByLocalId.set(localId, index);
+    localIds.push(localId);
+  }
+  return {
+    localIds,
+    requestedColumns,
+    columnsExplicit: input.columns !== undefined,
+    scale,
+  };
 }
 
 function computeSheetLayout(input: TilesetSheetInput): SheetLayout {
@@ -412,6 +685,115 @@ function computeSheetLayout(input: TilesetSheetInput): SheetLayout {
     width,
     height,
     effectivePageSize,
+  };
+}
+
+function computeTilesLayout(
+  input: TilesetTilesInput,
+  localIdCount: number,
+  requestedColumns: number,
+  columnsExplicit: boolean,
+  scale: number,
+): TilesLayout {
+  const tilePixelWidth = input.tileWidth * scale;
+  const tilePixelHeight = input.tileHeight * scale;
+  if (
+    !Number.isSafeInteger(tilePixelWidth) ||
+    !Number.isSafeInteger(tilePixelHeight)
+  ) {
+    throw invalidArgument("Scaled tile dimensions exceed safe integer bounds.");
+  }
+  const longestLabelWidth = digitStringWidth(
+    String(input.tileCount - 1),
+  );
+  const cellWidth = Math.max(
+    tilePixelWidth + 2 * TILE_PADDING,
+    longestLabelWidth + 2 * TILE_PADDING,
+  );
+  const cellHeight =
+    TILE_PADDING +
+    tilePixelHeight +
+    LABEL_GAP +
+    DIGIT_HEIGHT * DIGIT_SCALE +
+    LABEL_BOTTOM_PADDING;
+  const maxColumnsByEdge = Math.floor(
+    (MAX_TILE_RENDER_EDGE - 2 * OUTER_PADDING) / cellWidth,
+  );
+  const maxColumnsByPixels = Math.floor(
+    (MAX_TILE_RENDER_PIXELS /
+      (2 * OUTER_PADDING + cellHeight) -
+      2 * OUTER_PADDING) /
+      cellWidth,
+  );
+  const maximumColumns = Math.min(
+    MAX_TILE_RENDER_COLUMNS,
+    maxColumnsByEdge,
+    maxColumnsByPixels,
+  );
+  if (maximumColumns < 1) {
+    throw new TiledMcpError(
+      "IMAGE_DIMENSIONS_EXCEEDED",
+      "A single scaled tile and its local ID label do not fit the tile render budget.",
+      {
+        tileWidth: input.tileWidth,
+        tileHeight: input.tileHeight,
+        scale,
+        maxEdge: MAX_TILE_RENDER_EDGE,
+      },
+    );
+  }
+
+  const effectiveRequestedColumns = Math.min(
+    requestedColumns,
+    localIdCount,
+  );
+  if (
+    columnsExplicit &&
+    effectiveRequestedColumns > maximumColumns
+  ) {
+    throw new TiledMcpError(
+      "IMAGE_DIMENSIONS_EXCEEDED",
+      `columns ${requestedColumns} would require ${effectiveRequestedColumns} columns, but at most ${maximumColumns} fit this layout.`,
+      {
+        requestedColumns,
+        effectiveRequestedColumns,
+        maximumColumns,
+        maxEdge: MAX_TILE_RENDER_EDGE,
+        maxPixels: MAX_TILE_RENDER_PIXELS,
+      },
+    );
+  }
+  const maximumRequestedColumns = Math.min(
+    effectiveRequestedColumns,
+    maximumColumns,
+  );
+  let columns = maximumRequestedColumns;
+  if (!columnsExplicit) {
+    while (columns > 1) {
+      const candidateRows = Math.ceil(localIdCount / columns);
+      const candidateWidth =
+        2 * OUTER_PADDING + columns * cellWidth;
+      const candidateHeight =
+        2 * OUTER_PADDING + candidateRows * cellHeight;
+      if (fitsOutputBudget(candidateWidth, candidateHeight)) {
+        break;
+      }
+      columns -= 1;
+    }
+  }
+  const rows = Math.ceil(localIdCount / columns);
+  const width = 2 * OUTER_PADDING + columns * cellWidth;
+  const height = 2 * OUTER_PADDING + rows * cellHeight;
+  assertOutputBudget(width, height);
+  return {
+    cellWidth,
+    cellHeight,
+    requestedColumns,
+    columns,
+    rows,
+    adjusted:
+      !columnsExplicit &&
+      columns < effectiveRequestedColumns,
   };
 }
 
@@ -540,13 +922,7 @@ function setPixel(
 }
 
 function assertOutputBudget(width: number, height: number): void {
-  if (
-    width <= 0 ||
-    height <= 0 ||
-    width > MAX_TILESET_SHEET_EDGE ||
-    height > MAX_TILESET_SHEET_EDGE ||
-    width * height > MAX_TILESET_SHEET_PIXELS
-  ) {
+  if (!fitsOutputBudget(width, height)) {
     throw new TiledMcpError(
       "IMAGE_DIMENSIONS_EXCEEDED",
       `Sheet dimensions ${width}x${height} exceed the render budget.`,
@@ -558,6 +934,20 @@ function assertOutputBudget(width: number, height: number): void {
       },
     );
   }
+}
+
+function fitsOutputBudget(width: number, height: number): boolean {
+  const pixels = width * height;
+  return (
+    Number.isSafeInteger(width) &&
+    Number.isSafeInteger(height) &&
+    Number.isSafeInteger(pixels) &&
+    width > 0 &&
+    height > 0 &&
+    width <= MAX_TILESET_SHEET_EDGE &&
+    height <= MAX_TILESET_SHEET_EDGE &&
+    pixels <= MAX_TILESET_SHEET_PIXELS
+  );
 }
 
 function requirePositiveSafeInteger(value: number, field: string): void {
