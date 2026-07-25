@@ -99,6 +99,23 @@ export interface UpdateMapOperation {
   };
 }
 
+export interface ResizeMapOperation {
+  type: "resizeMap";
+  /**
+   * New map size in tiles. Every tile layer must currently match the map
+   * bounds exactly; layers with independent bounds fail closed.
+   */
+  width: number;
+  height: number;
+  /**
+   * Position of the old content inside the new map, in tile units, matching
+   * Tiled's resize dialog. Negative offsets crop from the top/left. Omitted
+   * offsets default to zero.
+   */
+  offsetX?: number;
+  offsetY?: number;
+}
+
 export interface RemoveTilesetFromMapOperation {
   type: "removeTilesetFromMap";
   /**
@@ -314,6 +331,7 @@ export interface DuplicateLayerOperation {
 
 export type MapEditOperation =
   | UpdateMapOperation
+  | ResizeMapOperation
   | RemoveTilesetFromMapOperation
   | SetTilesOperation
   | FillRegionOperation
@@ -404,6 +422,43 @@ export interface MapEditPlan {
       changedFields: string[];
       wouldChange: boolean;
       renderingMayChange: boolean;
+    }>;
+    mapResizes?: Array<{
+      operationIndex: number;
+      oldWidth: number;
+      oldHeight: number;
+      newWidth: number;
+      newHeight: number;
+      offsetX: number;
+      offsetY: number;
+      pixelOffsetX: number;
+      pixelOffsetY: number;
+      wouldChange: boolean;
+      mapDimensionsChanged: boolean;
+      tileLayerCount: number;
+      resizedTileLayerIds: number[];
+      scannedCellCount: number;
+      rewrittenCellCount: number;
+      preservedNonEmptyCellCount: number;
+      croppedNonEmptyCellCount: number;
+      /**
+       * Source-space coordinates of dropped non-empty cells in layer
+       * traversal order, then row-major order, bounded by the sample cap.
+       */
+      croppedCellSample: Array<{
+        layerId: number;
+        x: number;
+        y: number;
+        gid: number;
+      }>;
+      omittedCroppedCellCount: number;
+      objectLayerCount: number;
+      movedObjectCount: number;
+      objectsOutsideNewBounds: number;
+      imageLayerCount: number;
+      shiftedImageLayerIds: number[];
+      groupLayerCount: number;
+      lockedLayerCount: number;
     }>;
     removedTilesets?: Array<{
       operationIndex: number;

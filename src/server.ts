@@ -98,6 +98,10 @@ import {
   MAX_REMOVE_TILESET_GID_SCANS,
   MAX_REPLACE_TILE_MAPPINGS,
   MAX_REPLACE_TILE_SCANS,
+  MAX_RESIZE_CROPPED_CELL_SAMPLE,
+  MAX_RESIZE_MAP_DIMENSION,
+  MAX_RESIZE_OFFSET_MAGNITUDE,
+  MAX_RESIZE_SOURCE_CELL_SCANS,
   MAX_STAMP_PATTERN_CELLS,
   MAX_STAMP_PATTERN_EDGE,
   MAX_TILE_OPERATION_SCANS,
@@ -1031,6 +1035,34 @@ const updateMapSchema = z
   })
   .strict();
 
+const resizeMapSchema = z
+  .object({
+    type: z.literal("resizeMap"),
+    width: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_RESIZE_MAP_DIMENSION),
+    height: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_RESIZE_MAP_DIMENSION),
+    offsetX: z
+      .number()
+      .int()
+      .min(-MAX_RESIZE_OFFSET_MAGNITUDE)
+      .max(MAX_RESIZE_OFFSET_MAGNITUDE)
+      .optional(),
+    offsetY: z
+      .number()
+      .int()
+      .min(-MAX_RESIZE_OFFSET_MAGNITUDE)
+      .max(MAX_RESIZE_OFFSET_MAGNITUDE)
+      .optional(),
+  })
+  .strict();
+
 const layerPatchSchema = z
   .object({
     name: objectStringSchema.optional(),
@@ -1136,6 +1168,7 @@ const removeTilesetFromMapSchema = z
 
 const mapEditSchema = z.discriminatedUnion("type", [
   updateMapSchema,
+  resizeMapSchema,
   removeTilesetFromMapSchema,
   setTilesSchema,
   fillRegionSchema,
@@ -1407,7 +1440,33 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           listChanged: true,
         },
         editProfiles: ["finite-orthogonal-tmj-external-atlas-tsj"],
-        mapOperations: ["updateMap"],
+        mapOperations: ["updateMap", "resizeMap"],
+        mapResizeCapabilities: {
+          offsetUnit: "tiles",
+          offsetMeaning:
+            "old-content-position-in-new-map",
+          cellMapping:
+            "destination-equals-source-plus-offset",
+          tileLayerRequirement:
+            "map-aligned-zero-origin-finite-numeric-data-only",
+          croppedGidValidation:
+            "every-scanned-source-cell-fail-closed",
+          objectPolicy:
+            "shift-anchor-only-never-delete",
+          outOfBoundsObjectMetric:
+            "shifted-anchor-outside-closed-pixel-bounds",
+          templateObjects:
+            "fail-closed-when-shifting",
+          imageLayerPolicy:
+            "shift-changed-offset-members-only",
+          groupLayerPolicy:
+            "recurse-children-untouched-self",
+          idCounters: "unchanged",
+          operationOrdering:
+            "exclusive-single-operation-change-set",
+          sourcePatch:
+            "root-dimensions-and-affected-layer-members-local",
+        },
         mapUpdateCapabilities: {
           fields: [
             "renderOrder",
@@ -2154,6 +2213,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxStampPatternEdge: MAX_STAMP_PATTERN_EDGE,
           maxStampPatternCells:
             MAX_STAMP_PATTERN_CELLS,
+          maxResizeMapDimension:
+            MAX_RESIZE_MAP_DIMENSION,
+          maxResizeOffsetMagnitude:
+            MAX_RESIZE_OFFSET_MAGNITUDE,
+          maxResizeSourceCellScans:
+            MAX_RESIZE_SOURCE_CELL_SCANS,
+          maxResizeCroppedCellSample:
+            MAX_RESIZE_CROPPED_CELL_SAMPLE,
           maxObjectMutationsPerChangeSet: 10_000,
           maxEditedSubtreesPerChangeSet: 128,
           maxListedObjects: 10_000,
@@ -3317,7 +3384,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.",
+        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

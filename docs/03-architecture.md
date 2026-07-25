@@ -13,7 +13,7 @@
 > post-commit retention 均已落地。通用 force、缺少来源证明的更宽 commit 和项目资产
 > 删除仍明确 unsupported。
 > 当前 wire 使用的 external TSJ/image-layer identity 已接入持久 registry v1；其可验证
-> rename 边界由 capability contract 明示。当前 discovery contract 与 98-code v1 application-error
+> rename 边界由 capability contract 明示。当前 discovery contract 与 100-code v1 application-error
 > registry 已分别由
 > [discovery machine artifact](../contracts/mcp-contract.v1.json)、
 > [application-error machine artifact](../contracts/application-errors.v1.json) 和
@@ -49,7 +49,9 @@ GID fail-closed 和有界四向遍历；第 13 种 `updateMap` 以 strict root-m
 `removeTilesetFromMap` 则只移除全图零引用的 external atlas binding，并对隐藏、锁定及
 Group 后代中的 tile cells/tile objects 做有界扫描；第 15 种 `copyRegion` 则在同一 map
 的有限 numeric tile layers 间按绝对坐标、snapshot-source memmove 语义复制完整 encoded
-GID 矩形。这些能力都不注册新工具。
+GID 矩形；第 16 种、必须独占 change set 的 `resizeMap` 按 Tiled 1.12.2 核实语义
+调整地图尺寸——tile layer 重映射并 fail-closed 校验每个被扫描的源格，对象只平移
+从不删除，image layer 仅平移 offset members。这些能力都不注册新工具。
 专用 `tiled_add_tileset_to_map` preview 也已落地：它只签发单个外部 tileset 挂载操作的
 change set，只有通用 apply 边界才写入目标 TMJ，并且不修改 TSJ。专用
 `tiled_create_layer` preview 同样已落地：它在有限正交 TMJ 中规划一个空的
@@ -105,7 +107,7 @@ create-map commit 和 change-set apply 不是同一个 mutation 类型。handler
 图片摘要另外回报 `mimeType` 和实际 inline image 的原始 bytes。
 
 application code 的唯一稳定 wire 位置是
-`structuredContent.result.error.code`。当前 v1 allowlist 有 98 个 code，单一代码来源
+`structuredContent.result.error.code`。当前 v1 allowlist 有 100 个 code，单一代码来源
 生成 `contracts/application-errors.v1.json`，并把完全相同的 JSON 暴露为
 `tiled://application-errors`；`tiled_get_capabilities.applicationErrorContract` 公布
 resource URI、revision、size、wire location、`INTERNAL_ERROR` fallback 和兼容策略。
@@ -267,7 +269,7 @@ dependency revision record 与错误 `details`。这样 `tools/list` 得到的�
 能同时验证合法成功结果和 handler 内的合法应用错误。
 
 协议层 input-schema 校验发生在 tool handler 之前，不应包装成领域错误，也不会产生
-`structuredContent`。进入 handler 后的失败才经过统一错误归一化、98-code application
+`structuredContent`。进入 handler 后的失败才经过统一错误归一化、100-code application
 allowlist、长度/深度预算和 JSON 安全化。`Diagnostic` 是 validator 成功结果中的问题记录，
 不承担 transport/application 错误 envelope 的职责。
 
@@ -416,7 +418,7 @@ tileset 名称不保证唯一。公共模型使用 map-scoped `tilesetRef`（外
 安装的 Tiled 版本只影响 official adapter 的运行能力，也不等于资产兼容目标。每个已知特性
 在 `FeatureMatrix` 中声明最小目标版本、允许的文档类型、读/写状态与验证器；尚未支持写入的
 字段可以保留和展示。目标架构计划让相关 patch 返回
-`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 98-code
+`UNSUPPORTED_FEATURE_WRITE`，但它是 **planned / not current** code，不属于当前 100-code
 v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后续 registry 前，
 客户端不得依赖它。
 
@@ -440,7 +442,7 @@ v1 application registry；FeatureMatrix 写门控实现并把该 code 加入后�
 - 当前只允许 primary root 内的引用，没有 additional read roots。
 - 指向 allowlist 外的既有原始字符串应被原样保留且服务器不读取目标，也不能进行依赖该
   目标的编辑。目标架构为此预留 `EXTERNAL_REFERENCE_BLOCKED`，但它是
-  **planned / not current** code，不属于当前 98-code v1 application registry。
+  **planned / not current** code，不属于当前 100-code v1 application registry。
 - 新引用必须落在允许 root 中，并以拥有者为基准写成规范化相对路径；不自动把相对路径改成
   绝对路径。
 - 启动 Tiled 或图像工具前先解析完整依赖闭包；外部进程的输入、输出和工作目录都必须通过
@@ -1244,6 +1246,76 @@ properties、vendor siblings 或 template/tile data；tile/template 稳定报
 `sourcePatch:"object-layer-objects-member-local"}`。`creatable` 只描述 create wire union；
 七种 shape 都继续支持约束内的 common-field update 和 safe delete。
 
+### 6.16 Exclusive bounded map resize
+
+`resizeMap` 是 `tiled_preview_edits` 封闭 union 的第 16 种 operation，wire shape 为
+`{type:"resizeMap",width,height,offsetX?,offsetY?}`。它不注册 standalone
+`tiled_resize_map`，registry 仍为 25 core / 26 with rasterizer，且与
+`removeTilesetFromMap`、layer delete/move/duplicate 一样必须独占整个 change set。
+`width`/`height` 是 1..100,000 的整数；`offsetX`/`offsetY` 是幅值不超过 100,000 的
+整数，省略视为 0。语义逐条对齐 Tiled 1.12.2 官方源码（`MapDocument::resizeMap`、
+`TileLayer::resize`）而非图像 resize 直觉：offset 表示**旧内容在新地图中的位置**，
+目标格 `(x,y)` 取自源格 `(x−offsetX,y−offsetY)`，像素偏移为
+`(offsetX×tilewidth, offsetY×tileheight)` 并要求 checked safe-integer 算术。
+
+前置校验递归遍历全部 layer（受 10,000-layer/64-depth 遍历预算约束）。任何 tile layer
+带 `chunks`/字符串 data 仍以 `UNSUPPORTED_TILE_ENCODING` 拒绝；任何 tile layer 的
+`x`/`y` 非零或尺寸不等于当前地图尺寸时，整个操作以
+`UNSUPPORTED_RESIZE_LAYER_BOUNDS` fail closed——Tiled 自身对这类 layer 的 resize 留有
+`TODO`，本项目不猜测未定义行为。未知 layer type 以 `INVALID_DOCUMENT` 拒绝。
+
+tile 重映射逐格扫描完整源数据：每个被扫描的源格（包括将被裁剪的）都做完整 encoded
+GID reverse resolution，非整数、uint32 溢出、flag-only empty、unbound GID 一律 fail
+closed，裁剪不能掩盖坏数据。落入新边界的非零格计入
+`preservedNonEmptyCellCount`，其余非零格计入 `croppedNonEmptyCellCount` 并按 layer
+遍历序、row-major 顺序采样最多 16 项 `croppedCellSample{layerId,x,y,gid}`，差额回显
+`omittedCroppedCellCount`。目标数据总量（`tileLayerCount×newWidth×newHeight`）计入
+change set 100,000-cell write budget；源格扫描计入 1,000,000-read scan budget；受影响
+JSON 子树仍受 128-subtree 上限约束。
+
+对象语义固定为 Tiled "remove objects" 关闭时的行为：像素偏移非零时所有对象仅平移锚点
+`x`/`y`（polygon/polyline points 相对锚点自动跟随，rotation/gid 等成员不变），**从不
+删除**；平移对象计入 10,000 object-mutation budget，结果坐标必须落在 ±1e9 之内。
+`objectsOutsideNewBounds` 按精确判据"平移后锚点是否落在闭区间
+`[0,newWidth×tilewidth]×[0,newHeight×tileheight]` 之外"回显，仅供批准者参考，不复刻
+Tiled renderer 包围盒删除判据。像素偏移非零时含 `template` 成员的对象以
+`UNSUPPORTED_RESIZE_TEMPLATE` fail closed；零偏移的纯 grow/shrink 不触碰对象，模板
+对象原样保留。image layer 只平移**发生变化的** `offsetx`/`offsety` member（缺失按 0
+处理并按需插入）；group layer 自身完全不动，仅递归处理子层；
+`nextlayerid`/`nextobjectid` 高水位不变。
+
+plan 的 `summary.mapResizes[]` 精确 shape 为
+`{operationIndex,oldWidth,oldHeight,newWidth,newHeight,offsetX,offsetY,`
+`pixelOffsetX,pixelOffsetY,wouldChange,mapDimensionsChanged,tileLayerCount,`
+`resizedTileLayerIds,scannedCellCount,rewrittenCellCount,preservedNonEmptyCellCount,`
+`croppedNonEmptyCellCount,croppedCellSample,omittedCroppedCellCount,objectLayerCount,`
+`movedObjectCount,objectsOutsideNewBounds,imageLayerCount,shiftedImageLayerIds,`
+`groupLayerCount,lockedLayerCount}`。bounded operation preview 使用嵌套
+`oldBounds/newBounds/offset/pixelOffset` 回显同一组计数，固定
+`type:"resizeMap"`、`destructive:true` 与描述裁剪计数的 `warning`；`lockedLayerCount`
+仅供批准者参考——与 Tiled 的 map-level resize 一致，锁定 layer 不豁免重映射。
+
+`tiled_get_capabilities.mapResizeCapabilities` 精确固定为 `offsetUnit:"tiles"`、
+`offsetMeaning:"old-content-position-in-new-map"`、
+`cellMapping:"destination-equals-source-plus-offset"`、
+`tileLayerRequirement:"map-aligned-zero-origin-finite-numeric-data-only"`、
+`croppedGidValidation:"every-scanned-source-cell-fail-closed"`、
+`objectPolicy:"shift-anchor-only-never-delete"`、
+`outOfBoundsObjectMetric:"shifted-anchor-outside-closed-pixel-bounds"`、
+`templateObjects:"fail-closed-when-shifting"`、
+`imageLayerPolicy:"shift-changed-offset-members-only"`、
+`groupLayerPolicy:"recurse-children-untouched-self"`、`idCounters:"unchanged"`、
+`operationOrdering:"exclusive-single-operation-change-set"` 与
+`sourcePatch:"root-dimensions-and-affected-layer-members-local"`；`limits` 增加
+`maxResizeMapDimension`、`maxResizeOffsetMagnitude`、`maxResizeSourceCellScans` 与
+`maxResizeCroppedCellSample`。
+
+apply 从 pinned map/dependency read set 重放 operation 并重算完整 summary。source
+writer 只把根 `width`/`height`、每个 tile layer 的 `width`/`height`/`data`、发生对象
+平移的 layer 的 `objects` 数组和发生偏移的 image layer 的 offset members 作为最小
+patch 候选；语义相等的候选被跳过。同尺寸零偏移且数据、对象、offset 均无变化时为
+exact-byte no-op，返回 `changed:false`，revision 不变。
+
 ## 7. Tile data、chunk 与压缩
 
 tile layer 使用 lazy `TilePlaneView`。读取摘要不解压整层；只有区域查询、编辑或完整校验才
@@ -1339,7 +1411,7 @@ replace，也不等同于 crash durability。保证只在运维方确认底层�
 同一 batch 在 M0/M1 只能包含同一文档的白名单 edit intents。未来多目标 planner 检测到
 第二个写目标时，计划在 dry-run 阶段返回
 `MULTI_FILE_TRANSACTION_NOT_AVAILABLE`；该名称是 **planned / not current** code，
-不属于当前 98-code v1 application registry。
+不属于当前 100-code v1 application registry。
 
 ### 8.3 跨文件可恢复事务
 
@@ -1769,7 +1841,8 @@ M0 不追求完整地图 CRUD。验收标准：
   精确且 simultaneous single-pass 的 `replaceTiles`，以及从绝对 seed 推导 source 的
   固定四向 `floodFill`；已实现 rectangle/point/ellipse/capsule、有界 polygon/polyline
   与有界 text 对象 create/update/delete，以及单对象详情读取、map 根级
-  render/background/class `updateMap`，以及 4 类 layer 的公共字段
+  render/background/class `updateMap`、独占的 Tiled-1.12.2-语义有界 `resizeMap`
+  （tile 重映射、对象平移不删除、image offset 平移），以及 4 类 layer 的公共字段
   `updateLayer`、独占且可确认递归的 `deleteLayer`，以及独占的完整 subtree
   `moveLayer` 与安全 `duplicateLayer`；duplicate 以 preorder high-water IDs 复制完整
   subtree、重连副本内部 typed object/list references，并保留共享 file/image references。
@@ -1821,6 +1894,7 @@ M1 明确拒绝：
 | flood fill 忽略 transform、误用对角连通或扫描无界 | 错填区域、CPU/写入过量或坏 GID 隐藏 | 固定四向、seed 完整 encoded-GID match、observed GID reverse validation、与 replacement 共享实际读取预算及 tile write cap | 四向/纯对角、非零 origin、flags 隔离、null source/target、source=target scan-one no-op、重复边界读取、malformed observed GID、shared scan/write 边界、later-wins |
 | region copy 发生重叠级联、裁剪/跳过空格、丢 flags，或未验证将被覆盖的坏 GID | tile 图案错位、目标未按授权清空、坏数据被隐藏或局部提交 | strict 完整 bounds、operation-start source/destination snapshots、memmove、0 明确覆盖、两侧 observed-GID fail-closed、`2*cellCount` 共享 scan + 完整 write 预算、destination data-member-local patch | strict/extra keys、跨层/同层非零 origin、四方向 overlap、0 清空、flags、source/destination malformed、bounds/no clipping、scan/write 边界、前序 source 可见/后序 later-wins、bounded destructive preview、no-op、BOM/CRLF、tamper/stale revision、Tiled round trip |
 | map-root patch 接受宽松 key、吞掉默认值 intent 或重写完整 TMJ | 错误字段落盘、渲染变化漏报或无关 source diff | strict/nonempty schema、member existence-aware detection、root-member-local patch、完整 target tree 复核 | 4 render orders、颜色写入/删除、class 长度边界、extra/empty rejection、later-wins、rendering flag、BOM/CRLF、net no-op、tamper/stale revision |
+| map resize 猜错 offset 方向、静默裁掉坏 GID/对象、对非对齐 layer 套用未定义语义或整图重写 | 内容错位、数据丢失被隐藏、Tiled 打开结果与批准不符 | Tiled 1.12.2 源码核实语义、独占 change set、非对齐 tile layer fail-closed、每个被扫描源格 GID fail-closed、对象只平移不删除、有界 cropped sample、根/layer member-local patch | grow/shrink/offset 方向、cropped 非零计数与 sample、layer bounds mismatch、malformed/unbound GID、template/边界锚点、image offset member 局部性、identity exact-byte no-op、cell/scan/subtree 预算边界、tamper/stale revision、Tiled round trip |
 | tileset removal 漏扫隐藏/锁定/Group/template 引用、把相邻 `firstgid` 当重映射目标或漏 pin 被移除依赖 | 留下 unresolved/错绑 GID，或批准后删除了不同 binding | exclusive strict operation、完整 cell/object scan、encoded-GID binding identity、template fail-closed、`TILESET_IN_USE`、旧 dependency-set CAS、array-element-local deletion | nested hidden/locked tile layers、tile objects、template、transform flags、malformed/目标/非目标 GID、1,000,000 scan 边界、乱序 binding 原 index、其他 firstgid/source 保持、TSJ 保留、summary tamper/stale map/dependency、Tiled round trip |
 | polygon/polyline points 被当成绝对坐标、自动闭合/重排、以局部 patch 误改、注入 dimensions 或批量放大 | path 错位、形状变化、输出/验证工作无界 | shape-discriminated strict create、target-resolved complete-array replacement、object-local pixel contract、保序、3/2..256、create+update intent 每批 8,192、±1e9、path dimensions 禁止、plan/apply 重验 | min/max/create+update aggregate 边界、no-op/later-delete 不抵扣、负数/小数/超限/non-finite、extra key、非 path mismatch、width/height 注入、common+points update、source/alias 保真、Tiled round trip |
 | text 内容/字体含非法 Unicode 或控制字符、样式宽松 coercion、raw 默认值漂移、payload retention 放大 | 生成无效 JSON、Tiled 显示/编辑语义变化、内存耗尽 | flat strict union、well-formed scalar/Cc 单遍验证、pixel 1..999、nested known-key fail-closed、TMJ 默认值稀疏映射、256 KiB/change-set + 2 MiB pending canonical UTF-8 预算、独立有界详情读取 | 空/多行/Unicode、lone surrogate/C0、scalar/byte 双边界、颜色/enum/bool/pixel 边界、默认删除、unknown nested key、text patch shape mismatch、aggregate/pending/alias/release、closed output、Tiled round trip |
@@ -1848,7 +1922,7 @@ M1 明确拒绝：
 3. **Contract**：每个 MCP input schema、精确 closed output schema、成功/应用错误
    `structuredContent`、1024-byte compact one-line JSON v1 text summary（含不复制
    result/details、图片 MIME/raw bytes 与 structured byte count）、capabilities
-   `textContentContract` 与 `applicationErrorContract`、98-code v1 registry machine
+   `textContentContract` 与 `applicationErrorContract`、100-code v1 registry machine
    artifact / `tiled://application-errors` resource 一致性、未知 code 兼容与
    `INTERNAL_ERROR` fallback、各 excluded surface 类型边界、三种图片工具的同-buffer
    artifact metadata、rasterizer

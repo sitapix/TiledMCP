@@ -19,7 +19,7 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -120,6 +120,8 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "UNSUPPORTED_PROPERTY_QUERY",
     "UNSUPPORTED_RENDER_FEATURE",
     "UNSUPPORTED_RENDER_LAYER",
+    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+    "UNSUPPORTED_RESIZE_TEMPLATE",
     "UNSUPPORTED_TILESET",
     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
     "UNSUPPORTED_TILE_ENCODING"
@@ -158,9 +160,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3",
+    "revision": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
     "serverVersion": "0.0.1",
-    "size": 3767
+    "size": 3841
   },
   "annotations": {
     "audience": [
@@ -172,7 +174,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3767,
+  "size": 3841,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -185,9 +187,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:c117941597326db20a84556f3b2e83df033f6b7c75d77defba348a716ab2c6cd",
+    "revision": "sha256:f98501d5ad17754ac44cbb35e5ea6e671611e9d6e420a0c58d72d4145ccbcbd1",
     "serverVersion": "0.0.1",
-    "size": 60313
+    "size": 62328
   },
   "annotations": {
     "audience": [
@@ -199,15 +201,15 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 60313,
+  "size": 62328,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
+Content contract: `text`, 3841 UTF-8 bytes, revision `sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e`.
 
-Content contract: `text`, 60313 UTF-8 bytes, revision `sha256:c117941597326db20a84556f3b2e83df033f6b7c75d77defba348a716ab2c6cd`.
+Content contract: `text`, 62328 UTF-8 bytes, revision `sha256:f98501d5ad17754ac44cbb35e5ea6e671611e9d6e420a0c58d72d4145ccbcbd1`.
 
 Resource templates: none.
 
@@ -724,6 +726,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -1614,6 +1618,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -4092,6 +4098,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -4954,6 +4962,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -5612,6 +5622,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -6628,6 +6640,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -6795,7 +6809,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3",
+                  "const": "sha256:45a616e0aaff260b9213d7cd9203d3ebe8e6dde806444c5b52e3d4248a5a256e",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -6803,7 +6817,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3767,
+                  "const": 3841,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -8710,6 +8724,22 @@ Output schema:
                   "const": 1000000,
                   "type": "number"
                 },
+                "maxResizeCroppedCellSample": {
+                  "const": 16,
+                  "type": "number"
+                },
+                "maxResizeMapDimension": {
+                  "const": 100000,
+                  "type": "number"
+                },
+                "maxResizeOffsetMagnitude": {
+                  "const": 100000,
+                  "type": "number"
+                },
+                "maxResizeSourceCellScans": {
+                  "const": 1000000,
+                  "type": "number"
+                },
                 "maxSerializedDuplicateBytes": {
                   "const": 16777216,
                   "type": "number"
@@ -8899,6 +8929,10 @@ Output schema:
                 "maxPendingTextObjectPayloadBytes",
                 "maxStampPatternEdge",
                 "maxStampPatternCells",
+                "maxResizeMapDimension",
+                "maxResizeOffsetMagnitude",
+                "maxResizeSourceCellScans",
+                "maxResizeCroppedCellSample",
                 "maxObjectMutationsPerChangeSet",
                 "maxEditedSubtreesPerChangeSet",
                 "maxListedObjects",
@@ -9055,9 +9089,86 @@ Output schema:
                 {
                   "const": "updateMap",
                   "type": "string"
+                },
+                {
+                  "const": "resizeMap",
+                  "type": "string"
                 }
               ],
               "type": "array"
+            },
+            "mapResizeCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "cellMapping": {
+                  "const": "destination-equals-source-plus-offset",
+                  "type": "string"
+                },
+                "croppedGidValidation": {
+                  "const": "every-scanned-source-cell-fail-closed",
+                  "type": "string"
+                },
+                "groupLayerPolicy": {
+                  "const": "recurse-children-untouched-self",
+                  "type": "string"
+                },
+                "idCounters": {
+                  "const": "unchanged",
+                  "type": "string"
+                },
+                "imageLayerPolicy": {
+                  "const": "shift-changed-offset-members-only",
+                  "type": "string"
+                },
+                "objectPolicy": {
+                  "const": "shift-anchor-only-never-delete",
+                  "type": "string"
+                },
+                "offsetMeaning": {
+                  "const": "old-content-position-in-new-map",
+                  "type": "string"
+                },
+                "offsetUnit": {
+                  "const": "tiles",
+                  "type": "string"
+                },
+                "operationOrdering": {
+                  "const": "exclusive-single-operation-change-set",
+                  "type": "string"
+                },
+                "outOfBoundsObjectMetric": {
+                  "const": "shifted-anchor-outside-closed-pixel-bounds",
+                  "type": "string"
+                },
+                "sourcePatch": {
+                  "const": "root-dimensions-and-affected-layer-members-local",
+                  "type": "string"
+                },
+                "templateObjects": {
+                  "const": "fail-closed-when-shifting",
+                  "type": "string"
+                },
+                "tileLayerRequirement": {
+                  "const": "map-aligned-zero-origin-finite-numeric-data-only",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "offsetUnit",
+                "offsetMeaning",
+                "cellMapping",
+                "tileLayerRequirement",
+                "croppedGidValidation",
+                "objectPolicy",
+                "outOfBoundsObjectMetric",
+                "templateObjects",
+                "imageLayerPolicy",
+                "groupLayerPolicy",
+                "idCounters",
+                "operationOrdering",
+                "sourcePatch"
+              ],
+              "type": "object"
             },
             "mapUpdateCapabilities": {
               "additionalProperties": false,
@@ -11125,6 +11236,7 @@ Output schema:
             "resourceCapabilities",
             "editProfiles",
             "mapOperations",
+            "mapResizeCapabilities",
             "mapUpdateCapabilities",
             "tileOperations",
             "tileStampCapabilities",
@@ -11263,6 +11375,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -11813,6 +11927,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -12823,6 +12939,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -13264,6 +13382,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -14215,6 +14335,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -14750,6 +14872,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -15018,6 +15142,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -15406,6 +15532,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -15936,6 +16064,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -16716,6 +16846,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -17196,6 +17328,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -17248,7 +17382,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.
+Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -17447,6 +17581,41 @@ Input schema:
             "required": [
               "type",
               "patch"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "height": {
+                "maximum": 100000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "offsetX": {
+                "maximum": 100000,
+                "minimum": -100000,
+                "type": "integer"
+              },
+              "offsetY": {
+                "maximum": 100000,
+                "minimum": -100000,
+                "type": "integer"
+              },
+              "type": {
+                "const": "resizeMap",
+                "type": "string"
+              },
+              "width": {
+                "maximum": 100000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "width",
+              "height"
             ],
             "type": "object"
           },
@@ -19203,6 +19372,56 @@ Output schema:
       ],
       "type": "object"
     },
+    "ChangeSetResizeBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetResizeCroppedCell": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "layerId": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "x": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "layerId",
+        "x",
+        "y",
+        "gid"
+      ],
+      "type": "object"
+    },
     "ChangeSetSafeInteger": {
       "maximum": 9007199254740991,
       "minimum": -9007199254740991,
@@ -19424,6 +19643,176 @@ Output schema:
                       "changedFields",
                       "wouldChange",
                       "renderingMayChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "croppedCellSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "croppedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "groupLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "imageLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "mapDimensionsChanged": {
+                        "type": "boolean"
+                      },
+                      "movedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "newBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "objectLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectsOutsideNewBounds": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "y": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "oldBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "omittedCroppedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "pixelOffset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "preservedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "resizedTileLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "rewrittenCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "shiftedImageLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "tileLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "resizeMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "oldBounds",
+                      "newBounds",
+                      "offset",
+                      "pixelOffset",
+                      "wouldChange",
+                      "mapDimensionsChanged",
+                      "tileLayerCount",
+                      "resizedTileLayerIds",
+                      "scannedCellCount",
+                      "rewrittenCellCount",
+                      "preservedNonEmptyCellCount",
+                      "croppedNonEmptyCellCount",
+                      "croppedCellSample",
+                      "omittedCroppedCellCount",
+                      "objectLayerCount",
+                      "movedObjectCount",
+                      "objectsOutsideNewBounds",
+                      "imageLayerCount",
+                      "shiftedImageLayerIds",
+                      "groupLayerCount",
+                      "lockedLayerCount"
                     ],
                     "type": "object"
                   },
@@ -21766,6 +22155,170 @@ Output schema:
                       "minItems": 1,
                       "type": "array"
                     },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
                     "mapUpdates": {
                       "items": {
                         "additionalProperties": false,
@@ -22725,6 +23278,170 @@ Output schema:
                       "minItems": 1,
                       "type": "array"
                     },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
                     "mapUpdates": {
                       "items": {
                         "additionalProperties": false,
@@ -23424,6 +24141,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -24152,6 +24871,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -24858,6 +25579,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -25445,6 +26168,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -25828,6 +26553,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -26972,6 +27699,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -27571,6 +28300,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -28146,6 +28877,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"
@@ -28448,6 +29181,8 @@ Output schema:
                     "UNSUPPORTED_PROPERTY_QUERY",
                     "UNSUPPORTED_RENDER_FEATURE",
                     "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
                     "UNSUPPORTED_TILESET",
                     "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
                     "UNSUPPORTED_TILE_ENCODING"

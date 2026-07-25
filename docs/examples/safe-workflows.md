@@ -171,6 +171,32 @@ proposal 过期或冲突后都必须重新预览和批准；prune/discard/abando
 tombstone，不要
 把 not-found 当成可重试信号。
 
+### 独占地调整地图尺寸
+
+`resizeMap` 必须独占整个 change set，不能与其他 operations 混批。offset 语义与
+Tiled 1.12.2 一致：`offsetX`/`offsetY` 是**旧内容在新地图中的 tile 位置**，缩小或
+向左上裁剪用负值；目标格 `(x,y)` 取自源格 `(x−offsetX,y−offsetY)`。
+
+```text
+proposalWire = tiled_preview_edits({
+  mapPath,
+  expectedRevision: snapshot.revision,
+  expectedDependencyRevisions: snapshot.dependencyRevisions,
+  operations: [
+    { type: "resizeMap", width: 40, height: 30, offsetX: 4, offsetY: 0 }
+  ]
+})
+```
+
+批准前必须向人展示 preview 的 destructive summary：新旧 bounds、offset、
+`preservedNonEmptyCellCount`、`croppedNonEmptyCellCount` 与最多 16 项
+`croppedCellSample`（差额在 `omittedCroppedCellCount`），以及
+`movedObjectCount`/`objectsOutsideNewBounds`。对象只会被平移，绝不会被删除；越界
+对象原样保留，`objectsOutsideNewBounds` 只是锚点级参考指标。任何 tile layer 与地图
+bounds 不对齐时整个操作会以 `UNSUPPORTED_RESIZE_LAYER_BOUNDS` 拒绝；被裁剪区域中
+的 malformed/unbound GID 也会 fail closed，而不是被裁剪静默掩盖。apply 后重新读取
+map summary，并按需要用 `tiled_render_preview` 目视确认新 bounds。
+
 ### 创建或整体替换 polygon / polyline points
 
 `createObject.object` 按 `shape` 使用 strict union。polygon 需要 3–256 点，polyline
@@ -442,7 +468,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 ## 区分 SDK 输入错误、应用错误与诊断
 
-当前 v1 application-error registry 包含 98 个 code。code 的稳定 wire 位置是
+当前 v1 application-error registry 包含 100 个 code。code 的稳定 wire 位置是
 `structuredContent.result.error.code`；完整 allowlist 由
 [`contracts/application-errors.v1.json`](../../contracts/application-errors.v1.json)
 和 direct Resource `tiled://application-errors` 提供，capability 中的
@@ -451,7 +477,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 不同失败/诊断表面不能共用一个枚举：
 
-| 表面 | 客户端处理 | 属于 98-code application registry |
+| 表面 | 客户端处理 | 属于 100-code application registry |
 |---|---|---|
 | MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
 | Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |

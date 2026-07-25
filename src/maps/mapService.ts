@@ -153,6 +153,10 @@ export const MAX_FLOOD_FILL_SCANS =
   MAX_TILE_OPERATION_SCANS;
 export const MAX_STAMP_PATTERN_EDGE = 256;
 export const MAX_STAMP_PATTERN_CELLS = 16_384;
+export const MAX_RESIZE_MAP_DIMENSION = MAX_CREATE_MAP_DIMENSION;
+export const MAX_RESIZE_OFFSET_MAGNITUDE = MAX_CREATE_MAP_DIMENSION;
+export const MAX_RESIZE_SOURCE_CELL_SCANS = MAX_TILE_OPERATION_SCANS;
+export const MAX_RESIZE_CROPPED_CELL_SAMPLE = 16;
 export const DEFAULT_USAGE_TOP_TILE_LIMIT = 64;
 export const MAX_USAGE_TOP_TILE_LIMIT = 128;
 export const MAX_USAGE_SCAN_VALUES = 1_000_000;
@@ -3762,6 +3766,21 @@ function validateAndSummarizeOperations(
       "duplicateLayer must be the only operation in its change set.",
     );
   }
+  const resizeMapOperationCount = operations.filter(
+    (operation) =>
+      isRecordValue(operation) &&
+      operation.type === "resizeMap",
+  ).length;
+  if (
+    resizeMapOperationCount > 1 ||
+    (resizeMapOperationCount === 1 &&
+      operations.length !== 1)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "resizeMap must be the only operation in its change set.",
+    );
+  }
 
   let cellWrites = 0;
   let tileOperationScans = 0;
@@ -3800,6 +3819,9 @@ function validateAndSummarizeOperations(
   > = [];
   const mapUpdates: NonNullable<
     MapEditPlan["summary"]["mapUpdates"]
+  > = [];
+  const mapResizes: NonNullable<
+    MapEditPlan["summary"]["mapResizes"]
   > = [];
   const layerUpdates: NonNullable<
     MapEditPlan["summary"]["layerUpdates"]
@@ -3937,6 +3959,150 @@ function validateAndSummarizeOperations(
         renderingMayChange: update.changedFields.some(
           (field) => MAP_RENDER_FIELDS.has(field),
         ),
+      });
+    } else if (operation.type === "resizeMap") {
+      const operationContext = `operations[${operationIndex}]`;
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["height", "offsetX", "offsetY", "type", "width"]),
+        operationContext,
+      );
+      const input = readResizeMapInput(
+        operation as unknown as Record<string, unknown>,
+        operationContext,
+      );
+      const oldWidth = expectInteger(map.width, `${mapPath}.width`);
+      const oldHeight = expectInteger(map.height, `${mapPath}.height`);
+      assertPositiveInteger(oldWidth, `${mapPath}.width`);
+      assertPositiveInteger(oldHeight, `${mapPath}.height`);
+      const tileWidth = expectInteger(map.tilewidth, `${mapPath}.tilewidth`);
+      const tileHeight = expectInteger(map.tileheight, `${mapPath}.tileheight`);
+      assertPositiveInteger(tileWidth, `${mapPath}.tilewidth`);
+      assertPositiveInteger(tileHeight, `${mapPath}.tileheight`);
+      const pixelOffsetX = input.offsetX * tileWidth;
+      const pixelOffsetY = input.offsetY * tileHeight;
+      if (
+        !Number.isSafeInteger(pixelOffsetX) ||
+        !Number.isSafeInteger(pixelOffsetY) ||
+        !Number.isSafeInteger(input.width * tileWidth) ||
+        !Number.isSafeInteger(input.height * tileHeight)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${operationContext} pixel arithmetic must stay within safe integers.`,
+        );
+      }
+      const views = collectResizeLayerViews(
+        map,
+        oldWidth,
+        oldHeight,
+        mapPath,
+        operationContext,
+      );
+      const scannedCellCount =
+        views.tileLayers.length * oldWidth * oldHeight;
+      const rewrittenCellCount =
+        views.tileLayers.length * input.width * input.height;
+      if (
+        !Number.isSafeInteger(rewrittenCellCount) ||
+        cellWrites + rewrittenCellCount > MAX_CELL_WRITES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+          {
+            limit: MAX_CELL_WRITES,
+            actual: cellWrites + rewrittenCellCount,
+            operationIndex,
+          },
+        );
+      }
+      if (
+        !Number.isSafeInteger(scannedCellCount) ||
+        tileOperationScans + scannedCellCount >
+          MAX_RESIZE_SOURCE_CELL_SCANS
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A resizeMap operation may scan at most ${MAX_RESIZE_SOURCE_CELL_SCANS} source tile cells.`,
+          {
+            limit: MAX_RESIZE_SOURCE_CELL_SCANS,
+            actual: tileOperationScans + scannedCellCount,
+            operationIndex,
+          },
+        );
+      }
+      const resized = performMapResize(
+        map,
+        orientation,
+        bindings,
+        views,
+        {
+          operationContext,
+          mapPath,
+          oldWidth,
+          oldHeight,
+          newWidth: input.width,
+          newHeight: input.height,
+          offsetX: input.offsetX,
+          offsetY: input.offsetY,
+          pixelOffsetX,
+          pixelOffsetY,
+          tileWidth,
+          tileHeight,
+          objectMutationsUsed: objectMutations,
+        },
+      );
+      cellWrites += rewrittenCellCount;
+      tileOperationScans += scannedCellCount;
+      objectMutations += resized.movedObjectCount;
+      for (const layerId of resized.dataChangedTileLayerIds) {
+        affectedLayerIds.add(layerId);
+        affectedTileLayerIds.add(layerId);
+      }
+      for (const layerId of resized.objectShiftedLayerIds) {
+        affectedLayerIds.add(layerId);
+        affectedObjectLayerIds.add(layerId);
+      }
+      for (const layerId of resized.shiftedImageLayerIds) {
+        affectedLayerIds.add(layerId);
+      }
+      mapResizes.push({
+        operationIndex,
+        oldWidth,
+        oldHeight,
+        newWidth: input.width,
+        newHeight: input.height,
+        offsetX: input.offsetX,
+        offsetY: input.offsetY,
+        pixelOffsetX,
+        pixelOffsetY,
+        wouldChange: resized.wouldChange,
+        mapDimensionsChanged: resized.mapDimensionsChanged,
+        tileLayerCount: views.tileLayers.length,
+        resizedTileLayerIds: views.tileLayers
+          .map((layer) => layer.id)
+          .sort((left, right) => left - right),
+        scannedCellCount,
+        rewrittenCellCount,
+        preservedNonEmptyCellCount:
+          resized.preservedNonEmptyCellCount,
+        croppedNonEmptyCellCount:
+          resized.croppedNonEmptyCellCount,
+        croppedCellSample: resized.croppedCellSample,
+        omittedCroppedCellCount:
+          resized.croppedNonEmptyCellCount -
+          resized.croppedCellSample.length,
+        objectLayerCount: views.objectLayers.length,
+        movedObjectCount: resized.movedObjectCount,
+        objectsOutsideNewBounds:
+          resized.objectsOutsideNewBounds,
+        imageLayerCount: views.imageLayers.length,
+        shiftedImageLayerIds: [
+          ...resized.shiftedImageLayerIds,
+        ].sort((left, right) => left - right),
+        groupLayerCount: views.groupLayerCount,
+        lockedLayerCount: views.lockedLayerCount,
       });
     } else if (operation.type === "setTiles") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
@@ -5100,7 +5266,22 @@ function validateAndSummarizeOperations(
             : 2
           : 0),
       0,
-    );
+    ) +
+    mapResizes.reduce((count, resize) => {
+      const changedDimensionMembers =
+        (resize.newWidth !== resize.oldWidth ? 1 : 0) +
+        (resize.newHeight !== resize.oldHeight ? 1 : 0);
+      const changedOffsetMembers =
+        (resize.pixelOffsetX !== 0 ? 1 : 0) +
+        (resize.pixelOffsetY !== 0 ? 1 : 0);
+      return (
+        count +
+        changedDimensionMembers *
+          (1 + resize.resizedTileLayerIds.length) +
+        changedOffsetMembers *
+          resize.shiftedImageLayerIds.length
+      );
+    }, 0);
   if (patchedSubtreeCount > MAX_PATCHED_SUBTREES) {
     throw new TiledMcpError(
       "RESULT_LIMIT_EXCEEDED",
@@ -5125,6 +5306,9 @@ function validateAndSummarizeOperations(
     ...(mapUpdates.length === 0
       ? {}
       : { mapUpdates }),
+    ...(mapResizes.length === 0
+      ? {}
+      : { mapResizes }),
     ...(layerUpdates.length === 0
       ? {}
       : {
@@ -5155,6 +5339,502 @@ function validateAndSummarizeOperations(
     ...(duplicatedLayers.length === 0
       ? {}
       : { duplicatedLayers }),
+  };
+}
+
+interface ResizeTileLayerScanView {
+  object: JsonObject;
+  id: number;
+  width: number;
+  height: number;
+  data: JsonValue[];
+}
+
+interface ResizeObjectLayerScanView {
+  object: JsonObject;
+  id: number;
+  objects: JsonValue[];
+}
+
+interface ResizeImageLayerScanView {
+  object: JsonObject;
+  id: number;
+}
+
+interface ResizeLayerViews {
+  tileLayers: ResizeTileLayerScanView[];
+  objectLayers: ResizeObjectLayerScanView[];
+  imageLayers: ResizeImageLayerScanView[];
+  groupLayerCount: number;
+  lockedLayerCount: number;
+}
+
+function readResizeMapInput(
+  operation: Record<string, unknown>,
+  operationContext: string,
+): { width: number; height: number; offsetX: number; offsetY: number } {
+  const { width, height } = operation;
+  if (typeof width !== "number" || typeof height !== "number") {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${operationContext} width and height must be numbers.`,
+    );
+  }
+  assertPositiveIntegerAtMost(
+    width,
+    `${operationContext}.width`,
+    MAX_RESIZE_MAP_DIMENSION,
+  );
+  assertPositiveIntegerAtMost(
+    height,
+    `${operationContext}.height`,
+    MAX_RESIZE_MAP_DIMENSION,
+  );
+  const readOffset = (key: "offsetX" | "offsetY"): number => {
+    const value = operation[key];
+    if (value === undefined) {
+      return 0;
+    }
+    if (typeof value !== "number") {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${operationContext}.${key} must be an integer.`,
+      );
+    }
+    assertSafeInteger(value, `${operationContext}.${key}`);
+    if (Math.abs(value) > MAX_RESIZE_OFFSET_MAGNITUDE) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${operationContext}.${key} magnitude must be at most ${MAX_RESIZE_OFFSET_MAGNITUDE}.`,
+        {
+          option: `${operationContext}.${key}`,
+          limit: MAX_RESIZE_OFFSET_MAGNITUDE,
+          actual: value,
+        },
+      );
+    }
+    return value;
+  };
+  return {
+    width,
+    height,
+    offsetX: readOffset("offsetX"),
+    offsetY: readOffset("offsetY"),
+  };
+}
+
+function collectResizeLayerViews(
+  map: JsonObject,
+  oldWidth: number,
+  oldHeight: number,
+  mapPath: string,
+  operationContext: string,
+): ResizeLayerViews {
+  const tileLayers: ResizeTileLayerScanView[] = [];
+  const objectLayers: ResizeObjectLayerScanView[] = [];
+  const imageLayers: ResizeImageLayerScanView[] = [];
+  let groupLayerCount = 0;
+  let lockedLayerCount = 0;
+  const budget: LayerTraversalBudget = { count: 0 };
+  const visit = (
+    entries: JsonValue[],
+    context: string,
+    depth: number,
+  ): void => {
+    assertLayerTraversalBudget(entries.length, depth, budget);
+    for (const [index, value] of entries.entries()) {
+      const layer = expectObject(value, `${context}[${index}]`);
+      const layerType = expectString(
+        layer.type,
+        `${context}[${index}].type`,
+      );
+      const layerId = expectInteger(
+        layer.id,
+        `${context}[${index}].id`,
+      );
+      if (layer.locked === true) {
+        lockedLayerCount += 1;
+      }
+      if (layerType === "tilelayer") {
+        if ("chunks" in layer || typeof layer.data === "string") {
+          throw new TiledMcpError(
+            "UNSUPPORTED_TILE_ENCODING",
+            "MVP editing supports only finite JSON tile layers with numeric data arrays.",
+            { path: mapPath, layerId },
+          );
+        }
+        const width = expectInteger(layer.width, `layer ${layerId}.width`);
+        const height = expectInteger(layer.height, `layer ${layerId}.height`);
+        assertPositiveInteger(width, `layer ${layerId}.width`);
+        assertPositiveInteger(height, `layer ${layerId}.height`);
+        const x = readOptionalInteger(layer.x, `layer ${layerId}.x`, 0);
+        const y = readOptionalInteger(layer.y, `layer ${layerId}.y`, 0);
+        if (
+          x !== 0 ||
+          y !== 0 ||
+          width !== oldWidth ||
+          height !== oldHeight
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+            `${operationContext} cannot resize this map: tile layer ${layerId} bounds do not match the map bounds, and Tiled 1.12 leaves resize semantics for such layers undefined.`,
+            {
+              path: mapPath,
+              layerId,
+              layerBounds: { x, y, width, height },
+              mapBounds: {
+                x: 0,
+                y: 0,
+                width: oldWidth,
+                height: oldHeight,
+              },
+            },
+          );
+        }
+        const data = expectArray(layer.data, `layer ${layerId}.data`);
+        if (data.length !== width * height) {
+          throw new TiledMcpError(
+            "INVALID_TILE_DATA",
+            `Layer ${layerId} data length does not match width × height.`,
+            { layerId, expected: width * height, actual: data.length },
+          );
+        }
+        tileLayers.push({
+          object: layer,
+          id: layerId,
+          width,
+          height,
+          data,
+        });
+      } else if (layerType === "objectgroup") {
+        objectLayers.push({
+          object: layer,
+          id: layerId,
+          objects: expectArray(
+            layer.objects,
+            `layer ${layerId}.objects`,
+          ),
+        });
+      } else if (layerType === "imagelayer") {
+        imageLayers.push({ object: layer, id: layerId });
+      } else if (layerType === "group") {
+        groupLayerCount += 1;
+        visit(
+          expectArray(layer.layers, `layer ${layerId}.layers`),
+          `${context}[${index}].layers`,
+          depth + 1,
+        );
+      } else {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${context}[${index}].type is not a supported Tiled layer type.`,
+          { layerType },
+        );
+      }
+    }
+  };
+  visit(
+    expectArray(map.layers, `${mapPath}.layers`),
+    `${mapPath}.layers`,
+    0,
+  );
+  return {
+    tileLayers,
+    objectLayers,
+    imageLayers,
+    groupLayerCount,
+    lockedLayerCount,
+  };
+}
+
+function performMapResize(
+  map: JsonObject,
+  orientation: "orthogonal",
+  bindings: readonly TilesetBinding[],
+  views: ResizeLayerViews,
+  input: {
+    operationContext: string;
+    mapPath: string;
+    oldWidth: number;
+    oldHeight: number;
+    newWidth: number;
+    newHeight: number;
+    offsetX: number;
+    offsetY: number;
+    pixelOffsetX: number;
+    pixelOffsetY: number;
+    tileWidth: number;
+    tileHeight: number;
+    objectMutationsUsed: number;
+  },
+): {
+  wouldChange: boolean;
+  mapDimensionsChanged: boolean;
+  dataChangedTileLayerIds: number[];
+  preservedNonEmptyCellCount: number;
+  croppedNonEmptyCellCount: number;
+  croppedCellSample: Array<{
+    layerId: number;
+    x: number;
+    y: number;
+    gid: number;
+  }>;
+  objectShiftedLayerIds: number[];
+  movedObjectCount: number;
+  objectsOutsideNewBounds: number;
+  shiftedImageLayerIds: number[];
+} {
+  const {
+    operationContext,
+    mapPath,
+    newWidth,
+    newHeight,
+    offsetX,
+    offsetY,
+    pixelOffsetX,
+    pixelOffsetY,
+  } = input;
+  const newArea = newWidth * newHeight;
+  const dataChangedTileLayerIds: number[] = [];
+  const croppedCellSample: Array<{
+    layerId: number;
+    x: number;
+    y: number;
+    gid: number;
+  }> = [];
+  let preservedNonEmptyCellCount = 0;
+  let croppedNonEmptyCellCount = 0;
+  for (const layer of views.tileLayers) {
+    const newData: number[] = new Array<number>(newArea).fill(0);
+    for (let y = 0; y < layer.height; y += 1) {
+      for (let x = 0; x < layer.width; x += 1) {
+        const raw = layer.data[y * layer.width + x];
+        if (
+          typeof raw !== "number" ||
+          !Number.isSafeInteger(raw)
+        ) {
+          throw new TiledMcpError(
+            "INVALID_TILE_DATA",
+            `Layer ${layer.id} has a non-integer GID.`,
+            { layerId: layer.id, x, y },
+          );
+        }
+        // Every scanned source cell resolves fail closed, so cropping can
+        // never silently discard a malformed or unbound encoded GID.
+        gidToTileRef(raw, orientation, bindings);
+        const destX = x + offsetX;
+        const destY = y + offsetY;
+        if (
+          destX >= 0 &&
+          destX < newWidth &&
+          destY >= 0 &&
+          destY < newHeight
+        ) {
+          newData[destY * newWidth + destX] = raw;
+          if (raw !== 0) {
+            preservedNonEmptyCellCount += 1;
+          }
+        } else if (raw !== 0) {
+          croppedNonEmptyCellCount += 1;
+          if (
+            croppedCellSample.length <
+            MAX_RESIZE_CROPPED_CELL_SAMPLE
+          ) {
+            croppedCellSample.push({
+              layerId: layer.id,
+              x,
+              y,
+              gid: raw,
+            });
+          }
+        }
+      }
+    }
+    let changed =
+      layer.width !== newWidth || layer.height !== newHeight;
+    if (!changed) {
+      for (let index = 0; index < newArea; index += 1) {
+        if (newData[index] !== layer.data[index]) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    layer.object.width = newWidth;
+    layer.object.height = newHeight;
+    layer.object.data = newData;
+    if (changed) {
+      dataChangedTileLayerIds.push(layer.id);
+    }
+  }
+
+  const shifting = pixelOffsetX !== 0 || pixelOffsetY !== 0;
+  const newPixelWidth = newWidth * input.tileWidth;
+  const newPixelHeight = newHeight * input.tileHeight;
+  const objectShiftedLayerIds: number[] = [];
+  let movedObjectCount = 0;
+  let objectsOutsideNewBounds = 0;
+  let visitedObjects = 0;
+  for (const layer of views.objectLayers) {
+    let layerShifted = false;
+    for (const [objectIndex, value] of layer.objects.entries()) {
+      visitedObjects += 1;
+      if (visitedObjects > MAX_OBJECT_COUNT) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `A resizeMap operation may scan at most ${MAX_OBJECT_COUNT} objects.`,
+          { limit: MAX_OBJECT_COUNT },
+        );
+      }
+      const objectRecord = expectObject(
+        value,
+        `layer ${layer.id}.objects[${objectIndex}]`,
+      );
+      if (
+        shifting &&
+        Object.prototype.hasOwnProperty.call(
+          objectRecord,
+          "template",
+        )
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_RESIZE_TEMPLATE",
+          `${operationContext} cannot move template objects: template semantics are outside the supported editing profile.`,
+          {
+            path: mapPath,
+            layerId: layer.id,
+          },
+        );
+      }
+      const x = objectRecord.x;
+      const y = objectRecord.y;
+      if (
+        typeof x !== "number" ||
+        !Number.isFinite(x) ||
+        typeof y !== "number" ||
+        !Number.isFinite(y)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `layer ${layer.id}.objects[${objectIndex}] must have finite numeric x and y coordinates.`,
+          { path: mapPath, layerId: layer.id },
+        );
+      }
+      let finalX = x;
+      let finalY = y;
+      if (shifting) {
+        finalX = x + pixelOffsetX;
+        finalY = y + pixelOffsetY;
+        if (
+          !Number.isFinite(finalX) ||
+          Math.abs(finalX) > MAX_ABSOLUTE_OBJECT_NUMBER ||
+          !Number.isFinite(finalY) ||
+          Math.abs(finalY) > MAX_ABSOLUTE_OBJECT_NUMBER
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            `${operationContext} would move object coordinates beyond ±${MAX_ABSOLUTE_OBJECT_NUMBER} map pixels.`,
+            {
+              limit: MAX_ABSOLUTE_OBJECT_NUMBER,
+              layerId: layer.id,
+            },
+          );
+        }
+        objectRecord.x = finalX;
+        objectRecord.y = finalY;
+        movedObjectCount += 1;
+        if (
+          input.objectMutationsUsed + movedObjectCount >
+          MAX_OBJECT_MUTATIONS
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may mutate at most ${MAX_OBJECT_MUTATIONS} objects.`,
+            { limit: MAX_OBJECT_MUTATIONS },
+          );
+        }
+        layerShifted = true;
+      }
+      if (
+        finalX < 0 ||
+        finalX > newPixelWidth ||
+        finalY < 0 ||
+        finalY > newPixelHeight
+      ) {
+        objectsOutsideNewBounds += 1;
+      }
+    }
+    if (layerShifted) {
+      objectShiftedLayerIds.push(layer.id);
+    }
+  }
+
+  const shiftedImageLayerIds: number[] = [];
+  if (shifting) {
+    for (const layer of views.imageLayers) {
+      const applyOffsetShift = (
+        key: "offsetx" | "offsety",
+        delta: number,
+      ): void => {
+        if (delta === 0) {
+          return;
+        }
+        const current = layer.object[key];
+        if (
+          current !== undefined &&
+          (typeof current !== "number" ||
+            !Number.isFinite(current))
+        ) {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `layer ${layer.id}.${key} must be a finite number.`,
+            { path: mapPath, layerId: layer.id },
+          );
+        }
+        const base = typeof current === "number" ? current : 0;
+        const next = base + delta;
+        if (
+          !Number.isFinite(next) ||
+          Math.abs(next) > MAX_ABSOLUTE_OBJECT_NUMBER
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            `${operationContext} would move image layer ${layer.id} offsets beyond ±${MAX_ABSOLUTE_OBJECT_NUMBER} map pixels.`,
+            {
+              limit: MAX_ABSOLUTE_OBJECT_NUMBER,
+              layerId: layer.id,
+            },
+          );
+        }
+        layer.object[key] = next;
+      };
+      applyOffsetShift("offsetx", pixelOffsetX);
+      applyOffsetShift("offsety", pixelOffsetY);
+      shiftedImageLayerIds.push(layer.id);
+    }
+  }
+
+  const mapDimensionsChanged =
+    newWidth !== input.oldWidth || newHeight !== input.oldHeight;
+  if (mapDimensionsChanged) {
+    map.width = newWidth;
+    map.height = newHeight;
+  }
+  return {
+    wouldChange:
+      mapDimensionsChanged ||
+      dataChangedTileLayerIds.length > 0 ||
+      movedObjectCount > 0 ||
+      shiftedImageLayerIds.length > 0,
+    mapDimensionsChanged,
+    dataChangedTileLayerIds,
+    preservedNonEmptyCellCount,
+    croppedNonEmptyCellCount,
+    croppedCellSample,
+    objectShiftedLayerIds,
+    movedObjectCount,
+    objectsOutsideNewBounds,
+    shiftedImageLayerIds,
   };
 }
 
@@ -10448,6 +11128,34 @@ function sourcePatchPathsForSummary(
       paths.push(["nextobjectid"]);
     }
   }
+  for (const resize of summary.mapResizes ?? []) {
+    const widthChanged =
+      resize.newWidth !== resize.oldWidth;
+    const heightChanged =
+      resize.newHeight !== resize.oldHeight;
+    if (widthChanged) {
+      paths.push(["width"]);
+    }
+    if (heightChanged) {
+      paths.push(["height"]);
+    }
+    if (!widthChanged && !heightChanged) {
+      continue;
+    }
+    for (const layerId of resize.resizedTileLayerIds) {
+      const layerPath = findTileLayer(
+        map,
+        layerId,
+        mapPath,
+      ).path;
+      if (widthChanged) {
+        paths.push([...layerPath, "width"]);
+      }
+      if (heightChanged) {
+        paths.push([...layerPath, "height"]);
+      }
+    }
+  }
   return paths;
 }
 
@@ -10620,6 +11328,36 @@ function sourceObjectMemberPatchesForSummary(
       }
       seen.add(identity);
       patches.push(patch);
+    }
+  }
+  for (const resize of summary.mapResizes ?? []) {
+    for (const layerId of resize.shiftedImageLayerIds) {
+      const layer = findEditableLayer(
+        map,
+        layerId,
+        mapPath,
+      );
+      for (const [key, delta] of [
+        ["offsetx", resize.pixelOffsetX],
+        ["offsety", resize.pixelOffsetY],
+      ] as const) {
+        if (delta === 0) {
+          continue;
+        }
+        const patch = {
+          path: layer.path,
+          key,
+        };
+        const identity = JSON.stringify([
+          ...patch.path,
+          patch.key,
+        ]);
+        if (seen.has(identity)) {
+          continue;
+        }
+        seen.add(identity);
+        patches.push(patch);
+      }
     }
   }
   return patches;

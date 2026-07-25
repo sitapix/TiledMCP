@@ -52,6 +52,11 @@
 - 通过同一 union 的第 15 种、可混批 `copyRegion` operation 在同一 map 内复制一个完整
   tile 矩形；source/destination 先快照、同层重叠采用 memmove 语义，空 source 会明确
   清空 destination，且不会 clipping 或跳格；
+- 通过同一 union 的第 16 种、必须独占 change set 的 `resizeMap` operation 按
+  Tiled 1.12.2 核实语义调整地图尺寸：offset 表示旧内容在新地图中的 tile 位置，
+  tile layer 全量重映射并对每个被扫描源格做 GID fail-closed 校验，对象只平移从不
+  删除，image layer 仅平移发生变化的 offset members，裁剪计数与有界样本回显给
+  批准者；
 - rectangle/point/ellipse/capsule、有界 polygon/polyline path 与有界 text 对象的
   create、约束内 update 与 safe delete（正确维护 `nextobjectid`），并提供单对象
   详情读取以在整体替换/删除 path 对象或覆盖 text 内容前取得完整语义投影；
@@ -81,7 +86,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UT
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的
 PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
-双 profile discovery contract、98-code v1 application-error contract 和人类参考文档，
+双 profile discovery contract、100-code v1 application-error contract 和人类参考文档，
 并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
 asset identity v1 已经落地并通过 `tiled_get_capabilities.assetIdentityContract`
 公布精确边界；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
@@ -115,7 +120,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
-| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 98 个 v1 application code 及其兼容性、fallback 和排除边界 |
+| [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 100 个 v1 application code 及其兼容性、fallback 和排除边界 |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 26 工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
@@ -227,7 +232,7 @@ TSJ。root atlas、per-tile image 和 image-layer 引用按规范化项目路径
 返回
 `{"result":{"ok":false,"error":{"code":"…","message":"…","details":{}}}}`。
 应用错误码的精确 wire 位置是 `structuredContent.result.error.code`。当前 v1 注册表包含
-98 个 application code；机器 artifact 是
+100 个 application code；机器 artifact 是
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json)，运行时
 同一内容可从 direct Resource `tiled://application-errors` 读取，并由
 `tiled_get_capabilities.applicationErrorContract` 公布 URI、revision、size、fallback 和
@@ -260,7 +265,7 @@ inline image bytes。error summary 给稳定 `code`、有界单行 `message`、�
 | URI | 类型 | 作用 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | 串联能力发现、sheet/preview 检查、change set 客户端批准、提交与提交后复核；内容带 SHA-256 revision 和 UTF-8 byte size |
-| `tiled://application-errors` | `application/json` | 当前 98 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
+| `tiled://application-errors` | `application/json` | 当前 100 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界 |
 
 资产、schema 和 render Resource Templates 尚未注册；应以
 `resources/list` / `resources/templates/list` 的实际响应为准。
@@ -635,6 +640,29 @@ copy intent 仍计入 scan/write budget，但 `changedCellCount:0`、
 仍折叠为 exact-byte no-op。该 operation 不注册 standalone tool，因此工具数仍为
 25 core / 26 with rasterizer。
 
+调整地图尺寸时，使用 generic union 的第 16 种、必须独占 change set 的 operation：
+`{type:"resizeMap",width,height,offsetX?,offsetY?}`。语义按 Tiled 1.12.2 官方源码
+核实：`offsetX`/`offsetY` 单位为 tile，表示**旧内容在新地图中的位置**（缩小/向左上
+裁剪用负值，省略视为 0，幅值上限 100,000）；目标格 `(x,y)` 取自源格
+`(x−offsetX,y−offsetY)`，新增格子填空 tile。所有 tile layer 必须与当前地图 bounds
+完全对齐（零 origin、同尺寸），否则整个操作以 `UNSUPPORTED_RESIZE_LAYER_BOUNDS`
+fail closed——Tiled 对非对齐 layer 的 resize 行为本身留有未定义 TODO，本项目不做
+近似。每个被扫描的源格（包括将被裁剪的）都按完整 encoded GID fail-closed 校验，
+裁剪不能掩盖坏数据。
+
+对象固定采用 Tiled "remove objects" 关闭时的语义：像素偏移
+`(offsetX×tilewidth,offsetY×tileheight)` 非零时所有对象仅平移锚点，polygon/polyline
+points 相对锚点自动跟随，**从不删除**；越界对象原样保留，摘要按"平移后锚点是否落在
+闭区间像素边界外"回显 `objectsOutsideNewBounds`。含 `template` 的对象在需要平移时以
+`UNSUPPORTED_RESIZE_TEMPLATE` fail closed。image layer 只平移发生变化的
+`offsetx`/`offsety` member；group layer 自身不动；`nextlayerid`/`nextobjectid`
+不变。重写目标格计入 100,000-cell write budget，源格扫描上限 1,000,000，平移对象
+计入 10,000 object-mutation budget。plan 的 `summary.mapResizes[]` 与恒为
+`destructive:true` 的 operation preview 回显新旧 bounds、offset、preserved/cropped
+非零格计数、最多 16 项 `croppedCellSample` 与受影响 layer 计数。同尺寸零偏移且无
+实际变化时是 exact-byte no-op。该 operation 不注册 standalone tool，工具数仍为
+25 core / 26 with rasterizer。
+
 挂载一个尚未被 map 引用的现有 TSJ 时，先从最新 map summary 取得 map revision 与完整
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
@@ -782,7 +810,9 @@ gate、构建 `dist/`，并包含真实 production stdio smoke；
 
 测试覆盖路径沙箱、JSON 词法保真、revision 冲突、原子提交、checkpoint 启动对账、
 全部 GID flag 组合、tile set/fill/精确 replace、稠密矩形 stamp、四向 flood fill、
-矩形 tile copy 与 rectangle/point/ellipse/capsule/polygon/polyline/text object 编辑闭环
+矩形 tile copy、独占 map resize（offset 方向、裁剪计数与样本、layer bounds/模板/坏
+GID fail-closed、image offset 局部平移、identity no-op、预算边界与 Tiled 往返）与
+rectangle/point/ellipse/capsule/polygon/polyline/text object 编辑闭环
 （含单对象详情读取、path/text 单项、change-set aggregate、pending registry 与 closed
 output 预算），
 以及 atlas 几何、SVG 安全预检、图片预算和
@@ -936,7 +966,15 @@ checkpoint restore。架构与 roadmap
   共用的 scan 和 1 次共享 tile-write 预算。preview 标为 destructive，只返回完整 counts/
   regions 而不返回 cell list；apply 仅把 copy 执行时改变的 destination layer `data`
   纳入局部 patch 候选，后序恢复原值时仍折叠为 exact-byte no-op。
-- `createObject` 的 strict shape union 支持 rectangle、point、ellipse、Tiled 1.12
+- `resizeMap` 是同一 union 已实现的第 16 种、必须独占 change set 的 operation，也没有
+  standalone tool。offset 语义与 Tiled 1.12.2 完全一致（旧内容在新地图中的 tile
+  位置）；所有 tile layer 必须与地图 bounds 对齐，否则整体 fail closed，不套用 Tiled
+  自己都标注 TODO 的未定义行为。对象只平移从不删除，越界对象保留并按锚点判据计数；
+  需要平移的 template 对象 fail closed；`objectsOutsideNewBounds` 是锚点级参考指标，
+  不复刻 Tiled GUI 的 renderer 包围盒删除判据，本项目也不提供删除越界对象的选项。
+  重写目标格计入 100,000-cell write budget——总目标格超限的大图 resize（包括
+  identity resize）会被拒绝；受影响子树仍受 128-subtree 上限约束，层数很多的地图
+  需要先精简结构。
   capsule、polygon、polyline 与 text；ellipse/capsule 的 width/height 可省略并默认 0，也接受
   显式 0。polygon 为 3–256 点、polyline 为 2–256 点，points 使用相对 object x/y 的
   本地像素坐标、保序且每轴限制在 ±1e9；path wire 禁止 width/height，分别写成唯一

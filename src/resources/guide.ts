@@ -379,7 +379,8 @@ All edits are explicit operations. Supported tile operations are \`setTiles\`,
 supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
 \`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; supported map-level
-operations are \`updateMap\` and the exclusive \`removeTilesetFromMap\`.
+operations are \`updateMap\`, the exclusive \`resizeMap\`, and the exclusive
+\`removeTilesetFromMap\`.
 
 For \`createObject\`, the nested \`object\` is a strict shape-discriminated
 union. Rectangle keeps optional \`width\` and \`height\`; point accepts no
@@ -779,6 +780,38 @@ the original value, the final source diff still collapses to an exact-byte
 no-op. A plan with no net change preserves the exact source bytes and
 revision.
 
+Use \`{type:"resizeMap",width,height,offsetX?,offsetY?}\` to resize the whole
+map. This is the sixteenth generic operation, not a standalone tool, and it
+must be the only operation in its change set. Its semantics follow Tiled
+1.12.2 exactly: the offsets are tile units meaning the position of the old
+content inside the new map, so destination cell \`(x,y)\` takes source cell
+\`(x-offsetX,y-offsetY)\` and negative offsets crop from the top/left. Omitted
+offsets default to zero; dimensions are integers from 1 through 100,000 and
+offset magnitudes are bounded by 100,000.
+
+Every tile layer must currently match the map bounds with a zero origin;
+otherwise the whole operation fails closed with
+\`UNSUPPORTED_RESIZE_LAYER_BOUNDS\`, because Tiled itself leaves resize
+behavior for mismatched layers undefined. Every scanned source cell — including
+cells about to be cropped — is fully GID-validated and fails closed, so
+cropping can never hide malformed data. Rewritten destination cells count
+against the shared 100,000-cell write budget, and source scans against a
+1,000,000-cell scan budget.
+
+Objects are only shifted by the pixel offset
+(\`offsetX*tilewidth\`, \`offsetY*tileheight\`) and are never deleted;
+polygon/polyline points are anchor-relative and follow automatically.
+Out-of-bounds objects are preserved, and \`objectsOutsideNewBounds\` reports a
+purely informational shifted-anchor test against the closed new pixel bounds.
+Objects carrying a \`template\` member fail closed when a shift is required.
+Image layers only shift their changed \`offsetx\`/\`offsety\` members, group
+layers themselves are untouched, and \`nextlayerid\`/\`nextobjectid\` never
+change. \`summary.mapResizes[]\` and the always-destructive operation preview
+echo the old/new bounds, offsets, preserved/cropped nonzero cell counts, a
+bounded 16-entry \`croppedCellSample\`, and moved-object counts; present them
+before approval. An identity resize with no net change preserves the exact
+bytes and revision.
+
 1. Call \`tiled_preview_edits\` with:
    - the project-relative \`mapPath\`;
    - the exact map \`expectedRevision\` from the latest summary/read;
@@ -801,9 +834,9 @@ proposal.
 map, TSJs, or images. \`tiled_add_tileset_to_map\` and
 \`tiled_create_layer\` are also preview-only; these calls may update only the
 project-internal safety metadata advertised by
-\`assetIdentityContract.readOnlyToolEffect\`. \`removeTilesetFromMap\` and
-\`copyRegion\` stay inside the generic preview tool and do not add standalone
-tools.
+\`assetIdentityContract.readOnlyToolEffect\`. \`removeTilesetFromMap\`,
+\`copyRegion\`, and \`resizeMap\` stay inside the generic preview tool and do
+not add standalone tools.
 \`tiled_apply_change_set\` is the write
 boundary for all proposal types. A
 textual confirmation argument, prompt, or guide instruction is never a

@@ -73,6 +73,10 @@ import {
   MAX_OBJECT_SHAPE_POINTS,
   MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
   MAX_REMOVE_TILESET_GID_SCANS,
+  MAX_RESIZE_CROPPED_CELL_SAMPLE,
+  MAX_RESIZE_MAP_DIMENSION,
+  MAX_RESIZE_OFFSET_MAGNITUDE,
+  MAX_RESIZE_SOURCE_CELL_SCANS,
   MAX_TILE_OPERATION_SCANS,
   MIN_POLYGON_OBJECT_POINTS,
   MIN_POLYLINE_OBJECT_POINTS,
@@ -385,6 +389,37 @@ type OperationPreview =
       changedFields: string[];
       wouldChange: boolean;
       renderingMayChange: boolean;
+    }
+  | {
+      type: "resizeMap";
+      destructive: true;
+      warning: string;
+      oldBounds: { width: number; height: number };
+      newBounds: { width: number; height: number };
+      offset: { x: number; y: number };
+      pixelOffset: { x: number; y: number };
+      wouldChange: boolean;
+      mapDimensionsChanged: boolean;
+      tileLayerCount: number;
+      resizedTileLayerIds: number[];
+      scannedCellCount: number;
+      rewrittenCellCount: number;
+      preservedNonEmptyCellCount: number;
+      croppedNonEmptyCellCount: number;
+      croppedCellSample: Array<{
+        layerId: number;
+        x: number;
+        y: number;
+        gid: number;
+      }>;
+      omittedCroppedCellCount: number;
+      objectLayerCount: number;
+      movedObjectCount: number;
+      objectsOutsideNewBounds: number;
+      imageLayerCount: number;
+      shiftedImageLayerIds: number[];
+      groupLayerCount: number;
+      lockedLayerCount: number;
     }
   | {
       type: "setTiles";
@@ -1458,6 +1493,7 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
   }
   const plan = entry.plan;
   assertMapUpdateSummaryCoverage(plan);
+  assertMapResizeSummaryCoverage(plan);
   assertRemoveTilesetSummaryCoverage(plan);
   assertCopyRegionSummaryCoverage(plan);
   const operations = plan.operations.map(
@@ -1548,6 +1584,51 @@ function assertMapUpdateSummaryCoverage(
     throw new TiledMcpError(
       "INVALID_CHANGE_SET",
       "updateMap summaries do not match the updateMap operations.",
+    );
+  }
+}
+
+function assertMapResizeSummaryCoverage(
+  plan: MapEditPlan,
+): void {
+  const operationIndexes = plan.operations.flatMap(
+    (operation, operationIndex) =>
+      operation.type === "resizeMap"
+        ? [operationIndex]
+        : [],
+  );
+  const summaries = plan.summary.mapResizes;
+  if (operationIndexes.length === 0) {
+    if (summaries === undefined) {
+      return;
+    }
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "resizeMap summaries do not match the resizeMap operations.",
+    );
+  }
+  if (
+    operationIndexes.length !== 1 ||
+    plan.operations.length !== 1 ||
+    !Array.isArray(summaries) ||
+    summaries.length !== operationIndexes.length ||
+    summaries.some(
+      (summary, index) =>
+        !isMapResizeSummaryShape(
+          summary,
+          operationIndexes[index],
+        ),
+    ) ||
+    plan.summary.cellWrites !==
+      summaries.reduce(
+        (total, summary) =>
+          total + summary.rewrittenCellCount,
+        0,
+      )
+  ) {
+    throw new TiledMcpError(
+      "INVALID_CHANGE_SET",
+      "resizeMap summaries do not match the resizeMap operations.",
     );
   }
 }
@@ -1925,6 +2006,118 @@ function summarizeOperation(
       wouldChange: updateSummary.wouldChange,
       renderingMayChange:
         updateSummary.renderingMayChange,
+    };
+  }
+
+  if (operation.type === "resizeMap") {
+    const operationRecord =
+      operation as unknown as Record<string, unknown>;
+    const allowedKeys = new Set([
+      "height",
+      "offsetX",
+      "offsetY",
+      "type",
+      "width",
+    ]);
+    if (
+      Object.keys(operationRecord).some(
+        (key) => !allowedKeys.has(key),
+      ) ||
+      !Number.isSafeInteger(operation.width) ||
+      operation.width < 1 ||
+      operation.width > MAX_RESIZE_MAP_DIMENSION ||
+      !Number.isSafeInteger(operation.height) ||
+      operation.height < 1 ||
+      operation.height > MAX_RESIZE_MAP_DIMENSION ||
+      (operation.offsetX !== undefined &&
+        (!Number.isSafeInteger(operation.offsetX) ||
+          Math.abs(operation.offsetX) >
+            MAX_RESIZE_OFFSET_MAGNITUDE)) ||
+      (operation.offsetY !== undefined &&
+        (!Number.isSafeInteger(operation.offsetY) ||
+          Math.abs(operation.offsetY) >
+            MAX_RESIZE_OFFSET_MAGNITUDE))
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "resizeMap preview contains an invalid operation.",
+        { operationIndex },
+      );
+    }
+    const resizeSummaries =
+      summary.mapResizes?.filter(
+        (entry) =>
+          entry.operationIndex === operationIndex,
+      ) ?? [];
+    const resize = resizeSummaries[0];
+    if (
+      resizeSummaries.length !== 1 ||
+      !isMapResizeSummaryShape(
+        resize,
+        operationIndex,
+      ) ||
+      resize.newWidth !== operation.width ||
+      resize.newHeight !== operation.height ||
+      resize.offsetX !== (operation.offsetX ?? 0) ||
+      resize.offsetY !== (operation.offsetY ?? 0)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "resizeMap preview summary does not match its operation.",
+        { operationIndex },
+      );
+    }
+    return {
+      type: operation.type,
+      destructive: true,
+      warning:
+        resize.croppedNonEmptyCellCount > 0
+          ? `This rewrites every tile layer to the new map bounds and permanently drops ${resize.croppedNonEmptyCellCount} non-empty tile cell(s) outside the new bounds. Objects are shifted but never deleted; out-of-bounds objects are preserved.`
+          : "This rewrites every tile layer to the new map bounds without dropping any non-empty tile cells. Objects are shifted but never deleted; out-of-bounds objects are preserved.",
+      oldBounds: {
+        width: resize.oldWidth,
+        height: resize.oldHeight,
+      },
+      newBounds: {
+        width: resize.newWidth,
+        height: resize.newHeight,
+      },
+      offset: {
+        x: resize.offsetX,
+        y: resize.offsetY,
+      },
+      pixelOffset: {
+        x: resize.pixelOffsetX,
+        y: resize.pixelOffsetY,
+      },
+      wouldChange: resize.wouldChange,
+      mapDimensionsChanged:
+        resize.mapDimensionsChanged,
+      tileLayerCount: resize.tileLayerCount,
+      resizedTileLayerIds: structuredClone(
+        resize.resizedTileLayerIds,
+      ),
+      scannedCellCount: resize.scannedCellCount,
+      rewrittenCellCount: resize.rewrittenCellCount,
+      preservedNonEmptyCellCount:
+        resize.preservedNonEmptyCellCount,
+      croppedNonEmptyCellCount:
+        resize.croppedNonEmptyCellCount,
+      croppedCellSample: structuredClone(
+        resize.croppedCellSample,
+      ),
+      omittedCroppedCellCount:
+        resize.omittedCroppedCellCount,
+      objectLayerCount: resize.objectLayerCount,
+      movedObjectCount: resize.movedObjectCount,
+      objectsOutsideNewBounds:
+        resize.objectsOutsideNewBounds,
+      imageLayerCount: resize.imageLayerCount,
+      shiftedImageLayerIds: structuredClone(
+        resize.shiftedImageLayerIds,
+      ),
+      groupLayerCount: resize.groupLayerCount,
+      lockedLayerCount: resize.lockedLayerCount,
     };
   }
 
@@ -2795,6 +2988,198 @@ function isMapUpdateSummaryShape(
     typeof summary.wouldChange === "boolean" &&
     typeof summary.renderingMayChange === "boolean"
   );
+}
+
+function isMapResizeSummaryShape(
+  value: unknown,
+  expectedOperationIndex: number | undefined,
+): value is NonNullable<
+  MapEditPlan["summary"]["mapResizes"]
+>[number] {
+  if (
+    expectedOperationIndex === undefined ||
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+  const summary = value as Record<string, unknown>;
+  const isBoundedCount = (
+    candidate: unknown,
+    limit: number,
+  ): candidate is number =>
+    Number.isSafeInteger(candidate) &&
+    (candidate as number) >= 0 &&
+    (candidate as number) <= limit;
+  const isSortedIdArray = (
+    candidate: unknown,
+  ): candidate is number[] =>
+    Array.isArray(candidate) &&
+    candidate.every(
+      (id, index) =>
+        Number.isSafeInteger(id) &&
+        (id as number) > 0 &&
+        (index === 0 ||
+          (candidate[index - 1] as number) <
+            (id as number)),
+    );
+  if (
+    !hasExactKeys(summary, [
+      "operationIndex",
+      "oldWidth",
+      "oldHeight",
+      "newWidth",
+      "newHeight",
+      "offsetX",
+      "offsetY",
+      "pixelOffsetX",
+      "pixelOffsetY",
+      "wouldChange",
+      "mapDimensionsChanged",
+      "tileLayerCount",
+      "resizedTileLayerIds",
+      "scannedCellCount",
+      "rewrittenCellCount",
+      "preservedNonEmptyCellCount",
+      "croppedNonEmptyCellCount",
+      "croppedCellSample",
+      "omittedCroppedCellCount",
+      "objectLayerCount",
+      "movedObjectCount",
+      "objectsOutsideNewBounds",
+      "imageLayerCount",
+      "shiftedImageLayerIds",
+      "groupLayerCount",
+      "lockedLayerCount",
+    ]) ||
+    !Number.isSafeInteger(summary.operationIndex) ||
+    summary.operationIndex !== expectedOperationIndex ||
+    !isBoundedCount(
+      summary.oldWidth,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    (summary.oldWidth as number) < 1 ||
+    !isBoundedCount(
+      summary.oldHeight,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    (summary.oldHeight as number) < 1 ||
+    !isBoundedCount(
+      summary.newWidth,
+      MAX_RESIZE_MAP_DIMENSION,
+    ) ||
+    (summary.newWidth as number) < 1 ||
+    !isBoundedCount(
+      summary.newHeight,
+      MAX_RESIZE_MAP_DIMENSION,
+    ) ||
+    (summary.newHeight as number) < 1 ||
+    !Number.isSafeInteger(summary.offsetX) ||
+    Math.abs(summary.offsetX as number) >
+      MAX_RESIZE_OFFSET_MAGNITUDE ||
+    !Number.isSafeInteger(summary.offsetY) ||
+    Math.abs(summary.offsetY as number) >
+      MAX_RESIZE_OFFSET_MAGNITUDE ||
+    !Number.isSafeInteger(summary.pixelOffsetX) ||
+    !Number.isSafeInteger(summary.pixelOffsetY) ||
+    typeof summary.wouldChange !== "boolean" ||
+    typeof summary.mapDimensionsChanged !==
+      "boolean" ||
+    !isBoundedCount(
+      summary.tileLayerCount,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isSortedIdArray(summary.resizedTileLayerIds) ||
+    summary.resizedTileLayerIds.length !==
+      summary.tileLayerCount ||
+    !isBoundedCount(
+      summary.scannedCellCount,
+      MAX_RESIZE_SOURCE_CELL_SCANS,
+    ) ||
+    !isBoundedCount(
+      summary.rewrittenCellCount,
+      MAX_CELL_WRITES,
+    ) ||
+    !isBoundedCount(
+      summary.preservedNonEmptyCellCount,
+      MAX_RESIZE_SOURCE_CELL_SCANS,
+    ) ||
+    !isBoundedCount(
+      summary.croppedNonEmptyCellCount,
+      MAX_RESIZE_SOURCE_CELL_SCANS,
+    ) ||
+    !Array.isArray(summary.croppedCellSample) ||
+    summary.croppedCellSample.length >
+      MAX_RESIZE_CROPPED_CELL_SAMPLE ||
+    summary.croppedCellSample.length >
+      (summary.croppedNonEmptyCellCount as number) ||
+    !summary.croppedCellSample.every(
+      (cell) =>
+        typeof cell === "object" &&
+        cell !== null &&
+        !Array.isArray(cell) &&
+        hasExactKeys(
+          cell as Record<string, unknown>,
+          ["layerId", "x", "y", "gid"],
+        ) &&
+        Number.isSafeInteger(
+          (cell as Record<string, unknown>).layerId,
+        ) &&
+        ((cell as Record<string, unknown>)
+          .layerId as number) > 0 &&
+        Number.isSafeInteger(
+          (cell as Record<string, unknown>).x,
+        ) &&
+        ((cell as Record<string, unknown>)
+          .x as number) >= 0 &&
+        Number.isSafeInteger(
+          (cell as Record<string, unknown>).y,
+        ) &&
+        ((cell as Record<string, unknown>)
+          .y as number) >= 0 &&
+        Number.isSafeInteger(
+          (cell as Record<string, unknown>).gid,
+        ) &&
+        ((cell as Record<string, unknown>)
+          .gid as number) > 0 &&
+        ((cell as Record<string, unknown>)
+          .gid as number) <= 0xffffffff,
+    ) ||
+    summary.omittedCroppedCellCount !==
+      (summary.croppedNonEmptyCellCount as number) -
+        summary.croppedCellSample.length ||
+    !isBoundedCount(
+      summary.objectLayerCount,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isBoundedCount(
+      summary.movedObjectCount,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isBoundedCount(
+      summary.objectsOutsideNewBounds,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isBoundedCount(
+      summary.imageLayerCount,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isSortedIdArray(summary.shiftedImageLayerIds) ||
+    summary.shiftedImageLayerIds.length >
+      (summary.imageLayerCount as number) ||
+    !isBoundedCount(
+      summary.groupLayerCount,
+      Number.MAX_SAFE_INTEGER,
+    ) ||
+    !isBoundedCount(
+      summary.lockedLayerCount,
+      Number.MAX_SAFE_INTEGER,
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isRemovedTilesetSummaryShape(

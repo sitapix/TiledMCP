@@ -35,7 +35,8 @@ set 提交；探测到 `tmxrasterizer` 时再注册第 26 个高保真地图 PNG
 union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 `updateObject`、`deleteObjects`、`updateLayer`、`deleteLayer`、`moveLayer`、
 `duplicateLayer`、`stampPattern`、`floodFill`、`updateMap` 和必须独占 change set 的
-`removeTilesetFromMap`，以及第 15 种、可混批的 `copyRegion`。
+`removeTilesetFromMap`，第 15 种、可混批的 `copyRegion`，以及第 16 种、必须独占
+change set 的 `resizeMap`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
 对象写入支持 rectangle/point/ellipse/capsule、有界 polygon/polyline path 与有界
@@ -53,7 +54,7 @@ tool text content 已收敛为 `tiled-mcp-summary` v1 compact one-line JSON，UT
 1024 bytes；成功摘要不复制完整 result，应用错误摘要不复制 `details`，完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已使用精确封闭的可追溯 PNG
 元数据，并以 pre-Frozen clean break 删除旧 `mapPath`/`bytes`/`width`/`height`
-aliases。双 profile 的完整 discovery artifact、包含当前 98 个 v1 application code 的
+aliases。双 profile 的完整 discovery artifact、包含当前 100 个 v1 application code 的
 稳定错误 registry、生成式参考和每工具调用示例现已落地并纳入 drift gate；schema 无法
 表达的 revision/批准语义由手写安全工作流维护。当前 wire 实际使用的 external TSJ 与
 image-layer dependency `assetId` 已接入版本化持久 registry：首次分配兼容旧路径哈希，
@@ -301,7 +302,7 @@ type ApplyResult = CommitResult & {
 3. handler 已接收到合法输入后发生的领域/应用错误使用稳定 `code`，设置 `isError: true`，
    并返回符合该工具 error 分支的 `{result:{ok:false,error:{code,message,details}}}`
    `structuredContent`；code 的精确 wire 位置是
-   `structuredContent.result.error.code`。当前 v1 application registry 有 98 个 code，
+   `structuredContent.result.error.code`。当前 v1 application registry 有 100 个 code，
    机器 artifact 为
    [`contracts/application-errors.v1.json`](../contracts/application-errors.v1.json)，
    相同 JSON 由 `tiled://application-errors` 提供；
@@ -320,7 +321,7 @@ type ApplyResult = CommitResult & {
 5. application registry 只覆盖上述 tool application envelope，不包括 MCP SDK input
    error、`cli.*.issues[].code` capability-probe 诊断、startup fatal error、
    `tiled_validate` 的 `Diagnostic[]`、checkpoint reconciliation diagnostics 或原始 OS
-   error code。这些表面各自遵循独立契约，不能与 98-code allowlist 混用。
+   error code。这些表面各自遵循独立契约，不能与 100-code allowlist 混用。
 6. MCP SDK 在进入 handler 前拒绝的 input-schema 错误是协议层失败：当前 SDK 返回
    `isError: true` 的 text content，不携带 `structuredContent`，因此不应伪造
    `ApplicationErrorResult`。
@@ -428,7 +429,7 @@ type ApplyResult = CommitResult & {
 | `tiled_get_map_summary` | 地图摘要：尺寸、方向、规范化 render order、可选背景色/class、图层树（含 id/类型/可见性）、tileset 引用表（含 firstgid 区间）、对象统计。**模型动手前必读** | `mapPath` |
 | `tiled_create_map` | **已实现并正式保留 direct no-replace 例外**；新建空的有限正交 TMJ，目标已存在时绝不覆盖 | `mapPath`, `width`, `height`, `tileWidth`, `tileHeight`, `backgroundColor?` |
 | `tiled_update_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 13 种 `updateMap` operation 实现，修改根级 render order、背景色与 class | `mapPath`, `patch` |
-| `tiled_resize_map` | 调整地图尺寸；只要可能裁剪内容，该工具就静态标为 destructive 并走 change set 批准 | `mapPath`, `width`, `height`, `offsetX?`, `offsetY?` |
+| `tiled_resize_map` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 16 种、必须独占 change set 的 `resizeMap` operation 实现；operation preview 恒为 destructive 并走 change set 批准 | `mapPath`, `width`, `height`, `offsetX?`, `offsetY?` |
 | `tiled_delete_file` | 删除资产文件（**destructive**，只生成待批准 change set） | `path` |
 
 当前已实现的 map-root update wire contract 是
@@ -462,6 +463,35 @@ pinned source 重算 operation、summary 与 dependency revisions，只对实际
 root member 做 insertion/replacement/deletion。未触及的根成员、layers/tilesets 子树、
 未知字段、BOM、CRLF、缩进、键序和其他词法保持原 bytes；若顺序 operations 最终把根对象
 还原为原值，文件级结果为 `changed:false`，revision 与 exact bytes 不变。
+
+当前已实现的 map-resize wire contract 是
+`{type:"resizeMap", width, height, offsetX?, offsetY?}`，属于同一 union 的第 16 种、
+必须独占 change set 的 operation，同样不注册 `tiled_resize_map` standalone tool，
+registry 保持 25 core / 26 with rasterizer。语义按 Tiled 1.12.2 官方源码逐条核实：
+
+- `offsetX`/`offsetY` 单位为 tile，含义是**旧内容在新地图中的位置**；目标格
+  `(x,y)` 取自源格 `(x−offsetX, y−offsetY)`，缩小/向左上裁剪用负值。省略视为 0，
+  幅值上限 100,000；`width`/`height` 为 1..100,000 的整数。
+- 每个 tile layer 的尺寸被改写为新地图尺寸，落到新边界外的源格被裁剪；任何 tile
+  layer 若有非零 `x`/`y` 或尺寸不等于当前地图尺寸，整个操作以
+  `UNSUPPORTED_RESIZE_LAYER_BOUNDS` fail closed（Tiled 源码对这类 layer 的 resize
+  行为本身留有未定义 TODO）。
+- 每个被扫描的源格（包括将被裁剪的）都按完整 encoded GID fail-closed 校验；裁剪
+  不能掩盖坏数据。摘要回显 preserved/cropped 非零格计数与最多 16 项的
+  `croppedCellSample`。
+- 像素偏移为 `(offsetX×tilewidth, offsetY×tileheight)`。所有对象仅平移锚点
+  `x`/`y`（polygon/polyline points 相对锚点、自动跟随），**从不删除**；越界对象原样
+  保留，摘要按"平移后锚点是否落在闭区间像素边界外"回显
+  `objectsOutsideNewBounds`。像素偏移非零时含 `template` 的对象以
+  `UNSUPPORTED_RESIZE_TEMPLATE` fail closed。
+- image layer 只平移发生变化的 `offsetx`/`offsety` member；group layer 自身不动，
+  仅递归处理子层；`nextlayerid`/`nextobjectid` 不变。
+- 预算：重写目标格计入 change set 的 100,000 cell-write 上限；源格扫描上限
+  1,000,000；平移对象计入 10,000 object-mutation 上限；受影响 JSON 子树仍受
+  128-subtree 上限约束。同尺寸零偏移且无实际变化时为 exact-byte no-op。
+- source patch 只改写根 `width`/`height`、受影响 tile layer 的
+  `width`/`height`/`data`、发生对象平移的 layer 的 `objects` 数组和发生偏移的
+  image layer 的 offset members；其余 bytes 保持不变。
 
 ### 3.2 编辑事务与安全网
 
@@ -1707,7 +1737,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 | URI | `mimeType` | 内容 |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | **已实现。** 使用 playbook：能力发现 → 摘要 → tile search/sparse render/sheet/map preview → 预览 edits → 客户端批准 → 提交 → 校验与渲染自查 |
-| `tiled://application-errors` | `application/json` | **已实现。** 当前 98 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
+| `tiled://application-errors` | `application/json` | **已实现。** 当前 100 个 v1 application code，以及 wire location、`INTERNAL_ERROR` fallback、兼容策略和排除边界；内容与提交的 machine artifact 相同 |
 | `tiled://project/index` | `application/json` | **Roadmap，未实现。** 有界项目资产索引；大项目只给首页和 next cursor，完整翻页走 `tiled_list_files` |
 | `tiled://schema/tool-contracts` | `application/schema+json` | **Roadmap，未实现。** 从代码生成的已注册工具 input/output schemas |
 | `tiled://schema/tmj` | `application/schema+json` | **Roadmap，未实现。** 当前实现支持的 TMJ 子集 schema，不伪装成完整 Tiled schema |
@@ -1731,7 +1761,7 @@ resources 与全部 templates 仍是 roadmap，不得从本表推断为可读。
 - JSON/text direct read 的目标默认上限是 `2 MiB`，当前嵌入式 guide 使用更严格的
   `64 KiB` 上限；图片沿用第 3.11.1 节的 `8 MiB` 上限。`RESOURCE_TOO_LARGE` 是配合未来
   asset/template Resource reads 规划的 resource-layer code，**尚未实现，也不属于当前
-  98-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
+  100-code v1 application registry**；实现后应建议读取 summary、region 或分页资源，且不得
   截断后伪装成完整内容。
 - 当前 v1 registry 覆盖的 `assetId` 在同一项目内部状态中跨服务器重启可复用；同路径
   替换与可唯一验证的普通同文件系统 file-identity move 保持映射；原路径仍存活的 copy/

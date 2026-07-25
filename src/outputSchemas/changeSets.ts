@@ -3,6 +3,9 @@ import { z } from "zod";
 import {
   MAX_OBJECT_SHAPE_POINTS,
   MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
+  MAX_RESIZE_CROPPED_CELL_SAMPLE,
+  MAX_RESIZE_MAP_DIMENSION,
+  MAX_RESIZE_OFFSET_MAGNITUDE,
   MIN_POLYGON_OBJECT_POINTS,
   MIN_POLYLINE_OBJECT_POINTS,
 } from "../maps/mapService.js";
@@ -411,6 +414,82 @@ const updateMapOperationPreviewOutputSchema = z
     ),
     wouldChange: z.boolean(),
     renderingMayChange: z.boolean(),
+  })
+  .strict();
+
+const resizeDimensionOutputSchema =
+  positiveIntegerOutputSchema.max(
+    MAX_RESIZE_MAP_DIMENSION,
+  );
+const resizeOffsetOutputSchema = integerOutputSchema
+  .min(-MAX_RESIZE_OFFSET_MAGNITUDE)
+  .max(MAX_RESIZE_OFFSET_MAGNITUDE);
+const resizeBoundsOutputSchema = z
+  .object({
+    width: positiveIntegerOutputSchema,
+    height: positiveIntegerOutputSchema,
+  })
+  .strict()
+  .meta({ id: "ChangeSetResizeBounds" });
+const resizeCroppedCellOutputSchema = z
+  .object({
+    layerId: positiveIdOutputSchema,
+    x: nonnegativeIntegerOutputSchema,
+    y: nonnegativeIntegerOutputSchema,
+    gid: uint32OutputSchema.min(1),
+  })
+  .strict()
+  .meta({ id: "ChangeSetResizeCroppedCell" });
+const resizeAccountingShape = {
+  wouldChange: z.boolean(),
+  mapDimensionsChanged: z.boolean(),
+  tileLayerCount: nonnegativeIntegerOutputSchema,
+  resizedTileLayerIds: z.array(
+    positiveIdOutputSchema,
+  ),
+  scannedCellCount: nonnegativeIntegerOutputSchema,
+  rewrittenCellCount: nonnegativeIntegerOutputSchema,
+  preservedNonEmptyCellCount:
+    nonnegativeIntegerOutputSchema,
+  croppedNonEmptyCellCount:
+    nonnegativeIntegerOutputSchema,
+  croppedCellSample: z
+    .array(resizeCroppedCellOutputSchema)
+    .max(MAX_RESIZE_CROPPED_CELL_SAMPLE),
+  omittedCroppedCellCount:
+    nonnegativeIntegerOutputSchema,
+  objectLayerCount: nonnegativeIntegerOutputSchema,
+  movedObjectCount: nonnegativeIntegerOutputSchema,
+  objectsOutsideNewBounds:
+    nonnegativeIntegerOutputSchema,
+  imageLayerCount: nonnegativeIntegerOutputSchema,
+  shiftedImageLayerIds: z.array(
+    positiveIdOutputSchema,
+  ),
+  groupLayerCount: nonnegativeIntegerOutputSchema,
+  lockedLayerCount: nonnegativeIntegerOutputSchema,
+} as const;
+
+const resizeMapOperationPreviewOutputSchema = z
+  .object({
+    type: z.literal("resizeMap"),
+    destructive: z.literal(true),
+    warning: z.string(),
+    oldBounds: resizeBoundsOutputSchema,
+    newBounds: resizeBoundsOutputSchema,
+    offset: z
+      .object({
+        x: resizeOffsetOutputSchema,
+        y: resizeOffsetOutputSchema,
+      })
+      .strict(),
+    pixelOffset: z
+      .object({
+        x: safeIntegerOutputSchema,
+        y: safeIntegerOutputSchema,
+      })
+      .strict(),
+    ...resizeAccountingShape,
   })
   .strict();
 
@@ -1100,6 +1179,7 @@ const abandonPreparedCheckpointOperationPreviewOutputSchema =
 const genericOperationPreviewOutputSchema =
   z.discriminatedUnion("type", [
     updateMapOperationPreviewOutputSchema,
+    resizeMapOperationPreviewOutputSchema,
     setTilesOperationPreviewOutputSchema,
     fillRegionOperationPreviewOutputSchema,
     stampPatternOperationPreviewOutputSchema,
@@ -1127,6 +1207,21 @@ const mapUpdateSummaryOutputSchema = z
     ),
     wouldChange: z.boolean(),
     renderingMayChange: z.boolean(),
+  })
+  .strict();
+
+const mapResizeSummaryOutputSchema = z
+  .object({
+    operationIndex: nonnegativeIntegerOutputSchema,
+    oldWidth: positiveIntegerOutputSchema,
+    oldHeight: positiveIntegerOutputSchema,
+    newWidth: resizeDimensionOutputSchema,
+    newHeight: resizeDimensionOutputSchema,
+    offsetX: resizeOffsetOutputSchema,
+    offsetY: resizeOffsetOutputSchema,
+    pixelOffsetX: safeIntegerOutputSchema,
+    pixelOffsetY: safeIntegerOutputSchema,
+    ...resizeAccountingShape,
   })
   .strict();
 
@@ -1415,6 +1510,10 @@ const mapEditSummaryBaseShape = {
 const genericSummaryOptionalShape = {
   mapUpdates: z
     .array(mapUpdateSummaryOutputSchema)
+    .min(1)
+    .optional(),
+  mapResizes: z
+    .array(mapResizeSummaryOutputSchema)
     .min(1)
     .optional(),
   removedTilesets: z

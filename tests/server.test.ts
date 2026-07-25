@@ -2669,6 +2669,21 @@ describe("createTiledMcpServer", () => {
         checkpointRestore: string;
       };
       mapOperations: string[];
+      mapResizeCapabilities: {
+        offsetUnit: string;
+        offsetMeaning: string;
+        cellMapping: string;
+        tileLayerRequirement: string;
+        croppedGidValidation: string;
+        objectPolicy: string;
+        outOfBoundsObjectMetric: string;
+        templateObjects: string;
+        imageLayerPolicy: string;
+        groupLayerPolicy: string;
+        idCounters: string;
+        operationOrdering: string;
+        sourcePatch: string;
+      };
       mapUpdateCapabilities: {
         fields: string[];
         renderOrders: string[];
@@ -2944,6 +2959,10 @@ describe("createTiledMcpServer", () => {
         maxReplaceTileScans: number;
         maxStampPatternEdge: number;
         maxStampPatternCells: number;
+        maxResizeMapDimension: number;
+        maxResizeOffsetMagnitude: number;
+        maxResizeSourceCellScans: number;
+        maxResizeCroppedCellSample: number;
         maxPendingObjectShapePoints: number;
         maxPendingTextObjectPayloadBytes: number;
         maxCreateTileLayerCells: number;
@@ -3267,7 +3286,33 @@ describe("createTiledMcpServer", () => {
         checkpointRestore:
           "revert-would-delete-not-supported",
       },
-      mapOperations: ["updateMap"],
+      mapOperations: ["updateMap", "resizeMap"],
+      mapResizeCapabilities: {
+        offsetUnit: "tiles",
+        offsetMeaning:
+          "old-content-position-in-new-map",
+        cellMapping:
+          "destination-equals-source-plus-offset",
+        tileLayerRequirement:
+          "map-aligned-zero-origin-finite-numeric-data-only",
+        croppedGidValidation:
+          "every-scanned-source-cell-fail-closed",
+        objectPolicy:
+          "shift-anchor-only-never-delete",
+        outOfBoundsObjectMetric:
+          "shifted-anchor-outside-closed-pixel-bounds",
+        templateObjects:
+          "fail-closed-when-shifting",
+        imageLayerPolicy:
+          "shift-changed-offset-members-only",
+        groupLayerPolicy:
+          "recurse-children-untouched-self",
+        idCounters: "unchanged",
+        operationOrdering:
+          "exclusive-single-operation-change-set",
+        sourcePatch:
+          "root-dimensions-and-affected-layer-members-local",
+      },
       mapUpdateCapabilities: {
         fields: [
           "renderOrder",
@@ -3657,6 +3702,10 @@ describe("createTiledMcpServer", () => {
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
+        maxResizeMapDimension: 100_000,
+        maxResizeOffsetMagnitude: 100_000,
+        maxResizeSourceCellScans: 1_000_000,
+        maxResizeCroppedCellSample: 16,
         maxPendingObjectShapePoints: 65_536,
         maxPendingTextObjectPayloadBytes:
           2_097_152,

@@ -337,7 +337,33 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         removalLocator: "tileset-asset-id",
         removalSourcePatch: "array-element-local",
       },
-      mapOperations: ["updateMap"],
+      mapOperations: ["updateMap", "resizeMap"],
+      mapResizeCapabilities: {
+        offsetUnit: "tiles",
+        offsetMeaning:
+          "old-content-position-in-new-map",
+        cellMapping:
+          "destination-equals-source-plus-offset",
+        tileLayerRequirement:
+          "map-aligned-zero-origin-finite-numeric-data-only",
+        croppedGidValidation:
+          "every-scanned-source-cell-fail-closed",
+        objectPolicy:
+          "shift-anchor-only-never-delete",
+        outOfBoundsObjectMetric:
+          "shifted-anchor-outside-closed-pixel-bounds",
+        templateObjects:
+          "fail-closed-when-shifting",
+        imageLayerPolicy:
+          "shift-changed-offset-members-only",
+        groupLayerPolicy:
+          "recurse-children-untouched-self",
+        idCounters: "unchanged",
+        operationOrdering:
+          "exclusive-single-operation-change-set",
+        sourcePatch:
+          "root-dimensions-and-affected-layer-members-local",
+      },
       mapUpdateCapabilities: {
         fields: [
           "renderOrder",
@@ -510,6 +536,10 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxReplaceTileScans: 1_000_000,
         maxStampPatternEdge: 256,
         maxStampPatternCells: 16_384,
+        maxResizeMapDimension: 100_000,
+        maxResizeOffsetMagnitude: 100_000,
+        maxResizeSourceCellScans: 1_000_000,
+        maxResizeCroppedCellSample: 16,
         maxTileRenderLocalIds: 64,
         maxTileRenderColumns: 32,
         maxTileRenderScale: 4,
