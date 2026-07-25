@@ -188,7 +188,8 @@ function validOutput(): Record<string, unknown> {
         shadow: "one-pixel-black-offset",
         stroke: "one-pixel-cosmetic",
         text: "layout-box-only",
-        tileObjects: "omitted-counted",
+        tileObjects:
+        "affine-nearest-neighbor-images",
         templates: "omitted-counted",
         pointMarker:
           "tiled-pin-cosmetic-radius-10",

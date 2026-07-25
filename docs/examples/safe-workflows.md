@@ -342,8 +342,9 @@ pending registry 合计 2 MiB；后序覆盖或删除不会抵扣预算。
 内建 `tiled_render_preview` 的基础画面现已渲染可见 object layers（profile
 `base-object-layers-v1`）：基础几何按 Tiled 语义绘制（组色否则灰、alpha-50 填充、
 1px 黑影、topdown/index 绘制序、层×对象透明度、旋转、point 图钉标记）；text 只画
-layout box，tile/template 对象按层计数披露 omitted；class 色依赖 map 外的项目文
-件，是 documented divergence。`overlays.objectIds` 调试轮廓仍可显式叠加。
+layout box，tile object 以最近邻仿射采样绘制真实图块（对齐/tileoffset/翻转/缩放
+全按 Tiled 规则），template 对象按层计数披露 omitted；class 色依赖 map 外的项目
+文件，是 documented divergence。`overlays.objectIds` 调试轮廓仍可显式叠加。
 text 不能用来确认 glyph、字体、换行或对齐。需要像 Tiled
 一样核对完整排版时，使用 discovery 中实际存在的可选 `tiled_render_map`，或在 Tiled
 1.12.2 中打开项目；字体未安装导致的替换不属于 MCP 的可移植语义。

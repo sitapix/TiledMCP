@@ -55,7 +55,8 @@ describe("native preview base object layer rendering", () => {
       objectLayerRendering: {
         profile: "base-object-layers-v1",
         fillAlpha: 50,
-        tileObjects: "omitted-counted",
+        tileObjects:
+          "affine-nearest-neighbor-images",
       },
       objectLayers: [
         {
@@ -63,9 +64,9 @@ describe("native preview base object layer rendering", () => {
           name: "Red shapes",
           color: "#ff0000",
           drawOrder: "topdown",
-          objectCount: 2,
-          renderedObjectCount: 2,
-          omittedTileObjectCount: 1,
+          objectCount: 3,
+          renderedObjectCount: 3,
+          tileObjectCount: 1,
           omittedTemplateObjectCount: 1,
           hiddenObjectCount: 1,
           textBoxCount: 0,
@@ -77,7 +78,7 @@ describe("native preview base object layer rendering", () => {
           drawOrder: "index",
           objectCount: 2,
           renderedObjectCount: 2,
-          omittedTileObjectCount: 0,
+          tileObjectCount: 0,
           omittedTemplateObjectCount: 0,
           hiddenObjectCount: 0,
           textBoxCount: 1,
@@ -103,6 +104,12 @@ describe("native preview base object layer rendering", () => {
     // overlaps the red one, the blue stroke wins.
     expect(pixel(decoded, 88, 48)).toEqual([
       0, 0, 255, 255,
+    ]);
+    // The tile object (gid 1, bottom-left alignment) draws its atlas
+    // pixels: the frame spans map pixels (0,16)..(16,32), so its center
+    // at map pixel (8,24) → canvas (32,96) carries the atlas color.
+    expect(pixel(decoded, 32, 96)).toEqual([
+      0x33, 0x44, 0x55, 255,
     ]);
   });
 

@@ -60,7 +60,8 @@ export interface PreviewObjectLayerObject {
     | "capsule"
     | "polygon"
     | "polyline"
-    | "text";
+    | "text"
+    | "tile";
   x: number;
   y: number;
   width: number;
@@ -71,6 +72,28 @@ export interface PreviewObjectLayerObject {
     x: number;
     y: number;
   }>;
+  /**
+   * Raw encoded GID for tile objects; the service resolves it into
+   * `tileRender` before rendering.
+   */
+  gid?: number;
+  tileRender?: {
+    assetId: string;
+    localId: number;
+    /**
+     * Row-major 2x3 affine [a,b,c,d,e,f] mapping tile-image pixels to
+     * anchor-relative map pixels, combining Tiled's alignment, scaled
+     * tile offset, flips, and the diagonal-flip rotation.
+     */
+    transform: readonly [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+  };
 }
 
 export interface PreviewObjectLayer {
@@ -85,7 +108,7 @@ export interface PreviewObjectLayer {
   color?: string;
   drawOrder: "topdown" | "index";
   objects: PreviewObjectLayerObject[];
-  omittedTileObjectCount: number;
+  tileObjectCount: number;
   omittedTemplateObjectCount: number;
   hiddenObjectCount: number;
   textBoxCount: number;
@@ -629,10 +652,31 @@ function readPreviewObjectLayer(
     return value;
   };
   const objects: PreviewObjectLayerObject[] = [];
-  let omittedTileObjectCount = 0;
+  let tileObjectCount = 0;
   let omittedTemplateObjectCount = 0;
   let hiddenObjectCount = 0;
   let textBoxCount = 0;
+  const readObjectOpacity = (
+    value: unknown,
+    context: string,
+  ): number => {
+    const opacity = readNumber(
+      value,
+      `${context}.opacity`,
+      1,
+    );
+    if (opacity < 0 || opacity > 1) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.opacity must be between 0 and 1.`,
+        {
+          path: located.path,
+          layerId: located.id,
+        },
+      );
+    }
+    return opacity;
+  };
   for (const [
     index,
     objectValue,
@@ -651,7 +695,61 @@ function readPreviewObjectLayer(
       continue;
     }
     if (object.gid !== undefined) {
-      omittedTileObjectCount += 1;
+      const gid = object.gid;
+      if (
+        typeof gid !== "number" ||
+        !Number.isSafeInteger(gid) ||
+        gid <= 0 ||
+        gid > 0xffffffff
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${context}.gid must be a positive uint32.`,
+          {
+            path: located.path,
+            layerId: located.id,
+            index,
+          },
+        );
+      }
+      tileObjectCount += 1;
+      objects.push({
+        id: expectInteger(
+          object.id,
+          `${context}.id`,
+        ),
+        shape: "tile",
+        x: readNumber(
+          object.x,
+          `${context}.x`,
+          0,
+        ),
+        y: readNumber(
+          object.y,
+          `${context}.y`,
+          0,
+        ),
+        width: readNumber(
+          object.width,
+          `${context}.width`,
+          0,
+        ),
+        height: readNumber(
+          object.height,
+          `${context}.height`,
+          0,
+        ),
+        rotation: readNumber(
+          object.rotation,
+          `${context}.rotation`,
+          0,
+        ),
+        opacity: readObjectOpacity(
+          object.opacity,
+          context,
+        ),
+        gid,
+      });
       continue;
     }
     const markers = [
@@ -706,22 +804,10 @@ function readPreviewObjectLayer(
       );
       textBoxCount += 1;
     }
-    const opacity = readNumber(
+    const opacity = readObjectOpacity(
       object.opacity,
-      `${context}.opacity`,
-      1,
+      context,
     );
-    if (opacity < 0 || opacity > 1) {
-      throw new TiledMcpError(
-        "INVALID_DOCUMENT",
-        `${context}.opacity must be between 0 and 1.`,
-        {
-          path: located.path,
-          layerId: located.id,
-          index,
-        },
-      );
-    }
     const width = readNumber(
       object.width,
       `${context}.width`,
@@ -841,7 +927,7 @@ function readPreviewObjectLayer(
     ...(color === undefined ? {} : { color }),
     drawOrder: drawOrderValue,
     objects,
-    omittedTileObjectCount,
+    tileObjectCount,
     omittedTemplateObjectCount,
     hiddenObjectCount,
     textBoxCount,

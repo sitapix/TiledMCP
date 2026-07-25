@@ -1356,7 +1356,7 @@ const nativePreviewResultOutputSchema = z
               nonnegativeIntegerOutputSchema,
             renderedObjectCount:
               nonnegativeIntegerOutputSchema,
-            omittedTileObjectCount:
+            tileObjectCount:
               nonnegativeIntegerOutputSchema,
             omittedTemplateObjectCount:
               nonnegativeIntegerOutputSchema,
@@ -1385,7 +1385,7 @@ const nativePreviewResultOutputSchema = z
         ),
         text: z.literal("layout-box-only"),
         tileObjects: z.literal(
-          "omitted-counted",
+          "affine-nearest-neighbor-images",
         ),
         templates: z.literal(
           "omitted-counted",

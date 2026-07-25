@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:7ea00fb75d066e3818d747c2a2d57e4b5d4d45a2eed3988ad6ff5f5730c9d5ed",
+    "revision": "sha256:e6318b54f1dff578b6e1160edd94fe7c61e97c818e55b926699e3c14fc6378c5",
     "serverVersion": "0.0.1",
-    "size": 74706
+    "size": 74841
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 74706,
+  "size": 74841,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 74706 UTF-8 bytes, revision `sha256:7ea00fb75d066e3818d747c2a2d57e4b5d4d45a2eed3988ad6ff5f5730c9d5ed`.
+Content contract: `text`, 74841 UTF-8 bytes, revision `sha256:e6318b54f1dff578b6e1160edd94fe7c61e97c818e55b926699e3c14fc6378c5`.
 
 Resource templates: none.
 
@@ -30534,7 +30534,7 @@ Output schema:
                   "type": "string"
                 },
                 "tileObjects": {
-                  "const": "omitted-counted",
+                  "const": "affine-nearest-neighbor-images",
                   "type": "string"
                 }
               },
@@ -30591,17 +30591,17 @@ Output schema:
                     "minimum": 0,
                     "type": "integer"
                   },
-                  "omittedTileObjectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
                   "renderedObjectCount": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
                     "type": "integer"
                   },
                   "textBoxCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "tileObjectCount": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
                     "type": "integer"
@@ -30613,7 +30613,7 @@ Output schema:
                   "drawOrder",
                   "objectCount",
                   "renderedObjectCount",
-                  "omittedTileObjectCount",
+                  "tileObjectCount",
                   "omittedTemplateObjectCount",
                   "hiddenObjectCount",
                   "textBoxCount"

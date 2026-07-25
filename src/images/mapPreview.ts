@@ -9,6 +9,7 @@ import type {
 import { revisionOf } from "../storage/revision.js";
 import {
   blitAtlasTile,
+  getAtlasTileCrop,
   type AtlasGeometry,
   type RgbColor,
 } from "./atlas.js";
@@ -338,7 +339,7 @@ export interface NativePreviewObjectLayerRenderSummary {
   color?: string;
   objectCount: number;
   renderedObjectCount: number;
-  omittedTileObjectCount: number;
+  tileObjectCount: number;
   omittedTemplateObjectCount: number;
   hiddenObjectCount: number;
   textBoxCount: number;
@@ -3187,6 +3188,177 @@ function pointPinScreenPoints(
   }));
 }
 
+/**
+ * Draws one tile object by inverse-affine nearest-neighbor sampling: the
+ * resolved tile-image-to-map affine composes with the object rotation and
+ * layout transform, every canvas pixel in the projected bounding box maps
+ * back into tile-image space, and in-range samples blend source-over with
+ * the layer-times-object opacity.
+ */
+function drawBaseTileObject(
+  canvas: Buffer,
+  layout: PreviewLayout,
+  input: RenderNativePreviewInput,
+  shim: NativePreviewObjectInput,
+  object: PreviewObjectLayerObject,
+  alpha: number,
+  budget: { blends: number },
+): void {
+  const render = object.tileRender;
+  if (render === undefined) {
+    throw new TiledMcpError(
+      "INTERNAL_ERROR",
+      `Tile object ${object.id} reached the renderer without resolved frame data.`,
+      { objectId: object.id },
+    );
+  }
+  const atlas = input.atlases.find(
+    (candidate) =>
+      candidate.assetId === render.assetId,
+  );
+  if (atlas === undefined) {
+    throw new TiledMcpError(
+      "INTERNAL_ERROR",
+      `Tile object ${object.id} atlas ${render.assetId} was not loaded.`,
+      { objectId: object.id },
+    );
+  }
+  const crop = getAtlasTileCrop(
+    atlas.geometry,
+    render.localId,
+  );
+  const [ta, tb, tc, td, te, tf] =
+    render.transform;
+  const toCanvas = (
+    imageX: number,
+    imageY: number,
+  ): OutputPoint =>
+    mapObjectPointToOutput(
+      shim,
+      {
+        x: ta * imageX + tc * imageY + te,
+        y: tb * imageX + td * imageY + tf,
+      },
+      input,
+      layout,
+    );
+  const origin = toCanvas(0, 0);
+  const unitX = toCanvas(1, 0);
+  const unitY = toCanvas(0, 1);
+  const fa = unitX.x - origin.x;
+  const fb = unitX.y - origin.y;
+  const fc = unitY.x - origin.x;
+  const fd = unitY.y - origin.y;
+  const determinant = fa * fd - fb * fc;
+  if (
+    !Number.isFinite(determinant) ||
+    Math.abs(determinant) < 1e-9
+  ) {
+    return;
+  }
+  const inverseA = fd / determinant;
+  const inverseB = -fb / determinant;
+  const inverseC = -fc / determinant;
+  const inverseD = fa / determinant;
+  const corners = [
+    origin,
+    toCanvas(crop.width, 0),
+    toCanvas(0, crop.height),
+    toCanvas(crop.width, crop.height),
+  ];
+  const left = Math.max(
+    layout.contentLeft,
+    Math.floor(
+      Math.min(...corners.map((c) => c.x)),
+    ),
+  );
+  const right = Math.min(
+    layout.contentLeft + layout.contentWidth - 1,
+    Math.ceil(
+      Math.max(...corners.map((c) => c.x)),
+    ),
+  );
+  const top = Math.max(
+    layout.contentTop,
+    Math.floor(
+      Math.min(...corners.map((c) => c.y)),
+    ),
+  );
+  const bottom = Math.min(
+    layout.contentTop + layout.contentHeight - 1,
+    Math.ceil(
+      Math.max(...corners.map((c) => c.y)),
+    ),
+  );
+  const transparent = atlas.transparentColor;
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      budget.blends += 1;
+      if (
+        budget.blends >
+        MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `Object layer fills may blend at most ${MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS} pixels; reduce region, scale, or selected layers.`,
+          {
+            limit:
+              MAX_NATIVE_PREVIEW_OBJECT_FILL_BLENDS,
+          },
+        );
+      }
+      const relativeX = x + 0.5 - origin.x;
+      const relativeY = y + 0.5 - origin.y;
+      const imageX =
+        inverseA * relativeX +
+        inverseC * relativeY;
+      const imageY =
+        inverseB * relativeX +
+        inverseD * relativeY;
+      if (
+        imageX < 0 ||
+        imageX >= crop.width ||
+        imageY < 0 ||
+        imageY >= crop.height
+      ) {
+        continue;
+      }
+      const sourceX =
+        crop.left + Math.floor(imageX);
+      const sourceY =
+        crop.top + Math.floor(imageY);
+      const sourceIndex =
+        (sourceY * atlas.geometry.imageWidth +
+          sourceX) *
+        4;
+      const red = atlas.rgba[sourceIndex] ?? 0;
+      const green =
+        atlas.rgba[sourceIndex + 1] ?? 0;
+      const blue =
+        atlas.rgba[sourceIndex + 2] ?? 0;
+      const sourceAlpha =
+        atlas.rgba[sourceIndex + 3] ?? 0;
+      if (sourceAlpha === 0) {
+        continue;
+      }
+      if (
+        transparent !== undefined &&
+        red === transparent[0] &&
+        green === transparent[1] &&
+        blue === transparent[2]
+      ) {
+        continue;
+      }
+      blendPixel(canvas, layout.width, x, y, [
+        red,
+        green,
+        blue,
+        scaledAlpha(sourceAlpha, alpha),
+      ]);
+    }
+  }
+}
+
 function renderBaseObjectLayer(
   canvas: Buffer,
   layout: PreviewLayout,
@@ -3238,6 +3410,18 @@ function renderBaseObjectLayer(
       scaledAlpha(BASE_OBJECT_FILL_ALPHA, alpha),
     ];
     const shim = baseObjectShim(layer, object);
+    if (object.shape === "tile") {
+      drawBaseTileObject(
+        canvas,
+        layout,
+        input,
+        shim,
+        object,
+        alpha,
+        budget,
+      );
+      continue;
+    }
     if (object.shape === "point") {
       const anchor = mapObjectPointToOutput(
         shim,
@@ -3360,8 +3544,7 @@ function renderBaseObjectLayer(
       : { color: layer.color }),
     objectCount: layer.objects.length,
     renderedObjectCount,
-    omittedTileObjectCount:
-      layer.omittedTileObjectCount,
+    tileObjectCount: layer.tileObjectCount,
     omittedTemplateObjectCount:
       layer.omittedTemplateObjectCount,
     hiddenObjectCount: layer.hiddenObjectCount,

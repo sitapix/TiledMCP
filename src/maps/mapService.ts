@@ -103,10 +103,11 @@ import type {
   FileDeleteStoreResult,
   LoadedDocument,
 } from "../storage/documentStore.js";
-import { decodeGid, encodeGid, type MapOrientation } from "./gid.js";
+import { decodeGid, encodeGid, type MapOrientation, type OrthogonalTransform } from "./gid.js";
 import {
   buildPreviewScene,
   type PreviewRegion,
+  type PreviewScene,
 } from "./previewScene.js";
 import {
   assertAtlasTileDefinition,
@@ -1431,6 +1432,11 @@ export class MapService {
         ...(input.layerIds === undefined ? {} : { layerIds: input.layerIds }),
       },
     );
+    await this.resolveBaseTileObjects(
+      scene,
+      context.bindings,
+      context.loaded.path,
+    );
     prepareNativePreviewHighlightOverlay(
       input.overlays?.highlights,
       scene.region,
@@ -1643,7 +1649,8 @@ export class MapService {
           shadow: "one-pixel-black-offset",
           stroke: "one-pixel-cosmetic",
           text: "layout-box-only",
-          tileObjects: "omitted-counted",
+          tileObjects:
+            "affine-nearest-neighbor-images",
           templates: "omitted-counted",
           pointMarker:
             "tiled-pin-cosmetic-radius-10",
@@ -1658,6 +1665,178 @@ export class MapService {
         truncated: false,
       },
     };
+  }
+
+  /**
+   * Resolves base-preview tile objects: decodes each encoded GID, loads the
+   * owning tileset's frame metadata, and attaches the tile-image-to-anchor
+   * affine (the same fragment math as the collision overlay, without a
+   * per-shape rotation). Newly referenced atlases join the scene's atlas
+   * set.
+   */
+  private async resolveBaseTileObjects(
+    scene: PreviewScene,
+    bindings: readonly TilesetBinding[],
+    mapPath: string,
+  ): Promise<void> {
+    const frames = new Map<
+      string,
+      TileObjectFrameTileset
+    >();
+    for (const layer of scene.objectLayers) {
+      for (const object of layer.objects) {
+        if (
+          object.shape !== "tile" ||
+          object.gid === undefined
+        ) {
+          continue;
+        }
+        const decoded = decodeGid(
+          object.gid,
+          "orthogonal",
+        );
+        if (decoded.baseGid === 0) {
+          throw new TiledMcpError(
+            "INVALID_GID",
+            `Object ${object.id} carries a flip-only GID without a tile.`,
+            {
+              path: mapPath,
+              layerId: layer.id,
+              objectId: object.id,
+              gid: object.gid,
+            },
+          );
+        }
+        const binding = bindings.find(
+          (candidate) =>
+            decoded.baseGid >=
+              candidate.firstGid &&
+            decoded.baseGid <
+              candidate.firstGid +
+                candidate.gidSpan,
+        );
+        if (binding === undefined) {
+          throw new TiledMcpError(
+            "GID_OUT_OF_RANGE",
+            `Object ${object.id} GID ${decoded.baseGid} is outside every tileset range.`,
+            {
+              path: mapPath,
+              layerId: layer.id,
+              objectId: object.id,
+              gid: decoded.baseGid,
+            },
+          );
+        }
+        const localId =
+          decoded.baseGid - binding.firstGid;
+        if (localId >= binding.tileCount) {
+          throw new TiledMcpError(
+            "INVALID_GID",
+            `Object ${object.id} GID ${decoded.baseGid} points into the reserved gap of ${binding.path}.`,
+            {
+              path: mapPath,
+              layerId: layer.id,
+              objectId: object.id,
+              gid: decoded.baseGid,
+            },
+          );
+        }
+        let frame = frames.get(binding.assetId);
+        if (frame === undefined) {
+          frame =
+            await this.loadTileObjectFrameTileset(
+              binding,
+            );
+          frames.set(binding.assetId, frame);
+        }
+        const transform =
+          decoded.transform as OrthogonalTransform;
+        const width =
+          object.width === 0
+            ? frame.tileWidth
+            : object.width;
+        const height =
+          object.height === 0
+            ? frame.tileHeight
+            : object.height;
+        const alignmentOffset =
+          tileObjectAlignmentOffset(
+            frame.objectAlignment,
+            width,
+            height,
+          );
+        const scaleX =
+          width / frame.tileWidth;
+        const scaleY =
+          height / frame.tileHeight;
+        let rotated = false;
+        let flipH = transform.flipH;
+        let flipV = transform.flipV;
+        let fragmentX =
+          width / 2 +
+          frame.tileOffsetX * scaleX;
+        let fragmentY =
+          height / 2 +
+          frame.tileOffsetY * scaleY;
+        if (transform.flipD) {
+          rotated = true;
+          const wasFlippedH = flipH;
+          flipH = flipV;
+          flipV = !wasFlippedH;
+          const halfDiff =
+            height / 2 - width / 2;
+          fragmentX += halfDiff;
+          fragmentY += halfDiff;
+        }
+        const signedScaleX =
+          (flipH ? -1 : 1) * scaleX;
+        const signedScaleY =
+          (flipV ? -1 : 1) * scaleY;
+        const linearA = rotated
+          ? 0
+          : signedScaleX;
+        const linearB = rotated
+          ? signedScaleX
+          : 0;
+        const linearC = rotated
+          ? -signedScaleY
+          : 0;
+        const linearD = rotated
+          ? 0
+          : signedScaleY;
+        const centerX = frame.tileWidth / 2;
+        const centerY = frame.tileHeight / 2;
+        object.width = width;
+        object.height = height;
+        object.tileRender = {
+          assetId: binding.assetId,
+          localId,
+          transform: [
+            linearA,
+            linearB,
+            linearC,
+            linearD,
+            fragmentX -
+              alignmentOffset.x -
+              (linearA * centerX +
+                linearC * centerY),
+            fragmentY -
+              alignmentOffset.y -
+              (linearB * centerX +
+                linearD * centerY),
+          ],
+        };
+        if (
+          !scene.usedAssetIds.includes(
+            binding.assetId,
+          )
+        ) {
+          scene.usedAssetIds.push(
+            binding.assetId,
+          );
+        }
+      }
+    }
   }
 
   private async resolveTileObjectFrames(

@@ -588,9 +588,11 @@ renders visible object layers too (profile \`base-object-layers-v1\`):
 basic shapes draw with Tiled's group color (else gray), a 50-alpha fill, a
 one-pixel black shadow, Tiled's topdown-or-index draw order, layer-times-
 object opacity, rotation, and the pin marker for points. Text objects draw
-their layout box only, and tile and template objects are omitted with
-per-layer counts — class-based colors live in project files outside the
-map and are a documented divergence. The explicit
+their layout box only, tile objects draw their actual tile images through
+Tiled's alignment, tile-offset, flip, and scaling rules (nearest-neighbor
+affine sampling), and template objects stay omitted with per-layer
+counts — class-based colors live in project files outside the map and
+are a documented divergence. The explicit
 \`overlays.objectIds\` debug overlay remains available for outline
 verification. Use the optional rasterizer or Tiled 1.12.2 to inspect font
 substitution, wrapping, glyph layout, tile object images, antialiased
