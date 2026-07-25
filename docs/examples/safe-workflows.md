@@ -302,11 +302,14 @@ entries、`highlightedTileCount`、color、blend/overlap mode 与 PNG hash，不
 猜回选区。
 
 `objectIds` 是 1–64 个唯一、全图有效的显式 ID，和 tile `layerIds` 无关。rectangle、
-point、polygon、polyline 会绘制固定 cyan 轮廓与原点十字，text 只绘制 layout box；
+point、ellipse、Tiled 1.12 capsule、polygon、polyline 会绘制固定 cyan 轮廓与原点十字，
+text 只绘制 layout box；ellipse/capsule 曲线按连续 output space 最大 0.25px chord
+error 自适应细分，单对象最多 4096 段、全选集合计最多 65536 段，超限时整次失败。
+单零尺寸曲线显示为 bounds line，双零尺寸显示为以 anchor 为圆心的 20 map-pixel 圆；
 完全离区的对象仍在结果中返回 `rendered:false, clipped:true`。显式调试忽略
-visibility/opacity，但拒绝 ellipse/capsule、tile object、template 和带非默认定位变换
-的所选 layer/Group。客户端应逐项核对保序 entry，不能把 geometry-only profile 当成
-完整 object-layer 渲染。
+visibility/opacity，但拒绝 tile object、template 和带非默认定位变换的所选
+layer/Group。客户端应逐项核对保序 entry 与 `curveTessellation`，不能把
+geometry-only profile 当成完整 object-layer 渲染。
 
 ## 裁决含混的 prepared checkpoint
 
@@ -423,7 +426,8 @@ discard 同样会因 create 目标已存在而拒绝。只有目标当前严格�
 完成有限正交地图的常规视觉闭环；native preview
 还能以最多 64 个固定样式的绝对 tile 矩形标出核对区域，其 union fill 与底图共享
 pixel-blend 工作预算；`overlays.objectIds` 还能以最多 64 个显式 ID 核对 basic object
-几何与 text box，选中 path points 合计最多 8192，裁剪后的 stroke 同样计入共享预算。
+几何与 text box，选中 path points 合计最多 8192，曲线另有每对象 4096/合计 65536
+segment 上限，裁剪后的 stroke 同样计入共享预算。
 
 只有当 `tools/list` 包含 `tiled_render_map`，并且 capability 报告 rasterizer
 `available: true` 且带有已探测 version 时，才可调用可选的整图 raster 预览。客户端应按

@@ -411,6 +411,8 @@ describe("generated MCP contract", () => {
         supportedShapes: [
           "rectangle",
           "point",
+          "ellipse",
+          "capsule",
           "polygon",
           "polyline",
           "text",
@@ -420,7 +422,7 @@ describe("generated MCP contract", () => {
           "text-box-only",
         ],
         profile:
-          "explicit-basic-object-geometry-v1",
+          "explicit-basic-object-geometry-v2",
         style: "geometry-cyan-v1",
         color: {
           r: 34,
@@ -437,11 +439,30 @@ describe("generated MCP contract", () => {
           "after-highlights-and-grid-before-coordinates",
         quantization:
           "round-nearest-output-pixel",
+        curveTessellation: {
+          algorithm:
+            "uniform-angle-output-sagitta-v1",
+          maximumChordErrorPixels: 0.25,
+          minimumSegments: 12,
+          maximumSegmentsPerObject: 4_096,
+          maximumAggregateSegments: 65_536,
+          segmentMultiple: 4,
+          errorSpace:
+            "continuous-output-before-quantization",
+          overflowPolicy:
+            "reject-whole-preview",
+          offscreenPolicy:
+            "conservative-rotated-bounds-skip-before-tessellation",
+          capsuleConstruction:
+            "two-semicircles-plus-two-straight-segments",
+          degenerateExtent:
+            "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+        },
         workBudget:
           "included-in-native-preview-pixel-blend-limit",
         limitations: [
           "explicit-selection-only",
-          "ellipse-capsule-and-tile-objects-unsupported",
+          "tile-objects-unsupported",
           "text-box-only-no-glyph-rendering",
           "template-objects-unsupported",
           "non-default-selected-layer-or-ancestor-positioning-unsupported",
@@ -504,6 +525,20 @@ describe("generated MCP contract", () => {
         `${capabilitiesLabel} limits`,
       ).const,
     ).toBe(64);
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxNativePreviewObjectCurveSegments",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(4_096);
+    expect(
+      schemaProperty(
+        nativePreviewLimitsSchema,
+        "maxNativePreviewObjectCurveSegmentsAggregate",
+        `${capabilitiesLabel} limits`,
+      ).const,
+    ).toBe(65_536);
     expect(
       schemaProperty(
         nativePreviewLimitsSchema,
@@ -1055,6 +1090,51 @@ describe("generated MCP contract", () => {
     expectClosedRootObjectSchema(
       objectDebugEntriesSchema.items,
       `${nativePreviewLabel} object debug output entries`,
+    );
+    const objectDebugEntrySchema = asRecord(
+      objectDebugEntriesSchema.items,
+      `${nativePreviewLabel} object debug output entry`,
+    );
+    expect(
+      schemaProperty(
+        objectDebugEntrySchema,
+        "shape",
+        `${nativePreviewLabel} object debug output entry`,
+      ).enum,
+    ).toEqual([
+      "rectangle",
+      "point",
+      "ellipse",
+      "capsule",
+      "polygon",
+      "polyline",
+      "text",
+    ]);
+    expectExactLiteralSchema(
+      schemaProperty(
+        objectDebugOutputSchema,
+        "curveTessellation",
+        `${nativePreviewLabel} object debug output`,
+      ),
+      {
+        algorithm:
+          "uniform-angle-output-sagitta-v1",
+        maximumChordErrorPixels: 0.25,
+        minimumSegments: 12,
+        maximumSegmentsPerObject: 4_096,
+        maximumAggregateSegments: 65_536,
+        segmentMultiple: 4,
+        errorSpace:
+          "continuous-output-before-quantization",
+        overflowPolicy: "reject-whole-preview",
+        offscreenPolicy:
+          "conservative-rotated-bounds-skip-before-tessellation",
+        capsuleConstruction:
+          "two-semicircles-plus-two-straight-segments",
+        degenerateExtent:
+          "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+      },
+      `${nativePreviewLabel} object debug curve tessellation`,
     );
 
     const applicationErrorContractSchema =

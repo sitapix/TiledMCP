@@ -4,13 +4,18 @@ import {
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
   MAX_NATIVE_PREVIEW_OBJECTS,
   MAX_NATIVE_PREVIEW_SCALE,
+  MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
   NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
   NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+  NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
   NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
   NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
   NATIVE_PREVIEW_OBJECT_PROFILE,
@@ -1020,6 +1025,8 @@ const nativePreviewObjectDebugEntryOutputSchema = z
     shape: z.enum([
       "rectangle",
       "point",
+      "ellipse",
+      "capsule",
       "polygon",
       "polyline",
       "text",
@@ -1073,6 +1080,41 @@ const nativePreviewObjectDebugOutputSchema = z
     quantization: z.literal(
       NATIVE_PREVIEW_OBJECT_QUANTIZATION,
     ),
+    curveTessellation: z
+      .object({
+        algorithm: z.literal(
+          NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
+        ),
+        maximumChordErrorPixels: z.literal(
+          NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+        ),
+        minimumSegments: z.literal(
+          MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        ),
+        maximumSegmentsPerObject: z.literal(
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        ),
+        maximumAggregateSegments: z.literal(
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+        ),
+        segmentMultiple: z.literal(4),
+        errorSpace: z.literal(
+          "continuous-output-before-quantization",
+        ),
+        overflowPolicy: z.literal(
+          "reject-whole-preview",
+        ),
+        offscreenPolicy: z.literal(
+          "conservative-rotated-bounds-skip-before-tessellation",
+        ),
+        capsuleConstruction: z.literal(
+          "two-semicircles-plus-two-straight-segments",
+        ),
+        degenerateExtent: z.literal(
+          "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+        ),
+      })
+      .strict(),
     selectedObjectCount:
       nonnegativeIntegerOutputSchema.max(
         MAX_NATIVE_PREVIEW_OBJECTS,

@@ -59,16 +59,21 @@ import {
   MAX_NATIVE_PREVIEW_BYTES,
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
   MAX_NATIVE_PREVIEW_OBJECTS,
   MAX_NATIVE_PREVIEW_OBJECT_POINTS,
   MAX_NATIVE_PREVIEW_PIXELS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_SCALE,
+  MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
   NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
   NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+  NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
   NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
   NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
   NATIVE_PREVIEW_OBJECT_PROFILE,
@@ -2056,6 +2061,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             supportedShapes: [
               "rectangle",
               "point",
+              "ellipse",
+              "capsule",
               "polygon",
               "polyline",
               "text",
@@ -2078,11 +2085,34 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
             quantization:
               NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+            curveTessellation: {
+              algorithm:
+                NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
+              maximumChordErrorPixels:
+                NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+              minimumSegments:
+                MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+              maximumSegmentsPerObject:
+                MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+              maximumAggregateSegments:
+                MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+              segmentMultiple: 4,
+              errorSpace:
+                "continuous-output-before-quantization",
+              overflowPolicy:
+                "reject-whole-preview",
+              offscreenPolicy:
+                "conservative-rotated-bounds-skip-before-tessellation",
+              capsuleConstruction:
+                "two-semicircles-plus-two-straight-segments",
+              degenerateExtent:
+                "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+            },
             workBudget:
               "included-in-native-preview-pixel-blend-limit",
             limitations: [
               "explicit-selection-only",
-              "ellipse-capsule-and-tile-objects-unsupported",
+              "tile-objects-unsupported",
               "text-box-only-no-glyph-rendering",
               "template-objects-unsupported",
               "non-default-selected-layer-or-ancestor-positioning-unsupported",
@@ -2215,6 +2245,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             MAX_NATIVE_PREVIEW_HIGHLIGHTS,
           maxNativePreviewObjects:
             MAX_NATIVE_PREVIEW_OBJECTS,
+          maxNativePreviewObjectCurveSegments:
+            MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+          maxNativePreviewObjectCurveSegmentsAggregate:
+            MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
           maxNativePreviewRegionCells: MAX_PREVIEW_REGION_CELLS,
           maxNativePreviewLayers: MAX_PREVIEW_LAYERS,
           maxNativePreviewTileDraws: MAX_PREVIEW_TILE_DRAWS,
@@ -2942,7 +2976,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. Object debugging supports rectangles, points, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.",
+        "Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

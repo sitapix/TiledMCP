@@ -1390,7 +1390,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_render_preview` | **已实现 native v1 + object debug v1**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格、绝对坐标、最多 64 个固定样式的绝对 tile 矩形高亮，以及 1–64 个显式 basic object 的固定 geometry/text-box 调试轮廓；不支持的视觉语义 fail closed。完整 object-layer 与碰撞渲染仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
+| `tiled_render_preview` | **已实现 native v1 + object debug v2**。渲染有限正交地图的静态 external-atlas tile layer，可指定矩形 region/图层并叠加网格、绝对坐标、最多 64 个固定样式的绝对 tile 矩形高亮，以及 1–64 个显式 basic object（含 ellipse/Tiled 1.12 capsule）的固定 geometry/text-box 调试轮廓；不支持的视觉语义 fail closed。完整 object-layer 与碰撞渲染仍是后续候选 | `mapPath`, `region?`, `layerIds?`, `scale?`, `overlays?` |
 | `tiled_render_tileset_sheet` | **已实现基础版**。按地图摘要给出的 opaque asset id 渲染连续 local id 的分页 atlas sheet；安全预算不足时自动减小每页容量，不静默缩放 tile。语义名仍是后续能力 | `mapPath`, `tilesetAssetId`, `page?`, `pageSize?`, `columns?`, `scale?` |
 | `tiled_render_tiles` | **已实现 static root-atlas v1**。按输入顺序放大并标注 1–64 个唯一、显式且可稀疏的 local IDs；不分页、不缩减选集，预算不足时整次失败。动画胶片条、Wang 分组和语义名不在 v1 内 | `mapPath`, `tilesetAssetId`, `localIds`, `columns?`, `scale?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 | `tiled_render_diff` | 后续候选。按显式 changeSetId、revision 或比较资产渲染差异，不读取“上一步操作” | `mapPath`, `changeSetId?\|compareWithRevision?\|compareWith?`, `region?` |
@@ -1450,7 +1450,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
       overlapMode: "tile-union";
     };
     objectDebug: {
-      profile: "explicit-basic-object-geometry-v1";
+      profile: "explicit-basic-object-geometry-v2";
       style: "geometry-cyan-v1";
       color: { r: 34; g: 211; b: 238; a: 255 };
       strokeWidth: 1;
@@ -1459,13 +1459,34 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
       visibilityPolicy: "explicit-ignore-object-and-layer-visibility-opacity";
       drawOrder: "after-highlights-and-grid-before-coordinates";
       quantization: "round-nearest-output-pixel";
+      curveTessellation: {
+        algorithm: "uniform-angle-output-sagitta-v1";
+        maximumChordErrorPixels: 0.25;
+        minimumSegments: 12;
+        maximumSegmentsPerObject: 4096;
+        maximumAggregateSegments: 65536;
+        segmentMultiple: 4;
+        errorSpace: "continuous-output-before-quantization";
+        overflowPolicy: "reject-whole-preview";
+        offscreenPolicy: "conservative-rotated-bounds-skip-before-tessellation";
+        capsuleConstruction: "two-semicircles-plus-two-straight-segments";
+        degenerateExtent:
+          "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle";
+      };
       selectedObjectCount: number;
       renderedObjectCount: number;
       entries: Array<{
         sourceIndex: number;
         objectId: number;
         layerId: number;
-        shape: "rectangle" | "point" | "polygon" | "polyline" | "text";
+        shape:
+          | "rectangle"
+          | "point"
+          | "ellipse"
+          | "capsule"
+          | "polygon"
+          | "polyline"
+          | "text";
         representation: "geometry-outline" | "text-box-only";
         rendered: boolean;
         clipped: boolean;
@@ -1597,12 +1618,21 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   layer 与 ancestor Group 的 visibility/opacity，但该 policy 会固定回显；所选
   object layer/ancestor 的 `x/y` 必须为 0、`offsetx/y` 必须为 0、`parallaxx/y`
   必须为 1，否则 fail closed，不能把未知定位语义近似为 map origin。
-- object debug v1 的 profile 固定为
-  `explicit-basic-object-geometry-v1`：rectangle 画闭合矩形，point 画原点十字，
+- object debug v2 的 profile 固定为
+  `explicit-basic-object-geometry-v2`：rectangle 画闭合矩形，point 画原点十字，
   polygon 闭合、polyline 保持开放，text 只画旋转后的 layout box 且
   `representation:"text-box-only"`，不画 glyph、不宣称 font/wrap/alignment 保真。
-  ellipse/capsule 暂无确定性曲线 rasterizer，tile object 还缺 object alignment/
-  tile offset/GID transform，template 还缺继承解析，因此三类都明确拒绝，不降级成矩形。
+  ellipse 使用对象 bounds；Tiled 1.12 capsule 使用
+  `min(width,height)/2` 的圆角半径，由两个半圆和两条直边组成，正方形 capsule 与同
+  bounds ellipse 等价。任一单独为零的尺寸按 bounds line 处理；双零尺寸按以 object
+  anchor 为圆心的 20 map-pixel 圆处理。tile object 仍缺 object alignment/
+  tile offset/GID transform，template 仍缺继承解析，因此两类明确拒绝，不降级成矩形。
+- ellipse/capsule 使用 `uniform-angle-output-sagitta-v1`：在量化前的连续 output space
+  以最大 0.25px chord error 计算均匀角度段数，至少 12 段并向上取四的倍数；每对象最多
+  4096 个曲线段，全选集合计最多 65536 个。capsule 的两条直边不计入曲线段预算，但仍
+  计入 pixel work。完全位于 content 外的 conservative rotated bounds 会在细分前跳过；
+  其他对象超过任一曲线预算时以 `RESULT_LIMIT_EXCEEDED` 拒绝整次预览，不降低精度、
+  不部分返回。
 - 对象 `x/y` 与 path points 使用 map pixel 坐标，points 相对 `(x,y)`；先按 Tiled
   正角顺时针围绕 `(x,y)` 旋转，再通过
   `contentPixelOrigin + (mapPixel - tileRegionOrigin * mapTileSize) * scale`
@@ -1616,23 +1646,28 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   crosshair 在 highlight 和 grid 之后、coordinate labels 之前绘制；不显示 ID label，
   同色覆盖使对象输入顺序不会改变重叠像素颜色。
 - object debug 结果无论是否请求都固定返回 closed envelope：固定 profile/style/color/
-  stroke/originMarker/visibilityPolicy/drawOrder/quantization、保序 entries、
+  stroke/originMarker/visibilityPolicy/drawOrder/quantization/curveTessellation、保序 entries、
   `selectedObjectCount` 与 `renderedObjectCount`。每项回显 sourceIndex/objectId/layerId/
   shape/representation/rendered/clipped，不返回未绑定 revision 的对象 payload。
   所选 polygon/polyline 合计最多 8192 points；裁剪后的实际 object pixel writes 与
   tile/highlight 一起计入 30,000,000 work budget。
-- object debug 是 pre-Frozen wire clean break：input 只新增可选的 `objectIds`，但 native
-  preview 成功 output 现在总是要求 closed `overlays.objectDebug`（未请求时为空
-  envelope），capabilities 也增加 `overlays:"objectIds"`、`objectDebug` 与 limit。
-  缓存旧 exact schema 的客户端升级后必须重新执行 discovery/刷新 schema。
+- object debug v2 是 pre-Frozen wire clean break：profile 从 v1 升为 v2，entry 的 closed
+  shape union 从五类增加 ellipse/capsule，并且 native preview 成功 output 现在总是要求
+  closed `curveTessellation`（未请求 objectIds 时也存在）。capabilities 同步增加相同
+  policy，`supportedShapes` 增加 ellipse/capsule，limitations 将
+  `ellipse-capsule-and-tile-objects-unsupported` 替换为 `tile-objects-unsupported`，
+  limits 增加两个 required curve-segment key。缓存旧 discovery/exact output schema 的
+  客户端升级后必须重新执行 discovery/刷新 schema；selection/style/representation
+  语义不变。
 - native v1 支持静态 external atlas、透明色、layer opacity、orthogonal H/V/D 与 bit 29
   忽略；D 总是先于 H/V，非方形 tile 的 D 暂时 fail closed。atlas tile 尺寸必须与 map
   grid 相同。blend/tint、parallax、非零 pixel offset、非默认 group opacity、动画、
   per-tile image subrect、tileoffset、`tilerendersize:grid`、image collection 和
   非有限/非正交地图不做近似。
 - native preview 上限为 region 20,000 cells、128 个 tile layer、64 个 highlight
-  rectangle、64 个 object debug selection、8192 个选中 path points、250,000 次潜在 tile
-  draw、30,000,000 次 pixel blend、64 个实际 atlas；`omittedLayers` 最多内联 128 项，
+  rectangle、64 个 object debug selection、8192 个选中 path points、每对象 4096/
+  全选集 65536 个 curve segments、250,000 次潜在 tile draw、30,000,000 次 pixel blend、
+  64 个实际 atlas；`omittedLayers` 最多内联 128 项，
   超出时返回总数和 `omittedLayersTruncated`。atlas 源文件累计 64 MiB、声明解码像素累计 16,000,000。
   输出为 scale 1–4、2048 单边、1,500,000 像素、编码后 8 MiB。精确值由
   `tiled_get_capabilities` 返回。union 后的高亮 fill 与裁剪后的 object stroke 写入都

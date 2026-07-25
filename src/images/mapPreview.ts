@@ -23,6 +23,14 @@ export const MAX_NATIVE_PREVIEW_PIXEL_BLENDS = 30_000_000;
 export const MAX_NATIVE_PREVIEW_HIGHLIGHTS = 64;
 export const MAX_NATIVE_PREVIEW_OBJECTS = 64;
 export const MAX_NATIVE_PREVIEW_OBJECT_POINTS = 8_192;
+export const MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS = 12;
+export const MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS = 4_096;
+export const MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE =
+  65_536;
+export const NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS =
+  0.25;
+export const NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION =
+  "uniform-angle-output-sagitta-v1";
 export const NATIVE_PREVIEW_HIGHLIGHT_STYLE = "selection-amber-v1";
 export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
   Object.freeze({
@@ -34,7 +42,7 @@ export const NATIVE_PREVIEW_HIGHLIGHT_COLOR =
 export const NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE = "source-over";
 export const NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE = "tile-union";
 export const NATIVE_PREVIEW_OBJECT_PROFILE =
-  "explicit-basic-object-geometry-v1";
+  "explicit-basic-object-geometry-v2";
 export const NATIVE_PREVIEW_OBJECT_STYLE =
   "geometry-cyan-v1";
 export const NATIVE_PREVIEW_OBJECT_COLOR =
@@ -135,6 +143,8 @@ export interface NativePreviewHighlightRenderMetadata {
 export type NativePreviewObjectShape =
   | "rectangle"
   | "point"
+  | "ellipse"
+  | "capsule"
   | "polygon"
   | "polyline"
   | "text";
@@ -183,6 +193,28 @@ export interface NativePreviewObjectRenderMetadata {
     typeof NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY;
   drawOrder: typeof NATIVE_PREVIEW_OBJECT_DRAW_ORDER;
   quantization: typeof NATIVE_PREVIEW_OBJECT_QUANTIZATION;
+  curveTessellation: {
+    algorithm:
+      typeof NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION;
+    maximumChordErrorPixels:
+      typeof NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS;
+    minimumSegments:
+      typeof MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS;
+    maximumSegmentsPerObject:
+      typeof MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS;
+    maximumAggregateSegments:
+      typeof MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE;
+    segmentMultiple: 4;
+    errorSpace:
+      "continuous-output-before-quantization";
+    overflowPolicy: "reject-whole-preview";
+    offscreenPolicy:
+      "conservative-rotated-bounds-skip-before-tessellation";
+    capsuleConstruction:
+      "two-semicircles-plus-two-straight-segments";
+    degenerateExtent:
+      "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle";
+  };
   selectedObjectCount: number;
   renderedObjectCount: number;
   entries: readonly NativePreviewObjectRenderEntry[];
@@ -253,6 +285,14 @@ interface ClippedLine {
 interface ObjectRenderState {
   rendered: boolean;
   clipped: boolean;
+}
+
+interface PreparedObjectGeometry {
+  object: NativePreviewObjectInput;
+  anchor: OutputPoint;
+  points: readonly OutputPoint[];
+  closed: boolean;
+  initiallyClipped: boolean;
 }
 
 export async function renderNativePreview(
@@ -747,6 +787,8 @@ function validateNativePreviewObjectInput(
   const shapes = [
     "rectangle",
     "point",
+    "ellipse",
+    "capsule",
     "polygon",
     "polyline",
     "text",
@@ -772,6 +814,8 @@ function validateNativePreviewObjectInput(
   ];
   const shapeKeys =
     object.shape === "rectangle" ||
+    object.shape === "ellipse" ||
+    object.shape === "capsule" ||
     object.shape === "text"
       ? ["height", "width"]
       : object.shape === "polygon" ||
@@ -820,6 +864,8 @@ function validateNativePreviewObjectInput(
 
   if (
     object.shape === "rectangle" ||
+    object.shape === "ellipse" ||
+    object.shape === "capsule" ||
     object.shape === "text"
   ) {
     validateObjectDebugNumber(
@@ -1239,6 +1285,68 @@ function renderObjectDebugOverlay(
     return emptyObjectDebugMetadata();
   }
 
+  let aggregateCurveSegments = 0;
+  const preparedObjects: PreparedObjectGeometry[] =
+    objects.map((object) => {
+      const anchor = mapObjectPointToOutput(
+        object,
+        { x: 0, y: 0 },
+        input,
+        layout,
+      );
+      const geometryIsOffscreen =
+        isCurveObject(object) &&
+        objectCurveBoundsAreFullyOffscreen(
+          object,
+          input,
+          layout,
+        );
+      const geometry = geometryIsOffscreen
+        ? {
+            points:
+              [] as readonly NativePreviewObjectPoint[],
+            closed: false,
+            curveSegments: 0,
+          }
+        : objectGeometry(
+            object,
+            input.scale,
+          );
+      aggregateCurveSegments +=
+        geometry.curveSegments;
+      if (
+        aggregateCurveSegments >
+        MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `Object debug curves may contain at most ${MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE} generated segments.`,
+          {
+            actual: aggregateCurveSegments,
+            limit:
+              MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+            sourceIndex: object.sourceIndex,
+            objectId: object.objectId,
+          },
+        );
+      }
+      return {
+        object,
+        anchor,
+        points: geometry.points.map((point) =>
+          mapObjectPointToOutput(
+            object,
+            point,
+            input,
+            layout,
+          ),
+        ),
+        closed: geometry.closed,
+        initiallyClipped:
+          geometryIsOffscreen,
+      };
+    });
+
   let objectPixelWrites = 0;
   const entries: NativePreviewObjectRenderEntry[] = [];
   const writePixel = (
@@ -1281,40 +1389,25 @@ function renderObjectDebugOverlay(
     );
   };
 
-  for (const object of objects) {
+  for (const prepared of preparedObjects) {
+    const { object } = prepared;
     const state: ObjectRenderState = {
       rendered: false,
-      clipped: false,
+      clipped: prepared.initiallyClipped,
     };
-    const anchor = mapObjectPointToOutput(
-      object,
-      { x: 0, y: 0 },
-      input,
-      layout,
-    );
-    const localPoints = objectGeometryPoints(object);
-    const transformedPoints = localPoints.map((point) =>
-      mapObjectPointToOutput(
-        object,
-        point,
-        input,
-        layout,
-      ),
-    );
-    const segmentCount =
-      object.shape === "polygon"
-        ? transformedPoints.length
-        : Math.max(0, transformedPoints.length - 1);
+    const segmentCount = prepared.closed
+      ? prepared.points.length
+      : Math.max(0, prepared.points.length - 1);
     for (
       let segmentIndex = 0;
       segmentIndex < segmentCount;
       segmentIndex += 1
     ) {
-      const start = transformedPoints[segmentIndex];
+      const start = prepared.points[segmentIndex];
       const end =
-        transformedPoints[
+        prepared.points[
           (segmentIndex + 1) %
-            transformedPoints.length
+            prepared.points.length
         ];
       if (start === undefined || end === undefined) {
         throw new TiledMcpError(
@@ -1335,7 +1428,7 @@ function renderObjectDebugOverlay(
       );
     }
     drawObjectOriginMarker(
-      anchor,
+      prepared.anchor,
       state,
       writePixel,
     );
@@ -1384,17 +1477,120 @@ function objectDebugMetadataBase(): Omit<
       NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
     drawOrder: NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
     quantization: NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+    curveTessellation: {
+      algorithm:
+        NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
+      maximumChordErrorPixels:
+        NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+      minimumSegments:
+        MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+      maximumSegmentsPerObject:
+        MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+      maximumAggregateSegments:
+        MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+      segmentMultiple: 4,
+      errorSpace:
+        "continuous-output-before-quantization",
+      overflowPolicy: "reject-whole-preview",
+      offscreenPolicy:
+        "conservative-rotated-bounds-skip-before-tessellation",
+      capsuleConstruction:
+        "two-semicircles-plus-two-straight-segments",
+      degenerateExtent:
+        "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+    },
   };
 }
 
-function objectGeometryPoints(
+function isCurveObject(
   object: NativePreviewObjectInput,
-): readonly NativePreviewObjectPoint[] {
+): object is NativePreviewObjectInput & {
+  shape: "ellipse" | "capsule";
+  width: number;
+  height: number;
+} {
+  return (
+    object.shape === "ellipse" ||
+    object.shape === "capsule"
+  );
+}
+
+function objectCurveBoundsAreFullyOffscreen(
+  object: NativePreviewObjectInput & {
+    shape: "ellipse" | "capsule";
+    width: number;
+    height: number;
+  },
+  input: RenderNativePreviewInput,
+  layout: PreviewLayout,
+): boolean {
+  const doubleZero =
+    object.width === 0 && object.height === 0;
+  const left = doubleZero ? -10 : 0;
+  const top = doubleZero ? -10 : 0;
+  const right = doubleZero ? 10 : object.width;
+  const bottom = doubleZero ? 10 : object.height;
+  const corners = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ].map((point) =>
+    mapObjectPointToOutput(
+      object,
+      point,
+      input,
+      layout,
+    ),
+  );
+  const minimumX = Math.min(
+    ...corners.map((point) => point.x),
+  );
+  const maximumX = Math.max(
+    ...corners.map((point) => point.x),
+  );
+  const minimumY = Math.min(
+    ...corners.map((point) => point.y),
+  );
+  const maximumY = Math.max(
+    ...corners.map((point) => point.y),
+  );
+  const contentLeft = layout.contentLeft;
+  const contentTop = layout.contentTop;
+  const contentRight =
+    contentLeft + layout.contentWidth - 1;
+  const contentBottom =
+    contentTop + layout.contentHeight - 1;
+  const quantizationMargin = 1;
+  return (
+    maximumX <
+      contentLeft - quantizationMargin ||
+    minimumX >
+      contentRight + quantizationMargin ||
+    maximumY <
+      contentTop - quantizationMargin ||
+    minimumY >
+      contentBottom + quantizationMargin
+  );
+}
+
+function objectGeometry(
+  object: NativePreviewObjectInput,
+  scale: number,
+): {
+  points: readonly NativePreviewObjectPoint[];
+  closed: boolean;
+  curveSegments: number;
+} {
   if (
     object.shape === "polygon" ||
     object.shape === "polyline"
   ) {
-    return object.points ?? [];
+    return {
+      points: object.points ?? [],
+      closed: object.shape === "polygon",
+      curveSegments: 0,
+    };
   }
   if (
     object.shape === "rectangle" ||
@@ -1402,15 +1598,239 @@ function objectGeometryPoints(
   ) {
     const width = object.width ?? 0;
     const height = object.height ?? 0;
-    return [
-      { x: 0, y: 0 },
-      { x: width, y: 0 },
-      { x: width, y: height },
-      { x: 0, y: height },
-      { x: 0, y: 0 },
-    ];
+    return {
+      points: rectangleGeometryPoints(
+        width,
+        height,
+      ),
+      closed: true,
+      curveSegments: 0,
+    };
   }
-  return [];
+  if (
+    object.shape === "ellipse" ||
+    object.shape === "capsule"
+  ) {
+    const width = object.width ?? 0;
+    const height = object.height ?? 0;
+    if (width === 0 && height === 0) {
+      const curveSegments = objectCurveSegmentCount(
+        10 * scale,
+        object,
+      );
+      return {
+        points: ellipseGeometryPoints(
+          20,
+          20,
+          curveSegments,
+          -10,
+          -10,
+        ),
+        closed: true,
+        curveSegments,
+      };
+    }
+    if (width === 0 || height === 0) {
+      return {
+        points: [
+          { x: 0, y: 0 },
+          { x: width, y: height },
+        ],
+        closed: false,
+        curveSegments: 0,
+      };
+    }
+    const curveRadius =
+      object.shape === "ellipse"
+        ? (Math.max(width, height) * scale) / 2
+        : (Math.min(width, height) * scale) / 2;
+    const curveSegments = objectCurveSegmentCount(
+      curveRadius,
+      object,
+    );
+    return {
+      points:
+        object.shape === "ellipse"
+          ? ellipseGeometryPoints(
+              width,
+              height,
+              curveSegments,
+            )
+          : capsuleGeometryPoints(
+              width,
+              height,
+              curveSegments,
+            ),
+      closed: true,
+      curveSegments,
+    };
+  }
+  return {
+    points: [],
+    closed: false,
+    curveSegments: 0,
+  };
+}
+
+function rectangleGeometryPoints(
+  width: number,
+  height: number,
+): readonly NativePreviewObjectPoint[] {
+  return [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+}
+
+function objectCurveSegmentCount(
+  radiusInOutputPixels: number,
+  object: NativePreviewObjectInput,
+): number {
+  if (
+    !Number.isFinite(radiusInOutputPixels) ||
+    radiusInOutputPixels < 0
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `Object ${object.objectId} curve radius is not a finite nonnegative output distance.`,
+      {
+        objectId: object.objectId,
+        radiusInOutputPixels,
+      },
+    );
+  }
+  if (radiusInOutputPixels === 0) {
+    return MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS;
+  }
+  const cosine =
+    1 -
+    NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS /
+      radiusInOutputPixels;
+  const required =
+    cosine <= -1
+      ? 1
+      : Math.ceil(
+          Math.PI /
+            Math.acos(Math.min(1, cosine)),
+        );
+  const roundedToQuadrants =
+    Math.ceil(
+      Math.max(
+        MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        required,
+      ) / 4,
+    ) * 4;
+  if (
+    !Number.isSafeInteger(roundedToQuadrants) ||
+    roundedToQuadrants >
+      MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `Object ${object.objectId} needs too many curve segments for the native preview error bound.`,
+      {
+        objectId: object.objectId,
+        shape: object.shape,
+        radiusInOutputPixels,
+        requiredSegments: roundedToQuadrants,
+        limit:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        maximumChordErrorPixels:
+          NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+      },
+    );
+  }
+  return roundedToQuadrants;
+}
+
+function ellipseGeometryPoints(
+  width: number,
+  height: number,
+  segmentCount: number,
+  originX = 0,
+  originY = 0,
+): readonly NativePreviewObjectPoint[] {
+  const centerX = originX + width / 2;
+  const centerY = originY + height / 2;
+  const radiusX = width / 2;
+  const radiusY = height / 2;
+  return Array.from(
+    { length: segmentCount },
+    (_, index) => {
+      const angle =
+        (index * Math.PI * 2) / segmentCount;
+      return {
+        x: centerX + radiusX * Math.cos(angle),
+        y: centerY + radiusY * Math.sin(angle),
+      };
+    },
+  );
+}
+
+function capsuleGeometryPoints(
+  width: number,
+  height: number,
+  curveSegmentCount: number,
+): readonly NativePreviewObjectPoint[] {
+  const radius = Math.min(width, height) / 2;
+  if (width === height) {
+    return ellipseGeometryPoints(
+      width,
+      height,
+      curveSegmentCount,
+    );
+  }
+  const halfSegments = curveSegmentCount / 2;
+  const points: NativePreviewObjectPoint[] = [];
+  const arcs =
+    width > height
+      ? ([
+          {
+            centerX: width - radius,
+            centerY: radius,
+            startAngle: -Math.PI / 2,
+          },
+          {
+            centerX: radius,
+            centerY: radius,
+            startAngle: Math.PI / 2,
+          },
+        ] as const)
+      : ([
+          {
+            centerX: radius,
+            centerY: radius,
+            startAngle: Math.PI,
+          },
+          {
+            centerX: radius,
+            centerY: height - radius,
+            startAngle: 0,
+          },
+        ] as const);
+  for (const arc of arcs) {
+    for (
+      let segment = 0;
+      segment <= halfSegments;
+      segment += 1
+    ) {
+      const angle =
+        arc.startAngle +
+        (segment * Math.PI) /
+          halfSegments;
+      points.push({
+        x:
+          arc.centerX +
+          radius * Math.cos(angle),
+        y:
+          arc.centerY +
+          radius * Math.sin(angle),
+      });
+    }
+  }
+  return points;
 }
 
 function mapObjectPointToOutput(

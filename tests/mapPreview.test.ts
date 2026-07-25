@@ -5,14 +5,19 @@ import type { AtlasGeometry } from "../src/images/atlas.js";
 import {
   MAX_NATIVE_PREVIEW_EDGE,
   MAX_NATIVE_PREVIEW_HIGHLIGHTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+  MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
   MAX_NATIVE_PREVIEW_OBJECTS,
   MAX_NATIVE_PREVIEW_PIXEL_BLENDS,
   MAX_NATIVE_PREVIEW_PIXELS,
+  MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
   NATIVE_PREVIEW_HIGHLIGHT_BLEND_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_COLOR,
   NATIVE_PREVIEW_HIGHLIGHT_OVERLAP_MODE,
   NATIVE_PREVIEW_HIGHLIGHT_STYLE,
   NATIVE_PREVIEW_OBJECT_COLOR,
+  NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+  NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
   NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
   NATIVE_PREVIEW_OBJECT_ORIGIN_MARKER,
   NATIVE_PREVIEW_OBJECT_PROFILE,
@@ -613,6 +618,28 @@ describe("renderNativePreview", () => {
         NATIVE_PREVIEW_OBJECT_VISIBILITY_POLICY,
       drawOrder: NATIVE_PREVIEW_OBJECT_DRAW_ORDER,
       quantization: NATIVE_PREVIEW_OBJECT_QUANTIZATION,
+      curveTessellation: {
+        algorithm:
+          NATIVE_PREVIEW_OBJECT_CURVE_TESSELLATION,
+        maximumChordErrorPixels:
+          NATIVE_PREVIEW_OBJECT_CURVE_MAX_ERROR_PIXELS,
+        minimumSegments:
+          MIN_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        maximumSegmentsPerObject:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+        maximumAggregateSegments:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+        segmentMultiple: 4,
+        errorSpace:
+          "continuous-output-before-quantization",
+        overflowPolicy: "reject-whole-preview",
+        offscreenPolicy:
+          "conservative-rotated-bounds-skip-before-tessellation",
+        capsuleConstruction:
+          "two-semicircles-plus-two-straight-segments",
+        degenerateExtent:
+          "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+      },
       selectedObjectCount: 4,
       renderedObjectCount: 3,
       entries: [
@@ -755,6 +782,427 @@ describe("renderNativePreview", () => {
     );
   });
 
+  it("draws ellipse, rotated ellipse, and horizontal and vertical capsule geometry", async () => {
+    const rendered = await renderNativePreview({
+      tileWidth: 40,
+      tileHeight: 32,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        objectDebug: [
+          curveDebug(0, 1, "ellipse", {
+            x: 4,
+            y: 4,
+            width: 12,
+            height: 8,
+          }),
+          curveDebug(1, 2, "capsule", {
+            x: 20,
+            y: 4,
+            width: 16,
+            height: 8,
+          }),
+          curveDebug(2, 3, "capsule", {
+            x: 4,
+            y: 16,
+            width: 8,
+            height: 12,
+          }),
+          curveDebug(3, 4, "ellipse", {
+            x: 24,
+            y: 18,
+            width: 8,
+            height: 4,
+            rotation: 90,
+          }),
+        ],
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+
+    for (const [x, y] of [
+      [10, 4],
+      [16, 8],
+      [10, 12],
+      [24, 4],
+      [36, 8],
+      [28, 12],
+      [8, 16],
+      [12, 20],
+      [8, 28],
+      [4, 24],
+      [22, 18],
+      [24, 22],
+      [22, 26],
+      [20, 22],
+    ] as const) {
+      expect(pixel(decoded, x, y)).toEqual(cyan);
+    }
+    for (const [x, y] of [
+      [10, 8],
+      [16, 4],
+      [28, 8],
+      [36, 4],
+      [8, 22],
+      [12, 16],
+      [22, 22],
+      [24, 26],
+    ] as const) {
+      expect(pixel(decoded, x, y)).toEqual(
+        TRANSPARENT,
+      );
+    }
+    expect(rendered.objectDebugOverlay.entries).toEqual([
+      {
+        sourceIndex: 0,
+        objectId: 1,
+        layerId: 2,
+        shape: "ellipse",
+        representation: "geometry-outline",
+        rendered: true,
+        clipped: false,
+      },
+      {
+        sourceIndex: 1,
+        objectId: 2,
+        layerId: 2,
+        shape: "capsule",
+        representation: "geometry-outline",
+        rendered: true,
+        clipped: false,
+      },
+      {
+        sourceIndex: 2,
+        objectId: 3,
+        layerId: 2,
+        shape: "capsule",
+        representation: "geometry-outline",
+        rendered: true,
+        clipped: false,
+      },
+      {
+        sourceIndex: 3,
+        objectId: 4,
+        layerId: 2,
+        shape: "ellipse",
+        representation: "geometry-outline",
+        rendered: true,
+        clipped: false,
+      },
+    ]);
+  });
+
+  it("uses Tiled 1.12 curve fallbacks for zero extents", async () => {
+    const rendered = await renderNativePreview({
+      tileWidth: 32,
+      tileHeight: 32,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        objectDebug: [
+          curveDebug(0, 1, "ellipse", {
+            x: 4,
+            y: 4,
+            width: 0,
+            height: 8,
+          }),
+          curveDebug(1, 2, "capsule", {
+            x: 12,
+            y: 4,
+            width: 8,
+            height: 0,
+            rotation: 90,
+          }),
+          curveDebug(2, 3, "ellipse", {
+            x: 20,
+            y: 20,
+            width: 0,
+            height: 0,
+          }),
+          curveDebug(3, 4, "capsule", {
+            x: 28,
+            y: 4,
+            width: Number.MIN_VALUE,
+            height: 8,
+          }),
+        ],
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+
+    expect(pixel(decoded, 4, 12)).toEqual(cyan);
+    expect(pixel(decoded, 12, 12)).toEqual(cyan);
+    expect(pixel(decoded, 20, 10)).toEqual(cyan);
+    expect(pixel(decoded, 10, 20)).toEqual(cyan);
+    expect(pixel(decoded, 30, 20)).toEqual(cyan);
+    expect(pixel(decoded, 20, 30)).toEqual(cyan);
+    expect(pixel(decoded, 10, 10)).toEqual(
+      TRANSPARENT,
+    );
+    expect(pixel(decoded, 28, 12)).toEqual(cyan);
+    expect(
+      rendered.objectDebugOverlay.curveTessellation
+        .degenerateExtent,
+    ).toBe(
+      "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+    );
+  });
+
+  it("renders a square capsule exactly like an ellipse with the same bounds", async () => {
+    const renderCurve = async (
+      shape: "ellipse" | "capsule",
+    ) =>
+      renderNativePreview({
+        tileWidth: 24,
+        tileHeight: 24,
+        region: {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+        layers: [],
+        atlases: [],
+        scale: 2,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [
+            curveDebug(0, 1, shape, {
+              x: 4,
+              y: 4,
+              width: 8,
+              height: 8,
+              rotation: 30,
+            }),
+          ],
+        },
+      });
+
+    const ellipse = await renderCurve("ellipse");
+    const capsule = await renderCurve("capsule");
+    expect(capsule.png).toEqual(ellipse.png);
+  });
+
+  it("skips huge fully offscreen curves before tessellation and clips long thin capsules", async () => {
+    const rendered = await renderNativePreview({
+      tileWidth: 16,
+      tileHeight: 16,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+        objectDebug: [
+          curveDebug(0, 1, "ellipse", {
+            x: 1_000_000_000,
+            y: 1_000_000_000,
+            width: 1_000_000_000,
+            height: 1_000_000_000,
+            rotation: 45,
+          }),
+          curveDebug(1, 2, "capsule", {
+            x: -999_999_985,
+            y: 4,
+            width: 1_000_000_000,
+            height: 4,
+          }),
+        ],
+      },
+    });
+    const decoded = await decodeRgba(rendered.png);
+    const cyan = [
+      NATIVE_PREVIEW_OBJECT_COLOR.r,
+      NATIVE_PREVIEW_OBJECT_COLOR.g,
+      NATIVE_PREVIEW_OBJECT_COLOR.b,
+      NATIVE_PREVIEW_OBJECT_COLOR.a,
+    ] as const;
+
+    expect(pixel(decoded, 0, 4)).toEqual(cyan);
+    expect(pixel(decoded, 15, 6)).toEqual(cyan);
+    expect(pixel(decoded, 0, 8)).toEqual(cyan);
+    expect(rendered.objectDebugOverlay.entries).toEqual([
+      {
+        sourceIndex: 0,
+        objectId: 1,
+        layerId: 2,
+        shape: "ellipse",
+        representation: "geometry-outline",
+        rendered: false,
+        clipped: true,
+      },
+      {
+        sourceIndex: 1,
+        objectId: 2,
+        layerId: 2,
+        shape: "capsule",
+        representation: "geometry-outline",
+        rendered: true,
+        clipped: true,
+      },
+    ]);
+  });
+
+  it("rejects curve tessellation overflow per object and in aggregate", async () => {
+    const base = {
+      tileWidth: 16,
+      tileHeight: 16,
+      region: { x: 0, y: 0, width: 1, height: 1 },
+      layers: [],
+      atlases: [],
+      scale: 1,
+      overlays: {
+        grid: false,
+        coordinates: false,
+      },
+    } as const;
+    const scaleSensitiveCurve = curveDebug(
+      0,
+      1,
+      "ellipse",
+      {
+        x: 0,
+        y: 0,
+        width: 1_000_000,
+        height: 1_000_000,
+      },
+    );
+    const scaleOne = await renderNativePreview({
+      ...base,
+      overlays: {
+        ...base.overlays,
+        objectDebug: [scaleSensitiveCurve],
+      },
+    });
+    expect(
+      scaleOne.objectDebugOverlay.selectedObjectCount,
+    ).toBe(1);
+    await expect(
+      renderNativePreview({
+        ...base,
+        scale: 2,
+        overlays: {
+          ...base.overlays,
+          objectDebug: [scaleSensitiveCurve],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        objectId: 1,
+        requiredSegments: 4_444,
+        limit:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+      },
+    });
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          ...base.overlays,
+          objectDebug: [
+            curveDebug(0, 1, "ellipse", {
+              x: 0,
+              y: 0,
+              width: 2_000_000,
+              height: 2_000_000,
+            }),
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        objectId: 1,
+        requiredSegments: 4_444,
+        limit:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS,
+      },
+    });
+
+    const aggregateObjects = Array.from(
+      { length: MAX_NATIVE_PREVIEW_OBJECTS },
+      (_, index) =>
+        curveDebug(
+          index,
+          index + 1,
+          "ellipse",
+          {
+            x: -53_150,
+            y: -53_150,
+            width: 106_300,
+            height: 106_300,
+          },
+        ),
+    );
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          ...base.overlays,
+          objectDebug: aggregateObjects,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "RESULT_LIMIT_EXCEEDED",
+      details: {
+        sourceIndex: 63,
+        objectId: 64,
+        actual: 65_792,
+        limit:
+          MAX_NATIVE_PREVIEW_OBJECT_CURVE_SEGMENTS_AGGREGATE,
+      },
+    });
+
+    const exactBoundary = await renderNativePreview({
+      ...base,
+      overlays: {
+        ...base.overlays,
+        objectDebug: Array.from(
+          { length: MAX_NATIVE_PREVIEW_OBJECTS },
+          (_, index) =>
+            curveDebug(
+              index,
+              index + 1,
+              "ellipse",
+              {
+                x: -53_100,
+                y: -53_100,
+                width: 106_200,
+                height: 106_200,
+              },
+            ),
+        ),
+      },
+    });
+    expect(
+      exactBoundary.objectDebugOverlay
+        .selectedObjectCount,
+    ).toBe(MAX_NATIVE_PREVIEW_OBJECTS);
+  });
+
   it("rejects empty, oversized, duplicate and structurally loose object debug inputs", async () => {
     const base = {
       tileWidth: 8,
@@ -811,6 +1259,45 @@ describe("renderNativePreview", () => {
               ...pointDebug(0, 1),
               label: "not-supported",
             } as NativePreviewObjectInput,
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    const missingHeight = curveDebug(
+      0,
+      1,
+      "ellipse",
+      {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+      },
+    );
+    delete missingHeight.height;
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [missingHeight],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(
+      renderNativePreview({
+        ...base,
+        overlays: {
+          grid: false,
+          coordinates: false,
+          objectDebug: [
+            curveDebug(0, 1, "capsule", {
+              x: 0,
+              y: 0,
+              width: -1,
+              height: 4,
+            }),
           ],
         },
       }),
@@ -1013,6 +1500,32 @@ function pointDebug(
     x: 4,
     y: 4,
     rotation: 0,
+  };
+}
+
+function curveDebug(
+  sourceIndex: number,
+  objectId: number,
+  shape: "ellipse" | "capsule",
+  geometry: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation?: number;
+  },
+): NativePreviewObjectInput {
+  return {
+    sourceIndex,
+    objectId,
+    layerId: 2,
+    shape,
+    representation: "geometry-outline",
+    x: geometry.x,
+    y: geometry.y,
+    rotation: geometry.rotation ?? 0,
+    width: geometry.width,
+    height: geometry.height,
   };
 }
 

@@ -78,7 +78,7 @@ describe("MapService native object debug overlay", () => {
     const metadata = objectDebugOf(rendered.result);
 
     expect(metadata).toMatchObject({
-      profile: "explicit-basic-object-geometry-v1",
+      profile: "explicit-basic-object-geometry-v2",
       style: "geometry-cyan-v1",
       visibilityPolicy:
         "explicit-ignore-object-and-layer-visibility-opacity",
@@ -173,7 +173,7 @@ describe("MapService native object debug overlay", () => {
       scale: 1,
     });
     expect(objectDebugOf(rendered.result)).toMatchObject({
-      profile: "explicit-basic-object-geometry-v1",
+      profile: "explicit-basic-object-geometry-v2",
       selectedObjectCount: 0,
       renderedObjectCount: 0,
       entries: [],
@@ -328,25 +328,79 @@ describe("MapService native object debug overlay", () => {
     });
   });
 
-  it.each([
-    {
-      name: "ellipse",
-      object: {
+  it("projects ellipse, capsule and zero-extent curve objects in explicit order", async () => {
+    const map = supportedMap();
+    const omittedSizeEllipse: JsonObject = {
+      ...rectangleObject(13),
+      ellipse: true,
+      x: 32,
+      y: 32,
+    };
+    delete omittedSizeEllipse.width;
+    delete omittedSizeEllipse.height;
+    objectLayerOf(map).objects = [
+      {
         ...rectangleObject(11),
         ellipse: true,
+        rotation: 30,
+        width: 18,
+        height: 10,
+        x: 8,
+        y: 8,
       },
-      code: "UNSUPPORTED_RENDER_FEATURE",
-      feature: "object-debug-ellipse",
-    },
-    {
-      name: "capsule",
-      object: {
-        ...rectangleObject(11),
+      {
+        ...rectangleObject(12),
         capsule: true,
+        rotation: 90,
+        width: 20,
+        height: 8,
+        x: 40,
+        y: 8,
       },
-      code: "UNSUPPORTED_RENDER_FEATURE",
-      feature: "object-debug-capsule",
-    },
+      omittedSizeEllipse,
+    ];
+    map.nextobjectid = 14;
+    await writeMap(root, map);
+
+    const rendered = await service.renderPreview({
+      mapPath: MAP_PATH,
+      scale: 1,
+      overlays: { objectIds: [12, 11, 13] },
+    });
+    expect(objectDebugOf(rendered.result)).toMatchObject({
+      profile: "explicit-basic-object-geometry-v2",
+      selectedObjectCount: 3,
+      renderedObjectCount: 3,
+      entries: [
+        {
+          sourceIndex: 0,
+          objectId: 12,
+          shape: "capsule",
+          representation: "geometry-outline",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 1,
+          objectId: 11,
+          shape: "ellipse",
+          representation: "geometry-outline",
+          rendered: true,
+          clipped: false,
+        },
+        {
+          sourceIndex: 2,
+          objectId: 13,
+          shape: "ellipse",
+          representation: "geometry-outline",
+          rendered: true,
+          clipped: false,
+        },
+      ],
+    });
+  });
+
+  it.each([
     {
       name: "tile",
       object: {

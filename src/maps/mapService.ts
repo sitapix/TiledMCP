@@ -9809,19 +9809,6 @@ function prepareNativePreviewObjectDebug(
       objectId,
       mapPath,
     );
-    if (shape === "ellipse" || shape === "capsule") {
-      throw new TiledMcpError(
-        "UNSUPPORTED_RENDER_FEATURE",
-        `Native object debug overlay does not support ${shape} objects.`,
-        {
-          path: mapPath,
-          objectId,
-          layerId: location.layer.id,
-          feature: `object-debug-${shape}`,
-        },
-      );
-    }
-
     const common = {
       sourceIndex,
       objectId,
@@ -9833,13 +9820,23 @@ function prepareNativePreviewObjectDebug(
         0,
       ),
     };
-    if (shape === "rectangle") {
+    if (
+      shape === "rectangle" ||
+      shape === "ellipse" ||
+      shape === "capsule"
+    ) {
       selected.push({
         ...common,
         shape,
         representation: "geometry-outline",
-        width: location.object.width as number,
-        height: location.object.height as number,
+        width: displayNumber(
+          location.object.width,
+          0,
+        ),
+        height: displayNumber(
+          location.object.height,
+          0,
+        ),
       });
       continue;
     }

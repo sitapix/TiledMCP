@@ -185,9 +185,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:279768dc1bdcb90ec63790c702c0aee72e5d3003d2bae3151dcb9b613deae1af",
+    "revision": "sha256:c117941597326db20a84556f3b2e83df033f6b7c75d77defba348a716ab2c6cd",
     "serverVersion": "0.0.1",
-    "size": 59540
+    "size": 60313
   },
   "annotations": {
     "audience": [
@@ -199,7 +199,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 59540,
+  "size": 60313,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -207,7 +207,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3767 UTF-8 bytes, revision `sha256:a692dfd607422c02e5c36e4094b41f48db8c067e3392135404b151c093c9cee3`.
 
-Content contract: `text`, 59540 UTF-8 bytes, revision `sha256:279768dc1bdcb90ec63790c702c0aee72e5d3003d2bae3151dcb9b613deae1af`.
+Content contract: `text`, 60313 UTF-8 bytes, revision `sha256:c117941597326db20a84556f3b2e83df033f6b7c75d77defba348a716ab2c6cd`.
 
 Resource templates: none.
 
@@ -8622,6 +8622,14 @@ Output schema:
                   "const": 128,
                   "type": "number"
                 },
+                "maxNativePreviewObjectCurveSegments": {
+                  "const": 4096,
+                  "type": "number"
+                },
+                "maxNativePreviewObjectCurveSegmentsAggregate": {
+                  "const": 65536,
+                  "type": "number"
+                },
                 "maxNativePreviewObjects": {
                   "const": 64,
                   "type": "number"
@@ -8955,6 +8963,8 @@ Output schema:
                 "maxNativePreviewScale",
                 "maxNativePreviewHighlights",
                 "maxNativePreviewObjects",
+                "maxNativePreviewObjectCurveSegments",
+                "maxNativePreviewObjectCurveSegmentsAggregate",
                 "maxNativePreviewRegionCells",
                 "maxNativePreviewLayers",
                 "maxNativePreviewTileDraws",
@@ -9250,6 +9260,69 @@ Output schema:
                       ],
                       "type": "object"
                     },
+                    "curveTessellation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "algorithm": {
+                          "const": "uniform-angle-output-sagitta-v1",
+                          "type": "string"
+                        },
+                        "capsuleConstruction": {
+                          "const": "two-semicircles-plus-two-straight-segments",
+                          "type": "string"
+                        },
+                        "degenerateExtent": {
+                          "const": "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+                          "type": "string"
+                        },
+                        "errorSpace": {
+                          "const": "continuous-output-before-quantization",
+                          "type": "string"
+                        },
+                        "maximumAggregateSegments": {
+                          "const": 65536,
+                          "type": "number"
+                        },
+                        "maximumChordErrorPixels": {
+                          "const": 0.25,
+                          "type": "number"
+                        },
+                        "maximumSegmentsPerObject": {
+                          "const": 4096,
+                          "type": "number"
+                        },
+                        "minimumSegments": {
+                          "const": 12,
+                          "type": "number"
+                        },
+                        "offscreenPolicy": {
+                          "const": "conservative-rotated-bounds-skip-before-tessellation",
+                          "type": "string"
+                        },
+                        "overflowPolicy": {
+                          "const": "reject-whole-preview",
+                          "type": "string"
+                        },
+                        "segmentMultiple": {
+                          "const": 4,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "algorithm",
+                        "maximumChordErrorPixels",
+                        "minimumSegments",
+                        "maximumSegmentsPerObject",
+                        "maximumAggregateSegments",
+                        "segmentMultiple",
+                        "errorSpace",
+                        "overflowPolicy",
+                        "offscreenPolicy",
+                        "capsuleConstruction",
+                        "degenerateExtent"
+                      ],
+                      "type": "object"
+                    },
                     "drawOrder": {
                       "const": "after-highlights-and-grid-before-coordinates",
                       "type": "string"
@@ -9269,7 +9342,7 @@ Output schema:
                           "type": "string"
                         },
                         {
-                          "const": "ellipse-capsule-and-tile-objects-unsupported",
+                          "const": "tile-objects-unsupported",
                           "type": "string"
                         },
                         {
@@ -9304,7 +9377,7 @@ Output schema:
                       "type": "string"
                     },
                     "profile": {
-                      "const": "explicit-basic-object-geometry-v1",
+                      "const": "explicit-basic-object-geometry-v2",
                       "type": "string"
                     },
                     "quantization": {
@@ -9344,6 +9417,14 @@ Output schema:
                         },
                         {
                           "const": "point",
+                          "type": "string"
+                        },
+                        {
+                          "const": "ellipse",
+                          "type": "string"
+                        },
+                        {
+                          "const": "capsule",
                           "type": "string"
                         },
                         {
@@ -9387,6 +9468,7 @@ Output schema:
                     "visibilityPolicy",
                     "drawOrder",
                     "quantization",
+                    "curveTessellation",
                     "workBudget",
                     "limitations"
                   ],
@@ -25798,7 +25880,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. Object debugging supports rectangles, points, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
+Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
 
 Annotations:
 
@@ -26408,6 +26490,69 @@ Output schema:
                       ],
                       "type": "object"
                     },
+                    "curveTessellation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "algorithm": {
+                          "const": "uniform-angle-output-sagitta-v1",
+                          "type": "string"
+                        },
+                        "capsuleConstruction": {
+                          "const": "two-semicircles-plus-two-straight-segments",
+                          "type": "string"
+                        },
+                        "degenerateExtent": {
+                          "const": "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+                          "type": "string"
+                        },
+                        "errorSpace": {
+                          "const": "continuous-output-before-quantization",
+                          "type": "string"
+                        },
+                        "maximumAggregateSegments": {
+                          "const": 65536,
+                          "type": "number"
+                        },
+                        "maximumChordErrorPixels": {
+                          "const": 0.25,
+                          "type": "number"
+                        },
+                        "maximumSegmentsPerObject": {
+                          "const": 4096,
+                          "type": "number"
+                        },
+                        "minimumSegments": {
+                          "const": 12,
+                          "type": "number"
+                        },
+                        "offscreenPolicy": {
+                          "const": "conservative-rotated-bounds-skip-before-tessellation",
+                          "type": "string"
+                        },
+                        "overflowPolicy": {
+                          "const": "reject-whole-preview",
+                          "type": "string"
+                        },
+                        "segmentMultiple": {
+                          "const": 4,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "algorithm",
+                        "maximumChordErrorPixels",
+                        "minimumSegments",
+                        "maximumSegmentsPerObject",
+                        "maximumAggregateSegments",
+                        "segmentMultiple",
+                        "errorSpace",
+                        "overflowPolicy",
+                        "offscreenPolicy",
+                        "capsuleConstruction",
+                        "degenerateExtent"
+                      ],
+                      "type": "object"
+                    },
                     "drawOrder": {
                       "const": "after-highlights-and-grid-before-coordinates",
                       "type": "string"
@@ -26443,6 +26588,8 @@ Output schema:
                             "enum": [
                               "rectangle",
                               "point",
+                              "ellipse",
+                              "capsule",
                               "polygon",
                               "polyline",
                               "text"
@@ -26478,7 +26625,7 @@ Output schema:
                       "type": "string"
                     },
                     "profile": {
-                      "const": "explicit-basic-object-geometry-v1",
+                      "const": "explicit-basic-object-geometry-v2",
                       "type": "string"
                     },
                     "quantization": {
@@ -26518,6 +26665,7 @@ Output schema:
                     "visibilityPolicy",
                     "drawOrder",
                     "quantization",
+                    "curveTessellation",
                     "selectedObjectCount",
                     "renderedObjectCount",
                     "entries"

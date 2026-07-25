@@ -78,7 +78,7 @@ function validResult(): Record<string, unknown> {
       },
       objectDebug: {
         profile:
-          "explicit-basic-object-geometry-v1",
+          "explicit-basic-object-geometry-v2",
         style: "geometry-cyan-v1",
         color: {
           r: 34,
@@ -95,6 +95,24 @@ function validResult(): Record<string, unknown> {
           "after-highlights-and-grid-before-coordinates",
         quantization:
           "round-nearest-output-pixel",
+        curveTessellation: {
+          algorithm:
+            "uniform-angle-output-sagitta-v1",
+          maximumChordErrorPixels: 0.25,
+          minimumSegments: 12,
+          maximumSegmentsPerObject: 4_096,
+          maximumAggregateSegments: 65_536,
+          segmentMultiple: 4,
+          errorSpace:
+            "continuous-output-before-quantization",
+          overflowPolicy: "reject-whole-preview",
+          offscreenPolicy:
+            "conservative-rotated-bounds-skip-before-tessellation",
+          capsuleConstruction:
+            "two-semicircles-plus-two-straight-segments",
+          degenerateExtent:
+            "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+        },
         selectedObjectCount: 2,
         renderedObjectCount: 1,
         entries: [
@@ -164,6 +182,23 @@ describe("native preview object debug output contract", () => {
     ).toBe(true);
   });
 
+  it.each(["ellipse", "capsule"] as const)(
+    "accepts a %s geometry-outline entry",
+    (shape) => {
+      const output = validOutput();
+      const first = entriesOf(output)[0];
+      if (first === undefined) {
+        throw new Error("Missing object debug entry.");
+      }
+      first.shape = shape;
+      expect(
+        nativePreviewToolOutputSchema.safeParse(
+          output,
+        ).success,
+      ).toBe(true);
+    },
+  );
+
   it.each([
     {
       name: "object debug extension field",
@@ -185,6 +220,30 @@ describe("native preview object debug output contract", () => {
       mutate(output: Record<string, unknown>) {
         objectDebugOf(output).profile =
           "other-profile";
+      },
+    },
+    {
+      name: "fixed curve tessellation",
+      mutate(output: Record<string, unknown>) {
+        const curve =
+          objectDebugOf(output)
+            .curveTessellation as Record<
+            string,
+            unknown
+          >;
+        curve.maximumChordErrorPixels = 1;
+      },
+    },
+    {
+      name: "curve tessellation extension field",
+      mutate(output: Record<string, unknown>) {
+        const curve =
+          objectDebugOf(output)
+            .curveTessellation as Record<
+            string,
+            unknown
+          >;
+        curve.extra = true;
       },
     },
     {
@@ -393,6 +452,8 @@ describe("native preview object debug server contract", () => {
       supportedShapes: [
         "rectangle",
         "point",
+        "ellipse",
+        "capsule",
         "polygon",
         "polyline",
         "text",
@@ -402,7 +463,7 @@ describe("native preview object debug server contract", () => {
         "text-box-only",
       ],
       profile:
-        "explicit-basic-object-geometry-v1",
+        "explicit-basic-object-geometry-v2",
       style: "geometry-cyan-v1",
       color: {
         r: 34,
@@ -419,11 +480,29 @@ describe("native preview object debug server contract", () => {
         "after-highlights-and-grid-before-coordinates",
       quantization:
         "round-nearest-output-pixel",
+      curveTessellation: {
+        algorithm:
+          "uniform-angle-output-sagitta-v1",
+        maximumChordErrorPixels: 0.25,
+        minimumSegments: 12,
+        maximumSegmentsPerObject: 4_096,
+        maximumAggregateSegments: 65_536,
+        segmentMultiple: 4,
+        errorSpace:
+          "continuous-output-before-quantization",
+        overflowPolicy: "reject-whole-preview",
+        offscreenPolicy:
+          "conservative-rotated-bounds-skip-before-tessellation",
+        capsuleConstruction:
+          "two-semicircles-plus-two-straight-segments",
+        degenerateExtent:
+          "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+      },
       workBudget:
         "included-in-native-preview-pixel-blend-limit",
       limitations: [
         "explicit-selection-only",
-        "ellipse-capsule-and-tile-objects-unsupported",
+        "tile-objects-unsupported",
         "text-box-only-no-glyph-rendering",
         "template-objects-unsupported",
         "non-default-selected-layer-or-ancestor-positioning-unsupported",
@@ -433,6 +512,12 @@ describe("native preview object debug server contract", () => {
       capabilities.limits
         .maxNativePreviewObjects,
     ).toBe(64);
+    expect(capabilities.limits).toMatchObject({
+      maxNativePreviewObjectCurveSegments:
+        4_096,
+      maxNativePreviewObjectCurveSegmentsAggregate:
+        65_536,
+    });
   });
 
   it("accepts one through sixty-four unique positive safe object IDs", () => {

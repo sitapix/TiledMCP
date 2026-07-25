@@ -97,7 +97,7 @@ function validOutput(): Record<string, unknown> {
         },
         objectDebug: {
           profile:
-            "explicit-basic-object-geometry-v1",
+            "explicit-basic-object-geometry-v2",
           style: "geometry-cyan-v1",
           color: {
             r: 34,
@@ -114,6 +114,25 @@ function validOutput(): Record<string, unknown> {
             "after-highlights-and-grid-before-coordinates",
           quantization:
             "round-nearest-output-pixel",
+          curveTessellation: {
+            algorithm:
+              "uniform-angle-output-sagitta-v1",
+            maximumChordErrorPixels: 0.25,
+            minimumSegments: 12,
+            maximumSegmentsPerObject: 4_096,
+            maximumAggregateSegments: 65_536,
+            segmentMultiple: 4,
+            errorSpace:
+              "continuous-output-before-quantization",
+            overflowPolicy:
+              "reject-whole-preview",
+            offscreenPolicy:
+              "conservative-rotated-bounds-skip-before-tessellation",
+            capsuleConstruction:
+              "two-semicircles-plus-two-straight-segments",
+            degenerateExtent:
+              "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+          },
           selectedObjectCount: 0,
           renderedObjectCount: 0,
           entries: [],

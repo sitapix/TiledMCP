@@ -236,24 +236,37 @@ and zero. Highlight work shares the native preview pixel-blend limit.
 
 \`overlays.objectIds\` is strict, ordered, unique, all-or-error, and limited to
 64 positive safe IDs. The fixed
-\`explicit-basic-object-geometry-v1\` overlay draws rectangle, point, polygon,
-and open polyline geometry in opaque cyan with a one-pixel stroke and 5-pixel
-origin crosshair. Text objects render only their rotated layout box, never
-glyphs. Coordinates are map pixels: local path points rotate clockwise around
-the object's \`x/y\` anchor before scale and region cropping. Fully offscreen
-objects remain in ordered metadata as
+\`explicit-basic-object-geometry-v2\` overlay draws rectangle, point, ellipse,
+Tiled 1.12 capsule, polygon, and open polyline geometry in opaque cyan with a
+one-pixel stroke and 5-pixel origin crosshair. Text objects render only their
+rotated layout box, never glyphs. Ellipses use their bounds. Capsules use
+\`min(width,height)/2\` radii, two semicircles, and two straight sides. A single
+zero extent becomes a bounds line; a double-zero curve becomes an
+anchor-centered 20-map-pixel circle.
+
+Curve tessellation uses uniform angles in continuous output space with at most
+0.25 pixels of chord error, at least 12 segments rounded to a multiple of four,
+at most 4096 segments per object, and at most 65536 across the selection. A
+conservative rotated-bounds check skips fully offscreen curves before
+tessellation; any remaining segment-budget overflow rejects the whole preview
+without reducing precision. The closed \`curveTessellation\` result and
+capability fields report this policy exactly.
+
+Coordinates are map pixels: local path points rotate clockwise around the
+object's \`x/y\` anchor before scale and region cropping. Fully offscreen objects
+remain in ordered metadata as
 \`rendered:false, clipped:true\`; the service never drops them silently.
 The debug representation includes both the geometry/text-box stroke and origin
 marker: \`rendered\` means at least one pixel from either was written inside the
 content rectangle, while \`clipped\` means any segment or marker arm was partly
 or wholly clipped. Both flags can therefore be true.
 Explicit debug selection ignores object/layer visibility and opacity, as
-reported by \`visibilityPolicy\`. It rejects ellipse, capsule, tile objects,
-templates, and selected layer/group positioning with non-default x/y, offset,
-or parallax. Selected path geometry is capped at 8192 points, and clipped
-stroke work shares the native preview pixel-work limit. Use
-\`tiled_render_map\` or Tiled for full object-layer, font, tile-object, curve,
-and collision rendering.
+reported by \`visibilityPolicy\`. It rejects tile objects, templates, and
+selected layer/group positioning with non-default x/y, offset, or parallax.
+Selected path geometry is capped at 8192 points, and clipped stroke work shares
+the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
+object-layer, font, tile-object, antialiased curve styling, and collision
+rendering.
 
 ## Attach an existing tileset safely
 
@@ -425,8 +438,8 @@ custom properties, vendor fields, tile objects, or templates. The registry is
 layers as its base image and reports visible object layers as omitted, but an
 explicit \`overlays.objectIds\` selection can verify supported geometry and
 text layout boxes. Use the optional rasterizer or Tiled 1.12.2 to inspect font
-substitution, wrapping, glyph layout, curves, tile objects, and complete layer
-rendering.
+substitution, wrapping, glyph layout, tile objects, antialiased curve styling,
+and complete layer rendering.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
