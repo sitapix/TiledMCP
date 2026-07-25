@@ -90,8 +90,10 @@ tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UT
 PNG 元数据，不保留冻结前的 legacy aliases。实际 MCP discovery 现在会生成并提交
 双 profile discovery contract、101-code v1 application-error contract 和人类参考文档，
 并校验手写维护的每工具 schema-valid 调用示例；测试前会做 byte-level drift check。
-asset identity v1 已经落地并通过 `tiled_get_capabilities.assetIdentityContract`
-公布精确边界；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
+asset identity contract v2 已经落地并通过
+`tiled_get_capabilities.assetIdentityContract` 公布精确边界：read/preview 工具的
+身份解析零副作用（`readOnlyToolEffect:"none"`），registry 与锁只由 apply 写路径
+创建/更新，纯只读会话不留 rename 证据；它不把内容相同视为身份，也不承诺跨文件系统 move。尚未被 registry 观察的
 hardlink 在旧路径删除后与 rename 的最终状态不可区分，可能继承旧 ID。
 `tiled_create_map` 已正式冻结为唯一 direct additive no-preview 例外：只创建此前不存在的
 有限正交 TMJ，已有目标即使 bytes 相同也返回 `FILE_ALREADY_EXISTS`；精确边界由
@@ -695,8 +697,9 @@ points 相对锚点自动跟随，**从不删除**；越界对象原样保留，
 `dependencyRevisions`，再调用 `tiled_add_tileset_to_map`，传入 `mapPath`、
 `tilesetPath`、`expectedMapRevision`、`expectedDependencyRevisions`，以及可选的
 `expectedTilesetRevision`。这个工具只验证目标 atlas、分配 `firstgid` 并返回
-`changeSetId`，不会修改 TMJ/TSJ/图片等项目资产；身份发现可能更新 capability 已声明的
-`.tiledmcp` 内部 safety metadata。客户端批准后仍须调用 `tiled_apply_change_set`。提交成功后
+`changeSetId`，不会修改 TMJ/TSJ/图片等项目资产，也不写任何 `.tiledmcp` 内部状态
+（asset identity contract v2 起，read/preview 路径的身份解析无锁且零副作用，
+持久化只发生在 apply）。客户端批准后仍须调用 `tiled_apply_change_set`。提交成功后
 重新调用 `tiled_get_map_summary`，从响应取得新挂载 tileset 的 opaque `assetId`，不要从
 路径自行推导。该流程只增加 tileset 引用，不创建图层。
 

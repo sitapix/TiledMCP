@@ -163,6 +163,11 @@ describe("MapService", () => {
         ],
       );
 
+    await persistAssetIdentities(
+      harness.service,
+      before,
+    );
+
     const renamedPath = "tiles/ground.tsj";
     await rename(
       join(harness.root, TILESET_PATH),
@@ -224,6 +229,10 @@ describe("MapService", () => {
       before.tilesets as SummaryTileset[]
     )[0];
     expect(beforeTileset).toBeDefined();
+    await persistAssetIdentities(
+      harness.service,
+      before,
+    );
 
     const originalPath =
       "tiles/original-after-snapshot.tsj";
@@ -308,7 +317,9 @@ describe("MapService", () => {
       join(harness.root, TILESET_PATH),
       { bigint: true },
     );
-    const registryAfterRetry = JSON.parse(
+    // The successful retry is a read and must not refresh the persisted
+    // identity; only the following write-path apply does.
+    const registryAfterRead = JSON.parse(
       await readFile(
         join(
           harness.root,
@@ -322,7 +333,24 @@ describe("MapService", () => {
       }>;
     };
     expect(
-      registryAfterRetry.entries[0]?.identity.inode,
+      registryAfterRead.entries[0]?.identity.inode,
+    ).toBe(originalStat.ino.toString());
+    await persistAssetIdentities(retried, after);
+    const registryAfterWrite = JSON.parse(
+      await readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
+        "utf8",
+      ),
+    ) as {
+      entries: Array<{
+        identity: { inode: string };
+      }>;
+    };
+    expect(
+      registryAfterWrite.entries[0]?.identity.inode,
     ).toBe(replacementStat.ino.toString());
   });
 
@@ -462,12 +490,14 @@ describe("MapService", () => {
       before.tilesets as SummaryTileset[]
     ).find(({ path }) => path === otherPath);
     expect(otherBinding).toBeDefined();
-    const registryBefore = await readFile(
-      join(
-        harness.root,
-        ASSET_REGISTRY_RELATIVE_PATH,
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
       ),
-    );
+    ).rejects.toMatchObject({ code: "ENOENT" });
 
     await rm(
       join(
@@ -525,14 +555,14 @@ describe("MapService", () => {
           expect.stringMatching(/^sha256:/),
       },
     });
-    expect(
-      await readFile(
+    await expect(
+      readFile(
         join(
           harness.root,
           ASSET_REGISTRY_RELATIVE_PATH,
         ),
       ),
-    ).toEqual(registryBefore);
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reports the aggregate dependency limit before diffing an unread suffix", async () => {
@@ -571,12 +601,14 @@ describe("MapService", () => {
     );
     const before =
       await harness.service.getSummary(MAP_PATH);
-    const registryBefore = await readFile(
-      join(
-        harness.root,
-        ASSET_REGISTRY_RELATIVE_PATH,
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
       ),
-    );
+    ).rejects.toMatchObject({ code: "ENOENT" });
     const resolver =
       await ProjectPathResolver.create(
         harness.root,
@@ -627,14 +659,14 @@ describe("MapService", () => {
       TILESET_PATH,
       otherPath,
     ]);
-    expect(
-      await readFile(
+    await expect(
+      readFile(
         join(
           harness.root,
           ASSET_REGISTRY_RELATIVE_PATH,
         ),
       ),
-    ).toEqual(registryBefore);
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reports a captured stale dependency before the aggregate dependency limit", async () => {
@@ -666,12 +698,14 @@ describe("MapService", () => {
       before.tilesets as SummaryTileset[]
     ).find(({ path }) => path === otherPath);
     expect(otherBinding).toBeDefined();
-    const registryBefore = await readFile(
-      join(
-        harness.root,
-        ASSET_REGISTRY_RELATIVE_PATH,
+    await expect(
+      readFile(
+        join(
+          harness.root,
+          ASSET_REGISTRY_RELATIVE_PATH,
+        ),
       ),
-    );
+    ).rejects.toMatchObject({ code: "ENOENT" });
     other.vendorExtension = {
       changedAfterSnapshot: true,
     };
@@ -731,14 +765,14 @@ describe("MapService", () => {
           expect.stringMatching(/^sha256:/),
       },
     });
-    expect(
-      await readFile(
+    await expect(
+      readFile(
         join(
           harness.root,
           ASSET_REGISTRY_RELATIVE_PATH,
         ),
       ),
-    ).toEqual(registryBefore);
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rolls back identity allocation when validated tileset GID ranges overlap", async () => {
@@ -3909,6 +3943,29 @@ async function createHarness(): Promise<Harness> {
   const resolver = await ProjectPathResolver.create(root);
   const store = new DocumentStore(resolver);
   return { root, store, service: new MapService(resolver, store) };
+}
+
+async function persistAssetIdentities(
+  service: MapService,
+  summary: Record<string, unknown>,
+): Promise<void> {
+  // Identity evidence persists only on write-tool paths; a no-op apply
+  // records the currently observed identities without changing any bytes.
+  const plan = await service.planEdits(
+    MAP_PATH,
+    summary.revision as string,
+    summary.dependencyRevisions as Record<
+      string,
+      string
+    >,
+    [
+      {
+        type: "updateMap",
+        patch: { renderOrder: "right-down" },
+      },
+    ],
+  );
+  await service.applyEdits(plan);
 }
 
 function baseMap(): JsonObject {

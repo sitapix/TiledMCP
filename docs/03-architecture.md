@@ -519,13 +519,16 @@ MCP Resource 暴露。v1 不把这扩张为断电 durability 承诺：首次创�
 提供显式 rebind，或者把文件移动、引用更新和 registry 迁移纳入第 8.3 节的跨文件 WAL；
 不能用 content hash 启发式冒充身份。
 
-server factory 在注册工具前加载并校验现有 registry。首次发现或 file identity 刷新可能
-由 read/preview handler 更新 `.tiledmcp`，但不会修改 TMJ/TSJ/图片；因此 capability 的
-`readOnlyToolEffect` 明确写为
-`may-update-project-internal-safety-metadata-only`，同时覆盖 identity registry 与短暂的
-内部 coordination lock metadata。这里把这些文件当作 server-internal safety/cache
-state：`readOnlyHint:true` 描述用户项目资产与外部世界不被修改，不代表内部 metadata
-永远无写入。目标项目应忽略 `.tiledmcp`；本仓库
+server factory 在注册工具前加载并校验现有 registry。asset identity contract v2 起，
+read/preview handler 的解析是**无锁、无副作用**的：直接读盘 + 内存内按确定性路径
+哈希分配/按既有 file identity 采认 rename，不写 registry、不建 lock 文件；capability
+的 `readOnlyToolEffect` 因此为 `"none"`，`identityPersistenceBoundary` 固定为
+`write-tool-paths-only-reads-and-previews-resolve-lock-free`。身份证据的持久化只发生
+在 `tiled_apply_change_set` 的 apply 路径（apply 侧重放解析时在锁内落盘）；
+确定性首次分配保证 read/preview 分配的 ID 与随后的持久化分配一致，plan 中 pin 的
+prospective assetId 由 apply 的 stableJson 复核兜底。纯只读会话因此不留 rename
+证据——这是既有 best-effort rename continuity 的显式收窄：证据来自最近一次包含
+写入的会话。`readOnlyHint:true` 的 read/preview 工具由此严格不修改项目目录。目标项目应忽略 `.tiledmcp`；本仓库
 已在自己的 `.gitignore` 中排除它，但服务器不会改任意目标项目的 ignore 规则。复制或提交
 registry 会携带已有 ID，却不属于受支持的跨 clone 同步机制；删除/丢失它会丢失 rename
 历史并可能重新分配 ID。启动时损坏仍是 fatal；server 运行期观察到

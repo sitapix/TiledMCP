@@ -188,9 +188,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed",
+    "revision": "sha256:0fca2023bc234996e15336c76fa668442085ae1a078df050fbe677e68a2a1364",
     "serverVersion": "0.0.1",
-    "size": 67022
+    "size": 67171
   },
   "annotations": {
     "audience": [
@@ -202,7 +202,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 67022,
+  "size": 67171,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -210,7 +210,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3875 UTF-8 bytes, revision `sha256:8e6b3a69b8e676125165bdd34e16c6bb712d44f8313f6f397cd6c31bf866146f`.
 
-Content contract: `text`, 67022 UTF-8 bytes, revision `sha256:494edd0c88dcfc6ebdc0c21f573fe70fb48042e4dfb89c6173e3085c9831ffed`.
+Content contract: `text`, 67171 UTF-8 bytes, revision `sha256:0fca2023bc234996e15336c76fa668442085ae1a078df050fbe677e68a2a1364`.
 
 Resource templates: none.
 
@@ -222,7 +222,7 @@ Prompts: none.
 
 Availability: `core`
 
-Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. Asset discovery may update project-internal safety metadata.
+Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets.
 
 Annotations:
 
@@ -782,7 +782,7 @@ Output schema:
 
 Availability: `core`
 
-Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included. Asset discovery may update project-internal safety metadata.
+Returns bounded whole-map tile frequency, layer density, transform, used-tileset, and unused-local-ID summaries. Hidden layers and tile objects are included.
 
 Annotations:
 
@@ -1675,7 +1675,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins.
+Applies one previously previewed map edit, tileset edit, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
 
 Annotations:
 
@@ -4156,7 +4156,7 @@ Output schema:
 
 Availability: `core`
 
-Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without modifying project assets. Asset discovery may update project-internal safety metadata. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.
+Plans one empty tile, object, image or group layer at a root/group insertion index, pins map/dependency revisions, and returns an expiring change set without modifying project assets. Image layers require imagePath and may pin expectedImageRevision; other layer types reject both image fields.
 
 Annotations:
 
@@ -5682,7 +5682,7 @@ Output schema:
 
 Availability: `core`
 
-Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID. Asset discovery may update project-internal safety metadata.
+Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.
 
 Annotations:
 
@@ -6884,6 +6884,10 @@ Output schema:
                   "const": "asset_<24-lowercase-hex>",
                   "type": "string"
                 },
+                "identityPersistenceBoundary": {
+                  "const": "write-tool-paths-only-reads-and-previews-resolve-lock-free",
+                  "type": "string"
+                },
                 "initialAssignment": {
                   "const": "legacy-path-hash-compatible",
                   "type": "string"
@@ -6901,7 +6905,7 @@ Output schema:
                   "type": "string"
                 },
                 "readOnlyToolEffect": {
-                  "const": "may-update-project-internal-safety-metadata-only",
+                  "const": "none",
                   "type": "string"
                 },
                 "registeredPathSwap": {
@@ -6953,7 +6957,7 @@ Output schema:
                   "type": "string"
                 },
                 "version": {
-                  "const": 1,
+                  "const": 2,
                   "type": "number"
                 },
                 "weakIdentityEvidence": {
@@ -6986,7 +6990,8 @@ Output schema:
                 "mutationLimitPolicy",
                 "registryLossPolicy",
                 "crashDurability",
-                "readOnlyToolEffect"
+                "readOnlyToolEffect",
+                "identityPersistenceBoundary"
               ],
               "type": "object"
             },
@@ -11790,7 +11795,7 @@ Output schema:
 
 Availability: `core`
 
-Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Asset discovery may update project-internal safety metadata.
+Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.
 
 Annotations:
 
@@ -12343,7 +12348,7 @@ Output schema:
 
 Availability: `core`
 
-Returns one supported object with complete shape-specific geometry and effective text styling. Asset discovery may update project-internal safety metadata.
+Returns one supported object with complete shape-specific geometry and effective text styling.
 
 Annotations:
 
@@ -13356,7 +13361,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Asset discovery may update project-internal safety metadata.
+Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs.
 
 Annotations:
 
@@ -13800,7 +13805,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews. Asset discovery may update project-internal safety metadata.
+Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews.
 
 Annotations:
 
@@ -15563,7 +15568,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded list of objects from all object layers or one selected object layer. Asset discovery may update project-internal safety metadata.
+Returns a bounded list of objects from all object layers or one selected object layer.
 
 Annotations:
 
@@ -17753,7 +17758,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions. Asset discovery may update project-internal safety metadata.
+Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
 
 Annotations:
 
@@ -26597,7 +26602,7 @@ Output schema:
 
 Availability: `tmxrasterizer-version-probe`
 
-Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata. Asset discovery may update project-internal safety metadata.
+Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.
 
 Annotations:
 
@@ -26983,7 +26988,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. Asset discovery may update project-internal safety metadata.
+Renders a bounded finite orthogonal TMJ region without invoking TmxRasterizer. The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
 
 Annotations:
 
@@ -28269,7 +28274,7 @@ Output schema:
 
 Availability: `core`
 
-Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated. Asset discovery may update project-internal safety metadata.
+Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated.
 
 Annotations:
 
@@ -28871,7 +28876,7 @@ Output schema:
 
 Availability: `core`
 
-Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID. Asset discovery may update project-internal safety metadata.
+Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID.
 
 Annotations:
 
@@ -29449,7 +29454,7 @@ Output schema:
 
 Availability: `core`
 
-Validates bounded probability, class, and animation updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Tile geometry, the atlas image, GID layout, and referencing maps are never touched. Asset discovery may update project-internal safety metadata.
+Validates bounded probability, class, and animation updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Tile geometry, the atlas image, GID layout, and referencing maps are never touched.
 
 Annotations:
 
@@ -30242,7 +30247,7 @@ Output schema:
 
 Availability: `core`
 
-Performs structural and MVP-profile validation without modifying the map, tilesets, or images. Asset discovery may update only the project-internal safety metadata advertised by capabilities.
+Performs structural and MVP-profile validation without modifying the map, tilesets, or images.
 
 Annotations:
 

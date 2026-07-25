@@ -287,6 +287,12 @@ interface EditableContextRevisionGuards {
     assetId: string;
     expectedRevision: string;
   };
+  /**
+   * Only write-path callers persist asset-identity observations; read and
+   * preview tool paths default to lock-free, side-effect-free resolution so
+   * their readOnlyHint stays strictly true.
+   */
+  persistIdentity?: boolean;
 }
 
 interface TilesetBinding {
@@ -2038,7 +2044,10 @@ export class MapService {
     assertTilesetEditPlan(plan);
     const context = await this.loadEditableContext(
       plan.mapPath,
-      { expectedMapRevision: plan.mapRevision },
+      {
+        expectedMapRevision: plan.mapRevision,
+        persistIdentity: true,
+      },
     );
     const binding = this.requireTilesetBinding(
       context,
@@ -2305,6 +2314,7 @@ export class MapService {
     const context = await this.loadEditableContext(plan.mapPath, {
       expectedMapRevision: plan.baseRevision,
       expectedDependencyRevisions: plan.dependencyRevisions,
+      persistIdentity: true,
     });
     assertDependencyRevisions(plan.dependencyRevisions, context.dependencyRevisions);
 
@@ -2353,6 +2363,7 @@ export class MapService {
         plannedOperation.tilesetPath,
         plannedOperation.tilesetRevision,
         plannedOperation.assetId,
+        true,
       );
       assertDependencyRevisions(
         plan.prospectiveDependencyRevisions ?? {},
@@ -2392,6 +2403,7 @@ export class MapService {
           plannedOperation.image.path,
           plannedOperation.image.revision,
           plannedOperation.image.assetId,
+          true,
         );
         assertDependencyRevisions(
           plan.prospectiveDependencyRevisions ?? {},
@@ -2862,6 +2874,7 @@ export class MapService {
       expectArray(map.tilesets, `${loaded.path}.tilesets`),
       revisionGuards.selectedTileset,
       revisionGuards.expectedDependencyRevisions,
+      revisionGuards.persistIdentity === true,
     );
     const dependencyRevisions = Object.fromEntries(
       bindings.map((binding) => [binding.assetId, binding.revision]),
@@ -2883,6 +2896,7 @@ export class MapService {
       expectedRevision: string;
     },
     expectedDependencyRevisions?: Record<string, string>,
+    persistIdentity = false,
   ): Promise<TilesetBinding[]> {
     if (entries.length > MAX_TILESET_COUNT) {
       throw new TiledMcpError(
@@ -3323,6 +3337,7 @@ export class MapService {
             }
           }
         },
+        { persistIdentity },
       );
 
     for (
@@ -3365,6 +3380,7 @@ export class MapService {
     tilesetPath: string,
     expectedRevision?: string,
     expectedAssetId?: string,
+    persistIdentity = false,
   ): Promise<ProspectiveTilesetBinding> {
     const normalizedPath = this.resolver.normalize(tilesetPath);
     if (posix.extname(normalizedPath).toLowerCase() !== ".tsj") {
@@ -3453,11 +3469,14 @@ export class MapService {
       startTileId: 0,
       limit: 1,
     });
-    const assetId = await this.assetRegistry.resolve({
-      kind: "external-tileset",
-      path: normalizedPath,
-      identity: snapshot.identity,
-    });
+    const assetId = await this.assetRegistry.resolve(
+      {
+        kind: "external-tileset",
+        path: normalizedPath,
+        identity: snapshot.identity,
+      },
+      { persistIdentity },
+    );
     return {
       assetId,
       path: normalizedPath,
@@ -3471,6 +3490,7 @@ export class MapService {
     imagePath: string,
     expectedRevision?: string,
     expectedAssetId?: string,
+    persistIdentity = false,
   ): Promise<ProspectiveImageBinding> {
     const normalizedPath = this.resolver.normalize(imagePath);
     const snapshot = await readImageFileSnapshot(
@@ -3507,11 +3527,14 @@ export class MapService {
         maxInputEdge: MAX_TILESET_INPUT_EDGE,
       },
     });
-    const assetId = await this.assetRegistry.resolve({
-      kind: "image-layer",
-      path: normalizedPath,
-      identity: snapshot.identity,
-    });
+    const assetId = await this.assetRegistry.resolve(
+      {
+        kind: "image-layer",
+        path: normalizedPath,
+        identity: snapshot.identity,
+      },
+      { persistIdentity },
+    );
     return {
       assetId,
       path: snapshot.path,

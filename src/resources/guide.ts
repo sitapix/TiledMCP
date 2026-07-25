@@ -303,9 +303,11 @@ rendering.
 
 \`tiled_add_tileset_to_map\` prepares a proposal for attaching one existing
 project-local external atlas TSJ. Despite its name, it is preview-only and
-does not write the map, TSJ, or source image. Identity discovery and lock
-coordination may update the project-internal safety metadata described by
-\`assetIdentityContract.readOnlyToolEffect\`.
+writes nothing: identity resolution on read and preview paths is lock-free
+and side-effect-free, as advertised by
+\`assetIdentityContract.identityPersistenceBoundary\`. Asset-identity
+evidence is persisted only when \`tiled_apply_change_set\` commits a
+document edit.
 
 1. Call \`tiled_get_map_summary\` immediately before planning. Keep its exact
    map \`revision\` and complete \`dependencyRevisions\`.
@@ -904,10 +906,11 @@ operations. If it is missing or expired, re-read the map and preview a new
 proposal.
 
 \`tiled_preview_edits\` validates and stores a proposal but does not write the
-map, TSJs, or images. \`tiled_add_tileset_to_map\` and
-\`tiled_create_layer\` are also preview-only; these calls may update only the
-project-internal safety metadata advertised by
-\`assetIdentityContract.readOnlyToolEffect\`. \`removeTilesetFromMap\`,
+map, TSJs, or images. \`tiled_add_tileset_to_map\`, \`tiled_update_tile\`,
+and \`tiled_create_layer\` are also preview-only and, like every read tool,
+resolve asset identities without touching the project directory; identity
+metadata persists only when \`tiled_apply_change_set\` commits a document
+edit. \`removeTilesetFromMap\`,
 \`copyRegion\`, and \`resizeMap\` stay inside the generic preview tool and do
 not add standalone tools.
 \`tiled_apply_change_set\` is the write

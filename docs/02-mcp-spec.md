@@ -376,11 +376,12 @@ type ApplyResult = CommitResult & {
 | 删除、裁剪、覆盖导出、自动修复、快照恢复 | `false` | `true` | 按重复调用语义填写 | `false` |
 
 - annotations 是**工具级静态值**；若同一名字同时承担读/写、预览/提交或安全/破坏性分支，必须拆成独立工具。
-- 本项目把 `.tiledmcp` asset registry/locks 视为 server-internal safety/cache state：
-  `readOnlyHint:true` 表示不修改 TMJ/TSJ/图片等用户项目资产，也不触达外部世界；首次
-  identity discovery/refresh 与 lock coordination 仍可能更新该内部状态。客户端若把
-  任何本地 metadata 写入都视为环境 mutation，应同时读取
-  `assetIdentityContract.readOnlyToolEffect`，不能只依赖 annotation。
+- asset identity contract v2 起，`readOnlyHint:true` 的 read/preview 工具严格不写
+  项目目录：asset 解析走无锁、只读模式（确定性路径哈希分配 + 内存内 rename 采认），
+  registry 与 lock 文件只由 `tiled_apply_change_set` 的写路径创建/更新。
+  `assetIdentityContract.readOnlyToolEffect` 为 `"none"`，
+  `identityPersistenceBoundary` 声明该持久化边界；纯只读会话不留 rename 证据是
+  best-effort continuity 的显式收窄。
 - `tiled_preview_edits` 每次调用都会分配新的随机 `changeSetId` 并占用有界 registry，
   因而不是幂等调用；相同 plan 也不复用旧句柄，以避免 revision ABA 后误认历史批准。
 - `tiled_apply_change_set` 固定为 `{readOnlyHint:false, destructiveHint:true, idempotentHint:true, openWorldHint:false}`：即使某个 change set 实际无破坏性，也采取保守静态标注；重复提交同一 id 只返回第一次提交结果，不重复应用。

@@ -2609,6 +2609,7 @@ describe("createTiledMcpServer", () => {
         registryLossPolicy: string;
         crashDurability: string;
         readOnlyToolEffect: string;
+        identityPersistenceBoundary: string;
       };
       checkpointCapabilities: {
         automaticBeforeWrite: boolean;
@@ -3040,7 +3041,7 @@ describe("createTiledMcpServer", () => {
       },
       assetIdentityContract: {
         name: "tiled-mcp-asset-identity",
-        version: 1,
+        version: 2,
         idFormat:
           "asset_<24-lowercase-hex>",
         clientTreatment: "opaque",
@@ -3083,8 +3084,9 @@ describe("createTiledMcpServer", () => {
           "ids-may-be-reassigned",
         crashDurability:
           "not-guaranteed-first-internal-directory-parent-not-fsynced",
-        readOnlyToolEffect:
-          "may-update-project-internal-safety-metadata-only",
+        readOnlyToolEffect: "none",
+        identityPersistenceBoundary:
+          "write-tool-paths-only-reads-and-previews-resolve-lock-free",
       },
       checkpointCapabilities: {
         automaticBeforeWrite: true,

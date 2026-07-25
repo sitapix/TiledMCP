@@ -456,6 +456,9 @@ describe("MapService createLayer", () => {
       });
     const beforeOperation =
       requireCreateLayerOperation(beforePlan);
+    // Identity evidence persists only on write paths; applying the plan
+    // records the image identity so the rename below can be adopted.
+    await harness.service.applyEdits(beforePlan);
 
     const renamedPath = "images/renamed.png";
     await rename(

@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   stat,
@@ -190,6 +191,109 @@ describe("AssetRegistry", () => {
         ],
       }),
     );
+  });
+
+  it("resolves without persisting, locking or creating internal state in read-only mode", async () => {
+    await writeAsset(root, FIRST_PATH, "first");
+    const observation = await observationAt(
+      root,
+      "external-tileset",
+      FIRST_PATH,
+    );
+    const registry = new AssetRegistry(resolver);
+    const io = registry as unknown as {
+      writeToDisk: (
+        document: unknown,
+      ) => Promise<void>;
+    };
+    const originalWrite =
+      io.writeToDisk.bind(registry);
+    let writes = 0;
+    io.writeToDisk = async (document) => {
+      writes += 1;
+      await originalWrite(document);
+    };
+
+    const readOnlyId = await registry.resolve(
+      observation,
+      { persistIdentity: false },
+    );
+    expect(readOnlyId).toBe(
+      legacyAssetId("external-tileset", FIRST_PATH),
+    );
+    expect(writes).toBe(0);
+    await expect(
+      readFile(
+        join(
+          root,
+          ".tiledmcp",
+          "asset-registry.v1.json",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readdir(join(root, ".tiledmcp", "locks")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    // A later persisting resolution reproduces the same deterministic ID
+    // and records it durably.
+    const persistedId = await registry.resolve(
+      observation,
+    );
+    expect(persistedId).toBe(readOnlyId);
+    expect(writes).toBe(1);
+    expect(await readRegistry(root)).toEqual(
+      expect.objectContaining({
+        generation: 1,
+        entries: [
+          expect.objectContaining({
+            assetId: readOnlyId,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("adopts a registered rename in read-only mode without rewriting the entry", async () => {
+    await writeAsset(root, FIRST_PATH, "first");
+    const registry = new AssetRegistry(resolver);
+    const persistedId = await registry.resolve(
+      await observationAt(
+        root,
+        "external-tileset",
+        FIRST_PATH,
+      ),
+    );
+    const registryBefore = await readFile(
+      join(
+        root,
+        ".tiledmcp",
+        "asset-registry.v1.json",
+      ),
+    );
+    await rename(
+      join(root, FIRST_PATH),
+      join(root, SECOND_PATH),
+    );
+
+    const adoptedId = await registry.resolve(
+      await observationAt(
+        root,
+        "external-tileset",
+        SECOND_PATH,
+      ),
+      { persistIdentity: false },
+    );
+    expect(adoptedId).toBe(persistedId);
+    expect(
+      await readFile(
+        join(
+          root,
+          ".tiledmcp",
+          "asset-registry.v1.json",
+        ),
+      ),
+    ).toEqual(registryBefore);
   });
 
   it("does not commit a prepared batch when its synchronous check rejects", async () => {

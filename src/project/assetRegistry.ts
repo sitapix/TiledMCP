@@ -49,6 +49,15 @@ export type AssetIdentityKind =
   | "external-tileset"
   | "image-layer";
 
+export interface AssetResolutionOptions {
+  /**
+   * `false` resolves without the registry lock and never persists: used by
+   * read-only and preview tool paths so `readOnlyHint:true` stays strictly
+   * true. Defaults to persisting.
+   */
+  persistIdentity?: boolean;
+}
+
 export interface AssetIdentityObservation {
   kind: AssetIdentityKind;
   path: string;
@@ -106,10 +115,12 @@ export class AssetRegistry {
 
   async resolve(
     observationInput: AssetIdentityObservation,
+    options: AssetResolutionOptions = {},
   ): Promise<string> {
-    const [assetId] = await this.resolveMany([
-      observationInput,
-    ]);
+    const [assetId] = await this.resolveMany(
+      [observationInput],
+      options,
+    );
     if (assetId === undefined) {
       throw new TiledMcpError(
         "INTERNAL_ERROR",
@@ -122,10 +133,12 @@ export class AssetRegistry {
   async resolveMany(
     observationInputs:
       readonly AssetIdentityObservation[],
+    options: AssetResolutionOptions = {},
   ): Promise<string[]> {
     return this.resolveManyChecked(
       observationInputs,
       () => undefined,
+      options,
     );
   }
 
@@ -141,6 +154,7 @@ export class AssetRegistry {
     checkBeforeCommit: (
       assetIds: readonly string[],
     ) => void | Promise<void>,
+    options: AssetResolutionOptions = {},
   ): Promise<string[]> {
     const observations = observationInputs.map(
       (observation) =>
@@ -152,7 +166,9 @@ export class AssetRegistry {
       return [];
     }
 
-    return this.mutate(async (document) => {
+    const operation = async (
+      document: AssetRegistryDocument,
+    ): Promise<MutationResult<string[]>> => {
       for (const observation of observations) {
         const currentIdentity =
           await this.observePathIdentity(
@@ -227,21 +243,35 @@ export class AssetRegistry {
         changed,
         value: assetIds,
       };
-    });
+    };
+    if (options.persistIdentity === false) {
+      // Read-only tool paths resolve identities without the registry lock
+      // and never persist: initial IDs are deterministic path hashes, so a
+      // later write-path resolution reproduces and then durably records the
+      // same allocations and identity refreshes.
+      const document = await this.readFromDisk();
+      const result = await operation(document);
+      return result.value;
+    }
+    return this.mutate(operation);
   }
 
   async resolvePath(
     kind: AssetIdentityKind,
     projectPath: string,
+    options: AssetResolutionOptions = {},
   ): Promise<string> {
     const path = this.resolver.normalize(projectPath);
     const identity =
       await this.observePathIdentity(path);
-    return this.resolve({
-      kind,
-      path,
-      identity,
-    });
+    return this.resolve(
+      {
+        kind,
+        path,
+        identity,
+      },
+      options,
+    );
   }
 
   private async observePathIdentity(
