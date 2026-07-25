@@ -49,11 +49,19 @@ also decode finite tile layers stored as \`encoding:"base64"\` with
 optional gzip, zlib, or zstd compression, following the exact Tiled 1.12.2
 reader (strict canonical base64, decompression capped at exactly
 width × height × 4 bytes, little-endian uint32 cells, at most 64 MiB
-decoded per layer). Chunked infinite layers stay rejected, every edit path
-still fails closed on encoded data — the write profile is unchanged — and
-\`tiled_validate\` keeps reporting encoded layers as outside the editable
-profile. Inspect \`tileDataReadCapabilities\` for the frozen policy
-strings.
+decoded per layer). Infinite maps are readable through
+\`tiled_get_map_summary\`, \`tiled_get_region\`, and
+\`tiled_analyze_usage\`: chunked tile layers resolve cells by absolute
+tile coordinates (negatives allowed; cells outside every chunk are
+empty), chunk data decodes with the same layer-level encoding and
+compression rules, overlapping chunks fail closed as order-dependent, at
+most 4,096 chunks resolve per layer, and the summary reports
+\`infinite:true\` with per-layer content bounds and \`startX\`/\`startY\`.
+The native preview does not render chunked layers yet. Every edit and
+preview-edit path still fails closed on infinite maps and encoded data —
+the write profile is unchanged — and \`tiled_validate\` keeps reporting
+both as outside the editable profile. Inspect
+\`tileDataReadCapabilities\` for the frozen policy strings.
 
 ## Filesystem threat model
 

@@ -265,10 +265,13 @@ const mapLayerOutputSchema: z.ZodType = z.lazy(
         .object({
           ...mapLayerCommonShape,
           type: z.literal("tilelayer"),
-          width: positiveIntegerOutputSchema,
-          height: positiveIntegerOutputSchema,
+          width: nonnegativeIntegerOutputSchema,
+          height: nonnegativeIntegerOutputSchema,
           x: integerOutputSchema,
           y: integerOutputSchema,
+          startX: integerOutputSchema.optional(),
+          startY: integerOutputSchema.optional(),
+          chunked: z.literal(true).optional(),
         })
         .strict(),
       z
@@ -313,7 +316,7 @@ const mapSummaryResultOutputSchema = z
     revision: revisionOutputSchema,
     format: z.literal("tmj"),
     orientation: z.literal("orthogonal"),
-    infinite: z.literal(false),
+    infinite: z.boolean(),
     renderOrder: z.enum([
       "right-down",
       "right-up",
@@ -337,9 +340,10 @@ const mapSummaryResultOutputSchema = z
     ).max(4_096),
     dependencyRevisions:
       dependencyRevisionsOutputSchema,
-    editableProfile: z.literal(
+    editableProfile: z.enum([
       "finite-orthogonal-tmj-external-atlas-tsj",
-    ),
+      "infinite-orthogonal-tmj-read-only-chunked",
+    ]),
   })
   .strict();
 

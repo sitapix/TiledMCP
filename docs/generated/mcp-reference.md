@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:42072018d8a3d7fca7f15e70a0ae1358c3666b1856b474a21835b664984cc6c8",
+    "revision": "sha256:b2e18f665b5b1fe3cfc3aaf036555bfee242481fa125b5646d457fe07ac5ada2",
     "serverVersion": "0.0.1",
-    "size": 73344
+    "size": 73874
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 73344,
+  "size": 73874,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 73344 UTF-8 bytes, revision `sha256:42072018d8a3d7fca7f15e70a0ae1358c3666b1856b474a21835b664984cc6c8`.
+Content contract: `text`, 73874 UTF-8 bytes, revision `sha256:b2e18f665b5b1fe3cfc3aaf036555bfee242481fa125b5646d457fe07ac5ada2`.
 
 Resource templates: none.
 
@@ -12231,8 +12231,16 @@ Output schema:
                   "const": "little-endian-uint32-row-major",
                   "type": "string"
                 },
-                "chunkedLayers": {
+                "chunkCoordinates": {
+                  "const": "absolute-tile-space-negative-allowed",
+                  "type": "string"
+                },
+                "chunkOverlap": {
                   "const": "fail-closed",
+                  "type": "string"
+                },
+                "chunkedLayers": {
+                  "const": "read-only-summary-region-usage",
                   "type": "string"
                 },
                 "compressions": {
@@ -12260,9 +12268,21 @@ Output schema:
                   "const": "base64",
                   "type": "string"
                 },
+                "infiniteMaps": {
+                  "const": "readable-never-editable",
+                  "type": "string"
+                },
+                "maxChunksPerLayer": {
+                  "const": 4096,
+                  "type": "number"
+                },
                 "maxDecodedBytesPerLayer": {
                   "const": 67108864,
                   "type": "number"
+                },
+                "outsideChunkCells": {
+                  "const": "empty",
+                  "type": "string"
                 },
                 "readTools": {
                   "items": [
@@ -12304,6 +12324,11 @@ Output schema:
                 "cellLayout",
                 "maxDecodedBytesPerLayer",
                 "chunkedLayers",
+                "chunkCoordinates",
+                "chunkOverlap",
+                "outsideChunkCells",
+                "maxChunksPerLayer",
+                "infiniteMaps",
                 "writeProfile",
                 "validateDiagnostics"
               ],
@@ -13436,7 +13461,7 @@ Output schema:
 
 Availability: `core`
 
-Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.
+Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker.
 
 Annotations:
 
@@ -13494,9 +13519,13 @@ Output schema:
         {
           "additionalProperties": false,
           "properties": {
+            "chunked": {
+              "const": true,
+              "type": "boolean"
+            },
             "height": {
-              "exclusiveMinimum": 0,
               "maximum": 9007199254740991,
+              "minimum": 0,
               "type": "integer"
             },
             "id": {
@@ -13514,6 +13543,16 @@ Output schema:
             "opacity": {
               "type": "number"
             },
+            "startX": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "startY": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
             "type": {
               "const": "tilelayer",
               "type": "string"
@@ -13522,8 +13561,8 @@ Output schema:
               "type": "boolean"
             },
             "width": {
-              "exclusiveMinimum": 0,
               "maximum": 9007199254740991,
+              "minimum": 0,
               "type": "integer"
             },
             "x": {
@@ -13694,7 +13733,10 @@ Output schema:
               "type": "object"
             },
             "editableProfile": {
-              "const": "finite-orthogonal-tmj-external-atlas-tsj",
+              "enum": [
+                "finite-orthogonal-tmj-external-atlas-tsj",
+                "infinite-orthogonal-tmj-read-only-chunked"
+              ],
               "type": "string"
             },
             "format": {
@@ -13707,7 +13749,6 @@ Output schema:
               "type": "integer"
             },
             "infinite": {
-              "const": false,
               "type": "boolean"
             },
             "layers": {
@@ -15727,7 +15768,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs.
+Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty.
 
 Annotations:
 

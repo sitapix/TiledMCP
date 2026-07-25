@@ -1459,6 +1459,17 @@ fail closed 而非近似）、`maxOutputLength` 钉在精确的 `width×height×
 下都拒绝；`validate` 继续把 encoded data 报告为可编辑 profile 诊断（该地图仍不可
 编辑，这是准确的）。能力经 `tileDataReadCapabilities` 公布。
 
+M2 第二步在同一模块落地 infinite/chunk 只读：`readChunkedTileLayerStructure`
+做不解码的结构校验（chunk 数 ≤4,096、矩形正且有界、数组长度精确、**重叠 chunk
+fail closed**——重叠让读取顺序相关，正对应 7.2 的"不能以最后覆盖掩盖问题"），
+`readChunkedRegionGids` 只解码与区域相交的 chunk（chunk data 复用 layer 级
+encoding/compression 解码核心），chunk 外格子为空。`loadEditableContext` 增加
+默认关闭的 `allowInfinite` 开关：只有 summary/region/usage 三个只读工具显式
+打开，所有 mutation planner 与 native preview 不改一行即保持 fail closed。
+summary 的 `editableProfile` 对无限地图报
+`infinite-orthogonal-tmj-read-only-chunked` 并给出每层内容 bounds 与
+`startx`/`starty`（Tiled 写出侧的 localBounds 语义）。
+
 ## 8. Revision、锁与提交
 
 ### 8.1 Revision 与 CAS

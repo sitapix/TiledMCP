@@ -203,6 +203,7 @@ import {
 } from "./maps/fileDelete.js";
 import {
   MAX_DECODED_TILE_DATA_BYTES,
+  MAX_TILE_LAYER_CHUNKS,
   TILE_DATA_READ_COMPRESSIONS,
 } from "./maps/tileData.js";
 import {
@@ -2404,7 +2405,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "little-endian-uint32-row-major",
           maxDecodedBytesPerLayer:
             MAX_DECODED_TILE_DATA_BYTES,
-          chunkedLayers: "fail-closed",
+          chunkedLayers:
+            "read-only-summary-region-usage",
+          chunkCoordinates:
+            "absolute-tile-space-negative-allowed",
+          chunkOverlap: "fail-closed",
+          outsideChunkCells: "empty",
+          maxChunksPerLayer:
+            MAX_TILE_LAYER_CHUNKS,
+          infiniteMaps:
+            "readable-never-editable",
           writeProfile:
             "plain-array-only-fail-closed",
           validateDiagnostics:
@@ -3212,7 +3222,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a Tiled map summary",
       description:
-        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing.",
+        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema: mapSummaryToolOutputSchema,
       annotations: READ_ONLY,
@@ -3326,7 +3336,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a tile region",
       description:
-        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs.",
+        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

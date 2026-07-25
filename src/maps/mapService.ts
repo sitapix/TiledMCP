@@ -34,7 +34,12 @@ import {
   type FileDeletePlan,
   type FileDeleteScanSummary,
 } from "./fileDelete.js";
-import { resolveTileLayerCells } from "./tileData.js";
+import {
+  readChunkedRegionGids,
+  readChunkedTileLayerStructure,
+  decodeChunkCells,
+  resolveTileLayerCells,
+} from "./tileData.js";
 import {
   patchJsonDocumentSource,
   type JsonArrayDeletion,
@@ -305,6 +310,7 @@ interface EditableContext {
   width: number;
   height: number;
   orientation: "orthogonal";
+  infinite: boolean;
   bindings: TilesetBinding[];
   dependencyRevisions: Record<string, string>;
 }
@@ -322,6 +328,12 @@ interface EditableContextRevisionGuards {
    * their readOnlyHint stays strictly true.
    */
   persistIdentity?: boolean;
+  /**
+   * Read-only tools that understand chunked storage opt in explicitly;
+   * every write and preview-edit path keeps the default fail-closed gate,
+   * so infinite maps can never reach an edit planner.
+   */
+  allowInfinite?: boolean;
 }
 
 interface TilesetBinding {
@@ -680,7 +692,9 @@ export class MapService {
   }
 
   async getSummary(mapPath: string): Promise<Record<string, unknown>> {
-    const context = await this.loadEditableContext(mapPath);
+    const context = await this.loadEditableContext(mapPath, {
+      allowInfinite: true,
+    });
     const rootProperties = summarizeMapRootProperties(
       context.loaded.document,
       context.loaded.path,
@@ -688,13 +702,14 @@ export class MapService {
     const layers = collectLayerSummaries(
       expectArray(context.loaded.document.layers, `${mapPath}.layers`),
       `${mapPath}.layers`,
+      context.infinite,
     );
     return {
       path: context.loaded.path,
       revision: context.loaded.revision,
       format: "tmj",
       orientation: context.orientation,
-      infinite: false,
+      infinite: context.infinite,
       ...rootProperties,
       width: context.width,
       height: context.height,
@@ -714,7 +729,9 @@ export class MapService {
         revision: binding.revision,
       })),
       dependencyRevisions: context.dependencyRevisions,
-      editableProfile: "finite-orthogonal-tmj-external-atlas-tsj",
+      editableProfile: context.infinite
+        ? "infinite-orthogonal-tmj-read-only-chunked"
+        : "finite-orthogonal-tmj-external-atlas-tsj",
     };
   }
 
@@ -747,6 +764,7 @@ export class MapService {
       "topTileLimit",
     );
     const context = await this.loadEditableContext(input.mapPath, {
+      allowInfinite: true,
       ...(input.expectedMapRevision === undefined
         ? {}
         : {
@@ -761,6 +779,7 @@ export class MapService {
       mapPath: context.loaded.path,
       bindings: context.bindings,
       topTileLimit,
+      infinite: context.infinite,
     });
 
     await this.assertDependenciesUnchanged(context.bindings);
@@ -1816,30 +1835,87 @@ export class MapService {
       );
     }
 
-    const context = await this.loadEditableContext(input.mapPath);
-    const layer = findTileLayer(
-      context.loaded.document,
-      input.layerId,
-      input.mapPath,
-      "read",
-    );
-    assertRegionInsideLayer(layer, input.x, input.y, input.width, input.height);
-
+    const context = await this.loadEditableContext(input.mapPath, {
+      allowInfinite: true,
+    });
     const rows: Array<Array<TileRef | null>> = [];
-    for (let y = input.y; y < input.y + input.height; y += 1) {
-      const row: Array<TileRef | null> = [];
-      for (let x = input.x; x < input.x + input.width; x += 1) {
-        const gid = readLayerGid(layer, x, y);
-        row.push(gidToTileRef(gid, context.orientation, context.bindings));
+    let layerDescriptor: { id: number; name: string };
+    if (context.infinite) {
+      const located = findChunkedTileLayer(
+        context.loaded.document,
+        input.layerId,
+        input.mapPath,
+      );
+      layerDescriptor = {
+        id: located.id,
+        name: located.name,
+      };
+      const gids = readChunkedRegionGids(
+        located.object,
+        located.id,
+        input.mapPath,
+        {
+          x: input.x,
+          y: input.y,
+          width: input.width,
+          height: input.height,
+        },
+      );
+      for (let y = 0; y < input.height; y += 1) {
+        const row: Array<TileRef | null> = [];
+        for (let x = 0; x < input.width; x += 1) {
+          const gid = gids[y * input.width + x];
+          if (
+            typeof gid !== "number" ||
+            !Number.isSafeInteger(gid)
+          ) {
+            throw new TiledMcpError(
+              "INVALID_TILE_DATA",
+              `Layer ${located.id} has a non-integer GID.`,
+              {
+                layerId: located.id,
+                x: input.x + x,
+                y: input.y + y,
+              },
+            );
+          }
+          row.push(
+            gidToTileRef(
+              gid,
+              context.orientation,
+              context.bindings,
+            ),
+          );
+        }
+        rows.push(row);
       }
-      rows.push(row);
+    } else {
+      const layer = findTileLayer(
+        context.loaded.document,
+        input.layerId,
+        input.mapPath,
+        "read",
+      );
+      layerDescriptor = {
+        id: layer.id,
+        name: layer.name,
+      };
+      assertRegionInsideLayer(layer, input.x, input.y, input.width, input.height);
+      for (let y = input.y; y < input.y + input.height; y += 1) {
+        const row: Array<TileRef | null> = [];
+        for (let x = input.x; x < input.x + input.width; x += 1) {
+          const gid = readLayerGid(layer, x, y);
+          row.push(gidToTileRef(gid, context.orientation, context.bindings));
+        }
+        rows.push(row);
+      }
     }
 
     return {
       mapPath: context.loaded.path,
       revision: context.loaded.revision,
       dependencyRevisions: context.dependencyRevisions,
-      layer: { id: layer.id, name: layer.name },
+      layer: layerDescriptor,
       region: {
         x: input.x,
         y: input.y,
@@ -3406,10 +3482,14 @@ export class MapService {
         { path: loaded.path },
       );
     }
-    if (map.infinite) {
+    const infinite = map.infinite === true;
+    if (
+      infinite &&
+      revisionGuards.allowInfinite !== true
+    ) {
       throw new TiledMcpError(
         "UNSUPPORTED_MAP_PROFILE",
-        "MVP semantic tools support only finite maps.",
+        "This tool supports only finite maps; infinite maps are readable through the summary, region, and usage tools.",
         { path: loaded.path },
       );
     }
@@ -3444,7 +3524,15 @@ export class MapService {
         dependencyRevisions,
       );
     }
-    return { loaded, width, height, orientation, bindings, dependencyRevisions };
+    return {
+      loaded,
+      width,
+      height,
+      orientation,
+      infinite,
+      bindings,
+      dependencyRevisions,
+    };
   }
 
   private async loadTilesetBindings(
@@ -8440,6 +8528,60 @@ function gidToTileRef(
   };
 }
 
+function findChunkedTileLayer(
+  map: JsonObject,
+  layerId: number,
+  mapPath: string,
+): {
+  object: JsonObject;
+  id: number;
+  name: string;
+} {
+  const layers = expectArray(
+    map.layers,
+    `${mapPath}.layers`,
+  );
+  const located = findLayerRecursive(
+    layers,
+    layerId,
+    `${mapPath}.layers`,
+    ["layers"],
+  );
+  if (!located) {
+    throw new TiledMcpError(
+      "LAYER_NOT_FOUND",
+      `Layer ${layerId} does not exist.`,
+      { path: mapPath, layerId },
+    );
+  }
+  const found = located.object;
+  if (found.type !== "tilelayer") {
+    throw new TiledMcpError(
+      "LAYER_TYPE_MISMATCH",
+      `Layer ${layerId} is not a tile layer.`,
+      { path: mapPath, layerId },
+    );
+  }
+  if (!("chunks" in found)) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `Layer ${layerId} of an infinite map must use chunked storage.`,
+      { path: mapPath, layerId },
+    );
+  }
+  return {
+    object: found,
+    id: expectInteger(
+      found.id,
+      `layer ${layerId}.id`,
+    ),
+    name:
+      typeof found.name === "string"
+        ? found.name
+        : `Layer ${layerId}`,
+  };
+}
+
 function findTileLayer(
   map: JsonObject,
   layerId: number,
@@ -13424,6 +13566,7 @@ function assertRegionInsideLayer(
 function collectLayerSummaries(
   layers: JsonValue[],
   context: string,
+  infinite = false,
   depth = 0,
   budget: LayerTraversalBudget = { count: 0 },
 ): Array<Record<string, unknown>> {
@@ -13458,6 +13601,8 @@ function collectLayerSummaries(
       opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
     };
     if (layerType === "tilelayer") {
+      const chunked =
+        infinite && "chunks" in layer;
       const width = expectInteger(
         layer.width,
         `${context}[${index}].width`,
@@ -13466,7 +13611,11 @@ function collectLayerSummaries(
         layer.height,
         `${context}[${index}].height`,
       );
-      if (width <= 0 || height <= 0) {
+      // Chunked bounds may legitimately be 0 × 0 for an empty layer.
+      if (
+        (chunked && (width < 0 || height < 0)) ||
+        (!chunked && (width <= 0 || height <= 0))
+      ) {
         throw new TiledMcpError(
           "INVALID_DOCUMENT",
           `${context}[${index}] tile layer dimensions must be positive integers.`,
@@ -13478,6 +13627,17 @@ function collectLayerSummaries(
       }
       summary.width = width;
       summary.height = height;
+      if (chunked) {
+        summary.startX = expectInteger(
+          layer.startx ?? 0,
+          `${context}[${index}].startx`,
+        );
+        summary.startY = expectInteger(
+          layer.starty ?? 0,
+          `${context}[${index}].starty`,
+        );
+        summary.chunked = true;
+      }
       summary.x = expectInteger(
         layer.x ?? 0,
         `${context}[${index}].x`,
@@ -13494,6 +13654,7 @@ function collectLayerSummaries(
           `${context}[${index}].layers`,
         ),
         `${context}[${index}].layers`,
+        infinite,
         depth + 1,
         budget,
       );
@@ -13796,6 +13957,7 @@ function analyzeUsageDocument(input: {
   mapPath: string;
   bindings: readonly TilesetBinding[];
   topTileLimit: number;
+  infinite: boolean;
 }): Record<string, unknown> {
   const counters = input.bindings.map(
     (binding, bindingIndex): UsageTilesetCounter => ({
@@ -13999,6 +14161,64 @@ function analyzeUsageDocument(input: {
       }
 
       tileLayerCount += 1;
+      if (input.infinite && "chunks" in layer) {
+        const structure =
+          readChunkedTileLayerStructure(
+            layer,
+            layerId,
+            input.mapPath,
+          );
+        consumeUsageScanBudget(
+          structure.totalChunkCells,
+          scan,
+          input.mapPath,
+        );
+        tileCellCount +=
+          structure.totalChunkCells;
+        let layerNonEmptyCellCount = 0;
+        for (const [
+          chunkIndex,
+          chunk,
+        ] of structure.chunks.entries()) {
+          const cells = decodeChunkCells(
+            chunk,
+            layer,
+            layerId,
+            input.mapPath,
+          );
+          for (const [
+            gidIndex,
+            gid,
+          ] of cells.entries()) {
+            if (
+              recordGid(
+                gid,
+                "cell",
+                `${layerContext}.chunks[${chunkIndex}].data[${gidIndex}]`,
+              )
+            ) {
+              nonEmptyCellCount += 1;
+              layerNonEmptyCellCount += 1;
+            }
+          }
+        }
+        const name = boundedDisplayString(
+          layer.name,
+        );
+        layerDensities.push({
+          layerId,
+          name: name.value,
+          nameTruncated: name.truncated,
+          x: structure.startX,
+          y: structure.startY,
+          width: structure.width,
+          height: structure.height,
+          cellCount: structure.totalChunkCells,
+          nonEmptyCellCount:
+            layerNonEmptyCellCount,
+        });
+        continue;
+      }
       const width = expectInteger(
         layer.width,
         `${layerContext}.width`,
