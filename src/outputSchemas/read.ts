@@ -307,6 +307,7 @@ const mapTilesetBindingOutputSchema = z
     lastPotentialGid:
       positiveIntegerOutputSchema,
     revision: revisionOutputSchema,
+    collection: z.literal(true).optional(),
   })
   .strict();
 

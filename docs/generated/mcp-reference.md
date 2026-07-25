@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:e6318b54f1dff578b6e1160edd94fe7c61e97c818e55b926699e3c14fc6378c5",
+    "revision": "sha256:644b658fbab477371a2aa07668694b0d8e141151e1baffafca4eef9704c3d1c8",
     "serverVersion": "0.0.1",
-    "size": 74841
+    "size": 75203
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 74841,
+  "size": 75203,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 74841 UTF-8 bytes, revision `sha256:e6318b54f1dff578b6e1160edd94fe7c61e97c818e55b926699e3c14fc6378c5`.
+Content contract: `text`, 75203 UTF-8 bytes, revision `sha256:644b658fbab477371a2aa07668694b0d8e141151e1baffafca4eef9704c3d1c8`.
 
 Resource templates: none.
 
@@ -12243,6 +12243,10 @@ Output schema:
                   "const": "read-only-summary-region-usage-preview",
                   "type": "string"
                 },
+                "collectionTilesets": {
+                  "const": "summary-region-object-reads-only-sparse-ids-fail-closed",
+                  "type": "string"
+                },
                 "compressions": {
                   "items": [
                     {
@@ -12345,6 +12349,7 @@ Output schema:
                 "outsideChunkCells",
                 "maxChunksPerLayer",
                 "infiniteMaps",
+                "collectionTilesets",
                 "writeProfile",
                 "writeCompression",
                 "unwrittenEncodedLayers",
@@ -13816,6 +13821,10 @@ Output schema:
                   "assetId": {
                     "pattern": "^asset_[0-9a-f]{24}$",
                     "type": "string"
+                  },
+                  "collection": {
+                    "const": true,
+                    "type": "boolean"
                   },
                   "firstGid": {
                     "exclusiveMinimum": 0,

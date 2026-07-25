@@ -337,6 +337,12 @@ interface EditableContextRevisionGuards {
    * so infinite maps can never reach an edit planner.
    */
   allowInfinite?: boolean;
+  /**
+   * Read-only tools that tolerate image-collection tilesets opt in
+   * explicitly; every edit, render, and tileset-detail path keeps the
+   * default fail-closed gate.
+   */
+  allowCollectionTilesets?: boolean;
 }
 
 interface TilesetBinding {
@@ -348,6 +354,13 @@ interface TilesetBinding {
   name: string;
   nameTruncated: boolean;
   revision: string;
+  /**
+   * Image-collection tilesets (no root atlas image): readable through the
+   * semantic core, never editable or renderable in M1. `localIds` is the
+   * sparse set of existing tile ids for fail-closed GID validation.
+   */
+  collection?: true;
+  localIds?: ReadonlySet<number>;
 }
 
 interface TilesetBindingCandidate {
@@ -361,6 +374,7 @@ interface TilesetBindingCandidate {
         gidSpan: number;
         name: string;
         nameTruncated: boolean;
+        collectionLocalIds?: ReadonlySet<number>;
       }
     | {
         ok: false;
@@ -697,6 +711,7 @@ export class MapService {
   async getSummary(mapPath: string): Promise<Record<string, unknown>> {
     const context = await this.loadEditableContext(mapPath, {
       allowInfinite: true,
+      allowCollectionTilesets: true,
     });
     const rootProperties = summarizeMapRootProperties(
       context.loaded.document,
@@ -730,6 +745,9 @@ export class MapService {
         lastPotentialGid:
           binding.firstGid + binding.gidSpan - 1,
         revision: binding.revision,
+        ...(binding.collection === true
+          ? { collection: true }
+          : {}),
       })),
       dependencyRevisions: context.dependencyRevisions,
       editableProfile: context.infinite
@@ -2041,6 +2059,7 @@ export class MapService {
 
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
+      allowCollectionTilesets: true,
     });
     const rows: Array<Array<TileRef | null>> = [];
     let layerDescriptor: { id: number; name: string };
@@ -2146,7 +2165,9 @@ export class MapService {
       );
     }
 
-    const context = await this.loadEditableContext(input.mapPath);
+    const context = await this.loadEditableContext(input.mapPath, {
+      allowCollectionTilesets: true,
+    });
     const locations =
       input.layerId === undefined
         ? collectObjectLocations(context.loaded.document, context.loaded.path)
@@ -2170,7 +2191,9 @@ export class MapService {
 
   async getObject(input: GetObjectInput): Promise<Record<string, unknown>> {
     assertPositiveInteger(input.objectId, "objectId");
-    const context = await this.loadEditableContext(input.mapPath);
+    const context = await this.loadEditableContext(input.mapPath, {
+      allowCollectionTilesets: true,
+    });
     const location = findObjectLocation(
       buildObjectEditIndex(
         context.loaded.document,
@@ -3724,6 +3747,8 @@ export class MapService {
       revisionGuards.selectedTileset,
       revisionGuards.expectedDependencyRevisions,
       revisionGuards.persistIdentity === true,
+      revisionGuards.allowCollectionTilesets ===
+        true,
     );
     const dependencyRevisions = Object.fromEntries(
       bindings.map((binding) => [binding.assetId, binding.revision]),
@@ -3754,6 +3779,7 @@ export class MapService {
     },
     expectedDependencyRevisions?: Record<string, string>,
     persistIdentity = false,
+    allowCollectionTilesets = false,
   ): Promise<TilesetBinding[]> {
     if (entries.length > MAX_TILESET_COUNT) {
       throw new TiledMcpError(
@@ -3852,32 +3878,43 @@ export class MapService {
             `${tilesetPath} is not a Tiled tileset.`,
           );
         }
+        let collectionLocalIds:
+          | Set<number>
+          | undefined;
         if (
           typeof tileset.document.image !==
           "string"
         ) {
-          throw new TiledMcpError(
-            "UNSUPPORTED_TILESET",
-            "MVP editing requires atlas tilesets with a root image field.",
-            { path: tilesetPath },
+          if (!allowCollectionTilesets) {
+            throw new TiledMcpError(
+              "UNSUPPORTED_TILESET",
+              "This tool requires atlas tilesets with a root image field; maps referencing image-collection tilesets are readable through the summary, region, and object tools.",
+              { path: tilesetPath },
+            );
+          }
+          collectionLocalIds =
+            readCollectionTileIds(
+              tileset.document,
+              tilesetPath,
+            );
+        } else {
+          const imagePath =
+            await this.resolver.resolveReference(
+              tilesetPath,
+              tileset.document.image,
+            );
+          const imageStat = await stat(
+            await this.resolver.resolveExisting(
+              imagePath,
+            ),
           );
-        }
-        const imagePath =
-          await this.resolver.resolveReference(
-            tilesetPath,
-            tileset.document.image,
-          );
-        const imageStat = await stat(
-          await this.resolver.resolveExisting(
-            imagePath,
-          ),
-        );
-        if (!imageStat.isFile()) {
-          throw new TiledMcpError(
-            "INVALID_TILESET_IMAGE",
-            `${imagePath} is not a regular image file.`,
-            { path: imagePath },
-          );
+          if (!imageStat.isFile()) {
+            throw new TiledMcpError(
+              "INVALID_TILESET_IMAGE",
+              `${imagePath} is not a regular image file.`,
+              { path: imagePath },
+            );
+          }
         }
         const tileCount = expectInteger(
           tileset.document.tilecount,
@@ -3909,6 +3946,20 @@ export class MapService {
               `${tilesetPath}.name`,
             ),
           );
+        if (
+          collectionLocalIds !== undefined &&
+          collectionLocalIds.size !== tileCount
+        ) {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `${tilesetPath}.tilecount does not match its image-collection tile entries.`,
+            {
+              path: tilesetPath,
+              tileCount,
+              actual: collectionLocalIds.size,
+            },
+          );
+        }
         validation = {
           ok: true,
           tileCount,
@@ -3916,6 +3967,9 @@ export class MapService {
           name: displayName.value,
           nameTruncated:
             displayName.truncated,
+          ...(collectionLocalIds === undefined
+            ? {}
+            : { collectionLocalIds }),
         };
       } catch (error) {
         if (
@@ -4227,6 +4281,15 @@ export class MapService {
           candidate.validation.nameTruncated,
         revision:
           candidate.snapshot.revision,
+        ...(candidate.validation
+          .collectionLocalIds === undefined
+          ? {}
+          : {
+              collection: true as const,
+              localIds:
+                candidate.validation
+                  .collectionLocalIds,
+            }),
       });
     }
     bindings.sort((left, right) => left.firstGid - right.firstGid);
@@ -8692,6 +8755,69 @@ function assertTileTransformInput(
   }
 }
 
+/**
+ * Validates an image-collection tileset's per-tile entries and returns the
+ * sparse set of existing local ids. Every tile of a collection carries its
+ * own image, so `tiles.length` must equal `tilecount`.
+ */
+function readCollectionTileIds(
+  document: JsonObject,
+  tilesetPath: string,
+): Set<number> {
+  const entries = expectArray(
+    document.tiles,
+    `${tilesetPath}.tiles`,
+  );
+  const localIds = new Set<number>();
+  for (const [index, value] of entries.entries()) {
+    const entry = expectObject(
+      value,
+      `${tilesetPath}.tiles[${index}]`,
+    );
+    const id = expectInteger(
+      entry.id,
+      `${tilesetPath}.tiles[${index}].id`,
+    );
+    if (id < 0 || localIds.has(id)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${tilesetPath}.tiles[${index}].id must be a unique nonnegative integer.`,
+        { path: tilesetPath, index, id },
+      );
+    }
+    if (
+      typeof entry.image !== "string" ||
+      entry.image.length === 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${tilesetPath}.tiles[${index}] must carry a per-tile image in an image-collection tileset.`,
+        { path: tilesetPath, index, id },
+      );
+    }
+    for (const field of [
+      "imagewidth",
+      "imageheight",
+    ] as const) {
+      const size = entry[field];
+      if (
+        size !== undefined &&
+        (typeof size !== "number" ||
+          !Number.isSafeInteger(size) ||
+          size <= 0)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${tilesetPath}.tiles[${index}].${field} must be a positive integer.`,
+          { path: tilesetPath, index, id },
+        );
+      }
+    }
+    localIds.add(id);
+  }
+  return localIds;
+}
+
 function gidToTileRef(
   gid: number,
   orientation: MapOrientation,
@@ -8720,7 +8846,12 @@ function gidToTileRef(
     throw new TiledMcpError("GID_OUT_OF_RANGE", `GID ${decoded.baseGid} has no tileset.`);
   }
   const localId = decoded.baseGid - binding.firstGid;
-  if (localId < 0 || localId >= binding.tileCount) {
+  const insideRange =
+    binding.localIds !== undefined
+      ? binding.localIds.has(localId)
+      : localId >= 0 &&
+        localId < binding.tileCount;
+  if (!insideRange) {
     throw new TiledMcpError(
       "GID_OUT_OF_RANGE",
       `GID ${decoded.baseGid} falls outside tileset ${binding.name}.`,

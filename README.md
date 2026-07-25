@@ -78,8 +78,12 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-内嵌/图片集合 tileset、tile object 的创建/语义编辑、
+内嵌 tileset、tile object 的创建/语义编辑、
 模板和跨文件事务尚未实现；对应的不支持操作会被明确拒绝，不会静默降级。
+image-collection tileset（逐 tile 独立图片、无根图集）获得**语义读取核心**支持：
+`tiled_get_map_summary`（binding 报 `collection:true`，`gidSpan` 覆盖稀疏最大
+id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object` 可用；指向已
+删除 collection id 的 GID fail closed；编辑/渲染/tileset 详情继续拒绝。
 压缩/base64 tile data 已获得**只读**支持（M2 第一步）：`tiled_get_region`、
 `tiled_render_preview`、`tiled_analyze_usage` 与 `tiled_render_map` 按 Tiled
 1.12.2 读取器语义解码 `encoding:"base64"` + gzip/zlib/zstd 的有限 tile layer

@@ -2422,6 +2422,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             MAX_TILE_LAYER_CHUNKS,
           infiniteMaps:
             "readable-never-editable",
+          collectionTilesets:
+            "summary-region-object-reads-only-sparse-ids-fail-closed",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:

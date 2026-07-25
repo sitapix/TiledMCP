@@ -38,7 +38,7 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
    map preview path.
 
 The M1 edit profile is intentionally narrow: finite orthogonal TMJ maps,
-external atlas TSJ tilesets, uncompressed tile-layer arrays, and rectangle,
+external atlas TSJ tilesets, and rectangle,
 point, ellipse, Tiled 1.12 capsule, bounded polygon/polyline, and bounded text
 objects.
 Unsupported Tiled semantics fail closed instead of being approximated.
@@ -66,7 +66,13 @@ own stored encoding and compression — never transcoding — while
 untouched layers and exact net no-op writes keep their original bytes.
 Resizing an encoded map and every edit on infinite maps still fail
 closed, and \`tiled_validate\` keeps reporting chunked storage as
-outside the editable profile. Inspect
+outside the editable profile. Maps referencing image-collection tilesets
+(per-tile images, no root atlas) are readable through
+\`tiled_get_map_summary\` (bindings report \`collection:true\` with the
+sparse-id \`gidSpan\`), \`tiled_get_region\`, \`tiled_list_objects\`,
+and \`tiled_get_object\`; a GID pointing at a removed collection id
+fails closed, and every edit, render, and tileset-detail path keeps
+rejecting collection tilesets. Inspect
 \`tileDataReadCapabilities\` for the frozen policy strings.
 
 ## Filesystem threat model
