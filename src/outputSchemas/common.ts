@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { TILED_MCP_APPLICATION_ERROR_CODES } from "../errorRegistry.js";
+import {
+  MAX_PROPERTY_NAME_CODE_POINTS,
+  MAX_PROPERTY_VALUE_CODE_POINTS,
+} from "../maps/propertyEdits.js";
 import type { JsonValue } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
@@ -45,6 +49,60 @@ export const dependencyRevisionsOutputSchema = z.record(
   assetIdOutputSchema,
   revisionOutputSchema,
 );
+
+const projectedPropertyNameOutputSchema = z
+  .string()
+  .min(1)
+  .max(MAX_PROPERTY_NAME_CODE_POINTS * 2);
+
+/**
+ * One entry of the shared read-only custom-property projection: built-in
+ * scalar values verbatim, complex or oversized entries with an explicit
+ * omission marker.
+ */
+export const projectedPropertyOutputSchema =
+  z.union([
+    z
+      .object({
+        name: projectedPropertyNameOutputSchema,
+        type: z.enum([
+          "string",
+          "int",
+          "float",
+          "bool",
+          "color",
+          "file",
+        ]),
+        value: z.union([
+          z
+            .string()
+            .max(
+              MAX_PROPERTY_VALUE_CODE_POINTS * 4,
+            ),
+          z.number().finite(),
+          z.boolean(),
+        ]),
+      })
+      .strict(),
+    z
+      .object({
+        name: projectedPropertyNameOutputSchema,
+        type: z.string().min(1).max(64),
+        propertytype: z
+          .string()
+          .max(1_024)
+          .optional(),
+        valueOmitted: z.literal(true),
+        reason: z.enum([
+          "complex-type",
+          "custom-propertytype",
+          "oversized-value",
+        ]),
+        valueCodePoints:
+          nonnegativeIntegerOutputSchema.optional(),
+      })
+      .strict(),
+  ]);
 
 export const pixelSizeOutputSchema = z
   .object({

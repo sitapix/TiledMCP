@@ -394,7 +394,12 @@ id order; an entry reduced to only its \`id\` is removed, matching how Tiled
 omits metadata-free tiles. An update that inserts or removes an entry must be
 the only update in its change set, and a \`tiles\` array that is not sorted by
 ascending id fails closed for insertions. Tile geometry, the atlas image,
-GID layout, collision shapes, and per-tile properties are outside this tool.
+GID layout, and collision shapes are outside this tool. Before writing
+properties, read them back with \`tiled_get_tileset\`: each paged tile
+entry lists its scalar custom-property values verbatim in document order,
+while class, enum (\`propertytype\`), list, object, and oversized entries
+carry an explicit \`valueOmitted\` marker — the same projection
+\`tiled_get_object\` uses for map objects.
 
 ## Detach an unused tileset safely
 

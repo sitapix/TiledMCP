@@ -190,9 +190,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:38ceba06cc3b2b5505413c435bfad85c70d9bc33b7e455602d346e5be6167b8c",
+    "revision": "sha256:608fa9525f6ea744e4c2c90a580143df12922baf5a1ad86cf42c9ce359b29ca0",
     "serverVersion": "0.0.1",
-    "size": 71949
+    "size": 72263
   },
   "annotations": {
     "audience": [
@@ -204,7 +204,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 71949,
+  "size": 72263,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -212,7 +212,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3928 UTF-8 bytes, revision `sha256:e750b93afa084be99b1c5b542b039e2ce99df91eee2cded4fd0cd63c917bc5c3`.
 
-Content contract: `text`, 71949 UTF-8 bytes, revision `sha256:38ceba06cc3b2b5505413c435bfad85c70d9bc33b7e455602d346e5be6167b8c`.
+Content contract: `text`, 72263 UTF-8 bytes, revision `sha256:608fa9525f6ea744e4c2c90a580143df12922baf5a1ad86cf42c9ce359b29ca0`.
 
 Resource templates: none.
 
@@ -16114,7 +16114,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata, animation, collision counts and Wang-set overviews.
+Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, collision counts and Wang-set overviews.
 
 Annotations:
 
@@ -16286,7 +16286,7 @@ Output schema:
                   "type": "string"
                 },
                 "properties": {
-                  "const": "counts-only",
+                  "const": "tile-scalar-values-with-omission-markers-others-counts-only",
                   "type": "string"
                 },
                 "sourceImage": {
@@ -16434,6 +16434,101 @@ Output schema:
                         "minimum": 0,
                         "type": "number"
                       },
+                      "properties": {
+                        "items": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "enum": [
+                                    "string",
+                                    "int",
+                                    "float",
+                                    "bool",
+                                    "color",
+                                    "file"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 4096,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "propertytype": {
+                                  "maxLength": 1024,
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "enum": [
+                                    "complex-type",
+                                    "custom-propertytype",
+                                    "oversized-value"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "valueCodePoints": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "valueOmitted": {
+                                  "const": true,
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "valueOmitted",
+                                "reason"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "propertiesTruncated": {
+                        "const": true,
+                        "type": "boolean"
+                      },
                       "propertyCount": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
@@ -16448,6 +16543,7 @@ Output schema:
                     "required": [
                       "localId",
                       "sourceIndex",
+                      "properties",
                       "propertyCount"
                     ],
                     "type": "object"

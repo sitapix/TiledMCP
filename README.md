@@ -205,7 +205,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_checkpoint_restore` | 校验单文件 checkpoint 并生成 destructive 恢复 change set；不直接写盘 |
 | `tiled_get_map_summary` | 读取 revision、根显示/元数据、图层树和 tileset asset id |
 | `tiled_analyze_usage` | 只读统计整张地图的 tile 使用、图层密度、变换位和未使用 local ID |
-| `tiled_get_tileset` | 按 map + asset id 读取有界 atlas/稀疏 tile metadata/Wang 概览 |
+| `tiled_get_tileset` | 按 map + asset id 读取有界 atlas/稀疏 tile metadata（含 per-tile 标量属性值）/Wang 概览 |
 | `tiled_find_tiles` | 按 map + asset id 精确检索显式 class/property metadata，返回分页 `TileRef` |
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |
 | `tiled_render_tileset_sheet` | 按 `tilesetAssetId` 返回带 local ID 的分页 PNG sheet |
@@ -1109,8 +1109,10 @@ checkpoint restore。架构与 roadmap
   最多初始化 100,000 个空 cell。image layer 只接受项目内安全图片，图片 bytes revision
   作为 prospective dependency 在 preview 和 apply 两端复核；提交只修改 TMJ，不修改
   图片或既有图层内容。无限地图、压缩/chunk tile layer 和多图层批量创建仍不支持。
-- `tiled_get_tileset` 返回有界 semantic projection：tile properties 目前只给数量，
-  collision 只给对象数，Wang 只给 set 概览，不伪装成完整 TSJ。tile metadata 默认
+- `tiled_get_tileset` 返回有界 semantic projection：per-tile 标量自定义属性逐字
+  回读（复杂/enum/超长条目以 `valueOmitted` 标记，每 tile ≤128 条；tileset 级与
+  wang-set 属性仍只给数量），collision 只给对象数，Wang 只给 set 概览，不伪装成
+  完整 TSJ。tile metadata 默认
   64 项、最多 128 项并按 local ID 分页。响应中的依赖 revision 只包含所选 TSJ 的
   `source.assetId` / `source.revision`，不复制地图的完整 `dependencyRevisions`；
   准备编辑前应从 map summary/region 取得完整 revision 前提。外部 TSJ 的 `name`

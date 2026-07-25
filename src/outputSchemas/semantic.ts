@@ -26,6 +26,7 @@ import {
   nonnegativeIntegerOutputSchema,
   positiveIntegerOutputSchema,
   projectPathOutputSchema,
+  projectedPropertyOutputSchema,
   revisionOutputSchema,
   toolOutputSchema,
 } from "./common.js";
@@ -138,8 +139,14 @@ const tilesetMetadataItemOutputSchema = z
       .literal(true)
       .optional(),
     probability: z.number().nonnegative().optional(),
+    properties: z.array(
+      projectedPropertyOutputSchema,
+    ),
     propertyCount:
       nonnegativeIntegerOutputSchema,
+    propertiesTruncated: z
+      .literal(true)
+      .optional(),
     collision: z
       .object({
         objectCount:
@@ -212,7 +219,9 @@ const tilesetDetailSuccessOutputSchema = z
         tileClassField: z.literal(
           "type-with-class-compatibility-fallback",
         ),
-        properties: z.literal("counts-only"),
+        properties: z.literal(
+          "tile-scalar-values-with-omission-markers-others-counts-only",
+        ),
         collision: z.literal(
           "object-counts-only",
         ),

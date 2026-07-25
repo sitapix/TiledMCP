@@ -8,6 +8,10 @@ import {
   type JsonValue,
 } from "../formats/json.js";
 import {
+  projectScalarProperties,
+  type ProjectedProperty,
+} from "./propertyEdits.js";
+import {
   parseTransparentColor,
   validateAtlasGeometry,
 } from "../images/atlas.js";
@@ -58,7 +62,9 @@ interface TileMetadataSummary {
   classNameSource?: "class" | "type";
   classNameTruncated?: true;
   probability?: number;
+  properties: ProjectedProperty[];
   propertyCount: number;
+  propertiesTruncated?: true;
   collision?: {
     objectCount: number;
   };
@@ -321,7 +327,8 @@ export function summarizeTilesetDocument(
       kind: "bounded-semantic-summary",
       classResolution: "name-only",
       tileClassField: "type-with-class-compatibility-fallback",
-      properties: "counts-only",
+      properties:
+        "tile-scalar-values-with-omission-markers-others-counts-only",
       collision: "object-counts-only",
       wangSets: "overview-only",
       sourceImage: "declared-metadata-only",
@@ -455,6 +462,12 @@ function summarizeTile(
     "property entries",
     path,
   );
+  const projectedProperties =
+    projectScalarProperties(
+      tile,
+      `${path} tile ${localId}.properties`,
+      { path, tileId: localId },
+    );
 
   const collision =
     tile.objectgroup === undefined
@@ -484,7 +497,11 @@ function summarizeTile(
             : {}),
         }),
     ...(probability === undefined ? {} : { probability }),
-    propertyCount: properties.length,
+    properties: projectedProperties.entries,
+    propertyCount: projectedProperties.total,
+    ...(projectedProperties.truncated
+      ? { propertiesTruncated: true as const }
+      : {}),
     ...(collision === undefined ? {} : { collision }),
     ...(animation === undefined ? {} : { animation }),
   };

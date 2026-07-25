@@ -199,6 +199,137 @@ describe("tileset detail safety limits", () => {
     );
   });
 
+  it("reads scalar tile property values back with explicit omission markers", () => {
+    const document = baseTileset();
+    document.tiles = [
+      {
+        id: 0,
+        properties: [
+          {
+            name: "walkable",
+            type: "bool",
+            value: true,
+          },
+          {
+            name: "weight",
+            type: "int",
+            value: 5,
+          },
+          {
+            name: "linked",
+            type: "object",
+            value: 7,
+          },
+          {
+            name: "style",
+            propertytype: "GroundStyle",
+            type: "string",
+            value: "grass",
+          },
+          {
+            name: "big",
+            type: "string",
+            value: "v".repeat(2_000),
+          },
+        ],
+      },
+      { id: 1 },
+    ];
+
+    const result = summarize(document);
+    const tiles = (
+      result.tileMetadata as {
+        items: Array<Record<string, unknown>>;
+      }
+    ).items;
+    expect(tiles[0]).toMatchObject({
+      localId: 0,
+      propertyCount: 5,
+      properties: [
+        {
+          name: "walkable",
+          type: "bool",
+          value: true,
+        },
+        { name: "weight", type: "int", value: 5 },
+        {
+          name: "linked",
+          type: "object",
+          valueOmitted: true,
+          reason: "complex-type",
+        },
+        {
+          name: "style",
+          type: "string",
+          propertytype: "GroundStyle",
+          valueOmitted: true,
+          reason: "custom-propertytype",
+        },
+        {
+          name: "big",
+          type: "string",
+          valueOmitted: true,
+          reason: "oversized-value",
+          valueCodePoints: 2_000,
+        },
+      ],
+    });
+    expect(result.projection).toMatchObject({
+      properties:
+        "tile-scalar-values-with-omission-markers-others-counts-only",
+    });
+  });
+
+  it("fails closed on duplicate tile property names and truncates beyond 128 entries", () => {
+    const document = baseTileset();
+    document.tiles = [
+      {
+        id: 0,
+        properties: [
+          { name: "dup", type: "int", value: 1 },
+          { name: "dup", type: "int", value: 2 },
+        ],
+      },
+    ];
+    expect(() =>
+      summarize(document),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+        message: expect.stringContaining(
+          "duplicate property name",
+        ),
+      }),
+    );
+
+    document.tiles = [
+      {
+        id: 0,
+        properties: Array.from(
+          { length: 130 },
+          (_, index) => ({
+            name: `p${String(index).padStart(3, "0")}`,
+            type: "int",
+            value: index,
+          }),
+        ),
+      },
+    ];
+    const truncated = summarize(document);
+    const tile = (
+      truncated.tileMetadata as {
+        items: Array<Record<string, unknown>>;
+      }
+    ).items[0]!;
+    expect(tile).toMatchObject({
+      propertyCount: 130,
+      propertiesTruncated: true,
+    });
+    expect(
+      (tile.properties as unknown[]).length,
+    ).toBe(128);
+  });
+
   it("keeps a normal projection within the 256 KiB serialized result limit", () => {
     const document = baseTileset();
     document.objectalignment = "center";

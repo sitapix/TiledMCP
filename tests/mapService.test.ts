@@ -844,7 +844,7 @@ describe("MapService", () => {
       {
         id: 1,
         class: "CompatibilityFallback",
-        properties: [{ name: "nil", type: "string", value: null }],
+        properties: [{ name: "nil", type: "string", value: "unset" }],
       },
     ];
     tileset.wangsets = [
@@ -872,7 +872,8 @@ describe("MapService", () => {
         kind: "bounded-semantic-summary",
         classResolution: "name-only",
         tileClassField: "type-with-class-compatibility-fallback",
-        properties: "counts-only",
+        properties:
+          "tile-scalar-values-with-omission-markers-others-counts-only",
         collision: "object-counts-only",
         wangSets: "overview-only",
         sourceImage: "declared-metadata-only",
@@ -927,6 +928,13 @@ describe("MapService", () => {
             sourceIndex: 1,
             className: "CompatibilityFallback",
             classNameSource: "class",
+            properties: [
+              {
+                name: "nil",
+                type: "string",
+                value: "unset",
+              },
+            ],
             propertyCount: 1,
           },
         ],

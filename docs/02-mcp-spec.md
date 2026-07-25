@@ -1323,7 +1323,7 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞/属性计数和 Wang-set 概览；不把 `tiles.length` 冒充 `tilecount`，不读取 property values/碰撞 geometry/完整 wang assignments | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
+| `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞计数、Wang-set 概览，以及 per-tile 标量自定义属性值（与 `tiled_get_object` 同一投影：标量逐字、class/enum/list/object 与超长条目 `valueOmitted` 标记、每 tile ≤128 条；tileset 级与 wang-set 属性仍只给数量）；不把 `tiles.length` 冒充 `tilecount`，不读取碰撞 geometry/完整 wang assignments；整页受 256 KiB 结果预算约束，超限要求降低分页 | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
 | `tiled_create_tileset` | **已实现（preview→apply）。** 从项目内图集图片规划一个新 external `.tsj`：按 Tiled 1.12.2 网格公式算 columns/rows/tilecount，返回 `tilesetCreate` change set；`expectedRevision` 是**批准内容本身的 SHA-256**（无既有文件），apply 走 no-replace 创建、`beforeRevision:null`。direct 创建特例条款保持仅 `tiled_create_map` | `tilesetPath`, `imagePath`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?`, `className?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，完全不写盘（asset identity contract v2：读/预览路径无锁且零副作用） | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |

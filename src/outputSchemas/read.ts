@@ -47,11 +47,7 @@ import {
   MIN_POLYGON_OBJECT_POINTS,
   MIN_POLYLINE_OBJECT_POINTS,
 } from "../maps/mapService.js";
-import {
-  MAX_PROPERTIES_PER_TARGET,
-  MAX_PROPERTY_NAME_CODE_POINTS,
-  MAX_PROPERTY_VALUE_CODE_POINTS,
-} from "../maps/propertyEdits.js";
+import { MAX_PROPERTIES_PER_TARGET } from "../maps/propertyEdits.js";
 import {
   MAX_PREVIEW_ATLASES,
   MAX_PREVIEW_LAYERS,
@@ -88,6 +84,7 @@ import {
   pixelSizeOutputSchema,
   positiveIntegerOutputSchema,
   projectPathOutputSchema,
+  projectedPropertyOutputSchema,
   resolvedTileRefOutputSchema,
   revisionOutputSchema,
   toolOutputSchema,
@@ -442,54 +439,6 @@ const objectDetailsDisplayStringOutputSchema =
         Array.from(value).length <=
         MAX_OBJECT_DISPLAY_STRING_LENGTH,
     );
-const projectedPropertyNameOutputSchema = z
-  .string()
-  .min(1)
-  .max(MAX_PROPERTY_NAME_CODE_POINTS * 2);
-
-const projectedPropertyOutputSchema = z.union([
-  z
-    .object({
-      name: projectedPropertyNameOutputSchema,
-      type: z.enum([
-        "string",
-        "int",
-        "float",
-        "bool",
-        "color",
-        "file",
-      ]),
-      value: z.union([
-        z
-          .string()
-          .max(
-            MAX_PROPERTY_VALUE_CODE_POINTS * 4,
-          ),
-        z.number().finite(),
-        z.boolean(),
-      ]),
-    })
-    .strict(),
-  z
-    .object({
-      name: projectedPropertyNameOutputSchema,
-      type: z.string().min(1).max(64),
-      propertytype: z
-        .string()
-        .max(1_024)
-        .optional(),
-      valueOmitted: z.literal(true),
-      reason: z.enum([
-        "complex-type",
-        "custom-propertytype",
-        "oversized-value",
-      ]),
-      valueCodePoints:
-        nonnegativeIntegerOutputSchema.optional(),
-    })
-    .strict(),
-]);
-
 const objectDetailsCommonOutputShape = {
   id: positiveIntegerOutputSchema.max(
     Number.MAX_SAFE_INTEGER,
