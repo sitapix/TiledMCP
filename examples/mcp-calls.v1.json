@@ -25,6 +25,23 @@
       "purpose": "只读列出一个 JSON world 的显式地图成员：世界坐标、声明尺寸、逐成员存在性与 revision pin；pattern 成员只计数、绝不做文件系统匹配。"
     },
     {
+      "name": "tiled_preview_world_edits",
+      "profile": "core",
+      "arguments": {
+        "worldPath": "overworld.world",
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "operations": [
+          {
+            "type": "moveMap",
+            "index": 0,
+            "x": -32,
+            "y": 16
+          }
+        ]
+      },
+      "purpose": "预览 world 成员编辑：按当前数组 index 定位成员、以 world revision 为 pin；add 要求既有 .tmj 地图，被引用的地图文件绝不被改动。"
+    },
+    {
       "name": "tiled_list_checkpoints",
       "profile": "core",
       "arguments": {

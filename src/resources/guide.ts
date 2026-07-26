@@ -1381,8 +1381,14 @@ carries \`exists\` plus a pinned \`revision\` when the file is present;
 the member read set is not an atomic snapshot. Pattern-based members are
 counted and flagged \`patternsUnexpanded\`, never matched against the
 filesystem, and world custom properties use the shared property
-projection. This tool only reads; world membership editing is not
-supported yet.
+projection. \`tiled_preview_world_edits\` edits the membership through
+the standard preview-approve-apply flow: bounded \`addMap\` (requiring
+an existing project-local .tmj), \`moveMap\`, and \`removeMap\`
+operations address members by their current array index under the
+world's revision pin, at most one operation per member per change set.
+Removing a member deletes only the world entry - the referenced map
+file is never touched - and additions append like Tiled's own world
+editor.
 
 ## Atomic multi-file transactions
 

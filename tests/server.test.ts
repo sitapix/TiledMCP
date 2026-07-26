@@ -186,6 +186,7 @@ const CORE_TOOLS = [
   "tiled_update_tile",
   "tiled_create_layer",
   "tiled_preview_edits",
+  "tiled_preview_world_edits",
   "tiled_preview_transaction",
   "tiled_apply_change_set",
 ] as const;
@@ -285,7 +286,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the thirty core tools with safety annotations", async () => {
+  it("advertises exactly the thirty-one core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 

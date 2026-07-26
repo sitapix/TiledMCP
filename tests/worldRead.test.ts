@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { serializeJsonDocument } from "../src/formats/json.js";
+import { ChangeSetRegistry } from "../src/changeSets.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
@@ -129,6 +130,113 @@ describe("world member reading", () => {
       }),
     ).rejects.toMatchObject({
       code: "UNSUPPORTED_FORMAT",
+    });
+  });
+
+  it("adds, moves, and removes members through preview and apply", async () => {
+    const service = await createService(roots, {
+      maps: [
+        {
+          fileName: "maps/a.tmj",
+          x: 0,
+          y: 0,
+          width: 32,
+          height: 32,
+        },
+        {
+          fileName: "maps/a.tmj",
+          x: 64,
+          y: 0,
+          width: 32,
+          height: 32,
+        },
+      ],
+      onlyShowAdjacentMaps: false,
+      type: "world",
+    });
+    const before = await service.listWorldMaps({
+      worldPath: WORLD_PATH,
+    });
+    const plan = await service.planWorldEdits({
+      worldPath: WORLD_PATH,
+      expectedRevision:
+        before.revision as string,
+      operations: [
+        { type: "moveMap", index: 0, x: -32, y: 16 },
+        { type: "removeMap", index: 1 },
+        {
+          type: "addMap",
+          fileName: "maps/a.tmj",
+          x: 96,
+          y: 96,
+        },
+      ],
+    });
+    expect(plan.summary).toMatchObject({
+      memberCountBefore: 2,
+      memberCountAfter: 2,
+      moved: [
+        {
+          index: 0,
+          from: { x: 0, y: 0 },
+          to: { x: -32, y: 16 },
+        },
+      ],
+      removed: [{ index: 1 }],
+      added: [{ fileName: "maps/a.tmj" }],
+      wouldChange: true,
+    });
+    const preview = new ChangeSetRegistry().put(
+      plan,
+    );
+    expect(preview.operations).toHaveLength(3);
+    expect(preview.operations[1]).toMatchObject({
+      type: "removeWorldMap",
+      destructive: true,
+    });
+
+    await service.applyWorldEdits(plan);
+    const after = await service.listWorldMaps({
+      worldPath: WORLD_PATH,
+    });
+    expect(after.members).toEqual([
+      expect.objectContaining({
+        x: -32,
+        y: 16,
+        declaredSize: {
+          width: 32,
+          height: 32,
+        },
+      }),
+      expect.objectContaining({
+        x: 96,
+        y: 96,
+        declaredSize: null,
+      }),
+    ]);
+
+    // Stale plans and missing member maps fail closed.
+    await expect(
+      service.applyWorldEdits(plan),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+    });
+    await expect(
+      service.planWorldEdits({
+        worldPath: WORLD_PATH,
+        expectedRevision:
+          after.revision as string,
+        operations: [
+          {
+            type: "addMap",
+            fileName: "maps/missing.tmj",
+            x: 0,
+            y: 0,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "FILE_NOT_FOUND",
     });
   });
 });

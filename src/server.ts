@@ -193,6 +193,7 @@ import {
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
   previewTransactionToolOutputSchema,
+  worldEditPreviewToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -201,6 +202,7 @@ import {
   MAX_CREATE_TILESET_SPACING,
   MAX_CREATE_TILESET_TILE_EDGE,
 } from "./maps/tilesetCreate.js";
+import { MAX_WORLD_EDIT_OPERATIONS } from "./maps/worldRead.js";
 import {
   MAX_DELETE_REFERENCE_SCAN_ASSETS,
   MAX_DELETE_REFERENCE_SCAN_BYTES,
@@ -1224,6 +1226,17 @@ const resizeMapSchema = z
   })
   .strict();
 
+const worldCoordinateSchema = z
+  .number()
+  .int()
+  .min(-1_000_000_000)
+  .max(1_000_000_000);
+const worldSizeSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(1_000_000_000);
+
 const transcodeTileLayerSchema = z
   .object({
     type: z.literal("transcodeTileLayer"),
@@ -1532,6 +1545,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_update_tile",
     "tiled_create_layer",
     "tiled_preview_edits",
+    "tiled_preview_world_edits",
     "tiled_preview_transaction",
     "tiled_apply_change_set",
   ] as const);
@@ -3148,6 +3162,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+
   register(
     server,
     registeredTools,
@@ -4365,6 +4380,82 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_preview_world_edits",
+    {
+      title: "Preview world member edits",
+      description:
+        "Validates bounded add, move, and remove operations on one JSON world's explicit map members - members addressed by their current array index under the world's revision pin, additions requiring existing project-local .tmj maps - and returns an expiring change set without modifying project assets. Referenced map files are never touched.",
+      inputSchema: z
+        .object({
+          worldPath: projectPathSchema,
+          expectedRevision: revisionSchema,
+          operations: z
+            .array(
+              z.discriminatedUnion("type", [
+                z
+                  .object({
+                    type: z.literal("addMap"),
+                    fileName: z
+                      .string()
+                      .min(1)
+                      .max(4_096),
+                    x: worldCoordinateSchema,
+                    y: worldCoordinateSchema,
+                    width: worldSizeSchema.optional(),
+                    height:
+                      worldSizeSchema.optional(),
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal("moveMap"),
+                    index: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(999),
+                    x: worldCoordinateSchema,
+                    y: worldCoordinateSchema,
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal("removeMap"),
+                    index: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(999),
+                  })
+                  .strict(),
+              ]),
+            )
+            .min(1)
+            .max(MAX_WORLD_EDIT_OPERATIONS),
+        })
+        .strict(),
+      outputSchema:
+        worldEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      worldPath,
+      expectedRevision,
+      operations,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planWorldEdits({
+          worldPath,
+          expectedRevision,
+          operations: operations as never,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_preview_transaction",
     {
       title:
@@ -4514,9 +4605,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                 ? applyTransactionChangeSet(
                                     plan,
                                   )
-                                : maps.applyEdits(
-                                    plan,
-                                  ),
+                                : plan.kind ===
+                                    "worldEdit"
+                                  ? maps.applyWorldEdits(
+                                      plan,
+                                    )
+                                  : maps.applyEdits(
+                                      plan,
+                                    ),
         ),
       ),
   );

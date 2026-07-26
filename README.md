@@ -175,7 +175,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 
 目标是以 **TMJ/TSJ（JSON）无损读写**为地基，把 **Tiled CLI 与一次性脚本执行**作为格式转换、AutoMapping、Wang 编辑和兼容性验证后端，逐步提供面向结果的高层编辑工具与回滚安全网，并把**视觉闭环做成一等能力**：模型借助带 id 标注的 tileset 索引图选料，改完后渲染自查、对比确认。
 
-首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的分页 tileset sheet 与稀疏 tile 选集渲染、基础 tile/rectangle/point/ellipse/capsule、有界 polygon/polyline 与 text 对象编辑、单对象详情读取、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复，和把已批准 change set 组合原子提交的跨文件可恢复事务；无限地图的 chunked tile layer 已支持除 resize 外的全部 tile 操作（按 Tiled 规范化保存形态写回；floodFill 以已用 chunk 并集为界），有限 tile layer 可经独占 `transcodeTileLayer` operation 在 csv 与 base64+gzip/zlib/zstd 间显式转码。复杂属性读取已落地：嵌套 class/list 值以有界 raw JSON 投影（class 成员类型注解存于项目 class 定义而非 TMJ，披露为 `valueSemantics`），enum 与对象引用逐字投影，仅超限条目保留 `valueOmitted`；属性写入支持标量与 `setClassMembers`（覆写既有 class 值内既有标量成员、保持 JSON 类型；缺失成员与改型 fail closed——引入新成员需要项目 class 定义）。JSON world 的显式成员列表读取已可用（`tiled_list_world_maps`）；world 成员编辑、Wang 与程序化生成将在基础读写闭环稳定后分期加入。
+首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的分页 tileset sheet 与稀疏 tile 选集渲染、基础 tile/rectangle/point/ellipse/capsule、有界 polygon/polyline 与 text 对象编辑、单对象详情读取、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复，和把已批准 change set 组合原子提交的跨文件可恢复事务；无限地图的 chunked tile layer 已支持除 resize 外的全部 tile 操作（按 Tiled 规范化保存形态写回；floodFill 以已用 chunk 并集为界），有限 tile layer 可经独占 `transcodeTileLayer` operation 在 csv 与 base64+gzip/zlib/zstd 间显式转码。复杂属性读取已落地：嵌套 class/list 值以有界 raw JSON 投影（class 成员类型注解存于项目 class 定义而非 TMJ，披露为 `valueSemantics`），enum 与对象引用逐字投影，仅超限条目保留 `valueOmitted`；属性写入支持标量与 `setClassMembers`（覆写既有 class 值内既有标量成员、保持 JSON 类型；缺失成员与改型 fail closed——引入新成员需要项目 class 定义）。JSON world 的显式成员列表读取与成员编辑已可用（`tiled_list_world_maps` / `tiled_preview_world_edits`）；Wang 与程序化生成将在基础读写闭环稳定后分期加入。
 
 ## 快速开始
 
@@ -233,6 +233,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_get_capabilities` | 查看实现边界、限额和本机 Tiled CLI 能力 |
 | `tiled_list_files` | 列出项目内 Tiled 资产 |
 | `tiled_list_world_maps` | 只读列出一个 JSON world 的显式地图成员（坐标、声明尺寸、逐成员存在性与 revision pin）；pattern 成员只计数 |
+| `tiled_preview_world_edits` | 预览 world 成员的 add/move/remove（按当前数组 index 定位、world revision pin）；被引用地图文件绝不改动 |
 | `tiled_list_checkpoints` | 有界列出恢复 checkpoint，并隔离报告损坏 manifest |
 | `tiled_preview_prepared_checkpoint_discard` | 仅在目标仍精确等于写前状态时，固定 prepared manifest 与目标证据并生成 destructive discard change set |
 | `tiled_preview_prepared_checkpoint_commit` | 仅对 prepared create 的 exact-after 来源含混状态，固定完整 manifest/目标证据并生成内部状态 commit change set |

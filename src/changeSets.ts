@@ -51,6 +51,7 @@ import {
   DELETE_FILE_WARNING,
   type FileDeletePlan,
 } from "./maps/fileDelete.js";
+import type { WorldEditPlan } from "./maps/worldRead.js";
 import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
@@ -133,6 +134,7 @@ export type ChangeSetPlan =
   | TilesetEditPlan
   | TilesetCreatePlan
   | FileDeletePlan
+  | WorldEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -240,6 +242,13 @@ export interface FileDeleteChangeSetPreview
   kind: "fileDelete";
   targetPath: string;
   summary: FileDeletePlan["summary"];
+}
+
+export interface WorldEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "worldEdit";
+  worldPath: string;
+  summary: WorldEditPlan["summary"];
 }
 
 export const MIN_TRANSACTION_MEMBERS = 2;
@@ -674,6 +683,7 @@ export type ChangeSetPreview =
   | TilesetEditChangeSetPreview
   | TilesetCreateChangeSetPreview
   | FileDeleteChangeSetPreview
+  | WorldEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -1065,6 +1075,30 @@ type OperationPreview =
       revision: string;
       size: number;
       scan: FileDeletePlan["scan"];
+    }
+  | {
+      type: "addWorldMap";
+      destructive: false;
+      warning: string;
+      fileName: string;
+      x: number;
+      y: number;
+    }
+  | {
+      type: "moveWorldMap";
+      destructive: false;
+      warning: string;
+      index: number;
+      fileName: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+    }
+  | {
+      type: "removeWorldMap";
+      destructive: true;
+      warning: string;
+      index: number;
+      fileName: string;
     }
   | {
       type: "transactionMember";
@@ -2129,6 +2163,69 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "worldEdit") {
+    const plan = entry.plan;
+    const operations: OperationPreview[] = [];
+    for (const operation of plan.operations) {
+      if (operation.type === "addMap") {
+        operations.push({
+          type: "addWorldMap",
+          destructive: false,
+          warning:
+            "This appends a map member to the world file; the referenced map itself is never modified.",
+          fileName: operation.fileName,
+          x: operation.x,
+          y: operation.y,
+        });
+      } else if (operation.type === "moveMap") {
+        const moved = plan.summary.moved.find(
+          (candidate) =>
+            candidate.index === operation.index,
+        );
+        operations.push({
+          type: "moveWorldMap",
+          destructive: false,
+          warning:
+            "This repositions one world member; the referenced map itself is never modified.",
+          index: operation.index,
+          fileName: moved?.fileName ?? "",
+          from: moved?.from ?? {
+            x: 0,
+            y: 0,
+          },
+          to: { x: operation.x, y: operation.y },
+        });
+      } else {
+        const removed =
+          plan.summary.removed.find(
+            (candidate) =>
+              candidate.index === operation.index,
+          );
+        operations.push({
+          type: "removeWorldMap",
+          destructive: true,
+          warning:
+            "This permanently removes one member entry from the world file; the referenced map file itself is never deleted.",
+          index: operation.index,
+          fileName: removed?.fileName ?? "",
+        });
+      }
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      worldPath: plan.worldPath,
+      expectedRevision: plan.baseRevision,
+      operations,
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "transaction") {
     const plan = entry.plan;
     const { id: planDigestId, ...unsigned } =
@@ -2563,6 +2660,9 @@ function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
   }
   if (plan.kind === "tilesetEdit") {
     return { ...plan, updates: [] };
+  }
+  if (plan.kind === "worldEdit") {
+    return { ...plan, operations: [] };
   }
   return plan;
 }

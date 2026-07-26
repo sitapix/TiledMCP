@@ -172,8 +172,12 @@ import {
   readObjectTemplate,
 } from "./objectTemplates.js";
 import {
+  applyWorldEditOperations,
   assertWorldPath,
   projectWorldDocument,
+  worldEditPlanId,
+  type WorldEditOperation,
+  type WorldEditPlan,
 } from "./worldRead.js";
 import type {
   CreatableLayerType,
@@ -3108,6 +3112,165 @@ export class MapService {
       snapshotConsistency:
         "non-atomic-read-set",
     };
+  }
+
+  async planWorldEdits(input: {
+    worldPath: string;
+    expectedRevision: string;
+    operations: readonly WorldEditOperation[];
+  }): Promise<WorldEditPlan> {
+    assertRequiredRevision(
+      input.expectedRevision,
+      "expectedRevision",
+    );
+    const worldPath = this.resolver.normalize(
+      input.worldPath,
+    );
+    assertWorldPath(worldPath);
+    const snapshot =
+      await this.store.readSnapshot(worldPath);
+    if (
+      snapshot.revision !== input.expectedRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${worldPath} does not match expectedRevision.`,
+        {
+          path: worldPath,
+          expectedRevision:
+            input.expectedRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    const parsed =
+      this.store.parseSnapshot(snapshot);
+    const operations = structuredClone(
+      input.operations,
+    ) as WorldEditOperation[];
+    // Added members must reference existing project-local .tmj maps.
+    for (const operation of operations) {
+      if (operation.type !== "addMap") {
+        continue;
+      }
+      const memberPath =
+        await this.resolver.resolveReference(
+          worldPath,
+          operation.fileName,
+        );
+      if (
+        posix.extname(memberPath).toLowerCase() !==
+        ".tmj"
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_FORMAT",
+          `World members must be project-local .tmj maps; got ${memberPath}.`,
+          { path: memberPath },
+        );
+      }
+    }
+    const applied = applyWorldEditOperations(
+      parsed.document,
+      worldPath,
+      operations,
+    );
+    const unsigned: Omit<WorldEditPlan, "id"> = {
+      kind: "worldEdit",
+      version: 1,
+      worldPath,
+      baseRevision: snapshot.revision,
+      operations,
+      summary: applied.summary,
+    };
+    return {
+      ...unsigned,
+      id: worldEditPlanId(
+        unsigned,
+        (domain, json) =>
+          `changeset:${createHash("sha256")
+            .update(domain)
+            .update(json)
+            .digest("hex")}`,
+      ),
+    };
+  }
+
+  async applyWorldEdits(
+    plan: WorldEditPlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    const { id: suppliedId, ...unsigned } = plan;
+    const expectedId = worldEditPlanId(
+      unsigned,
+      (domain, json) =>
+        `changeset:${createHash("sha256")
+          .update(domain)
+          .update(json)
+          .digest("hex")}`,
+    );
+    if (suppliedId !== expectedId) {
+      throw new TiledMcpError(
+        "CHANGE_SET_TAMPERED",
+        "The world edit contents do not match its digest. Preview the edits again.",
+        { suppliedId, expectedId },
+      );
+    }
+    const snapshot = await this.store.readSnapshot(
+      plan.worldPath,
+    );
+    if (snapshot.revision !== plan.baseRevision) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${plan.worldPath} changed since the world edit was previewed.`,
+        {
+          path: plan.worldPath,
+          expectedRevision: plan.baseRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    const parsed =
+      this.store.parseSnapshot(snapshot);
+    const applied = applyWorldEditOperations(
+      parsed.document,
+      plan.worldPath,
+      plan.operations,
+    );
+    if (
+      stableJson(
+        applied.summary as unknown as JsonValue,
+      ) !==
+      stableJson(
+        plan.summary as unknown as JsonValue,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The world edit summary does not match its operations.",
+      );
+    }
+    const edited = cloneJson(
+      parsed.document,
+    ) as JsonObject;
+    edited.maps = applied.maps;
+    const patchedSource = patchJsonDocumentSource(
+      parsed.source,
+      edited,
+      [],
+      plan.worldPath,
+      [],
+      [{ path: [], key: "maps" }],
+      [],
+      [],
+    );
+    const result = await this.store.commitBytes(
+      plan.worldPath,
+      plan.baseRevision,
+      patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
   }
 
   async getObject(input: GetObjectInput): Promise<Record<string, unknown>> {

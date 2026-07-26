@@ -3190,6 +3190,140 @@ const transactionPreviewOutputSchema = z
     }
   });
 
+const worldEditCoordinateOutputSchema = z
+  .number()
+  .int()
+  .min(-1_000_000_000)
+  .max(1_000_000_000);
+
+const worldEditOperationPreviewOutputSchema =
+  z.discriminatedUnion("type", [
+    z
+      .object({
+        type: z.literal("addWorldMap"),
+        destructive: z.literal(false),
+        warning: z.string(),
+        fileName: z.string().min(1).max(4_096),
+        x: worldEditCoordinateOutputSchema,
+        y: worldEditCoordinateOutputSchema,
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("moveWorldMap"),
+        destructive: z.literal(false),
+        warning: z.string(),
+        index: nonnegativeIntegerOutputSchema,
+        fileName: z.string().max(4_096),
+        from: z
+          .object({
+            x: worldEditCoordinateOutputSchema,
+            y: worldEditCoordinateOutputSchema,
+          })
+          .strict(),
+        to: z
+          .object({
+            x: worldEditCoordinateOutputSchema,
+            y: worldEditCoordinateOutputSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("removeWorldMap"),
+        destructive: z.literal(true),
+        warning: z.string(),
+        index: nonnegativeIntegerOutputSchema,
+        fileName: z.string().max(4_096),
+      })
+      .strict(),
+  ]);
+
+const worldEditSummaryOutputSchema = z
+  .object({
+    operationCount: positiveIntegerOutputSchema,
+    memberCountBefore:
+      nonnegativeIntegerOutputSchema,
+    memberCountAfter:
+      nonnegativeIntegerOutputSchema,
+    added: z
+      .array(
+        z
+          .object({
+            index:
+              nonnegativeIntegerOutputSchema,
+            fileName: z
+              .string()
+              .min(1)
+              .max(4_096),
+          })
+          .strict(),
+      )
+      .max(32),
+    moved: z
+      .array(
+        z
+          .object({
+            index:
+              nonnegativeIntegerOutputSchema,
+            fileName: z.string().max(4_096),
+            from: z
+              .object({
+                x: worldEditCoordinateOutputSchema,
+                y: worldEditCoordinateOutputSchema,
+              })
+              .strict(),
+            to: z
+              .object({
+                x: worldEditCoordinateOutputSchema,
+                y: worldEditCoordinateOutputSchema,
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .max(32),
+    removed: z
+      .array(
+        z
+          .object({
+            index:
+              nonnegativeIntegerOutputSchema,
+            fileName: z.string().max(4_096),
+          })
+          .strict(),
+      )
+      .max(32),
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const worldEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("worldEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    worldPath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        worldEditOperationPreviewOutputSchema,
+      )
+      .min(1)
+      .max(32),
+    summary: worldEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const worldEditPreviewToolOutputSchema =
+  toolOutputSchema(worldEditPreviewOutputSchema);
+
 export const previewTransactionToolOutputSchema =
   toolOutputSchema(
     transactionPreviewOutputSchema,

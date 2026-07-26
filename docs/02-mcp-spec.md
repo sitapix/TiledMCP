@@ -1963,9 +1963,7 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
 | `tiled_rasterize` | 使用 `tmxrasterizer` 把地图渲染为 PNG，与 `tiled_export` 分开声明和标注 | `sourcePath`, `targetPath`, `options?` |
 | `tiled_run_automapping` | 通过 one-shot `tiled --evaluate` 调用官方 `TileMap.autoMap()`，不要求常驻 GUI 或 xvfb | `mapPath`, `rulesPath` |
 | `tiled_list_world_maps` | **已实现。** 只读列出 JSON world 的显式地图成员：世界坐标、声明尺寸（非正即 null，由地图决定）、逐成员存在性与 revision pin、world 自定义属性；pattern 成员只计数（`patternsUnexpanded`），绝不做文件系统匹配 | `worldPath` |
-| `tiled_add_world_map` | 添加 world 条目，返回 change set | `worldPath`, `entry` |
-| `tiled_move_world_map` | 移动 world 条目，返回 change set | `worldPath`, `entryId`, `position` |
-| `tiled_remove_world_map` | 删除 world 条目（**destructive**），返回 change set | `worldPath`, `entryId` |
+| `tiled_preview_world_edits` | **已实现**（单工具承载 add/move/remove，未拆三个工具）：按当前数组 index 定位成员、world revision pin、add 要求既有 .tmj；被引用地图绝不改动 | `worldPath`, `expectedRevision`, `operations` |
 
 ---
 
