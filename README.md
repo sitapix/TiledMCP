@@ -98,7 +98,7 @@ id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object`、
 `tiled_get_tileset`、`tiled_find_tiles`、`tiled_render_tiles` 与
 `tiled_update_tile` 可用（选中 tile 逐个从各自图片渲染进按选集最大尺寸组格的
 标注单元；元数据编辑只能针对既有稀疏条目、per-tile image 成员绝不触碰；sheet 按稀疏
-id 升序分页、每页至多 64 tile；native preview 绘制与 map grid 同尺寸的 collection tile（cell 与 tile object），其余尺寸 fail closed）。collection 详情以 `collection`
+id 升序分页、每页至多 64 tile；native preview 按 tile 自身尺寸绘制 collection tile——cell 左下角锚点、向上溢出、画布裁剪，与 Tiled 的 `tilerendersize:"tile"` 语义一致）。collection 详情以 `collection`
 块（`maxLocalId`、最大 tile 尺寸语义）取代 atlas 几何，返回页内每个 tile 的图
 片经安全检查验证并 pin revision（声明尺寸与实际不符即 fail closed）；分页与检
 索按稀疏 local id 升序。指向已删除 collection id 的 GID、per-tile 图片

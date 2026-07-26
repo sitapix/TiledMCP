@@ -573,9 +573,12 @@ function validateInput(input: RenderNativePreviewInput): void {
     );
   }
   for (const atlas of input.atlases) {
+    // Collection tile sources draw at their own size with bottom-left
+    // cell anchoring; only atlas grids must match the map grid.
     if (
-      atlas.geometry.tileWidth !== input.tileWidth ||
-      atlas.geometry.tileHeight !== input.tileHeight
+      atlas.collectionLocalId === undefined &&
+      (atlas.geometry.tileWidth !== input.tileWidth ||
+        atlas.geometry.tileHeight !== input.tileHeight)
     ) {
       throw new TiledMcpError(
         "UNSUPPORTED_RENDER_FEATURE",
@@ -1426,7 +1429,8 @@ function renderLayer(
       const transform = decoded.transform as OrthogonalTransform;
       if (
         transform.flipD &&
-        input.tileWidth !== input.tileHeight
+        atlas.geometry.tileWidth !==
+          atlas.geometry.tileHeight
       ) {
         throw new TiledMcpError(
           "UNSUPPORTED_RENDER_FEATURE",
@@ -1436,8 +1440,8 @@ function renderLayer(
             layerId: layer.id,
             gid,
             tileSize: {
-              width: input.tileWidth,
-              height: input.tileHeight,
+              width: atlas.geometry.tileWidth,
+              height: atlas.geometry.tileHeight,
             },
           },
         );
@@ -1453,9 +1457,14 @@ function renderLayer(
         destinationLeft:
           layout.contentLeft +
           (mapX - input.region.x) * layout.tilePixelWidth,
+        // Tiled 1.12.2 anchors every cell at its bottom-left and draws
+        // the tile at its own size (tilerendersize "tile"), overflowing
+        // upward; grid-sized atlas tiles keep the exact old position.
         destinationTop:
           layout.contentTop +
-          (mapY - input.region.y) * layout.tilePixelHeight,
+          (mapY - input.region.y + 1) *
+            layout.tilePixelHeight -
+          atlas.geometry.tileHeight * input.scale,
         scale: input.scale,
         transform: {
           flipH: transform.flipH,

@@ -2244,28 +2244,6 @@ export class MapService {
           index,
           tile,
         ] of collectionSources.tiles.entries()) {
-          if (
-            tile.width !== tileWidth ||
-            tile.height !== tileHeight
-          ) {
-            throw unsupportedRenderFeature(
-              "collection-tile-size",
-              "Native preview renders collection tiles only at the exact map grid size.",
-              {
-                assetId: binding.assetId,
-                path: binding.path,
-                localId: tile.localId,
-                tileSize: {
-                  width: tile.width,
-                  height: tile.height,
-                },
-                mapGrid: {
-                  width: tileWidth,
-                  height: tileHeight,
-                },
-              },
-            );
-          }
           aggregateImageBytes +=
             collectionSources.byteLengths[
               index

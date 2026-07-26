@@ -286,7 +286,7 @@ describe("image-collection tileset details and search", () => {
     });
   });
 
-  it("renders native previews from grid-sized collection tiles", async () => {
+  it("renders native previews from collection tiles of any size", async () => {
     const harness = await createHarness(roots);
     const rendered =
       await harness.service.renderPreview({
@@ -307,17 +307,26 @@ describe("image-collection tileset details and search", () => {
       ],
     });
 
-    // Tile 7 is 24x32 while the map grid is 16x16.
-    await expect(
-      harness.service.renderPreview({
+    // Tile 7 is 24x32 while the map grid is 16x16: it draws anchored
+    // at the cell's bottom-left and overflows upward, clipped by the
+    // canvas, matching Tiled's tilerendersize "tile" semantics.
+    const mixed =
+      await harness.service.renderPreview({
         mapPath: MAP_PATH,
         region: { x: 0, y: 0, width: 2, height: 2 },
-      }),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_RENDER_FEATURE",
-      details: expect.objectContaining({
-        feature: "collection-tile-size",
-      }),
+      });
+    expect(
+      mixed.png.byteLength,
+    ).toBeGreaterThan(0);
+    expect(mixed.result).toMatchObject({
+      sources: expect.arrayContaining([
+        expect.objectContaining({
+          image: expect.objectContaining({
+            path: "tiles/prop-b.png",
+            pixelSize: { width: 24, height: 32 },
+          }),
+        }),
+      ]),
     });
   });
 

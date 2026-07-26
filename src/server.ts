@@ -2500,7 +2500,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           collectionTilesets:
             "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
           collectionPreviewTiles:
-            "grid-sized-only-each-used-tile-counts-as-one-atlas-source",
+            "own-size-bottom-left-cell-anchor-upward-overflow-each-used-tile-counts-as-one-atlas-source",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:

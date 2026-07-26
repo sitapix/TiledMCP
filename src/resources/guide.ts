@@ -112,10 +112,11 @@ not merged). Tile templates, XML (.tx) templates, and nested templates
 fail closed; \`tiled_list_objects\` keeps reporting the unexpanded
 \`template\` shape marker.
 \`tiled_render_preview\` draws collection tiles too — cells and tile
-objects — as long as every used tile image exactly matches the map grid
-size (larger or smaller collection tiles fail closed); each distinct
-used tile image counts against the preview's atlas-source budget, and a
-GID pointing at a removed sparse id fails closed.
+objects — at each tile's own image size, anchored at the cell's
+bottom-left and overflowing upward exactly like Tiled's
+\`tilerendersize: "tile"\` cell renderer, clipped by the output canvas;
+each distinct used tile image counts against the preview's atlas-source
+budget, and a GID pointing at a removed sparse id fails closed.
 Collection details replace the \`atlas\`/\`image\` blocks with a
 \`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
 returned metadata page entry carries its verified per-tile image —
