@@ -126,6 +126,19 @@ export interface RemoveTilesetFromMapOperation {
   tilesetAssetId: string;
 }
 
+export interface TranscodeTileLayerOperation {
+  type: "transcodeTileLayer";
+  layerId: number;
+  /**
+   * Target storage: "csv" is the plain JSON number array (no encoding
+   * members); "base64" stores little-endian uint32 bytes, optionally
+   * compressed. Matches the Tiled 1.12.2 writer exactly, including the
+   * empty compression member for uncompressed base64.
+   */
+  encoding: "csv" | "base64";
+  compression?: "" | "gzip" | "zlib" | "zstd";
+}
+
 export interface ReplaceTilesOperation {
   type: "replaceTiles";
   layerId: number;
@@ -341,6 +354,7 @@ export type MapEditOperation =
   | UpdateMapOperation
   | ResizeMapOperation
   | RemoveTilesetFromMapOperation
+  | TranscodeTileLayerOperation
   | SetTilesOperation
   | FillRegionOperation
   | StampPatternOperation
@@ -426,6 +440,16 @@ export interface MapEditPlan {
      * a dense data member.
      */
     chunkedTileLayerIds?: number[];
+    transcodes?: Array<{
+      operationIndex: number;
+      layerId: number;
+      fromEncoding: "csv" | "base64";
+      fromCompression: string;
+      toEncoding: "csv" | "base64";
+      toCompression: string;
+      cellCount: number;
+      wouldChange: boolean;
+    }>;
     affectedObjectLayerIds: number[];
     createdObjectIds: number[];
     updatedObjectIds: number[];

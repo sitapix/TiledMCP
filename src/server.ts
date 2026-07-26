@@ -1200,6 +1200,17 @@ const resizeMapSchema = z
   })
   .strict();
 
+const transcodeTileLayerSchema = z
+  .object({
+    type: z.literal("transcodeTileLayer"),
+    layerId: z.number().int().min(1),
+    encoding: z.enum(["csv", "base64"]),
+    compression: z
+      .enum(["", "gzip", "zlib", "zstd"])
+      .optional(),
+  })
+  .strict();
+
 const layerPatchSchema = z
   .object({
     name: objectStringSchema.optional(),
@@ -1449,6 +1460,7 @@ const tileMetadataUpdateSchema = z
 const mapEditSchema = z.discriminatedUnion("type", [
   updateMapSchema,
   resizeMapSchema,
+  transcodeTileLayerSchema,
   removeTilesetFromMapSchema,
   setTilesSchema,
   fillRegionSchema,
@@ -2479,7 +2491,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:
-            "same-encoding-and-compression-as-stored-no-transcoding",
+            "same-encoding-and-compression-as-stored-no-implicit-transcoding",
+          explicitTranscode:
+            "exclusive-transcode-tile-layer-operation-finite-layers-only",
           unwrittenEncodedLayers:
             "exact-original-bytes",
           netNoOpEncodedWrites:

@@ -571,6 +571,32 @@ const resizeAccountingShape = {
   lockedLayerCount: nonnegativeIntegerOutputSchema,
 } as const;
 
+const transcodeStorageOutputSchema = z
+  .object({
+    encoding: z.enum(["csv", "base64"]),
+    compression: z.enum([
+      "",
+      "gzip",
+      "zlib",
+      "zstd",
+    ]),
+  })
+  .strict();
+
+const transcodeTileLayerOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("transcodeTileLayer"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      layerId: positiveIdOutputSchema,
+      from: transcodeStorageOutputSchema,
+      to: transcodeStorageOutputSchema,
+      cellCount: positiveIntegerOutputSchema,
+      wouldChange: z.boolean(),
+    })
+    .strict();
+
 const resizeMapOperationPreviewOutputSchema = z
   .object({
     type: z.literal("resizeMap"),
@@ -1283,6 +1309,7 @@ const genericOperationPreviewOutputSchema =
   z.discriminatedUnion("type", [
     updateMapOperationPreviewOutputSchema,
     resizeMapOperationPreviewOutputSchema,
+    transcodeTileLayerOperationPreviewOutputSchema,
     setTilesOperationPreviewOutputSchema,
     fillRegionOperationPreviewOutputSchema,
     stampPatternOperationPreviewOutputSchema,
@@ -1598,6 +1625,38 @@ const mapEditSummaryBaseShape = {
   ),
   chunkedTileLayerIds: z
     .array(positiveIdOutputSchema)
+    .optional(),
+  transcodes: z
+    .array(
+      z
+        .object({
+          operationIndex:
+            nonnegativeIntegerOutputSchema,
+          layerId: positiveIdOutputSchema,
+          fromEncoding: z.enum([
+            "csv",
+            "base64",
+          ]),
+          fromCompression: z.enum([
+            "",
+            "gzip",
+            "zlib",
+            "zstd",
+          ]),
+          toEncoding: z.enum(["csv", "base64"]),
+          toCompression: z.enum([
+            "",
+            "gzip",
+            "zlib",
+            "zstd",
+          ]),
+          cellCount:
+            positiveIntegerOutputSchema,
+          wouldChange: z.boolean(),
+        })
+        .strict(),
+    )
+    .max(1)
     .optional(),
   affectedObjectLayerIds: z.array(
     positiveIdOutputSchema,

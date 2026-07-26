@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:4dbe1ef31a86f10bb2a70ade5cadc7f6a0548adc3d8435716dc8a37015b00f47",
+    "revision": "sha256:968183f886acead1b2c27db61259f3cd811a446c1cad573b1598f481f03d4b12",
     "serverVersion": "0.0.1",
-    "size": 78994
+    "size": 79533
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 78994,
+  "size": 79533,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 78994 UTF-8 bytes, revision `sha256:4dbe1ef31a86f10bb2a70ade5cadc7f6a0548adc3d8435716dc8a37015b00f47`.
+Content contract: `text`, 79533 UTF-8 bytes, revision `sha256:968183f886acead1b2c27db61259f3cd811a446c1cad573b1598f481f03d4b12`.
 
 Resource templates: none.
 
@@ -12788,6 +12788,10 @@ Output schema:
                   "const": "fail-closed",
                   "type": "string"
                 },
+                "explicitTranscode": {
+                  "const": "exclusive-transcode-tile-layer-operation-finite-layers-only",
+                  "type": "string"
+                },
                 "infiniteMaps": {
                   "const": "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
                   "type": "string"
@@ -12838,7 +12842,7 @@ Output schema:
                   "type": "string"
                 },
                 "writeCompression": {
-                  "const": "same-encoding-and-compression-as-stored-no-transcoding",
+                  "const": "same-encoding-and-compression-as-stored-no-implicit-transcoding",
                   "type": "string"
                 },
                 "writeProfile": {
@@ -12866,6 +12870,7 @@ Output schema:
                 "collectionTilesets",
                 "writeProfile",
                 "writeCompression",
+                "explicitTranscode",
                 "unwrittenEncodedLayers",
                 "netNoOpEncodedWrites",
                 "encodedResize",
@@ -22503,6 +22508,42 @@ Input schema:
           {
             "additionalProperties": false,
             "properties": {
+              "compression": {
+                "enum": [
+                  "",
+                  "gzip",
+                  "zlib",
+                  "zstd"
+                ],
+                "type": "string"
+              },
+              "encoding": {
+                "enum": [
+                  "csv",
+                  "base64"
+                ],
+                "type": "string"
+              },
+              "layerId": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "type": {
+                "const": "transcodeTileLayer",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "layerId",
+              "encoding"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
               "tilesetAssetId": {
                 "pattern": "^asset_[0-9a-f]{24}$",
                 "type": "string"
@@ -24841,6 +24882,96 @@ Output schema:
                       "shiftedImageLayerIds",
                       "groupLayerCount",
                       "lockedLayerCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "from": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "to": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "transcodeTileLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "layerId",
+                      "from",
+                      "to",
+                      "cellCount",
+                      "wouldChange"
                     ],
                     "type": "object"
                   },
@@ -28052,6 +28183,74 @@ Output schema:
                       "minItems": 1,
                       "type": "array"
                     },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "type": "array"
+                    },
                     "updatedObjectIds": {
                       "items": {
                         "$ref": "#/definitions/ChangeSetPositiveId"
@@ -29179,6 +29378,74 @@ Output schema:
                         "type": "object"
                       },
                       "minItems": 1,
+                      "type": "array"
+                    },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
                       "type": "array"
                     },
                     "updatedLayerIds": {

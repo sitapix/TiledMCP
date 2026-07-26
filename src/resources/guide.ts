@@ -64,6 +64,14 @@ coordinate labels are supported) and the render profile reports
 stored data, and apply re-encodes each actually-written layer with its
 own stored encoding and compression — never transcoding — while
 untouched layers and exact net no-op writes keep their original bytes.
+The only transcoding path is the explicit, exclusive
+\`transcodeTileLayer\` operation of \`tiled_preview_edits\`: it
+rewrites one finite tile layer's stored representation between the plain
+csv array and base64 with "", gzip, zlib, or zstd compression (matching
+the Tiled 1.12.2 writer, including the empty compression member for
+uncompressed base64) while every cell keeps its exact GID. It must be
+the only operation in its change set, a same-target request is a no-op
+that leaves the stored bytes untouched, and chunked layers fail closed.
 Infinite chunked layers accept \`setTiles\` and \`stampPattern\`
 edits with bounded absolute coordinates: an edited chunked layer
 serializes in Tiled 1.12.2's own canonical save form — cells rebucketed

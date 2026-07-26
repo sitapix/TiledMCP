@@ -697,6 +697,22 @@ type OperationPreview =
       renderingMayChange: boolean;
     }
   | {
+      type: "transcodeTileLayer";
+      destructive: false;
+      warning: string;
+      layerId: number;
+      from: {
+        encoding: "csv" | "base64";
+        compression: string;
+      };
+      to: {
+        encoding: "csv" | "base64";
+        compression: string;
+      };
+      cellCount: number;
+      wouldChange: boolean;
+    }
+  | {
       type: "resizeMap";
       destructive: true;
       warning: string;
@@ -3598,6 +3614,39 @@ function summarizeOperation(
       objectCount: operation.objectIds.length,
       objectIdSample,
       omittedObjectCount: operation.objectIds.length - objectIdSample.length,
+    };
+  }
+
+  if (operation.type === "transcodeTileLayer") {
+    const transcode = (
+      summary.transcodes ?? []
+    ).find(
+      (candidate) =>
+        candidate.operationIndex ===
+        operationIndex,
+    );
+    if (transcode === undefined) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The transcode summary entry is missing.",
+      );
+    }
+    return {
+      type: operation.type,
+      destructive: false,
+      warning:
+        "This rewrites the layer's entire stored byte representation into the requested encoding; every cell keeps its exact GID.",
+      layerId: operation.layerId,
+      from: {
+        encoding: transcode.fromEncoding,
+        compression: transcode.fromCompression,
+      },
+      to: {
+        encoding: transcode.toEncoding,
+        compression: transcode.toCompression,
+      },
+      cellCount: transcode.cellCount,
+      wouldChange: transcode.wouldChange,
     };
   }
 

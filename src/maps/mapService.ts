@@ -6066,6 +6066,21 @@ function validateAndSummarizeOperations(
       "resizeMap must be the only operation in its change set.",
     );
   }
+  const transcodeOperationCount = operations.filter(
+    (operation) =>
+      isRecordValue(operation) &&
+      operation.type === "transcodeTileLayer",
+  ).length;
+  if (
+    transcodeOperationCount > 1 ||
+    (transcodeOperationCount === 1 &&
+      operations.length !== 1)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "transcodeTileLayer must be the only operation in its change set.",
+    );
+  }
 
   let cellWrites = 0;
   let tileOperationScans = 0;
@@ -6106,6 +6121,9 @@ function validateAndSummarizeOperations(
   > = [];
   const mapUpdates: NonNullable<
     MapEditPlan["summary"]["mapUpdates"]
+  > = [];
+  const transcodes: NonNullable<
+    MapEditPlan["summary"]["transcodes"]
   > = [];
   const mapResizes: NonNullable<
     MapEditPlan["summary"]["mapResizes"]
@@ -6397,6 +6415,77 @@ function validateAndSummarizeOperations(
         ].sort((left, right) => left - right),
         groupLayerCount: views.groupLayerCount,
         lockedLayerCount: views.lockedLayerCount,
+      });
+    } else if (operation.type === "transcodeTileLayer") {
+      assertExactObjectKeys(
+        operation as unknown as Record<string, unknown>,
+        new Set(["compression", "encoding", "layerId", "type"]),
+        `operations[${operationIndex}]`,
+      );
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
+      if (
+        operation.encoding !== "csv" &&
+        operation.encoding !== "base64"
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}].encoding must be "csv" or "base64".`,
+        );
+      }
+      const toCompression = operation.compression ?? "";
+      if (
+        !["", "gzip", "zlib", "zstd"].includes(toCompression)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}].compression must be "", "gzip", "zlib" or "zstd".`,
+        );
+      }
+      if (operation.encoding === "csv" && toCompression !== "") {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}] csv storage cannot carry a compression member.`,
+        );
+      }
+      const layer = findTileLayer(map, operation.layerId, mapPath);
+      const fromEncoding =
+        layer.object.encoding === "base64" ? "base64" : "csv";
+      const fromCompression =
+        fromEncoding === "base64" &&
+        layer.object.compression !== undefined
+          ? String(layer.object.compression)
+          : "";
+      const wouldChange =
+        fromEncoding !== operation.encoding ||
+        (operation.encoding === "base64" &&
+          fromCompression !== toCompression);
+      if (wouldChange) {
+        affectedLayerIds.add(layer.id);
+        affectedTileLayerIds.add(layer.id);
+        if (operation.encoding === "csv") {
+          delete layer.object.encoding;
+          delete layer.object.compression;
+        } else {
+          layer.object.encoding = "base64";
+          layer.object.compression = toCompression;
+        }
+        // The shared re-encode pass turns this array into the target
+        // byte representation using the members written above.
+        layer.object.data = layer.data;
+      }
+      transcodes.push({
+        operationIndex,
+        layerId: layer.id,
+        fromEncoding,
+        fromCompression,
+        toEncoding: operation.encoding,
+        toCompression:
+          operation.encoding === "base64" ? toCompression : "",
+        cellCount: layer.data.length,
+        wouldChange,
       });
     } else if (operation.type === "setTiles") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
@@ -7655,6 +7744,9 @@ function validateAndSummarizeOperations(
     ...(mapResizes.length === 0
       ? {}
       : { mapResizes }),
+    ...(transcodes.length === 0
+      ? {}
+      : { transcodes }),
     ...(layerUpdates.length === 0
       ? {}
       : {
@@ -9891,7 +9983,12 @@ function reencodeWrittenTileLayers(
     if (
       originalLayer !== undefined &&
       typeof originalLayer.data === "string" &&
-      originalLayer.encoding === "base64"
+      originalLayer.encoding === "base64" &&
+      (originalLayer.compression === undefined ||
+      originalLayer.compression === ""
+        ? ""
+        : String(originalLayer.compression)) ===
+        compression
     ) {
       const originalCells =
         decodeEncodedTileLayerData(
@@ -14613,6 +14710,24 @@ function sourceObjectMemberPatchesForSummary(
 ): JsonObjectMemberPatch[] {
   const patches: JsonObjectMemberPatch[] = [];
   const seen = new Set<string>();
+  for (const transcode of summary.transcodes ?? []) {
+    if (!transcode.wouldChange) {
+      continue;
+    }
+    const layerPath = findTileLayer(
+      map,
+      transcode.layerId,
+      mapPath,
+    ).path;
+    patches.push({
+      path: layerPath,
+      key: "encoding",
+    });
+    patches.push({
+      path: layerPath,
+      key: "compression",
+    });
+  }
   for (const layerId of summary.chunkedTileLayerIds ?? []) {
     const layerPath = findTileLayer(
       map,
