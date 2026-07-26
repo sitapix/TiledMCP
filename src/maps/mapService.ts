@@ -6450,7 +6450,13 @@ function validateAndSummarizeOperations(
           `operations[${operationIndex}] csv storage cannot carry a compression member.`,
         );
       }
-      const layer = findTileLayer(map, operation.layerId, mapPath);
+      const layer = findTileLayer(
+        map,
+        operation.layerId,
+        mapPath,
+        "edit",
+        true,
+      );
       const fromEncoding =
         layer.object.encoding === "base64" ? "base64" : "csv";
       const fromCompression =
@@ -6472,9 +6478,21 @@ function validateAndSummarizeOperations(
           layer.object.encoding = "base64";
           layer.object.compression = toCompression;
         }
-        // The shared re-encode pass turns this array into the target
-        // byte representation using the members written above.
-        layer.object.data = layer.data;
+        if (layer.chunked !== undefined) {
+          // Transcoding rewrites every chunk in the target encoding and,
+          // like any chunked write, normalizes the chunk structure.
+          layer.chunked.dirty = true;
+          finalizeChunkedTileLayerWrite(
+            layer,
+            map,
+            mapPath,
+            chunkedTileLayerIds,
+          );
+        } else {
+          // The shared re-encode pass turns this array into the target
+          // byte representation using the members written above.
+          layer.object.data = layer.data;
+        }
       }
       transcodes.push({
         operationIndex,
@@ -6484,7 +6502,11 @@ function validateAndSummarizeOperations(
         toEncoding: operation.encoding,
         toCompression:
           operation.encoding === "base64" ? toCompression : "",
-        cellCount: layer.data.length,
+        cellCount:
+          layer.chunked === undefined
+            ? layer.data.length
+            : layer.chunked.structure
+                .totalChunkCells,
         wouldChange,
       });
     } else if (operation.type === "setTiles") {
@@ -6592,14 +6614,44 @@ function validateAndSummarizeOperations(
         map,
         operation.layerId,
         mapPath,
+        "edit",
+        true,
       );
-      assertRegionInsideLayer(
-        layer,
-        operation.x,
-        operation.y,
-        1,
-        1,
-      );
+      let fillBounds: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null;
+      if (layer.chunked === undefined) {
+        assertRegionInsideLayer(
+          layer,
+          operation.x,
+          operation.y,
+          1,
+          1,
+        );
+        fillBounds = {
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+        };
+      } else {
+        // Tiled 1.12.2 flood-fills an infinite layer inside its used
+        // chunk bounds; a seed outside them fills nothing.
+        fillBounds = chunkedFillBounds(
+          layer.chunked,
+        );
+      }
+      const seedInsideBounds =
+        fillBounds !== null &&
+        operation.x >= fillBounds.x &&
+        operation.x <
+          fillBounds.x + fillBounds.width &&
+        operation.y >= fillBounds.y &&
+        operation.y <
+          fillBounds.y + fillBounds.height;
       const targetGid = tileRefToGid(
         operation.tile,
         orientation,
@@ -6660,7 +6712,11 @@ function validateAndSummarizeOperations(
         height: number;
       } | null = null;
 
-      if (source.gid !== targetGid) {
+      if (
+        source.gid !== targetGid &&
+        seedInsideBounds &&
+        fillBounds !== null
+      ) {
         if (cellWrites + 1 > MAX_CELL_WRITES) {
           throw new TiledMcpError(
             "RESULT_LIMIT_EXCEEDED",
@@ -6672,12 +6728,11 @@ function validateAndSummarizeOperations(
             },
           );
         }
-        const seedLocalX =
-          operation.x - layer.x;
-        const seedLocalY =
-          operation.y - layer.y;
-        const queue = [
-          seedLocalY * layer.width + seedLocalX,
+        const queue: Array<{
+          x: number;
+          y: number;
+        }> = [
+          { x: operation.x, y: operation.y },
         ];
         writeLayerGid(
           layer,
@@ -6696,31 +6751,29 @@ function validateAndSummarizeOperations(
           queueIndex < queue.length;
           queueIndex += 1
         ) {
-          const index = queue[queueIndex] as number;
-          const localX = index % layer.width;
-          const localY = Math.floor(
-            index / layer.width,
-          );
+          const current = queue[
+            queueIndex
+          ] as { x: number; y: number };
           for (const [
             deltaX,
             deltaY,
           ] of FOUR_WAY_TILE_NEIGHBOR_OFFSETS) {
-            const neighborLocalX =
-              localX + deltaX;
-            const neighborLocalY =
-              localY + deltaY;
+            const neighborX =
+              current.x + deltaX;
+            const neighborY =
+              current.y + deltaY;
             if (
-              neighborLocalX < 0 ||
-              neighborLocalY < 0 ||
-              neighborLocalX >= layer.width ||
-              neighborLocalY >= layer.height
+              neighborX < fillBounds.x ||
+              neighborY < fillBounds.y ||
+              neighborX >=
+                fillBounds.x +
+                  fillBounds.width ||
+              neighborY >=
+                fillBounds.y +
+                  fillBounds.height
             ) {
               continue;
             }
-            const neighborX =
-              layer.x + neighborLocalX;
-            const neighborY =
-              layer.y + neighborLocalY;
             const candidate = readObservedGid(
               neighborX,
               neighborY,
@@ -6771,10 +6824,10 @@ function validateAndSummarizeOperations(
               maximumY,
               neighborY,
             );
-            queue.push(
-              neighborLocalY * layer.width +
-                neighborLocalX,
-            );
+            queue.push({
+              x: neighborX,
+              y: neighborY,
+            });
           }
         }
         affectedBounds = {
@@ -6791,6 +6844,12 @@ function validateAndSummarizeOperations(
       if (changedCellCount > 0) {
         affectedLayerIds.add(layer.id);
         affectedTileLayerIds.add(layer.id);
+        finalizeChunkedTileLayerWrite(
+          layer,
+          map,
+          mapPath,
+          chunkedTileLayerIds,
+        );
       }
       tileFloodFills.push({
         operationIndex,
@@ -14718,6 +14777,8 @@ function sourceObjectMemberPatchesForSummary(
       map,
       transcode.layerId,
       mapPath,
+      "edit",
+      true,
     ).path;
     patches.push({
       path: layerPath,
@@ -14950,6 +15011,40 @@ function assertChunkedRegionBounded(
       { layerId: layer.id, x, y, width, height },
     );
   }
+}
+
+/**
+ * Union of the stored chunk rectangles: the flood-fill bounds of an
+ * infinite layer, matching Tiled 1.12.2's used-chunk bounds. Returns
+ * null for a layer with no chunks.
+ */
+function chunkedFillBounds(
+  view: ChunkedCellView,
+): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const chunk of view.structure.chunks) {
+    minX = Math.min(minX, chunk.x);
+    minY = Math.min(minY, chunk.y);
+    maxX = Math.max(maxX, chunk.x + chunk.width);
+    maxY = Math.max(maxY, chunk.y + chunk.height);
+  }
+  if (!Number.isFinite(minX)) {
+    return null;
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
 }
 
 /**

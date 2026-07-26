@@ -70,17 +70,20 @@ rewrites one finite tile layer's stored representation between the plain
 csv array and base64 with "", gzip, zlib, or zstd compression (matching
 the Tiled 1.12.2 writer, including the empty compression member for
 uncompressed base64) while every cell keeps its exact GID. It must be
-the only operation in its change set, a same-target request is a no-op
-that leaves the stored bytes untouched, and chunked layers fail closed.
-Infinite chunked layers accept \`setTiles\` and \`stampPattern\`
-edits with bounded absolute coordinates: an edited chunked layer
+the only operation in its change set and a same-target request is a
+no-op that leaves the stored bytes untouched; transcoding a chunked
+layer rewrites every chunk in kind and normalizes the chunk structure.
+Infinite chunked layers accept \`setTiles\`, \`stampPattern\`, and
+\`floodFill\` edits with bounded absolute coordinates (a flood fill is
+bounded by the used-chunk union, and a seed outside it fills nothing,
+matching the Tiled editor): an edited chunked layer
 serializes in Tiled 1.12.2's own canonical save form — cells rebucketed
 into chunksize-aligned chunks (default 16x16), empty chunks dropped,
 (y,x) ordering, bounds recomputed — while untouched layers keep their
 exact bytes and per-chunk data re-encodes with the layer's own stored
-encoding, never transcoding. Resizing, flood fills, tile replacement,
-and region copies on chunked layers still fail closed, as does resizing
-an encoded map, and \`tiled_validate\` keeps reporting chunked storage
+encoding, never transcoding implicitly. Resizing, tile replacement, and
+region copies on chunked layers still fail closed, as does resizing an
+encoded map, and \`tiled_validate\` keeps reporting chunked storage
 as outside the fully editable profile. Maps referencing image-collection tilesets
 (per-tile images, no root atlas) are readable through
 \`tiled_get_map_summary\` (bindings report \`collection:true\` with the

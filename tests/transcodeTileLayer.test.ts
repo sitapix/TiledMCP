@@ -208,18 +208,40 @@ describe("explicit tile layer transcoding", () => {
       code: "INVALID_ARGUMENT",
     });
 
-    const chunked = await createHarness(roots, {
+  });
+
+  it("transcodes chunked layers, rewriting every chunk in kind", async () => {
+    const harness = await createHarness(roots, {
       infinite: true,
     });
-    await expect(
-      pledge(chunked, {
-        type: "transcodeTileLayer",
-        layerId: LAYER_ID,
-        encoding: "base64",
-      }),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_TILE_ENCODING",
+    const plan = await pledge(harness, {
+      type: "transcodeTileLayer",
+      layerId: LAYER_ID,
+      encoding: "base64",
+      compression: "zstd",
     });
+    expect(plan.summary).toMatchObject({
+      chunkedTileLayerIds: [LAYER_ID],
+      transcodes: [
+        {
+          fromEncoding: "csv",
+          toEncoding: "base64",
+          toCompression: "zstd",
+          wouldChange: true,
+        },
+      ],
+    });
+    await harness.service.applyEdits(plan);
+    const layer = await readLayer(harness);
+    expect(layer.encoding).toBe("base64");
+    expect(layer.compression).toBe("zstd");
+    const chunks = layer.chunks as Array<{
+      data: unknown;
+    }>;
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(typeof chunk.data).toBe("string");
+    }
   });
 });
 
@@ -289,7 +311,10 @@ async function createHarness(
               y: 0,
               width: 4,
               height: 4,
-              data: new Array(16).fill(0),
+              data: [
+                5,
+                ...new Array(15).fill(0),
+              ],
             },
           ],
           width: 4,

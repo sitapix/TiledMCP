@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:968183f886acead1b2c27db61259f3cd811a446c1cad573b1598f481f03d4b12",
+    "revision": "sha256:9ae61e7f6c42db41d7104cc74558fa65c97886be3444e9e2924d18ea76d9404c",
     "serverVersion": "0.0.1",
-    "size": 79533
+    "size": 79723
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 79533,
+  "size": 79723,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 79533 UTF-8 bytes, revision `sha256:968183f886acead1b2c27db61259f3cd811a446c1cad573b1598f481f03d4b12`.
+Content contract: `text`, 79723 UTF-8 bytes, revision `sha256:9ae61e7f6c42db41d7104cc74558fa65c97886be3444e9e2924d18ea76d9404c`.
 
 Resource templates: none.
 
@@ -12734,6 +12734,10 @@ Output schema:
                   "const": "fail-closed",
                   "type": "string"
                 },
+                "chunkedFloodFillBounds": {
+                  "const": "used-chunk-union-seed-outside-fills-nothing",
+                  "type": "string"
+                },
                 "chunkedLayers": {
                   "const": "summary-region-usage-preview-reads-set-tiles-stamp-writes",
                   "type": "string"
@@ -12746,6 +12750,14 @@ Output schema:
                     },
                     {
                       "const": "stampPattern",
+                      "type": "string"
+                    },
+                    {
+                      "const": "floodFill",
+                      "type": "string"
+                    },
+                    {
+                      "const": "transcodeTileLayer",
                       "type": "string"
                     }
                   ],
@@ -12789,11 +12801,11 @@ Output schema:
                   "type": "string"
                 },
                 "explicitTranscode": {
-                  "const": "exclusive-transcode-tile-layer-operation-finite-layers-only",
+                  "const": "exclusive-transcode-tile-layer-operation-chunked-layers-normalize",
                   "type": "string"
                 },
                 "infiniteMaps": {
-                  "const": "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
+                  "const": "set-tiles-stamp-flood-fill-transcode-editable-other-tile-operations-fail-closed",
                   "type": "string"
                 },
                 "maxChunksPerLayer": {
@@ -12867,6 +12879,7 @@ Output schema:
                 "infiniteMaps",
                 "chunkedWriteProfile",
                 "chunkedWriteOperations",
+                "chunkedFloodFillBounds",
                 "collectionTilesets",
                 "writeProfile",
                 "writeCompression",

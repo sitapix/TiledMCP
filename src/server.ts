@@ -2479,13 +2479,17 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxChunksPerLayer:
             MAX_TILE_LAYER_CHUNKS,
           infiniteMaps:
-            "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
+            "set-tiles-stamp-flood-fill-transcode-editable-other-tile-operations-fail-closed",
           chunkedWriteProfile:
             "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
           chunkedWriteOperations: [
             "setTiles",
             "stampPattern",
+            "floodFill",
+            "transcodeTileLayer",
           ],
+          chunkedFloodFillBounds:
+            "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:
             "summary-region-object-details-search-reads-sparse-ids-fail-closed",
           writeProfile:
@@ -2493,7 +2497,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           writeCompression:
             "same-encoding-and-compression-as-stored-no-implicit-transcoding",
           explicitTranscode:
-            "exclusive-transcode-tile-layer-operation-finite-layers-only",
+            "exclusive-transcode-tile-layer-operation-chunked-layers-normalize",
           unwrittenEncodedLayers:
             "exact-original-bytes",
           netNoOpEncodedWrites:
