@@ -363,6 +363,264 @@ async function decodeTilesetAtlas(
   };
 }
 
+/** One decoded per-tile image of an image-collection tileset. */
+export interface CollectionTileSource {
+  localId: number;
+  imagePath: string;
+  rgba: Buffer;
+  width: number;
+  height: number;
+}
+
+export interface CollectionTilesInput {
+  /** Selection order is preserved; ids validated by the caller. */
+  tiles: readonly CollectionTileSource[];
+  /** Highest existing local id, sizing the label column. */
+  maxLabelId: number;
+  columns?: number;
+  scale?: number;
+}
+
+export interface CollectionTilesRender {
+  png: Buffer;
+  mimeType: "image/png";
+  pixelSize: { width: number; height: number };
+  byteLength: number;
+  sha256: string;
+  selection: TilesetTilesSelection;
+  scale: number;
+}
+
+/**
+ * Renders explicit image-collection tiles into the same labeled grid as
+ * the atlas tile renderer. Each tile blits through a degenerate
+ * single-tile atlas geometry of its own full image, so pixel semantics
+ * (alpha, scaling) stay identical to the atlas path; cells size to the
+ * largest selected tile.
+ */
+export async function renderCollectionTiles(
+  input: CollectionTilesInput,
+): Promise<CollectionTilesRender> {
+  const scale = input.scale ?? DEFAULT_TILE_RENDER_SCALE;
+  requirePositiveSafeInteger(scale, "scale");
+  if (scale > MAX_TILE_RENDER_SCALE) {
+    throw invalidArgument(
+      `scale must not exceed ${MAX_TILE_RENDER_SCALE}.`,
+    );
+  }
+  const requestedColumns =
+    input.columns ?? DEFAULT_TILE_RENDER_COLUMNS;
+  requirePositiveSafeInteger(requestedColumns, "columns");
+  if (requestedColumns > MAX_TILE_RENDER_COLUMNS) {
+    throw invalidArgument(
+      `columns must not exceed ${MAX_TILE_RENDER_COLUMNS}.`,
+    );
+  }
+  if (
+    input.tiles.length < 1 ||
+    input.tiles.length > MAX_TILE_RENDER_LOCAL_IDS
+  ) {
+    throw invalidArgument(
+      `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} IDs.`,
+    );
+  }
+  requireNonNegativeSafeInteger(input.maxLabelId, "maxLabelId");
+
+  let maxTileWidth = 1;
+  let maxTileHeight = 1;
+  for (const tile of input.tiles) {
+    requirePositiveSafeInteger(tile.width, "tile width");
+    requirePositiveSafeInteger(tile.height, "tile height");
+    maxTileWidth = Math.max(maxTileWidth, tile.width);
+    maxTileHeight = Math.max(maxTileHeight, tile.height);
+  }
+  const tilePixelWidth = maxTileWidth * scale;
+  const tilePixelHeight = maxTileHeight * scale;
+  if (
+    !Number.isSafeInteger(tilePixelWidth) ||
+    !Number.isSafeInteger(tilePixelHeight)
+  ) {
+    throw invalidArgument("Scaled tile dimensions exceed safe integer bounds.");
+  }
+  const longestLabelWidth = digitStringWidth(String(input.maxLabelId));
+  const cellWidth = Math.max(
+    tilePixelWidth + 2 * TILE_PADDING,
+    longestLabelWidth + 2 * TILE_PADDING,
+  );
+  const cellHeight =
+    TILE_PADDING +
+    tilePixelHeight +
+    LABEL_GAP +
+    DIGIT_HEIGHT * DIGIT_SCALE +
+    LABEL_BOTTOM_PADDING;
+  const maxColumnsByEdge = Math.floor(
+    (MAX_TILE_RENDER_EDGE - 2 * OUTER_PADDING) / cellWidth,
+  );
+  const maxColumnsByPixels = Math.floor(
+    (MAX_TILE_RENDER_PIXELS /
+      (2 * OUTER_PADDING + cellHeight) -
+      2 * OUTER_PADDING) /
+      cellWidth,
+  );
+  const maximumColumns = Math.min(
+    MAX_TILE_RENDER_COLUMNS,
+    maxColumnsByEdge,
+    maxColumnsByPixels,
+  );
+  if (maximumColumns < 1) {
+    throw new TiledMcpError(
+      "IMAGE_DIMENSIONS_EXCEEDED",
+      "A single scaled collection tile and its local ID label do not fit the tile render budget.",
+      {
+        maxTileWidth,
+        maxTileHeight,
+        scale,
+        maxEdge: MAX_TILE_RENDER_EDGE,
+      },
+    );
+  }
+  const effectiveRequestedColumns = Math.min(
+    requestedColumns,
+    input.tiles.length,
+  );
+  if (
+    input.columns !== undefined &&
+    effectiveRequestedColumns > maximumColumns
+  ) {
+    throw new TiledMcpError(
+      "IMAGE_DIMENSIONS_EXCEEDED",
+      `columns ${input.columns} would require ${effectiveRequestedColumns} columns, but at most ${maximumColumns} fit this layout.`,
+      {
+        requestedColumns: input.columns,
+        effectiveRequestedColumns,
+        maximumColumns,
+        maxEdge: MAX_TILE_RENDER_EDGE,
+        maxPixels: MAX_TILE_RENDER_PIXELS,
+      },
+    );
+  }
+  const columns = Math.min(
+    effectiveRequestedColumns,
+    maximumColumns,
+  );
+  const rows = Math.ceil(input.tiles.length / columns);
+
+  const outputWidth = 2 * OUTER_PADDING + columns * cellWidth;
+  const outputHeight = 2 * OUTER_PADDING + rows * cellHeight;
+  assertOutputBudget(outputWidth, outputHeight);
+
+  const canvas = Buffer.alloc(outputWidth * outputHeight * 4);
+  fillRect(canvas, outputWidth, 0, 0, outputWidth, outputHeight, [17, 24, 39, 255]);
+
+  for (const [offset, tile] of input.tiles.entries()) {
+    const column = offset % columns;
+    const row = Math.floor(offset / columns);
+    const cellLeft = OUTER_PADDING + column * cellWidth;
+    const cellTop = OUTER_PADDING + row * cellHeight;
+    drawCell(
+      canvas,
+      outputWidth,
+      cellLeft,
+      cellTop,
+      cellWidth,
+      cellHeight,
+    );
+
+    const scaledWidth = tile.width * scale;
+    const scaledHeight = tile.height * scale;
+    const tileLeft =
+      cellLeft + Math.floor((cellWidth - scaledWidth) / 2);
+    const tileTop = cellTop + TILE_PADDING;
+    drawCheckerboard(
+      canvas,
+      outputWidth,
+      tileLeft,
+      tileTop,
+      scaledWidth,
+      scaledHeight,
+    );
+
+    const singleTileAtlas: AtlasGeometry = {
+      imagePath: tile.imagePath,
+      imageWidth: tile.width,
+      imageHeight: tile.height,
+      tileWidth: tile.width,
+      tileHeight: tile.height,
+      tileCount: 1,
+      columns: 1,
+      margin: 0,
+      spacing: 0,
+    };
+    validateAtlasGeometry(singleTileAtlas);
+    blitAtlasTile({
+      sourceRgba: tile.rgba,
+      sourceWidth: tile.width,
+      atlas: singleTileAtlas,
+      localId: 0,
+      destinationRgba: canvas,
+      destinationWidth: outputWidth,
+      destinationLeft: tileLeft,
+      destinationTop: tileTop,
+      scale,
+    });
+
+    const label = String(tile.localId);
+    const labelWidth = digitStringWidth(label);
+    const labelLeft =
+      cellLeft + Math.floor((cellWidth - labelWidth) / 2);
+    const labelTop = tileTop + tilePixelHeight + LABEL_GAP;
+    drawDigitString(
+      canvas,
+      outputWidth,
+      labelLeft,
+      labelTop,
+      label,
+      [226, 232, 240, 255],
+    );
+  }
+
+  const encoded = await encodeRgbaPng(
+    canvas,
+    outputWidth,
+    outputHeight,
+    "The selected collection tiles",
+  );
+  if (encoded.byteLength > MAX_TILE_RENDER_BYTES) {
+    throw new TiledMcpError(
+      "IMAGE_TOO_LARGE",
+      `The rendered tile selection is ${encoded.byteLength} bytes; the inline limit is ${MAX_TILE_RENDER_BYTES}. Reduce localIds or scale.`,
+      {
+        byteLength: encoded.byteLength,
+        limit: MAX_TILE_RENDER_BYTES,
+      },
+    );
+  }
+
+  return {
+    png: encoded,
+    mimeType: "image/png",
+    pixelSize: { width: outputWidth, height: outputHeight },
+    byteLength: encoded.byteLength,
+    sha256: revisionOf(encoded),
+    selection: {
+      localIds: input.tiles.map(({ localId }) => localId),
+      count: input.tiles.length,
+      order: "input",
+      labels: "local-id",
+      layout: {
+        kind: "row-major",
+        requestedColumns: effectiveRequestedColumns,
+        columns,
+        rows,
+        adjusted:
+          input.columns !== undefined &&
+          columns !== input.columns,
+      },
+    },
+    scale,
+  };
+}
+
 async function renderLabeledAtlasGrid(
   input: DecodedTilesetAtlas & {
     localIds: readonly number[];

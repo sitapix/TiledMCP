@@ -2495,6 +2495,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "map-path-plus-tileset-asset-id",
           renderProfile:
             "explicit-local-id-atlas-selection-v1",
+          collectionRenderProfile:
+            "explicit-local-id-collection-selection-v1",
+          collectionTiles:
+            "per-tile-images-verified-revision-pinned-sparse-ids-fail-closed",
+          collectionCellLayout:
+            "largest-selected-tile-sized-cells",
           atlasProfile:
             "root-atlas-no-per-tile-images",
           supportedFormats: [
@@ -3483,7 +3489,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render selected tiles",
       description:
-        "Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated.",
+        "Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external tileset (atlas or image-collection). Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated. Collection selections read each tile's own image verified and revision-pinned; missing sparse ids fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

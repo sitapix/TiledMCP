@@ -70,8 +70,10 @@ import {
   MAX_TILESET_IMAGE_BYTES,
   MAX_TILESET_INPUT_EDGE,
   MAX_TILESET_INPUT_PIXELS,
+  renderCollectionTiles,
   renderTilesetTiles,
   renderTilesetSheet,
+  type CollectionTileSource,
 } from "../images/tilesetSheet.js";
 import {
   MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
@@ -123,6 +125,7 @@ import {
   assertTilesetDetailResultSize,
   DEFAULT_TILESET_METADATA_LIMIT,
   MAX_TILESET_METADATA_ENTRIES,
+  readCollectionTileDefinition,
   summarizeTilesetDocument,
 } from "./tilesetDetails.js";
 import {
@@ -1371,6 +1374,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        allowCollectionTilesets: true,
         ...(input.expectedMapRevision === undefined
           ? {}
           : {
@@ -1414,6 +1418,14 @@ export class MapService {
     const tileset =
       this.store.parseSnapshot(tilesetSnapshot);
     const document = tileset.document;
+    if (binding.collection === true) {
+      return this.renderCollectionTileSelection(
+        input,
+        context,
+        binding,
+        document,
+      );
+    }
     if (typeof document.image !== "string") {
       throw new TiledMcpError(
         "UNSUPPORTED_TILESET",
@@ -1573,6 +1585,297 @@ export class MapService {
         },
         renderProfile:
           "explicit-local-id-atlas-selection-v1",
+        selection: rendered.selection,
+        scale: rendered.scale,
+        snapshotConsistency:
+          "non-atomic-read-set",
+        truncated: false,
+      },
+    };
+  }
+
+  /**
+   * Renders an explicit sparse selection of image-collection tiles. Each
+   * selected tile's own image is read, safely decoded, verified against
+   * any declared dimensions, and revision-pinned, under shared aggregate
+   * byte and pixel budgets.
+   */
+  private async renderCollectionTileSelection(
+    input: RenderTilesInput,
+    context: EditableContext,
+    binding: TilesetBinding,
+    document: JsonObject,
+  ): Promise<RenderTilesResult> {
+    if (binding.localIds === undefined) {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        `${binding.path} is bound as a collection without its sparse tile id set.`,
+      );
+    }
+    if (
+      !Array.isArray(input.localIds) ||
+      input.localIds.length < 1 ||
+      input.localIds.length >
+        MAX_TILE_RENDER_LOCAL_IDS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} IDs.`,
+        { count: input.localIds?.length ?? null },
+      );
+    }
+    const seen = new Set<number>();
+    for (const [index, localId] of input.localIds.entries()) {
+      if (
+        !Number.isSafeInteger(localId) ||
+        localId < 0
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "localIds must contain non-negative safe integers.",
+          { index },
+        );
+      }
+      if (!binding.localIds.has(localId)) {
+        throw new TiledMcpError(
+          "TILE_ID_OUT_OF_RANGE",
+          `Tile ${localId} does not exist in ${binding.path}.`,
+          {
+            path: binding.path,
+            localId,
+            index,
+          },
+        );
+      }
+      if (seen.has(localId)) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `localIds contains duplicate local ID ${localId}.`,
+          { localId, duplicateIndex: index },
+        );
+      }
+      seen.add(localId);
+    }
+
+    const definitions = new Map<
+      number,
+      ReturnType<typeof readCollectionTileDefinition>
+    >();
+    const entries = expectArray(
+      document.tiles,
+      `${binding.path}.tiles`,
+    );
+    for (const [index, value] of entries.entries()) {
+      const entry = expectObject(
+        value,
+        `${binding.path}.tiles[${index}]`,
+      );
+      const localId = expectInteger(
+        entry.id,
+        `${binding.path}.tiles[${index}].id`,
+      );
+      if (!seen.has(localId)) {
+        continue;
+      }
+      definitions.set(
+        localId,
+        readCollectionTileDefinition(
+          entry,
+          binding.path,
+          localId,
+        ),
+      );
+    }
+
+    let aggregateBytes = 0;
+    let aggregatePixels = 0;
+    const tiles: CollectionTileSource[] = [];
+    const images: Record<string, unknown>[] = [];
+    for (const localId of input.localIds) {
+      const definition = definitions.get(localId);
+      if (definition === undefined) {
+        throw new TiledMcpError(
+          "INTERNAL_ERROR",
+          `${binding.path} tile ${localId} disappeared while its image was resolved.`,
+        );
+      }
+      const imagePath =
+        await this.resolver.resolveReference(
+          binding.path,
+          definition.source,
+        );
+      const snapshot = await readImageFileSnapshot(
+        this.resolver,
+        imagePath,
+        MAX_TILESET_IMAGE_BYTES,
+      );
+      aggregateBytes += snapshot.bytes.byteLength;
+      if (
+        aggregateBytes >
+        MAX_RASTER_INPUT_AGGREGATE_BYTES
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `The selected collection tiles read more than ${MAX_RASTER_INPUT_AGGREGATE_BYTES} aggregate image bytes; reduce localIds.`,
+          {
+            path: binding.path,
+            limit: MAX_RASTER_INPUT_AGGREGATE_BYTES,
+          },
+        );
+      }
+      const limits = {
+        maxInputBytes: MAX_TILESET_IMAGE_BYTES,
+        maxInputPixels: MAX_TILESET_INPUT_PIXELS,
+        maxInputEdge: MAX_TILESET_INPUT_EDGE,
+      };
+      const metadata = await inspectSafeImage({
+        bytes: snapshot.bytes,
+        path: snapshot.path,
+        limits,
+      });
+      const decoded = await decodeSafeImage({
+        bytes: snapshot.bytes,
+        path: snapshot.path,
+        declaredWidth: metadata.width,
+        declaredHeight: metadata.height,
+        limits,
+      });
+      aggregatePixels +=
+        decoded.pixelSize.width *
+        decoded.pixelSize.height;
+      if (
+        aggregatePixels >
+        MAX_RASTER_INPUT_AGGREGATE_PIXELS
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `The selected collection tiles decode more than ${MAX_RASTER_INPUT_AGGREGATE_PIXELS} aggregate pixels; reduce localIds.`,
+          {
+            path: binding.path,
+            limit:
+              MAX_RASTER_INPUT_AGGREGATE_PIXELS,
+          },
+        );
+      }
+      if (
+        (definition.declaredWidth !== undefined &&
+          definition.declaredWidth !==
+            decoded.pixelSize.width) ||
+        (definition.declaredHeight !==
+          undefined &&
+          definition.declaredHeight !==
+            decoded.pixelSize.height)
+      ) {
+        throw new TiledMcpError(
+          "TILESET_IMAGE_DIMENSION_MISMATCH",
+          `${imagePath} is ${decoded.pixelSize.width}x${decoded.pixelSize.height} but the tileset declares ${definition.declaredWidth ?? "?"}x${definition.declaredHeight ?? "?"}.`,
+          {
+            path: imagePath,
+            actualWidth: decoded.pixelSize.width,
+            actualHeight:
+              decoded.pixelSize.height,
+            declaredWidth:
+              definition.declaredWidth ?? null,
+            declaredHeight:
+              definition.declaredHeight ?? null,
+          },
+        );
+      }
+      tiles.push({
+        localId,
+        imagePath: snapshot.path,
+        rgba: decoded.rgba,
+        width: decoded.pixelSize.width,
+        height: decoded.pixelSize.height,
+      });
+      images.push({
+        localId,
+        path: snapshot.path,
+        revision: snapshot.revision,
+        format: decoded.format,
+        pixelSize: {
+          width: decoded.pixelSize.width,
+          height: decoded.pixelSize.height,
+        },
+      });
+    }
+
+    const rendered = await renderCollectionTiles({
+      tiles,
+      maxLabelId: binding.gidSpan - 1,
+      ...(input.columns === undefined
+        ? {}
+        : { columns: input.columns }),
+      ...(input.scale === undefined
+        ? {}
+        : { scale: input.scale }),
+    });
+
+    await this.assertDependenciesUnchanged([
+      binding,
+    ]);
+    const currentMapRevision =
+      await this.store.readRevision(
+        context.loaded.path,
+      );
+    if (
+      currentMapRevision !==
+      context.loaded.revision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${context.loaded.path} changed while the explicit tile selection was rendered.`,
+        {
+          path: context.loaded.path,
+          expectedRevision:
+            context.loaded.revision,
+          actualRevision: currentMapRevision,
+        },
+      );
+    }
+
+    return {
+      png: rendered.png,
+      result: {
+        mimeType: rendered.mimeType,
+        pixelSize: rendered.pixelSize,
+        byteLength: rendered.byteLength,
+        sha256: rendered.sha256,
+        map: {
+          path: context.loaded.path,
+          revision: context.loaded.revision,
+        },
+        source: {
+          assetId: binding.assetId,
+          revision: binding.revision,
+        },
+        images,
+        tileset: {
+          path: binding.path,
+          name: binding.name,
+          ...(binding.nameTruncated
+            ? { nameTruncated: true }
+            : {}),
+          tileCount: binding.tileCount,
+          tileSize: {
+            width: expectInteger(
+              document.tilewidth,
+              `${binding.path}.tilewidth`,
+            ),
+            height: expectInteger(
+              document.tileheight,
+              `${binding.path}.tileheight`,
+            ),
+          },
+          collection: {
+            sparseLocalIds: true,
+            maxLocalId: binding.gidSpan - 1,
+            tileSizeSemantics:
+              "maximum-tile-image-size",
+          },
+        },
+        renderProfile:
+          "explicit-local-id-collection-selection-v1",
         selection: rendered.selection,
         scale: rendered.scale,
         snapshotConsistency:

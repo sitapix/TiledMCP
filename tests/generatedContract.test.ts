@@ -524,6 +524,12 @@ describe("generated MCP contract", () => {
           "map-path-plus-tileset-asset-id",
         renderProfile:
           "explicit-local-id-atlas-selection-v1",
+        collectionRenderProfile:
+          "explicit-local-id-collection-selection-v1",
+        collectionTiles:
+          "per-tile-images-verified-revision-pinned-sparse-ids-fail-closed",
+        collectionCellLayout:
+          "largest-selected-tile-sized-cells",
         atlasProfile:
           "root-atlas-no-per-tile-images",
         supportedFormats: [
@@ -884,21 +890,64 @@ describe("generated MCP contract", () => {
       ].sort(),
     );
 
-    const tileRenderSuccess =
-      findResultBranchWithProperty(
-        tileRenderTool.outputSchema,
-        "renderProfile",
-        `${tileRenderLabel}.outputSchema`,
-      );
-    expect(
-      schemaProperty(
-        tileRenderSuccess,
-        "renderProfile",
-        `${tileRenderLabel} success result`,
-      ).const,
-    ).toBe(
-      "explicit-local-id-atlas-selection-v1",
+    const tileRenderOutput = asRecord(
+      tileRenderTool.outputSchema,
+      `${tileRenderLabel}.outputSchema`,
     );
+    const tileRenderResultSchema = schemaProperty(
+      tileRenderOutput,
+      "result",
+      `${tileRenderLabel}.outputSchema`,
+    );
+    const tileRenderBranches = asRecordArray(
+      tileRenderResultSchema.anyOf,
+      `${tileRenderLabel}.result.anyOf`,
+    ).flatMap((branch) =>
+      Array.isArray(branch.anyOf)
+        ? asRecordArray(
+            branch.anyOf,
+            `${tileRenderLabel}.result.anyOf[].anyOf`,
+          )
+        : [branch],
+    );
+    const renderProfileBranches =
+      tileRenderBranches.filter(
+        (branch) =>
+          branch.properties !== null &&
+          typeof branch.properties === "object" &&
+          !Array.isArray(branch.properties) &&
+          "renderProfile" in
+            (branch.properties as Record<
+              string,
+              unknown
+            >),
+      );
+    expect(renderProfileBranches).toHaveLength(2);
+    expect(
+      renderProfileBranches
+        .map(
+          (branch) =>
+            schemaProperty(
+              branch,
+              "renderProfile",
+              `${tileRenderLabel} success result`,
+            ).const,
+        )
+        .sort(),
+    ).toEqual([
+      "explicit-local-id-atlas-selection-v1",
+      "explicit-local-id-collection-selection-v1",
+    ]);
+    const tileRenderSuccess =
+      renderProfileBranches.find(
+        (branch) =>
+          schemaProperty(
+            branch,
+            "renderProfile",
+            `${tileRenderLabel} success result`,
+          ).const ===
+          "explicit-local-id-atlas-selection-v1",
+      ) as Record<string, unknown>;
     expect(
       schemaProperty(
         tileRenderSuccess,

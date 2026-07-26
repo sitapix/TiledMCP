@@ -154,6 +154,77 @@ describe("image-collection tileset details and search", () => {
     });
   });
 
+  it("renders explicit sparse collection tiles in input order", async () => {
+    const harness = await createHarness(roots);
+    const rendered =
+      await harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        localIds: [7, 0],
+        scale: 2,
+      });
+    expect(rendered.result).toMatchObject({
+      renderProfile:
+        "explicit-local-id-collection-selection-v1",
+      images: [
+        {
+          localId: 7,
+          path: "tiles/prop-b.png",
+          revision: expect.stringMatching(
+            /^sha256:[0-9a-f]{64}$/u,
+          ),
+          format: "png",
+          pixelSize: { width: 24, height: 32 },
+        },
+        {
+          localId: 0,
+          path: "tiles/prop-a.png",
+          format: "png",
+          pixelSize: { width: 16, height: 16 },
+        },
+      ],
+      tileset: {
+        path: COLLECTION_PATH,
+        tileCount: 2,
+        collection: {
+          sparseLocalIds: true,
+          maxLocalId: 7,
+        },
+      },
+      selection: {
+        localIds: [7, 0],
+        order: "input",
+        labels: "local-id",
+      },
+      scale: 2,
+      truncated: false,
+    });
+    expect(
+      (rendered.result as { tileset: Record<string, unknown> })
+        .tileset.atlas,
+    ).toBeUndefined();
+    expect(rendered.png.byteLength).toBeGreaterThan(0);
+
+    await expect(
+      harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        localIds: [3],
+      }),
+    ).rejects.toMatchObject({
+      code: "TILE_ID_OUT_OF_RANGE",
+    });
+    await expect(
+      harness.service.renderTiles({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        localIds: [7, 7],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+
   it("fails closed on dimension mismatch, sub-rectangles, and Wang sets", async () => {
     const mismatch = await createHarness(roots, {
       tiles: [

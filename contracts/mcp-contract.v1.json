@@ -109,14 +109,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
+        "revision": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
         "serverVersion": "0.0.1",
-        "size": 77972
+        "size": 78226
       },
-      "byteLength": 77972,
+      "byteLength": 78226,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
+      "sha256": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
       "uri": "tiled://guide"
     }
   ],
@@ -144,9 +144,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
+        "revision": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
         "serverVersion": "0.0.1",
-        "size": 77972
+        "size": 78226
       },
       "annotations": {
         "audience": [
@@ -158,7 +158,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 77972,
+      "size": 78226,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -13002,6 +13002,18 @@
                         "const": "root-atlas-no-per-tile-images",
                         "type": "string"
                       },
+                      "collectionCellLayout": {
+                        "const": "largest-selected-tile-sized-cells",
+                        "type": "string"
+                      },
+                      "collectionRenderProfile": {
+                        "const": "explicit-local-id-collection-selection-v1",
+                        "type": "string"
+                      },
+                      "collectionTiles": {
+                        "const": "per-tile-images-verified-revision-pinned-sparse-ids-fail-closed",
+                        "type": "string"
+                      },
                       "columnsSemantics": {
                         "const": "maximum-per-row",
                         "type": "string"
@@ -13083,6 +13095,9 @@
                     "required": [
                       "locator",
                       "renderProfile",
+                      "collectionRenderProfile",
+                      "collectionTiles",
+                      "collectionCellLayout",
                       "atlasProfile",
                       "supportedFormats",
                       "selection",
@@ -32809,7 +32824,7 @@
         "readOnlyHint": true,
         "title": "Read local Tiled project data"
       },
-      "description": "Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external atlas tileset. Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated.",
+      "description": "Renders an explicit bounded, input-ordered selection of local tile IDs from one referenced external tileset (atlas or image-collection). Every selected tile is labeled with its local ID; the selection is never sorted, reduced or paginated. Collection selections read each tile's own image verified and revision-pinned; missing sparse ids fail closed.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -32910,41 +32925,414 @@
           "result": {
             "anyOf": [
               {
-                "additionalProperties": false,
-                "description": "Runtime enforces every selection.localIds entry is less than tileset.tileCount; this dynamic cross-field invariant is not expressible in the published Draft-07 schema.",
-                "properties": {
-                  "byteLength": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 8388608,
-                    "type": "integer"
-                  },
-                  "image": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
+                    "description": "Runtime enforces every selection.localIds entry is less than tileset.tileCount; this dynamic cross-field invariant is not expressible in the published Draft-07 schema.",
                     "properties": {
-                      "format": {
-                        "enum": [
-                          "jpeg",
-                          "png",
-                          "svg",
-                          "webp"
+                      "byteLength": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 8388608,
+                        "type": "integer"
+                      },
+                      "image": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "format": {
+                            "enum": [
+                              "jpeg",
+                              "png",
+                              "svg",
+                              "webp"
+                            ],
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "pixelSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision",
+                          "format",
+                          "pixelSize"
                         ],
+                        "type": "object"
+                      },
+                      "map": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "mimeType": {
+                        "const": "image/png",
                         "type": "string"
                       },
-                      "path": {
-                        "minLength": 1,
+                      "pixelSize": {
+                        "additionalProperties": false,
+                        "description": "Rendered PNG dimensions. Runtime enforces width * height <= 1500000; this multiplicative invariant is not expressible in the published Draft-07 schema.",
+                        "properties": {
+                          "height": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 2048,
+                            "type": "integer"
+                          },
+                          "width": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 2048,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "width",
+                          "height"
+                        ],
+                        "type": "object"
+                      },
+                      "renderProfile": {
+                        "const": "explicit-local-id-atlas-selection-v1",
+                        "type": "string"
+                      },
+                      "scale": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 4,
+                        "type": "integer"
+                      },
+                      "selection": {
+                        "additionalProperties": false,
+                        "description": "Runtime-enforced cross-field invariants: count equals localIds.length; layout.rows equals ceil(count / layout.columns); layout.adjusted exactly reports an automatic reduction from the omitted-input default of 8 columns, and adjusted=true requires requestedColumns=8.",
+                        "properties": {
+                          "count": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 64,
+                            "type": "integer"
+                          },
+                          "labels": {
+                            "const": "local-id",
+                            "type": "string"
+                          },
+                          "layout": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "adjusted": {
+                                "type": "boolean"
+                              },
+                              "columns": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 32,
+                                "type": "integer"
+                              },
+                              "kind": {
+                                "const": "row-major",
+                                "type": "string"
+                              },
+                              "requestedColumns": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 32,
+                                "type": "integer"
+                              },
+                              "rows": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 64,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "requestedColumns",
+                              "columns",
+                              "rows",
+                              "adjusted"
+                            ],
+                            "type": "object"
+                          },
+                          "localIds": {
+                            "items": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "maxItems": 64,
+                            "minItems": 1,
+                            "type": "array",
+                            "uniqueItems": true
+                          },
+                          "order": {
+                            "const": "input",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "localIds",
+                          "count",
+                          "order",
+                          "labels",
+                          "layout"
+                        ],
+                        "type": "object"
+                      },
+                      "sha256": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "atlas": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "columns": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "margin": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "spacing": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "columns",
+                              "margin",
+                              "spacing"
+                            ],
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tileSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "name",
+                          "tileCount",
+                          "tileSize",
+                          "atlas"
+                        ],
+                        "type": "object"
+                      },
+                      "truncated": {
+                        "const": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "mimeType",
+                      "pixelSize",
+                      "byteLength",
+                      "sha256",
+                      "map",
+                      "source",
+                      "image",
+                      "tileset",
+                      "renderProfile",
+                      "selection",
+                      "scale",
+                      "snapshotConsistency",
+                      "truncated"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "byteLength": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 8388608,
+                        "type": "integer"
+                      },
+                      "images": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "format": {
+                              "enum": [
+                                "jpeg",
+                                "png",
+                                "svg",
+                                "webp"
+                              ],
+                              "type": "string"
+                            },
+                            "localId": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "path": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "pixelSize": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "height": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "width": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "width",
+                                "height"
+                              ],
+                              "type": "object"
+                            },
+                            "revision": {
+                              "pattern": "^sha256:[0-9a-f]{64}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "revision",
+                            "format",
+                            "pixelSize",
+                            "localId"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 64,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "map": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "mimeType": {
+                        "const": "image/png",
                         "type": "string"
                       },
                       "pixelSize": {
                         "additionalProperties": false,
                         "properties": {
                           "height": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
+                            "exclusiveMinimum": 0,
+                            "maximum": 2048,
                             "type": "integer"
                           },
                           "width": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
+                            "exclusiveMinimum": 0,
+                            "maximum": 2048,
                             "type": "integer"
                           }
                         },
@@ -32954,266 +33342,210 @@
                         ],
                         "type": "object"
                       },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision",
-                      "format",
-                      "pixelSize"
-                    ],
-                    "type": "object"
-                  },
-                  "map": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "minLength": 1,
+                      "renderProfile": {
+                        "const": "explicit-local-id-collection-selection-v1",
                         "type": "string"
                       },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "mimeType": {
-                    "const": "image/png",
-                    "type": "string"
-                  },
-                  "pixelSize": {
-                    "additionalProperties": false,
-                    "description": "Rendered PNG dimensions. Runtime enforces width * height <= 1500000; this multiplicative invariant is not expressible in the published Draft-07 schema.",
-                    "properties": {
-                      "height": {
+                      "scale": {
                         "exclusiveMinimum": 0,
-                        "maximum": 2048,
+                        "maximum": 4,
                         "type": "integer"
                       },
-                      "width": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 2048,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "width",
-                      "height"
-                    ],
-                    "type": "object"
-                  },
-                  "renderProfile": {
-                    "const": "explicit-local-id-atlas-selection-v1",
-                    "type": "string"
-                  },
-                  "scale": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 4,
-                    "type": "integer"
-                  },
-                  "selection": {
-                    "additionalProperties": false,
-                    "description": "Runtime-enforced cross-field invariants: count equals localIds.length; layout.rows equals ceil(count / layout.columns); layout.adjusted exactly reports an automatic reduction from the omitted-input default of 8 columns, and adjusted=true requires requestedColumns=8.",
-                    "properties": {
-                      "count": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 64,
-                        "type": "integer"
-                      },
-                      "labels": {
-                        "const": "local-id",
-                        "type": "string"
-                      },
-                      "layout": {
+                      "selection": {
                         "additionalProperties": false,
+                        "description": "Runtime-enforced cross-field invariants: count equals localIds.length; layout.rows equals ceil(count / layout.columns); layout.adjusted exactly reports an automatic reduction from the omitted-input default of 8 columns, and adjusted=true requires requestedColumns=8.",
                         "properties": {
-                          "adjusted": {
-                            "type": "boolean"
-                          },
-                          "columns": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 32,
-                            "type": "integer"
-                          },
-                          "kind": {
-                            "const": "row-major",
-                            "type": "string"
-                          },
-                          "requestedColumns": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 32,
-                            "type": "integer"
-                          },
-                          "rows": {
+                          "count": {
                             "exclusiveMinimum": 0,
                             "maximum": 64,
                             "type": "integer"
+                          },
+                          "labels": {
+                            "const": "local-id",
+                            "type": "string"
+                          },
+                          "layout": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "adjusted": {
+                                "type": "boolean"
+                              },
+                              "columns": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 32,
+                                "type": "integer"
+                              },
+                              "kind": {
+                                "const": "row-major",
+                                "type": "string"
+                              },
+                              "requestedColumns": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 32,
+                                "type": "integer"
+                              },
+                              "rows": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 64,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "requestedColumns",
+                              "columns",
+                              "rows",
+                              "adjusted"
+                            ],
+                            "type": "object"
+                          },
+                          "localIds": {
+                            "items": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "maxItems": 64,
+                            "minItems": 1,
+                            "type": "array",
+                            "uniqueItems": true
+                          },
+                          "order": {
+                            "const": "input",
+                            "type": "string"
                           }
                         },
                         "required": [
-                          "kind",
-                          "requestedColumns",
-                          "columns",
-                          "rows",
-                          "adjusted"
+                          "localIds",
+                          "count",
+                          "order",
+                          "labels",
+                          "layout"
                         ],
                         "type": "object"
                       },
-                      "localIds": {
-                        "items": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "maxItems": 64,
-                        "minItems": 1,
-                        "type": "array",
-                        "uniqueItems": true
-                      },
-                      "order": {
-                        "const": "input",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "localIds",
-                      "count",
-                      "order",
-                      "labels",
-                      "layout"
-                    ],
-                    "type": "object"
-                  },
-                  "sha256": {
-                    "pattern": "^sha256:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "snapshotConsistency": {
-                    "const": "non-atomic-read-set",
-                    "type": "string"
-                  },
-                  "source": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "pattern": "^asset_[0-9a-f]{24}$",
-                        "type": "string"
-                      },
-                      "revision": {
+                      "sha256": {
                         "pattern": "^sha256:[0-9a-f]{64}$",
                         "type": "string"
-                      }
-                    },
-                    "required": [
-                      "assetId",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "atlas": {
+                      },
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
+                      },
+                      "source": {
                         "additionalProperties": false,
                         "properties": {
-                          "columns": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "collection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "maxLocalId": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "sparseLocalIds": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "tileSizeSemantics": {
+                                "const": "maximum-tile-image-size",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sparseLocalIds",
+                              "maxLocalId",
+                              "tileSizeSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
                             "exclusiveMinimum": 0,
                             "maximum": 9007199254740991,
                             "type": "integer"
                           },
-                          "margin": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "spacing": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
+                          "tileSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
                           }
                         },
                         "required": [
-                          "columns",
-                          "margin",
-                          "spacing"
+                          "path",
+                          "name",
+                          "tileCount",
+                          "tileSize",
+                          "collection"
                         ],
                         "type": "object"
                       },
-                      "name": {
-                        "type": "string"
-                      },
-                      "nameTruncated": {
-                        "const": true,
+                      "truncated": {
+                        "const": false,
                         "type": "boolean"
-                      },
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "tileCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "tileSize": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "height": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "width": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "width",
-                          "height"
-                        ],
-                        "type": "object"
                       }
                     },
                     "required": [
-                      "path",
-                      "name",
-                      "tileCount",
-                      "tileSize",
-                      "atlas"
+                      "mimeType",
+                      "pixelSize",
+                      "byteLength",
+                      "sha256",
+                      "map",
+                      "source",
+                      "images",
+                      "tileset",
+                      "renderProfile",
+                      "selection",
+                      "scale",
+                      "snapshotConsistency",
+                      "truncated"
                     ],
                     "type": "object"
-                  },
-                  "truncated": {
-                    "const": false,
-                    "type": "boolean"
                   }
-                },
-                "required": [
-                  "mimeType",
-                  "pixelSize",
-                  "byteLength",
-                  "sha256",
-                  "map",
-                  "source",
-                  "image",
-                  "tileset",
-                  "renderProfile",
-                  "selection",
-                  "scale",
-                  "snapshotConsistency",
-                  "truncated"
-                ],
-                "type": "object"
+                ]
               },
               {
                 "additionalProperties": false,
