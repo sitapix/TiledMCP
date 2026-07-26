@@ -235,6 +235,7 @@ import { measurePropertiesPatchBytes } from "./maps/propertyEdits.js";
 import {
   checkpointListToolOutputSchema,
   listFilesToolOutputSchema,
+  worldListToolOutputSchema,
   mapSummaryToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
@@ -1482,6 +1483,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
   Object.freeze([
     "tiled_get_capabilities",
     "tiled_list_files",
+    "tiled_list_world_maps",
     "tiled_list_checkpoints",
     "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_prepared_checkpoint_commit",
@@ -3098,6 +3100,29 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       annotations: READ_ONLY,
     },
     async ({ limit }) => executeTool(() => resolver.listAssets(limit)),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_list_world_maps",
+    {
+      title: "List JSON world map members",
+      description:
+        "Reads one project-local JSON .world file and returns its explicit map members with world coordinates, declared sizes, per-member existence and pinned revisions, plus world custom properties. Pattern-based members are counted but never matched against the filesystem.",
+      inputSchema: z
+        .object({
+          worldPath: projectPathSchema,
+        })
+        .strict(),
+      outputSchema:
+        worldListToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ worldPath }) =>
+      executeTool(() =>
+        maps.listWorldMaps({ worldPath }),
+      ),
   );
 
   register(

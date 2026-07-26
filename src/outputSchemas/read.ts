@@ -245,6 +245,82 @@ const checkpointListResultOutputSchema = z
   })
   .strict();
 
+const worldMapMemberOutputSchema = z
+  .object({
+    source: z.string().min(1).max(4_096),
+    exists: z.boolean(),
+    path: projectPathOutputSchema.optional(),
+    revision: revisionOutputSchema.optional(),
+    x: integerOutputSchema
+      .min(-1_000_000_000)
+      .max(1_000_000_000),
+    y: integerOutputSchema
+      .min(-1_000_000_000)
+      .max(1_000_000_000),
+    declaredSize: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+  .superRefine((member, context) => {
+    if (
+      member.exists !==
+      (member.path !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["path"],
+        message:
+          "A world member resolves a project path exactly when it exists",
+      });
+    }
+    if (
+      member.exists !==
+      (member.revision !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["revision"],
+        message:
+          "A world member pins a revision exactly when it exists",
+      });
+    }
+  });
+
+const worldListResultOutputSchema = z
+  .object({
+    path: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    onlyShowAdjacentMaps: z.boolean(),
+    members: z
+      .array(worldMapMemberOutputSchema)
+      .max(1_000),
+    memberCount:
+      nonnegativeIntegerOutputSchema.max(1_000),
+    patternCount:
+      nonnegativeIntegerOutputSchema,
+    patternsUnexpanded: z.boolean(),
+    properties: z
+      .array(projectedPropertyOutputSchema)
+      .max(128),
+    propertyCount:
+      nonnegativeIntegerOutputSchema,
+    propertiesTruncated: z
+      .literal(true)
+      .optional(),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const worldListToolOutputSchema =
+  toolOutputSchema(worldListResultOutputSchema);
+
 export const checkpointListToolOutputSchema =
   toolOutputSchema(
     checkpointListResultOutputSchema,

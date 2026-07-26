@@ -17,6 +17,14 @@
       "purpose": "有界列出项目根目录下可用的 Tiled 资产。"
     },
     {
+      "name": "tiled_list_world_maps",
+      "profile": "core",
+      "arguments": {
+        "worldPath": "overworld.world"
+      },
+      "purpose": "只读列出一个 JSON world 的显式地图成员：世界坐标、声明尺寸、逐成员存在性与 revision pin；pattern 成员只计数、绝不做文件系统匹配。"
+    },
+    {
       "name": "tiled_list_checkpoints",
       "profile": "core",
       "arguments": {

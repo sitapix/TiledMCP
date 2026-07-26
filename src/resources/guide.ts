@@ -1363,6 +1363,20 @@ no-replace semantics. The same missing-target restore works for files
 deleted by external tools. Inspect \`fileDeletionCapabilities\` for the
 frozen policy strings and budgets.
 
+## Reading JSON worlds
+
+\`tiled_list_world_maps\` reads one project-local JSON \`.world\` file
+and returns its explicit map members with Tiled 1.12.2 reader semantics:
+member \`fileName\` references resolve against the world's own
+directory, missing coordinates read as 0, and a non-positive declared
+size reports \`declaredSize: null\` (the map file decides). Each member
+carries \`exists\` plus a pinned \`revision\` when the file is present;
+the member read set is not an atomic snapshot. Pattern-based members are
+counted and flagged \`patternsUnexpanded\`, never matched against the
+filesystem, and world custom properties use the shared property
+projection. This tool only reads; world membership editing is not
+supported yet.
+
 ## Atomic multi-file transactions
 
 \`tiled_preview_transaction\` composes between 2 and 16 already previewed,

@@ -171,6 +171,10 @@ import {
   mergeTemplateInstance,
   readObjectTemplate,
 } from "./objectTemplates.js";
+import {
+  assertWorldPath,
+  projectWorldDocument,
+} from "./worldRead.js";
 import type {
   CreatableLayerType,
   Diagnostic,
@@ -3038,6 +3042,93 @@ export class MapService {
       total: locations.length,
       truncated: locations.length > limit,
       objects: locations.slice(0, limit).map(summarizeObjectLocation),
+    };
+  }
+
+  async listWorldMaps(input: {
+    worldPath: string;
+  }): Promise<Record<string, unknown>> {
+    const worldPath = this.resolver.normalize(
+      input.worldPath,
+    );
+    assertWorldPath(worldPath);
+    const snapshot =
+      await this.store.readSnapshot(worldPath);
+    const parsed =
+      this.store.parseSnapshot(snapshot);
+    const projection = projectWorldDocument(
+      parsed.document,
+      worldPath,
+    );
+    const members: Array<
+      Record<string, unknown>
+    > = [];
+    for (const member of projection.members) {
+      let resolvedPath: string | undefined;
+      let revision: string | undefined;
+      try {
+        resolvedPath =
+          await this.resolver.resolveReference(
+            worldPath,
+            member.fileName,
+          );
+        revision =
+          await this.store.readRevision(
+            resolvedPath,
+          );
+      } catch (error) {
+        if (
+          asTiledMcpError(error)?.code !==
+          "FILE_NOT_FOUND"
+        ) {
+          throw error;
+        }
+      }
+      members.push({
+        source: member.fileName,
+        exists: resolvedPath !== undefined,
+        ...(resolvedPath === undefined
+          ? {}
+          : { path: resolvedPath }),
+        ...(revision === undefined
+          ? {}
+          : { revision }),
+        x: member.x,
+        y: member.y,
+        declaredSize: member.declaredSize,
+      });
+    }
+    const currentRevision =
+      await this.store.readRevision(worldPath);
+    if (currentRevision !== snapshot.revision) {
+      throw new TiledMcpError(
+        "DOCUMENT_CHANGED_DURING_READ",
+        `${worldPath} changed while its members were being listed.`,
+        {
+          path: worldPath,
+          expectedRevision: snapshot.revision,
+          actualRevision: currentRevision,
+        },
+      );
+    }
+    return {
+      path: worldPath,
+      revision: snapshot.revision,
+      onlyShowAdjacentMaps:
+        projection.onlyShowAdjacentMaps,
+      members,
+      memberCount: members.length,
+      patternCount: projection.patternCount,
+      patternsUnexpanded:
+        projection.patternCount > 0,
+      properties: projection.properties.entries,
+      propertyCount:
+        projection.properties.total,
+      ...(projection.properties.truncated
+        ? { propertiesTruncated: true }
+        : {}),
+      snapshotConsistency:
+        "non-atomic-read-set",
     };
   }
 
