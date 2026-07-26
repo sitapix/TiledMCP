@@ -155,9 +155,11 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 | [docs/02-mcp-spec.md](docs/02-mcp-spec.md) | **MCP 功能规格草案**：Tools / Resources / Prompts 清单与分期计划 |
 | [docs/03-architecture.md](docs/03-architecture.md) | 技术架构：技术选型、读写策略、关键实现要点与坑 |
 | [docs/04-security.md](docs/04-security.md) | **Frozen v1** direct filesystem 威胁模型与部署要求 |
+| [docs/05-cross-file-wal-design.md](docs/05-cross-file-wal-design.md) | 跨文件 WAL 事务设计与决策记录（S1–S3 已实施） |
+| [docs/06-infinite-edit-design.md](docs/06-infinite-edit-design.md) | 无限地图编辑设计定稿：Tiled 1.12.2 chunk 语义考证、规范化写回决策与实施切片 |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | 从真实 MCP discovery 生成的双 profile 完整机器契约 |
 | [contracts/application-errors.v1.json](contracts/application-errors.v1.json) | 当前 104 个 v1 application code 及其兼容性、fallback 和排除边界 |
-| [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的 26 工具 schema、annotations 与调用参考 |
+| [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | 自动生成的全部工具 schema、annotations 与调用参考 |
 | [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md) | revision 传递、批准边界、创建例外与错误处理工作流 |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | 每个已注册工具恰好一个、由公开 input schema 校验的调用示例 |
 
