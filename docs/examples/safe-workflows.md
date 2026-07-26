@@ -551,7 +551,17 @@ checkpoint 再 unlink**，结果里的 `checkpointId` 就是恢复入口：
 
 事务提交经崩溃可恢复 redo journal：提交点之前进程崩溃，重启对账把所有目标回滚
 到原状；之后崩溃则前滚补完。同时最多 4 个事务 pending；不想继续的事务等它过期
-即可，成员锁自动释放。tileset create + 挂载同一事务的耦合放行尚未开放。
+即可，成员锁自动释放。会破坏其他成员 revision pin 的组合（改写别人 pin 的地
+图、编辑别人 pin 的 tileset）在事务 preview 即被拒绝。
+
+创建即挂载走唯一放行的耦合：
+
+1. `tiled_create_tileset` 取得 create change set；
+2. `tiled_add_tileset_to_map` 传 `createChangeSetId`——TSJ 还不存在也能预览，
+   挂载 pin 的是 create 计划的 prospective 内容 revision；
+3. `tiled_preview_transaction([createId, attachId])` 组合后批准 apply，新
+   tileset 文件与地图引用一次性原子落盘。两个成员也可以不进事务、按
+   create→attach 顺序分别批准 apply，结果一致。
 
 ## Raster 预览是可选能力
 

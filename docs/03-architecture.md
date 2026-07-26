@@ -1595,6 +1595,13 @@ prepare 出 `TransactionTargetInput`，交给 `commitTransaction` 原子提交�
 为 `fileDelete` 判别分支）回填进 registry，使成员重放返回事务结果而不是二次提
 交。成员计划在事务批准后被篡改或过期都会使事务 apply fail closed。
 
+成员间 pin 耦合在 preview 即拒绝（tilesetEdit pin 的地图被同事务改写/删除、
+mapEdit 依赖 pin 的 tileset 被同事务编辑），唯一放行 create+attach：
+`tiled_add_tileset_to_map` 可用 pending create 计划的重放内容顶替尚不存在的
+TSJ（prospective assetId 由 asset registry 的确定性路径哈希预分配，与落盘后首
+次真实分配一致），挂载 pin 其 prospective 内容 revision；事务 prepare 先重放
+create 成员，其内容直接充当 attach 成员的依赖来源，digest 校验全程不放松。
+
 外部 adapter 不能绕过这套流程。evaluate、export 等先产生 staging 结果，TiledMCP 校验后
 再将结果纳入单文件提交或 WAL。
 

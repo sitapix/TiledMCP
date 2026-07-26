@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16",
+    "revision": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
     "serverVersion": "0.0.1",
-    "size": 76783
+    "size": 77549
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 76783,
+  "size": 77549,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 76783 UTF-8 bytes, revision `sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16`.
+Content contract: `text`, 77549 UTF-8 bytes, revision `sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490`.
 
 Resource templates: none.
 
@@ -225,7 +225,7 @@ Prompts: none.
 
 Availability: `core`
 
-Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets.
+Validates one project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. With createChangeSetId, a pending tileset-create change set's replayed prospective content stands in for a TSJ that does not exist yet; the attachment pins that prospective revision, so it applies after the create commits or atomically with it in one transaction.
 
 Annotations:
 
@@ -263,6 +263,10 @@ Input schema:
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
+    "createChangeSetId": {
+      "pattern": "^changeset:[0-9a-f]{64}$",
+      "type": "string"
+    },
     "expectedDependencyRevisions": {
       "additionalProperties": {
         "description": "SHA-256 revision returned by a read or preview",
@@ -13726,6 +13730,10 @@ Output schema:
                   "const": "rolled-back-on-startup",
                   "type": "string"
                 },
+                "createAttachCoupling": {
+                  "const": "add-tileset-preview-accepts-pending-create-change-set",
+                  "type": "string"
+                },
                 "divergedTargetRecovery": {
                   "const": "single-target-conflict-others-roll-forward",
                   "type": "string"
@@ -13753,6 +13761,10 @@ Output schema:
                 "maxStagedBytes": {
                   "const": 67108864,
                   "type": "number"
+                },
+                "memberCoupling": {
+                  "const": "rejected-except-create-attach-prospective-pin",
+                  "type": "string"
                 },
                 "memberKinds": {
                   "items": [
@@ -13812,7 +13824,9 @@ Output schema:
                 "crashBeforeCommitPoint",
                 "crashAfterCommitPoint",
                 "divergedTargetRecovery",
-                "perTargetCheckpoints"
+                "perTargetCheckpoints",
+                "memberCoupling",
+                "createAttachCoupling"
               ],
               "type": "object"
             },

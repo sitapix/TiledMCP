@@ -368,6 +368,99 @@ function transactionTargetForPlan(
   );
 }
 
+/**
+ * Rejects member combinations whose own commit would break another
+ * member's revision pins. The only permitted coupling is create+attach: a
+ * map edit whose add-tileset operation pins exactly the prospective
+ * content revision of a tileset-create member in the same transaction.
+ */
+function assertTransactionMemberCoupling(
+  plans: readonly ChangeSetPlan[],
+  targets: readonly TransactionPlanTarget[],
+): void {
+  const targetPaths = new Set(
+    targets.map((target) => target.path),
+  );
+  for (const [index, plan] of plans.entries()) {
+    const memberChangeSetId =
+      targets[index]?.memberChangeSetId ?? null;
+    if (
+      plan.kind === "tilesetEdit" &&
+      targetPaths.has(plan.mapPath)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "A tileset-edit member pins a map that another member of the same transaction rewrites or deletes.",
+        {
+          changeSetId: memberChangeSetId,
+          mapPath: plan.mapPath,
+        },
+      );
+    }
+    if (plan.kind !== "mapEdit") {
+      continue;
+    }
+    for (const [
+      otherIndex,
+      otherPlan,
+    ] of plans.entries()) {
+      if (
+        otherIndex === index ||
+        otherPlan.kind !== "tilesetEdit"
+      ) {
+        continue;
+      }
+      if (
+        Object.hasOwn(
+          plan.dependencyRevisions,
+          otherPlan.assetId,
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "A map-edit member pins a tileset that another member of the same transaction edits.",
+          {
+            changeSetId: memberChangeSetId,
+            tilesetPath: otherPlan.tilesetPath,
+            assetId: otherPlan.assetId,
+          },
+        );
+      }
+    }
+    for (const operation of plan.operations) {
+      if (operation.type !== "addTilesetToMap") {
+        continue;
+      }
+      const otherIndex = targets.findIndex(
+        (target) =>
+          target.path === operation.tilesetPath,
+      );
+      if (
+        otherIndex === -1 ||
+        otherIndex === index
+      ) {
+        continue;
+      }
+      const otherPlan = plans[otherIndex];
+      if (
+        otherPlan?.kind === "tilesetCreate" &&
+        operation.tilesetRevision ===
+          otherPlan.baseRevision
+      ) {
+        continue;
+      }
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "A map-edit member attaches a tileset another member targets; only a create+attach coupling pinned on the exact prospective content is allowed.",
+        {
+          changeSetId: memberChangeSetId,
+          tilesetPath: operation.tilesetPath,
+        },
+      );
+    }
+  }
+}
+
 export interface CheckpointRestoreChangeSetPreview
   extends ChangeSetPreviewCommon {
   kind: "checkpointRestore";
@@ -1080,6 +1173,33 @@ export class ChangeSetRegistry {
   }
 
   /**
+   * Returns a clone of a pending tileset-create plan for composition:
+   * `tiled_add_tileset_to_map` uses it to pre-pin an attachment on the
+   * prospective TSJ content before the file exists.
+   */
+  getTilesetCreatePlan(
+    changeSetId: string,
+  ): TilesetCreatePlan {
+    this.prune();
+    const entry = this.entries.get(changeSetId);
+    if (entry === undefined) {
+      throw new TiledMcpError(
+        "CHANGE_SET_NOT_FOUND",
+        "The tileset-create change set is missing or expired. Preview it again.",
+        { changeSetId },
+      );
+    }
+    if (entry.plan.kind !== "tilesetCreate") {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "createChangeSetId must reference a tileset-create change set.",
+        { changeSetId, kind: entry.plan.kind },
+      );
+    }
+    return structuredClone(entry.plan);
+  }
+
+  /**
    * Builds and registers a transaction change set from already-previewed,
    * unapplied, unowned member change sets with pairwise-distinct target
    * paths, then locks each member against individual apply.
@@ -1158,6 +1278,10 @@ export class ChangeSetRegistry {
       targets.push(target);
       members.push(entry);
     }
+    assertTransactionMemberCoupling(
+      members.map((entry) => entry.plan),
+      targets,
+    );
     const baseRevision = `sha256:${createHash(
       "sha256",
     )

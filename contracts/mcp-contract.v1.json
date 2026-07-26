@@ -109,14 +109,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16",
+        "revision": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
         "serverVersion": "0.0.1",
-        "size": 76783
+        "size": 77549
       },
-      "byteLength": 76783,
+      "byteLength": 77549,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16",
+      "sha256": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
       "uri": "tiled://guide"
     }
   ],
@@ -144,9 +144,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:6412192f3a78942bef6d9fc6657fe5733dbdbb3cf8005008a0ed8fda939b8d16",
+        "revision": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
         "serverVersion": "0.0.1",
-        "size": 76783
+        "size": 77549
       },
       "annotations": {
         "audience": [
@@ -158,7 +158,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 76783,
+      "size": 77549,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -218,7 +218,7 @@
         "readOnlyHint": true,
         "title": "Preview a local Tiled map change"
       },
-      "description": "Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets.",
+      "description": "Validates one project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. With createChangeSetId, a pending tileset-create change set's replayed prospective content stands in for a TSJ that does not exist yet; the attachment pins that prospective revision, so it applies after the create commits or atomically with it in one transaction.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -226,6 +226,10 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,
         "properties": {
+          "createChangeSetId": {
+            "pattern": "^changeset:[0-9a-f]{64}$",
+            "type": "string"
+          },
           "expectedDependencyRevisions": {
             "additionalProperties": {
               "description": "SHA-256 revision returned by a read or preview",
@@ -13457,6 +13461,10 @@
                         "const": "rolled-back-on-startup",
                         "type": "string"
                       },
+                      "createAttachCoupling": {
+                        "const": "add-tileset-preview-accepts-pending-create-change-set",
+                        "type": "string"
+                      },
                       "divergedTargetRecovery": {
                         "const": "single-target-conflict-others-roll-forward",
                         "type": "string"
@@ -13484,6 +13492,10 @@
                       "maxStagedBytes": {
                         "const": 67108864,
                         "type": "number"
+                      },
+                      "memberCoupling": {
+                        "const": "rejected-except-create-attach-prospective-pin",
+                        "type": "string"
                       },
                       "memberKinds": {
                         "items": [
@@ -13543,7 +13555,9 @@
                       "crashBeforeCommitPoint",
                       "crashAfterCommitPoint",
                       "divergedTargetRecovery",
-                      "perTargetCheckpoints"
+                      "perTargetCheckpoints",
+                      "memberCoupling",
+                      "createAttachCoupling"
                     ],
                     "type": "object"
                   },

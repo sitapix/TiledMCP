@@ -256,6 +256,41 @@ export class AssetRegistry {
     return this.mutate(operation);
   }
 
+  /**
+   * Resolves the asset ID a currently missing path would receive on its
+   * first write-path resolution, without observing a file identity or
+   * persisting anything. A live entry at the path keeps its ID; otherwise
+   * this returns the same deterministic path-hash allocation that
+   * {@link resolveMany} reproduces once the file exists. The near-impossible
+   * hash collision with a different live entry fails closed instead of
+   * guessing a random ID the later write-path resolution cannot reproduce.
+   */
+  async resolveProspectivePath(
+    kind: AssetIdentityKind,
+    projectPath: string,
+  ): Promise<string> {
+    const path = this.resolver.normalize(projectPath);
+    const document = await this.readFromDisk();
+    const index = indexDocument(document);
+    const live = index.byPath.get(
+      registryPathKey(kind, path),
+    );
+    if (live !== undefined) {
+      return live.assetId;
+    }
+    const candidate = `asset_${shortHash(
+      `${kind}:${path}`,
+    )}`;
+    if (index.assetIds.has(candidate)) {
+      throw new TiledMcpError(
+        "ASSET_ID_COLLISION",
+        `The prospective asset ID for ${path} collides with a different registry entry.`,
+        { path },
+      );
+    }
+    return candidate;
+  }
+
   async resolvePath(
     kind: AssetIdentityKind,
     projectPath: string,

@@ -22,6 +22,7 @@ import {
   type TransactionApplyOutcome,
   type TransactionMemberApplyResult,
   type TransactionPlan,
+  type TransactionPlanTarget,
 } from "../changeSets.js";
 import type { TransactionTargetInput } from "../storage/transactions.js";
 import {
@@ -416,6 +417,16 @@ interface ProspectiveTilesetBinding {
   revision: string;
 }
 
+/**
+ * In-memory stand-in for a TSJ that does not exist on disk yet: the exact
+ * replayed content of an approved tileset-create plan, keyed by that plan's
+ * prospective content revision.
+ */
+interface ProspectiveTilesetSource {
+  document: JsonObject;
+  revision: string;
+}
+
 interface ProspectiveImageBinding {
   assetId: string;
   path: string;
@@ -586,6 +597,13 @@ export interface PlanAddTilesetToMapInput {
   expectedMapRevision: string;
   expectedDependencyRevisions: Record<string, string>;
   expectedTilesetRevision?: string;
+  /**
+   * Approved tileset-create plan whose replayed prospective content stands
+   * in for a TSJ that does not exist on disk yet. The attachment pins that
+   * plan's prospective content revision, so it applies either after the
+   * create commits individually or atomically with it in one transaction.
+   */
+  createPlan?: TilesetCreatePlan;
 }
 
 export interface PlanCreateLayerInput {
@@ -2243,9 +2261,91 @@ export class MapService {
     if (posix.extname(tilesetPath).toLowerCase() !== ".tsj") {
       throw new TiledMcpError(
         "UNSUPPORTED_FORMAT",
-        "Adding a tileset to an MVP map requires an existing .tsj file.",
+        "Adding a tileset to an MVP map requires a .tsj path.",
         { path: tilesetPath },
       );
+    }
+
+    let prospectiveSource:
+      | ProspectiveTilesetSource
+      | undefined;
+    if (input.createPlan !== undefined) {
+      const createPlan = input.createPlan;
+      if (
+        this.resolver.normalize(
+          createPlan.tilesetPath,
+        ) !== tilesetPath
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "The tileset-create plan targets a different path than the attachment.",
+          {
+            tilesetPath,
+            createTilesetPath:
+              createPlan.tilesetPath,
+          },
+        );
+      }
+      if (
+        input.expectedTilesetRevision !==
+          undefined &&
+        input.expectedTilesetRevision !==
+          createPlan.baseRevision
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          "expectedTilesetRevision does not match the tileset-create plan's prospective content.",
+          {
+            path: tilesetPath,
+            expectedRevision:
+              input.expectedTilesetRevision,
+            actualRevision:
+              createPlan.baseRevision,
+          },
+        );
+      }
+      const { document } =
+        await this.prepareTilesetCreateContent(
+          createPlan,
+        );
+      let existing: DocumentSnapshot | undefined;
+      try {
+        existing =
+          await this.store.readSnapshot(
+            tilesetPath,
+          );
+      } catch (error) {
+        if (
+          asTiledMcpError(error)?.code !==
+          "FILE_NOT_FOUND"
+        ) {
+          throw error;
+        }
+      }
+      if (existing === undefined) {
+        prospectiveSource = {
+          document,
+          revision: createPlan.baseRevision,
+        };
+      } else if (
+        existing.revision !==
+        createPlan.baseRevision
+      ) {
+        // The tileset appeared with different content; the create plan is
+        // stale and pinning its prospective revision would never apply.
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          `${tilesetPath} already exists and no longer matches the tileset-create plan.`,
+          {
+            path: tilesetPath,
+            expectedRevision:
+              createPlan.baseRevision,
+            actualRevision: existing.revision,
+          },
+        );
+      }
+      // An existing file with matching bytes (the create was applied
+      // individually) falls through to the normal on-disk path.
     }
 
     const context = await this.loadEditableContext(mapPath, {
@@ -2259,7 +2359,12 @@ export class MapService {
     );
     const prospective = await this.loadProspectiveTilesetBinding(
       tilesetPath,
-      input.expectedTilesetRevision,
+      input.createPlan === undefined
+        ? input.expectedTilesetRevision
+        : input.createPlan.baseRevision,
+      undefined,
+      false,
+      prospectiveSource,
     );
     const operation = resolveAddTilesetToMapOperation(
       context,
@@ -2292,15 +2397,21 @@ export class MapService {
     };
 
     await this.assertDependenciesUnchanged(context.bindings);
-    await assertRevisionUnchanged(
-      this.store,
-      prospective.path,
-      prospective.revision,
-      "DEPENDENCY_REVISION_CONFLICT",
-      {
-        assetId: prospective.assetId,
-      },
-    );
+    if (prospectiveSource === undefined) {
+      await assertRevisionUnchanged(
+        this.store,
+        prospective.path,
+        prospective.revision,
+        "DEPENDENCY_REVISION_CONFLICT",
+        {
+          assetId: prospective.assetId,
+        },
+      );
+    } else {
+      await this.assertCreateTargetAbsent(
+        prospective.path,
+      );
+    }
     await assertRevisionUnchanged(
       this.store,
       context.loaded.path,
@@ -2794,7 +2905,10 @@ export class MapService {
         "The transaction member plans do not match the approved targets.",
       );
     }
-    const targets: TransactionTargetInput[] = [];
+    const pairs: {
+      target: TransactionPlanTarget;
+      memberPlan: ChangeSetPlan;
+    }[] = [];
     for (
       let index = 0;
       index < plan.targets.length;
@@ -2814,20 +2928,56 @@ export class MapService {
           { index },
         );
       }
-      const prepared =
-        await this.prepareTransactionTarget(
-          memberPlan,
+      pairs.push({ target, memberPlan });
+    }
+    // Replay create members first so map-edit members can bind prospective
+    // TSJs that only materialize inside this transaction.
+    const prospectiveTilesetSources = new Map<
+      string,
+      ProspectiveTilesetSource
+    >();
+    const preparedByIndex = new Array<
+      TransactionTargetInput | undefined
+    >(pairs.length).fill(undefined);
+    for (const [index, pair] of pairs.entries()) {
+      if (pair.memberPlan.kind !== "tilesetCreate") {
+        continue;
+      }
+      const { document, content } =
+        await this.prepareTilesetCreateContent(
+          pair.memberPlan,
         );
+      prospectiveTilesetSources.set(
+        pair.memberPlan.tilesetPath,
+        {
+          document,
+          revision: pair.memberPlan.baseRevision,
+        },
+      );
+      preparedByIndex[index] = {
+        kind: "create",
+        path: pair.memberPlan.tilesetPath,
+        content,
+      };
+    }
+    const targets: TransactionTargetInput[] = [];
+    for (const [index, pair] of pairs.entries()) {
+      const prepared =
+        preparedByIndex[index] ??
+        (await this.prepareTransactionTarget(
+          pair.memberPlan,
+          prospectiveTilesetSources,
+        ));
       if (
-        prepared.path !== target.path ||
+        prepared.path !== pair.target.path ||
         ("expectedRevision" in prepared
           ? prepared.expectedRevision
-          : null) !== target.expectedRevision
+          : null) !== pair.target.expectedRevision
       ) {
         throw new TiledMcpError(
           "INVALID_CHANGE_SET",
           "A prepared transaction target no longer matches its approved path or revision pin.",
-          { index, path: target.path },
+          { index, path: pair.target.path },
         );
       }
       targets.push(prepared);
@@ -2837,6 +2987,14 @@ export class MapService {
         targets,
         `apply transaction change set ${plan.id}`,
       );
+    // The store reports per-target results in its deterministic canonical
+    // path order; the wire result follows the approved member order.
+    const resultByPath = new Map(
+      commit.results.map((targetResult) => [
+        targetResult.path,
+        targetResult,
+      ]),
+    );
     const memberResults = new Map<
       string,
       TransactionMemberApplyResult
@@ -2849,11 +3007,15 @@ export class MapService {
       index += 1
     ) {
       const target = plan.targets[index];
-      const targetResult = commit.results[index];
+      const targetResult =
+        target === undefined
+          ? undefined
+          : resultByPath.get(target.path);
       if (
         target === undefined ||
         targetResult === undefined ||
-        targetResult.path !== target.path
+        resultByPath.size !==
+          plan.targets.length
       ) {
         throw new TiledMcpError(
           "INTERNAL_ERROR",
@@ -2917,6 +3079,10 @@ export class MapService {
    */
   private async prepareTransactionTarget(
     memberPlan: ChangeSetPlan,
+    prospectiveTilesetSources?: ReadonlyMap<
+      string,
+      ProspectiveTilesetSource
+    >,
   ): Promise<TransactionTargetInput> {
     if (memberPlan.kind === "mapEdit") {
       return {
@@ -2926,6 +3092,7 @@ export class MapService {
         content:
           await this.prepareMapEditBytes(
             memberPlan,
+            prospectiveTilesetSources,
           ),
       };
     }
@@ -3424,6 +3591,10 @@ export class MapService {
    */
   private async prepareMapEditBytes(
     plan: MapEditPlan,
+    prospectiveTilesetSources?: ReadonlyMap<
+      string,
+      ProspectiveTilesetSource
+    >,
   ): Promise<Buffer> {
     assertPlanShape(plan);
     const { id: suppliedId, ...unsignedPlan } = plan;
@@ -3484,11 +3655,16 @@ export class MapService {
           "The add-tileset operation is missing.",
         );
       }
+      const transactionSource =
+        prospectiveTilesetSources?.get(
+          plannedOperation.tilesetPath,
+        );
       prospectiveTileset = await this.loadProspectiveTilesetBinding(
         plannedOperation.tilesetPath,
         plannedOperation.tilesetRevision,
         plannedOperation.assetId,
-        true,
+        transactionSource === undefined,
+        transactionSource,
       );
       assertDependencyRevisions(
         plan.prospectiveDependencyRevisions ?? {},
@@ -3610,7 +3786,12 @@ export class MapService {
       );
     }
     await this.assertDependenciesUnchanged(context.bindings);
-    if (prospectiveTileset !== undefined) {
+    if (
+      prospectiveTileset !== undefined &&
+      prospectiveTilesetSources?.has(
+        prospectiveTileset.path,
+      ) !== true
+    ) {
       await assertRevisionUnchanged(
         this.store,
         prospectiveTileset.path,
@@ -4557,6 +4738,7 @@ export class MapService {
     expectedRevision?: string,
     expectedAssetId?: string,
     persistIdentity = false,
+    prospectiveSource?: ProspectiveTilesetSource,
   ): Promise<ProspectiveTilesetBinding> {
     const normalizedPath = this.resolver.normalize(tilesetPath);
     if (posix.extname(normalizedPath).toLowerCase() !== ".tsj") {
@@ -4566,29 +4748,57 @@ export class MapService {
         { path: normalizedPath },
       );
     }
-    const snapshot = await this.store.readSnapshot(normalizedPath);
-    if (
-      expectedRevision !== undefined &&
-      snapshot.revision !== expectedRevision
-    ) {
-      throw new TiledMcpError(
-        "DEPENDENCY_REVISION_CONFLICT",
-        `${normalizedPath} changed after the prospective tileset was selected.`,
-        {
-          path: normalizedPath,
-          ...(expectedAssetId === undefined
-            ? {}
-            : { assetId: expectedAssetId }),
-          expectedRevision,
-          actualRevision: snapshot.revision,
-        },
-      );
-    }
+    let document: JsonObject;
+    let revision: string;
+    let identity: DocumentSnapshot["identity"] | undefined;
+    if (prospectiveSource === undefined) {
+      const snapshot = await this.store.readSnapshot(normalizedPath);
+      if (
+        expectedRevision !== undefined &&
+        snapshot.revision !== expectedRevision
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          `${normalizedPath} changed after the prospective tileset was selected.`,
+          {
+            path: normalizedPath,
+            ...(expectedAssetId === undefined
+              ? {}
+              : { assetId: expectedAssetId }),
+            expectedRevision,
+            actualRevision: snapshot.revision,
+          },
+        );
+      }
 
-    // Parse only after the raw-byte revision comparison above. A stale plan
-    // must remain a revision conflict even when the new bytes are malformed.
-    const loaded = this.store.parseSnapshot(snapshot);
-    if (loaded.document.type !== "tileset") {
+      // Parse only after the raw-byte revision comparison above. A stale plan
+      // must remain a revision conflict even when the new bytes are malformed.
+      const loaded = this.store.parseSnapshot(snapshot);
+      document = loaded.document;
+      revision = loaded.revision;
+      identity = snapshot.identity;
+    } else {
+      if (
+        expectedRevision !== undefined &&
+        prospectiveSource.revision !== expectedRevision
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          `${normalizedPath} no longer matches the approved prospective tileset content.`,
+          {
+            path: normalizedPath,
+            ...(expectedAssetId === undefined
+              ? {}
+              : { assetId: expectedAssetId }),
+            expectedRevision,
+            actualRevision: prospectiveSource.revision,
+          },
+        );
+      }
+      document = prospectiveSource.document;
+      revision = prospectiveSource.revision;
+    }
+    if (document.type !== "tileset") {
       throw new TiledMcpError(
         "INVALID_DOCUMENT",
         `${normalizedPath} is not a Tiled tileset.`,
@@ -4596,7 +4806,7 @@ export class MapService {
       );
     }
     const imageReference = expectString(
-      loaded.document.image,
+      document.image,
       `${normalizedPath}.image`,
     );
     const imagePath = await this.resolver.resolveReference(
@@ -4614,7 +4824,7 @@ export class MapService {
       );
     }
     const tileCount = expectInteger(
-      loaded.document.tilecount,
+      document.tilecount,
       `${normalizedPath}.tilecount`,
     );
     if (tileCount <= 0 || tileCount > 0x0fffffff) {
@@ -4625,18 +4835,18 @@ export class MapService {
       );
     }
     const gidSpan = tilesetGidSpan(
-      loaded.document,
+      document,
       normalizedPath,
       tileCount,
     );
     const displayName = boundedDisplayString(
-      expectString(loaded.document.name, `${normalizedPath}.name`),
+      expectString(document.name, `${normalizedPath}.name`),
     );
     // Reuse the bounded semantic scanner as the write-profile gate. In
     // addition to atlas geometry, this rejects duplicate/out-of-range tile
     // definitions and per-tile image/subrect overrides.
     summarizeTilesetDocument({
-      document: loaded.document,
+      document,
       path: normalizedPath,
       imagePath,
       name: displayName.value,
@@ -4645,20 +4855,26 @@ export class MapService {
       startTileId: 0,
       limit: 1,
     });
-    const assetId = await this.assetRegistry.resolve(
-      {
-        kind: "external-tileset",
-        path: normalizedPath,
-        identity: snapshot.identity,
-      },
-      { persistIdentity },
-    );
+    const assetId =
+      identity === undefined
+        ? await this.assetRegistry.resolveProspectivePath(
+            "external-tileset",
+            normalizedPath,
+          )
+        : await this.assetRegistry.resolve(
+            {
+              kind: "external-tileset",
+              path: normalizedPath,
+              identity,
+            },
+            { persistIdentity },
+          );
     return {
       assetId,
       path: normalizedPath,
       tileCount,
       gidSpan,
-      revision: loaded.revision,
+      revision,
     };
   }
 

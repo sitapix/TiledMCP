@@ -901,8 +901,17 @@ redo journal 提交——manifest 原子改写为 committed 是唯一提交点�
 的 `results` 数组逐成员采用其单独 apply 的完全相同 wire 形状，成员 change set
 重放返回事务内结果而非二次提交。staged 总量 ≤ 64 MiB；12 项存储层崩溃注入测试
 与 wire 层端到端测试覆盖每个协议步骤。策略字符串冻结于
-`transactionCapabilities`。tileset create + attach 的同事务耦合（attach pin
-prospective TSJ revision）是下一刀。
+`transactionCapabilities`。
+
+会破坏其他成员 revision pin 的成员组合在事务 preview 即被拒绝（如成员 A 改写
+成员 B 的 tilesetEdit 所 pin 的地图、或 mapEdit 依赖 pin 的 tileset 被同事务
+编辑）；唯一放行的耦合是 **create+attach**：`tiled_add_tileset_to_map` 接受可
+选 `createChangeSetId`，用 pending `tiled_create_tileset` 计划重放出的
+prospective TSJ 内容顶替尚不存在的文件——挂载计划 pin 的正是 create 计划的
+prospective 内容 revision，prospective assetId 也是确定性路径哈希、与文件落盘
+后的首次真实分配一致。这对组合既可以顺序单独 apply（先 create 后 attach），也
+可以放进同一个事务原子提交：事务 prepare 时 create 成员先重放，其内容直接充当
+attach 成员的依赖来源，绕开磁盘读取而不放松任何 digest 校验。
 
 ## 开发与验证
 

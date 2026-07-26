@@ -2434,6 +2434,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "single-target-conflict-others-roll-forward",
           perTargetCheckpoints:
             "committed-before-promotion",
+          memberCoupling:
+            "rejected-except-create-attach-prospective-pin",
+          createAttachCoupling:
+            "add-tileset-preview-accepts-pending-create-change-set",
         },
         tileDataReadCapabilities: {
           readTools: [
@@ -3973,7 +3977,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview adding a tileset to a map",
       description:
-        "Validates one existing project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets.",
+        "Validates one project-local external atlas TSJ, assigns its GID range after all current ranges, and returns an expiring map change set without modifying project assets. With createChangeSetId, a pending tileset-create change set's replayed prospective content stands in for a TSJ that does not exist yet; the attachment pins that prospective revision, so it applies after the create commits or atomically with it in one transaction.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -3981,6 +3985,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           expectedMapRevision: revisionSchema,
           expectedDependencyRevisions: dependencyRevisionsSchema,
           expectedTilesetRevision: revisionSchema.optional(),
+          createChangeSetId: z
+            .string()
+            .regex(/^changeset:[0-9a-f]{64}$/u)
+            .optional(),
         })
         .strict(),
       outputSchema:
@@ -3993,6 +4001,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       expectedMapRevision,
       expectedDependencyRevisions,
       expectedTilesetRevision,
+      createChangeSetId,
     }) =>
       executeTool(async () => {
         const plan = await maps.planAddTilesetToMap({
@@ -4003,6 +4012,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           ...(expectedTilesetRevision === undefined
             ? {}
             : { expectedTilesetRevision }),
+          ...(createChangeSetId === undefined
+            ? {}
+            : {
+                createPlan:
+                  changeSets.getTilesetCreatePlan(
+                    createChangeSetId,
+                  ),
+              }),
         });
         return changeSets.put(plan);
       }),

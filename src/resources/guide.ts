@@ -363,6 +363,14 @@ The proposal pins the current map, every existing map dependency, and the
 prospective TSJ revision. A conflict requires a fresh summary and proposal.
 This operation only adds a tileset reference; it does not create a layer.
 
+To attach a tileset that does not exist yet, pass the optional
+\`createChangeSetId\` of a pending \`tiled_create_tileset\` change set for
+the same \`tilesetPath\`. The create plan's replayed prospective content
+stands in for the missing file and the attachment pins its prospective
+content revision, so the pair applies either sequentially (create first)
+or atomically inside one \`tiled_preview_transaction\` — the only member
+coupling a transaction accepts.
+
 Asset IDs are backed by project-internal persistent metadata. Same-path
 replacement preserves the ID. A uniquely matched ordinary same-filesystem
 rename preserves it on a best-effort basis only when inode and birthtime
@@ -1302,7 +1310,11 @@ unapplied change sets — map edits, tileset edits, tileset creations, and
 file deletions, with pairwise-distinct target paths — into one expiring
 transaction change set. Preview locks every member against individual
 apply (\`CHANGE_SET_OWNED\`); the lock releases if the transaction
-expires. The preview's \`expectedRevision\` is an aggregate digest over
+expires. Member combinations whose own commit would break another
+member's revision pins are rejected; the only permitted coupling is
+create+attach, where a map edit's add-tileset operation pins exactly the
+prospective content revision of a tileset-create member in the same
+transaction (see \`createChangeSetId\` above). The preview's \`expectedRevision\` is an aggregate digest over
 the ordered member target pins, since a multi-file proposal has no single
 current revision. After approval, pass it with the transaction's
 changeSetId to \`tiled_apply_change_set\`: every member plan is replayed
