@@ -1208,7 +1208,9 @@ export class MapService {
   async renderTilesetSheet(
     input: RenderTilesetSheetInput,
   ): Promise<RenderTilesetSheetResult> {
-    const context = await this.loadEditableContext(input.mapPath);
+    const context = await this.loadEditableContext(input.mapPath, {
+      allowCollectionTilesets: true,
+    });
     const binding = this.requireTilesetBinding(
       context,
       input.tilesetAssetId,
@@ -1230,6 +1232,14 @@ export class MapService {
     const tileset =
       this.store.parseSnapshot(tilesetSnapshot);
     const document = tileset.document;
+    if (binding.collection === true) {
+      return this.renderCollectionSheetPage(
+        input,
+        context,
+        binding,
+        document,
+      );
+    }
     if (typeof document.image !== "string") {
       throw new TiledMcpError(
         "UNSUPPORTED_TILESET",
@@ -1362,6 +1372,181 @@ export class MapService {
           },
         },
         page: rendered.page,
+        scale: rendered.scale,
+        truncated: false,
+      },
+    };
+  }
+
+  /**
+   * Renders one ascending sparse-id page of an image-collection tileset.
+   * Every page tile reads its own verified, revision-pinned image;
+   * collection pages are bounded by the per-tile image budget rather
+   * than the atlas sheet page size.
+   */
+  private async renderCollectionSheetPage(
+    input: RenderTilesetSheetInput,
+    context: EditableContext,
+    binding: TilesetBinding,
+    document: JsonObject,
+  ): Promise<RenderTilesetSheetResult> {
+    if (binding.localIds === undefined) {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        `${binding.path} is bound as a collection without its sparse tile id set.`,
+      );
+    }
+    const page = input.page ?? 0;
+    const pageSize =
+      input.pageSize ??
+      DEFAULT_TILESET_SHEET_PAGE_SIZE;
+    if (
+      !Number.isSafeInteger(page) ||
+      page < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "page must be a nonnegative integer.",
+        { page },
+      );
+    }
+    if (
+      !Number.isSafeInteger(pageSize) ||
+      pageSize < 1 ||
+      pageSize > MAX_TILE_RENDER_LOCAL_IDS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `Collection sheet pages may contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} tiles.`,
+        {
+          pageSize,
+          limit: MAX_TILE_RENDER_LOCAL_IDS,
+        },
+      );
+    }
+    const orderedIds = [
+      ...binding.localIds,
+    ].sort((left, right) => left - right);
+    const pageCount = Math.max(
+      1,
+      Math.ceil(orderedIds.length / pageSize),
+    );
+    if (page >= pageCount) {
+      throw new TiledMcpError(
+        "PAGE_OUT_OF_RANGE",
+        `page ${page} is outside the ${pageCount} available collection sheet pages.`,
+        { page, pageCount },
+      );
+    }
+    const pageIds = orderedIds.slice(
+      page * pageSize,
+      page * pageSize + pageSize,
+    );
+    const firstId = pageIds[0];
+    const lastId = pageIds[pageIds.length - 1];
+    if (
+      firstId === undefined ||
+      lastId === undefined
+    ) {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        `${binding.path} produced an empty collection sheet page.`,
+      );
+    }
+    const { tiles, images } =
+      await this.loadCollectionTileSources(
+        binding,
+        document,
+        pageIds,
+      );
+    const rendered = await renderCollectionTiles({
+      tiles,
+      maxLabelId: binding.gidSpan - 1,
+      ...(input.columns === undefined
+        ? {}
+        : { columns: input.columns }),
+      ...(input.scale === undefined
+        ? {}
+        : { scale: input.scale }),
+    });
+
+    await this.assertDependenciesUnchanged([
+      binding,
+    ]);
+    const currentMapRevision =
+      await this.store.readRevision(
+        context.loaded.path,
+      );
+    if (
+      currentMapRevision !==
+      context.loaded.revision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${context.loaded.path} changed while the tileset sheet was rendered.`,
+        {
+          path: context.loaded.path,
+          expectedRevision:
+            context.loaded.revision,
+          actualRevision: currentMapRevision,
+        },
+      );
+    }
+
+    return {
+      png: rendered.png,
+      result: {
+        mimeType: rendered.mimeType,
+        pixelSize: rendered.pixelSize,
+        byteLength: rendered.byteLength,
+        sha256: rendered.sha256,
+        source: {
+          assetId: binding.assetId,
+          revision: binding.revision,
+        },
+        map: {
+          path: context.loaded.path,
+          revision: context.loaded.revision,
+        },
+        images,
+        tileset: {
+          path: binding.path,
+          name: binding.name,
+          ...(binding.nameTruncated
+            ? { nameTruncated: true }
+            : {}),
+          tileCount: binding.tileCount,
+          tileSize: {
+            width: expectInteger(
+              document.tilewidth,
+              `${binding.path}.tilewidth`,
+            ),
+            height: expectInteger(
+              document.tileheight,
+              `${binding.path}.tileheight`,
+            ),
+          },
+          collection: {
+            sparseLocalIds: true,
+            maxLocalId: binding.gidSpan - 1,
+            tileSizeSemantics:
+              "maximum-tile-image-size",
+          },
+        },
+        page: {
+          index: page,
+          count: pageCount,
+          requestedSize: pageSize,
+          size: pageIds.length,
+          tileCount: pageIds.length,
+          localIdRange: {
+            first: firstId,
+            last: lastId,
+          },
+          columns:
+            rendered.selection.layout.columns,
+          rows: rendered.selection.layout.rows,
+        },
         scale: rendered.scale,
         truncated: false,
       },
@@ -1608,63 +1793,20 @@ export class MapService {
    * any declared dimensions, and revision-pinned, under shared aggregate
    * byte and pixel budgets.
    */
-  private async renderCollectionTileSelection(
-    input: RenderTilesInput,
-    context: EditableContext,
+  /**
+   * Loads, safely decodes, verifies, and revision-pins the per-tile
+   * images of the given existing collection ids, in order, under shared
+   * aggregate byte and pixel budgets.
+   */
+  private async loadCollectionTileSources(
     binding: TilesetBinding,
     document: JsonObject,
-  ): Promise<RenderTilesResult> {
-    if (binding.localIds === undefined) {
-      throw new TiledMcpError(
-        "INTERNAL_ERROR",
-        `${binding.path} is bound as a collection without its sparse tile id set.`,
-      );
-    }
-    if (
-      !Array.isArray(input.localIds) ||
-      input.localIds.length < 1 ||
-      input.localIds.length >
-        MAX_TILE_RENDER_LOCAL_IDS
-    ) {
-      throw new TiledMcpError(
-        "INVALID_ARGUMENT",
-        `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} IDs.`,
-        { count: input.localIds?.length ?? null },
-      );
-    }
-    const seen = new Set<number>();
-    for (const [index, localId] of input.localIds.entries()) {
-      if (
-        !Number.isSafeInteger(localId) ||
-        localId < 0
-      ) {
-        throw new TiledMcpError(
-          "INVALID_ARGUMENT",
-          "localIds must contain non-negative safe integers.",
-          { index },
-        );
-      }
-      if (!binding.localIds.has(localId)) {
-        throw new TiledMcpError(
-          "TILE_ID_OUT_OF_RANGE",
-          `Tile ${localId} does not exist in ${binding.path}.`,
-          {
-            path: binding.path,
-            localId,
-            index,
-          },
-        );
-      }
-      if (seen.has(localId)) {
-        throw new TiledMcpError(
-          "INVALID_ARGUMENT",
-          `localIds contains duplicate local ID ${localId}.`,
-          { localId, duplicateIndex: index },
-        );
-      }
-      seen.add(localId);
-    }
-
+    orderedIds: readonly number[],
+  ): Promise<{
+    tiles: CollectionTileSource[];
+    images: Record<string, unknown>[];
+  }> {
+    const wanted = new Set(orderedIds);
     const definitions = new Map<
       number,
       ReturnType<typeof readCollectionTileDefinition>
@@ -1682,7 +1824,7 @@ export class MapService {
         entry.id,
         `${binding.path}.tiles[${index}].id`,
       );
-      if (!seen.has(localId)) {
+      if (!wanted.has(localId)) {
         continue;
       }
       definitions.set(
@@ -1699,7 +1841,7 @@ export class MapService {
     let aggregatePixels = 0;
     const tiles: CollectionTileSource[] = [];
     const images: Record<string, unknown>[] = [];
-    for (const localId of input.localIds) {
+    for (const localId of orderedIds) {
       const definition = definitions.get(localId);
       if (definition === undefined) {
         throw new TiledMcpError(
@@ -1807,6 +1949,73 @@ export class MapService {
         },
       });
     }
+
+    return { tiles, images };
+  }
+
+  private async renderCollectionTileSelection(
+    input: RenderTilesInput,
+    context: EditableContext,
+    binding: TilesetBinding,
+    document: JsonObject,
+  ): Promise<RenderTilesResult> {
+    if (binding.localIds === undefined) {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        `${binding.path} is bound as a collection without its sparse tile id set.`,
+      );
+    }
+    if (
+      !Array.isArray(input.localIds) ||
+      input.localIds.length < 1 ||
+      input.localIds.length >
+        MAX_TILE_RENDER_LOCAL_IDS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `localIds must contain between 1 and ${MAX_TILE_RENDER_LOCAL_IDS} IDs.`,
+        { count: input.localIds?.length ?? null },
+      );
+    }
+    const seen = new Set<number>();
+    for (const [index, localId] of input.localIds.entries()) {
+      if (
+        !Number.isSafeInteger(localId) ||
+        localId < 0
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "localIds must contain non-negative safe integers.",
+          { index },
+        );
+      }
+      if (!binding.localIds.has(localId)) {
+        throw new TiledMcpError(
+          "TILE_ID_OUT_OF_RANGE",
+          `Tile ${localId} does not exist in ${binding.path}.`,
+          {
+            path: binding.path,
+            localId,
+            index,
+          },
+        );
+      }
+      if (seen.has(localId)) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `localIds contains duplicate local ID ${localId}.`,
+          { localId, duplicateIndex: index },
+        );
+      }
+      seen.add(localId);
+    }
+
+    const { tiles, images } =
+      await this.loadCollectionTileSources(
+        binding,
+        document,
+        input.localIds,
+      );
 
     const rendered = await renderCollectionTiles({
       tiles,

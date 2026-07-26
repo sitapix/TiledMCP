@@ -2496,7 +2496,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           chunkedFloodFillBounds:
             "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:
-            "summary-region-object-details-search-reads-metadata-updates-sparse-ids-fail-closed",
+            "summary-region-object-details-search-sheet-reads-metadata-updates-sparse-ids-fail-closed",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:
@@ -2517,6 +2517,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           defaultPageSize: DEFAULT_TILESET_SHEET_PAGE_SIZE,
           defaultScale: DEFAULT_TILESET_SHEET_SCALE,
           consecutiveLocalIds: true,
+          collectionPages:
+            "ascending-sparse-ids-max-64-per-tile-images-verified-revision-pinned",
+          collectionCellLayout:
+            "largest-page-tile-sized-cells",
           semanticNames: false,
         },
         tileRenderCapabilities: {
@@ -3457,7 +3461,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a labeled tileset sheet",
       description:
-        "Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID.",
+        "Renders one bounded page of a referenced tileset (atlas or image-collection), with every tile labeled by its local ID. Collection pages walk sparse local ids ascending, read each tile's own verified, revision-pinned image, and are limited to 64 tiles per page.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

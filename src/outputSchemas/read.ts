@@ -720,9 +720,110 @@ const tilesetSheetResultOutputSchema = z
   })
   .strict();
 
+const collectionSheetPageOutputSchema = z
+  .object({
+    index: nonnegativeIntegerOutputSchema,
+    count: positiveIntegerOutputSchema,
+    requestedSize: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_LOCAL_IDS,
+    ),
+    size: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_LOCAL_IDS,
+    ),
+    tileCount: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_LOCAL_IDS,
+    ),
+    localIdRange: z
+      .object({
+        first: nonnegativeIntegerOutputSchema,
+        last: nonnegativeIntegerOutputSchema,
+      })
+      .strict(),
+    columns: positiveIntegerOutputSchema.max(
+      MAX_TILESET_SHEET_COLUMNS,
+    ),
+    rows: positiveIntegerOutputSchema.max(
+      MAX_TILE_RENDER_LOCAL_IDS,
+    ),
+  })
+  .strict();
+
+const collectionSheetResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize:
+      tilesetSheetPixelSizeOutputSchema,
+    byteLength: positiveIntegerOutputSchema.max(
+      MAX_TILESET_SHEET_BYTES,
+    ),
+    sha256: revisionOutputSchema,
+    source: z
+      .object({
+        assetId: assetIdOutputSchema,
+        revision: revisionOutputSchema,
+      })
+      .strict(),
+    map: mapSnapshotOutputSchema,
+    images: z
+      .array(
+        renderedImageSourceOutputSchema.extend({
+          localId:
+            nonnegativeIntegerOutputSchema,
+        }),
+      )
+      .min(1)
+      .max(MAX_TILE_RENDER_LOCAL_IDS),
+    tileset: z
+      .object({
+        path: projectPathOutputSchema,
+        name: displayStringOutputSchema,
+        nameTruncated:
+          truncatedMarkerOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        tileSize: z
+          .object({
+            width: positiveIntegerOutputSchema,
+            height: positiveIntegerOutputSchema,
+          })
+          .strict(),
+        collection: z
+          .object({
+            sparseLocalIds: z.literal(true),
+            maxLocalId:
+              nonnegativeIntegerOutputSchema,
+            tileSizeSemantics: z.literal(
+              "maximum-tile-image-size",
+            ),
+          })
+          .strict(),
+      })
+      .strict(),
+    page: collectionSheetPageOutputSchema,
+    scale: positiveIntegerOutputSchema.max(
+      MAX_TILESET_SHEET_SCALE,
+    ),
+    truncated: z.literal(false),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (
+      result.images.length !== result.page.size
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["images"],
+        message:
+          "Every collection sheet page tile must report exactly one rendered image source",
+      });
+    }
+  });
+
 export const tilesetSheetToolOutputSchema =
   toolOutputSchema(
-    tilesetSheetResultOutputSchema,
+    z.union([
+      tilesetSheetResultOutputSchema,
+      collectionSheetResultOutputSchema,
+    ]),
   );
 
 const tileRenderSelectionOutputSchema = z

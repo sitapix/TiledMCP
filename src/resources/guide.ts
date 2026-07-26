@@ -97,8 +97,10 @@ sparse-id \`gidSpan\`), \`tiled_get_region\`, \`tiled_list_objects\`,
 \`tiled_render_tiles\` (each selected tile renders from its own verified,
 revision-pinned image into largest-tile-sized labeled cells under the
 \`explicit-local-id-collection-selection-v1\` profile), and
-\`tiled_update_tile\` edits their per-tile metadata;
-\`tiled_render_tileset_sheet\` keeps rejecting collections.
+\`tiled_update_tile\` edits their per-tile metadata, and
+\`tiled_render_tileset_sheet\` renders ascending sparse-id pages of at
+most 64 tiles, each from its own verified, revision-pinned image; only
+the native map preview still rejects collections.
 Collection details replace the \`atlas\`/\`image\` blocks with a
 \`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
 returned metadata page entry carries its verified per-tile image —

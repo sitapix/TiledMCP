@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:e5773d14cf9518cd3b00e5e6865f113884ad4d75504adaeddf355c795911e71d",
+    "revision": "sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1",
     "serverVersion": "0.0.1",
-    "size": 80365
+    "size": 80501
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 80365,
+  "size": 80501,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 80365 UTF-8 bytes, revision `sha256:e5773d14cf9518cd3b00e5e6865f113884ad4d75504adaeddf355c795911e71d`.
+Content contract: `text`, 80501 UTF-8 bytes, revision `sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1`.
 
 Resource templates: none.
 
@@ -12784,7 +12784,7 @@ Output schema:
                   "type": "string"
                 },
                 "collectionTilesets": {
-                  "const": "summary-region-object-details-search-reads-metadata-updates-sparse-ids-fail-closed",
+                  "const": "summary-region-object-details-search-sheet-reads-metadata-updates-sparse-ids-fail-closed",
                   "type": "string"
                 },
                 "compressions": {
@@ -13732,6 +13732,14 @@ Output schema:
             "tilesetSheetCapabilities": {
               "additionalProperties": false,
               "properties": {
+                "collectionCellLayout": {
+                  "const": "largest-page-tile-sized-cells",
+                  "type": "string"
+                },
+                "collectionPages": {
+                  "const": "ascending-sparse-ids-max-64-per-tile-images-verified-revision-pinned",
+                  "type": "string"
+                },
                 "consecutiveLocalIds": {
                   "const": true,
                   "type": "boolean"
@@ -13780,6 +13788,8 @@ Output schema:
                 "defaultPageSize",
                 "defaultScale",
                 "consecutiveLocalIds",
+                "collectionPages",
+                "collectionCellLayout",
                 "semanticNames"
               ],
               "type": "object"
@@ -34909,7 +34919,7 @@ Output schema:
 
 Availability: `core`
 
-Renders one bounded page of an atlas tileset referenced by a map, with every tile labeled by its local ID.
+Renders one bounded page of a referenced tileset (atlas or image-collection), with every tile labeled by its local ID. Collection pages walk sparse local ids ascending, read each tile's own verified, revision-pinned image, and are limited to 64 tiles per page.
 
 Annotations:
 
@@ -35034,40 +35044,172 @@ Output schema:
     "result": {
       "anyOf": [
         {
-          "additionalProperties": false,
-          "properties": {
-            "byteLength": {
-              "exclusiveMinimum": 0,
-              "maximum": 8388608,
-              "type": "integer"
-            },
-            "image": {
+          "anyOf": [
+            {
               "additionalProperties": false,
               "properties": {
-                "format": {
-                  "enum": [
-                    "jpeg",
-                    "png",
-                    "svg",
-                    "webp"
+                "byteLength": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 8388608,
+                  "type": "integer"
+                },
+                "image": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": {
+                      "enum": [
+                        "jpeg",
+                        "png",
+                        "svg",
+                        "webp"
+                      ],
+                      "type": "string"
+                    },
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "pixelSize": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "width": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ],
+                      "type": "object"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "revision",
+                    "format",
+                    "pixelSize"
                   ],
+                  "type": "object"
+                },
+                "map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "revision"
+                  ],
+                  "type": "object"
+                },
+                "mimeType": {
+                  "const": "image/png",
                   "type": "string"
                 },
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
+                "page": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "adjusted": {
+                      "type": "boolean"
+                    },
+                    "columns": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 32,
+                      "type": "integer"
+                    },
+                    "count": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "index": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "localIdRange": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "first": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "last": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "first",
+                        "last"
+                      ],
+                      "type": "object"
+                    },
+                    "requestedSize": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 256,
+                      "type": "integer"
+                    },
+                    "rows": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 256,
+                      "type": "integer"
+                    },
+                    "size": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 256,
+                      "type": "integer"
+                    },
+                    "tileCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 256,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "count",
+                    "requestedSize",
+                    "size",
+                    "adjusted",
+                    "tileCount",
+                    "localIdRange",
+                    "columns",
+                    "rows"
+                  ],
+                  "type": "object"
                 },
                 "pixelSize": {
                   "additionalProperties": false,
                   "properties": {
                     "height": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
+                      "exclusiveMinimum": 0,
+                      "maximum": 2048,
                       "type": "integer"
                     },
                     "width": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
+                      "exclusiveMinimum": 0,
+                      "maximum": 2048,
                       "type": "integer"
                     }
                   },
@@ -35077,219 +35219,300 @@ Output schema:
                   ],
                   "type": "object"
                 },
-                "revision": {
+                "scale": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 4,
+                  "type": "integer"
+                },
+                "sha256": {
                   "pattern": "^sha256:[0-9a-f]{64}$",
                   "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "revision",
-                "format",
-                "pixelSize"
-              ],
-              "type": "object"
-            },
-            "map": {
-              "additionalProperties": false,
-              "properties": {
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
                 },
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "revision"
-              ],
-              "type": "object"
-            },
-            "mimeType": {
-              "const": "image/png",
-              "type": "string"
-            },
-            "page": {
-              "additionalProperties": false,
-              "properties": {
-                "adjusted": {
-                  "type": "boolean"
-                },
-                "columns": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 32,
-                  "type": "integer"
-                },
-                "count": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "index": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "localIdRange": {
+                "source": {
                   "additionalProperties": false,
                   "properties": {
-                    "first": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
+                    "assetId": {
+                      "pattern": "^asset_[0-9a-f]{24}$",
+                      "type": "string"
                     },
-                    "last": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "first",
-                    "last"
+                    "assetId",
+                    "revision"
                   ],
                   "type": "object"
                 },
-                "requestedSize": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 256,
-                  "type": "integer"
+                "tileset": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "atlas": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "columns": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "margin": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "spacing": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "columns",
+                        "margin",
+                        "spacing"
+                      ],
+                      "type": "object"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "tileCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileSize": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "width": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "name",
+                    "tileCount",
+                    "tileSize",
+                    "atlas"
+                  ],
+                  "type": "object"
                 },
-                "rows": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 256,
-                  "type": "integer"
-                },
-                "size": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 256,
-                  "type": "integer"
-                },
-                "tileCount": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 256,
-                  "type": "integer"
+                "truncated": {
+                  "const": false,
+                  "type": "boolean"
                 }
               },
               "required": [
-                "index",
-                "count",
-                "requestedSize",
-                "size",
-                "adjusted",
-                "tileCount",
-                "localIdRange",
-                "columns",
-                "rows"
+                "mimeType",
+                "pixelSize",
+                "byteLength",
+                "sha256",
+                "source",
+                "map",
+                "image",
+                "tileset",
+                "page",
+                "scale",
+                "truncated"
               ],
               "type": "object"
             },
-            "pixelSize": {
+            {
               "additionalProperties": false,
               "properties": {
-                "height": {
+                "byteLength": {
                   "exclusiveMinimum": 0,
-                  "maximum": 2048,
+                  "maximum": 8388608,
                   "type": "integer"
                 },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 2048,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "scale": {
-              "exclusiveMinimum": 0,
-              "maximum": 4,
-              "type": "integer"
-            },
-            "sha256": {
-              "pattern": "^sha256:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "source": {
-              "additionalProperties": false,
-              "properties": {
-                "assetId": {
-                  "pattern": "^asset_[0-9a-f]{24}$",
+                "images": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "format": {
+                        "enum": [
+                          "jpeg",
+                          "png",
+                          "svg",
+                          "webp"
+                        ],
+                        "type": "string"
+                      },
+                      "localId": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "path": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "pixelSize": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "height": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "width": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "width",
+                          "height"
+                        ],
+                        "type": "object"
+                      },
+                      "revision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "revision",
+                      "format",
+                      "pixelSize",
+                      "localId"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 64,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "revision"
+                  ],
+                  "type": "object"
+                },
+                "mimeType": {
+                  "const": "image/png",
                   "type": "string"
                 },
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "assetId",
-                "revision"
-              ],
-              "type": "object"
-            },
-            "tileset": {
-              "additionalProperties": false,
-              "properties": {
-                "atlas": {
+                "page": {
                   "additionalProperties": false,
                   "properties": {
                     "columns": {
                       "exclusiveMinimum": 0,
+                      "maximum": 32,
+                      "type": "integer"
+                    },
+                    "count": {
+                      "exclusiveMinimum": 0,
                       "maximum": 9007199254740991,
                       "type": "integer"
                     },
-                    "margin": {
+                    "index": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
                     },
-                    "spacing": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
+                    "localIdRange": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "first": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "last": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "first",
+                        "last"
+                      ],
+                      "type": "object"
+                    },
+                    "requestedSize": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 64,
+                      "type": "integer"
+                    },
+                    "rows": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 64,
+                      "type": "integer"
+                    },
+                    "size": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 64,
+                      "type": "integer"
+                    },
+                    "tileCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 64,
                       "type": "integer"
                     }
                   },
                   "required": [
+                    "index",
+                    "count",
+                    "requestedSize",
+                    "size",
+                    "tileCount",
+                    "localIdRange",
                     "columns",
-                    "margin",
-                    "spacing"
+                    "rows"
                   ],
                   "type": "object"
                 },
-                "name": {
-                  "type": "string"
-                },
-                "nameTruncated": {
-                  "const": true,
-                  "type": "boolean"
-                },
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "tileCount": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "tileSize": {
+                "pixelSize": {
                   "additionalProperties": false,
                   "properties": {
                     "height": {
                       "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991,
+                      "maximum": 2048,
                       "type": "integer"
                     },
                     "width": {
                       "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991,
+                      "maximum": 2048,
                       "type": "integer"
                     }
                   },
@@ -35298,36 +35521,128 @@ Output schema:
                     "height"
                   ],
                   "type": "object"
+                },
+                "scale": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 4,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "source": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "pattern": "^asset_[0-9a-f]{24}$",
+                      "type": "string"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "assetId",
+                    "revision"
+                  ],
+                  "type": "object"
+                },
+                "tileset": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "collection": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxLocalId": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sparseLocalIds": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "tileSizeSemantics": {
+                          "const": "maximum-tile-image-size",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sparseLocalIds",
+                        "maxLocalId",
+                        "tileSizeSemantics"
+                      ],
+                      "type": "object"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "tileCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileSize": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "width": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "name",
+                    "tileCount",
+                    "tileSize",
+                    "collection"
+                  ],
+                  "type": "object"
+                },
+                "truncated": {
+                  "const": false,
+                  "type": "boolean"
                 }
               },
               "required": [
-                "path",
-                "name",
-                "tileCount",
-                "tileSize",
-                "atlas"
+                "mimeType",
+                "pixelSize",
+                "byteLength",
+                "sha256",
+                "source",
+                "map",
+                "images",
+                "tileset",
+                "page",
+                "scale",
+                "truncated"
               ],
               "type": "object"
-            },
-            "truncated": {
-              "const": false,
-              "type": "boolean"
             }
-          },
-          "required": [
-            "mimeType",
-            "pixelSize",
-            "byteLength",
-            "sha256",
-            "source",
-            "map",
-            "image",
-            "tileset",
-            "page",
-            "scale",
-            "truncated"
-          ],
-          "type": "object"
+          ]
         },
         {
           "additionalProperties": false,

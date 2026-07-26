@@ -225,6 +225,67 @@ describe("image-collection tileset details and search", () => {
     });
   });
 
+  it("renders ascending sparse sheet pages with verified per-tile images", async () => {
+    const harness = await createHarness(roots);
+    const sheet =
+      await harness.service.renderTilesetSheet({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        pageSize: 1,
+        page: 1,
+      });
+    expect(sheet.result).toMatchObject({
+      images: [
+        {
+          localId: 7,
+          path: "tiles/prop-b.png",
+          format: "png",
+          pixelSize: { width: 24, height: 32 },
+        },
+      ],
+      tileset: {
+        path: COLLECTION_PATH,
+        tileCount: 2,
+        collection: {
+          sparseLocalIds: true,
+          maxLocalId: 7,
+        },
+      },
+      page: {
+        index: 1,
+        count: 2,
+        requestedSize: 1,
+        size: 1,
+        tileCount: 1,
+        localIdRange: { first: 7, last: 7 },
+      },
+      truncated: false,
+    });
+    expect(
+      sheet.png.byteLength,
+    ).toBeGreaterThan(0);
+
+    await expect(
+      harness.service.renderTilesetSheet({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        pageSize: 1,
+        page: 2,
+      }),
+    ).rejects.toMatchObject({
+      code: "PAGE_OUT_OF_RANGE",
+    });
+    await expect(
+      harness.service.renderTilesetSheet({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        pageSize: 65,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+
   it("updates collection tile metadata while preserving per-tile images", async () => {
     const harness = await createHarness(roots);
     const summary =

@@ -91,8 +91,8 @@ image-collection tileset（逐 tile 独立图片、无根图集）获得**语义
 id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object`、
 `tiled_get_tileset`、`tiled_find_tiles`、`tiled_render_tiles` 与
 `tiled_update_tile` 可用（选中 tile 逐个从各自图片渲染进按选集最大尺寸组格的
-标注单元；元数据编辑只能针对既有稀疏条目、per-tile image 成员绝不触碰；sheet
-继续拒绝）。collection 详情以 `collection`
+标注单元；元数据编辑只能针对既有稀疏条目、per-tile image 成员绝不触碰；sheet 按稀疏
+id 升序分页、每页至多 64 tile；仅 native 地图 preview 仍拒绝 collection）。collection 详情以 `collection`
 块（`maxLocalId`、最大 tile 尺寸语义）取代 atlas 几何，返回页内每个 tile 的图
 片经安全检查验证并 pin revision（声明尺寸与实际不符即 fail closed）；分页与检
 索按稀疏 local id 升序。指向已删除 collection id 的 GID、per-tile 图片
