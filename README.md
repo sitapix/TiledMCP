@@ -78,8 +78,14 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-内嵌 tileset、tile object 的创建/语义编辑和模板尚未实现；对应的不支持操作会被
-明确拒绝，不会静默降级。
+内嵌 tileset 与 tile object 的创建/语义编辑尚未实现；对应的不支持操作会被明确
+拒绝，不会静默降级。JSON（.tj）对象模板获得**读取展开**支持：
+`tiled_get_object` 按 Tiled 1.12.2 `syncWithTemplate` 精确合并规则展开模板实例
+（非空 name、全正 size、显式 rotation/opacity/visible、任一 shape 成员覆盖模
+板，text 成员只覆盖文本不覆盖形状），结果携带 pin 了 revision 的 template 块；
+模板自定义属性不合并（`propertiesSource: "instance-only"`），tile 模板、XML 模
+板与嵌套模板 fail closed，`tiled_list_objects` 仍报未展开的 `template` 形状标
+记。
 跨文件原子事务已实现：`tiled_preview_transaction` 把 2..16 个已批准的 map
 edit/tileset edit/tileset create/file delete change set（目标路径两两不同）组合
 为一个事务 change set，preview 即锁定成员禁止单独 apply；事务 apply 经

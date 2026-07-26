@@ -2513,6 +2513,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           validateDiagnostics:
             "encoded-data-still-reported-as-uneditable",
         },
+        objectTemplateCapabilities: {
+          readProfile:
+            "tiled-sync-with-template-v1",
+          tools: ["tiled_get_object"],
+          format: "json-tj-only",
+          tileTemplates: "fail-closed",
+          nestedTemplates: "fail-closed",
+          propertiesSource: "instance-only",
+          listProjection:
+            "template-shape-marker-unexpanded",
+          templatePin: "path-and-raw-revision",
+        },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           pageIndexBase: 0,
@@ -3789,7 +3801,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Get map object",
       description:
-        "Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value.",
+        "Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

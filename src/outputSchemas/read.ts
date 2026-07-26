@@ -583,6 +583,19 @@ const objectDetailsResultOutputSchema = z
       objectDetailsPolylineOutputSchema,
       objectDetailsTextOutputSchema,
     ]),
+    template: z
+      .object({
+        path: projectPathOutputSchema,
+        revision: revisionOutputSchema,
+        mergeProfile: z.literal(
+          "tiled-sync-with-template-v1",
+        ),
+        propertiesSource: z.literal(
+          "instance-only",
+        ),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

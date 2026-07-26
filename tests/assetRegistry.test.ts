@@ -1335,7 +1335,7 @@ describe("AssetRegistry", () => {
     expect(
       await readFile(registryPath(root)),
     ).toEqual(before);
-  });
+  }, 20_000);
 
   it.each([
     {

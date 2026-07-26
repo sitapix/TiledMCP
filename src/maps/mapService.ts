@@ -167,6 +167,10 @@ import {
   projectScalarProperties,
   validatePropertiesPatch,
 } from "./propertyEdits.js";
+import {
+  mergeTemplateInstance,
+  readObjectTemplate,
+} from "./objectTemplates.js";
 import type {
   CreatableLayerType,
   Diagnostic,
@@ -3050,8 +3054,67 @@ export class MapService {
       input.objectId,
       context.loaded.path,
     );
+    let effectiveLocation = location;
+    let templateBlock:
+      | Record<string, unknown>
+      | undefined;
+    if (
+      typeof location.object.template === "string"
+    ) {
+      if (
+        posix
+          .extname(location.object.template)
+          .toLowerCase() !== ".tj"
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_FORMAT",
+          `Object ${input.objectId} references a non-JSON template; only .tj templates are readable.`,
+          {
+            objectId: input.objectId,
+            template: location.object.template,
+          },
+        );
+      }
+      const templatePath =
+        await this.resolver.resolveReference(
+          context.loaded.path,
+          location.object.template,
+        );
+      const gid = location.object.gid;
+      if (
+        typeof gid === "number" &&
+        gid !== 0
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_OBJECT_PROFILE",
+          `Object ${input.objectId} is a tile template instance, which is outside the supported reading profile.`,
+          { objectId: input.objectId },
+        );
+      }
+      const template = await this.store.read(
+        templatePath,
+      );
+      const templateObject = readObjectTemplate(
+        template.document,
+        templatePath,
+      );
+      effectiveLocation = {
+        ...location,
+        object: mergeTemplateInstance(
+          location.object,
+          templateObject,
+        ),
+      };
+      templateBlock = {
+        path: templatePath,
+        revision: template.revision,
+        mergeProfile:
+          "tiled-sync-with-template-v1",
+        propertiesSource: "instance-only",
+      };
+    }
     const shape = assertBasicEditableObject(
-      location.object,
+      effectiveLocation.object,
       input.objectId,
       context.loaded.path,
     );
@@ -3060,10 +3123,13 @@ export class MapService {
       revision: context.loaded.revision,
       dependencyRevisions: context.dependencyRevisions,
       object: describeEditableObject(
-        location,
+        effectiveLocation,
         shape,
         context.loaded.path,
       ),
+      ...(templateBlock === undefined
+        ? {}
+        : { template: templateBlock }),
     };
   }
 

@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05",
+    "revision": "sha256:3a9bd21e457b19dd326d7bda1ef06ce345d716134d599a168c50a18762ef0321",
     "serverVersion": "0.0.1",
-    "size": 80780
+    "size": 81490
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 80780,
+  "size": 81490,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 80780 UTF-8 bytes, revision `sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05`.
+Content contract: `text`, 81490 UTF-8 bytes, revision `sha256:3a9bd21e457b19dd326d7bda1ef06ce345d716134d599a168c50a18762ef0321`.
 
 Resource templates: none.
 
@@ -12245,6 +12245,59 @@ Output schema:
               ],
               "type": "object"
             },
+            "objectTemplateCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "format": {
+                  "const": "json-tj-only",
+                  "type": "string"
+                },
+                "listProjection": {
+                  "const": "template-shape-marker-unexpanded",
+                  "type": "string"
+                },
+                "nestedTemplates": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "propertiesSource": {
+                  "const": "instance-only",
+                  "type": "string"
+                },
+                "readProfile": {
+                  "const": "tiled-sync-with-template-v1",
+                  "type": "string"
+                },
+                "templatePin": {
+                  "const": "path-and-raw-revision",
+                  "type": "string"
+                },
+                "tileTemplates": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "tools": {
+                  "items": [
+                    {
+                      "const": "tiled_get_object",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                }
+              },
+              "required": [
+                "readProfile",
+                "tools",
+                "format",
+                "tileTemplates",
+                "nestedTemplates",
+                "propertiesSource",
+                "listProjection",
+                "templatePin"
+              ],
+              "type": "object"
+            },
             "protocolBaseline": {
               "const": "2025-11-25",
               "type": "string"
@@ -14001,6 +14054,7 @@ Output schema:
             "fileDeletionCapabilities",
             "transactionCapabilities",
             "tileDataReadCapabilities",
+            "objectTemplateCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
             "tilesetDetailCapabilities",
@@ -14758,7 +14812,7 @@ Output schema:
 
 Availability: `core`
 
-Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value.
+Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.
 
 Annotations:
 
@@ -16324,6 +16378,34 @@ Output schema:
             "revision": {
               "pattern": "^sha256:[0-9a-f]{64}$",
               "type": "string"
+            },
+            "template": {
+              "additionalProperties": false,
+              "properties": {
+                "mergeProfile": {
+                  "const": "tiled-sync-with-template-v1",
+                  "type": "string"
+                },
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "propertiesSource": {
+                  "const": "instance-only",
+                  "type": "string"
+                },
+                "revision": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "revision",
+                "mergeProfile",
+                "propertiesSource"
+              ],
+              "type": "object"
             }
           },
           "required": [

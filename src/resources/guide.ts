@@ -99,7 +99,18 @@ revision-pinned image into largest-tile-sized labeled cells under the
 \`explicit-local-id-collection-selection-v1\` profile), and
 \`tiled_update_tile\` edits their per-tile metadata, and
 \`tiled_render_tileset_sheet\` renders ascending sparse-id pages of at
-most 64 tiles, each from its own verified, revision-pinned image.
+most 64 tiles, each from its own verified, revision-pinned image. A
+\`tiled_get_object\` call on a JSON (.tj) template instance expands it
+with the exact Tiled 1.12.2 \`syncWithTemplate\` rules — a nonempty
+instance name, a fully positive instance size, a serialized rotation,
+opacity, or visible member, and any instance shape member override the
+template, while everything else inherits; an instance \`text\` member
+overrides the text data but deliberately not the template's shape — and
+reports the revision-pinned template under \`template\` with
+\`propertiesSource: "instance-only"\` (template custom properties are
+not merged). Tile templates, XML (.tx) templates, and nested templates
+fail closed; \`tiled_list_objects\` keeps reporting the unexpanded
+\`template\` shape marker.
 \`tiled_render_preview\` draws collection tiles too — cells and tile
 objects — as long as every used tile image exactly matches the map grid
 size (larger or smaller collection tiles fail closed); each distinct
