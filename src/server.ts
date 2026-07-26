@@ -2496,7 +2496,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           chunkedFloodFillBounds:
             "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:
-            "summary-region-object-details-search-sheet-reads-metadata-updates-sparse-ids-fail-closed",
+            "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
+          collectionPreviewTiles:
+            "grid-sized-only-each-used-tile-counts-as-one-atlas-source",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:

@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1",
+    "revision": "sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05",
     "serverVersion": "0.0.1",
-    "size": 80501
+    "size": 80780
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 80501,
+  "size": 80780,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 80501 UTF-8 bytes, revision `sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1`.
+Content contract: `text`, 80780 UTF-8 bytes, revision `sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05`.
 
 Resource templates: none.
 
@@ -12783,8 +12783,12 @@ Output schema:
                   "const": "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
                   "type": "string"
                 },
+                "collectionPreviewTiles": {
+                  "const": "grid-sized-only-each-used-tile-counts-as-one-atlas-source",
+                  "type": "string"
+                },
                 "collectionTilesets": {
-                  "const": "summary-region-object-details-search-sheet-reads-metadata-updates-sparse-ids-fail-closed",
+                  "const": "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
                   "type": "string"
                 },
                 "compressions": {
@@ -12898,6 +12902,7 @@ Output schema:
                 "chunkedReplaceScan",
                 "chunkedFloodFillBounds",
                 "collectionTilesets",
+                "collectionPreviewTiles",
                 "writeProfile",
                 "writeCompression",
                 "explicitTranscode",

@@ -136,13 +136,15 @@ describe("image-collection tileset read support", () => {
       code: "UNSUPPORTED_TILESET",
     });
 
+    // Collection previews are supported, so this fixture without real
+    // image files now fails on the missing per-tile image instead.
     await expect(
       harness.service.renderPreview({
         mapPath: MAP_PATH,
         scale: 1,
       }),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_TILESET",
+      code: "FILE_NOT_FOUND",
     });
 
   });

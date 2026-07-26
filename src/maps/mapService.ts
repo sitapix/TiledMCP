@@ -104,6 +104,7 @@ import {
 import {
   decodeSafeImage,
   inspectSafeImage,
+  type SafeImageFormat,
 } from "../images/safeImage.js";
 import type { ProjectPathResolver } from "../project/pathResolver.js";
 import {
@@ -123,6 +124,7 @@ import type {
 import { decodeGid, encodeGid, type MapOrientation, type OrthogonalTransform } from "./gid.js";
 import {
   buildPreviewScene,
+  MAX_PREVIEW_ATLASES,
   type PreviewRegion,
   type PreviewScene,
 } from "./previewScene.js";
@@ -1805,8 +1807,10 @@ export class MapService {
   ): Promise<{
     tiles: CollectionTileSource[];
     images: Record<string, unknown>[];
+    byteLengths: number[];
   }> {
     const wanted = new Set(orderedIds);
+    const byteLengths: number[] = [];
     const definitions = new Map<
       number,
       ReturnType<typeof readCollectionTileDefinition>
@@ -1860,6 +1864,7 @@ export class MapService {
         MAX_TILESET_IMAGE_BYTES,
       );
       aggregateBytes += snapshot.bytes.byteLength;
+      byteLengths.push(snapshot.bytes.byteLength);
       if (
         aggregateBytes >
         MAX_RASTER_INPUT_AGGREGATE_BYTES
@@ -1950,7 +1955,7 @@ export class MapService {
       });
     }
 
-    return { tiles, images };
+    return { tiles, images, byteLengths };
   }
 
   private async renderCollectionTileSelection(
@@ -2107,6 +2112,7 @@ export class MapService {
   ): Promise<RenderPreviewResult> {
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
+      allowCollectionTilesets: true,
     });
     const map = context.loaded.document;
     const tileWidth = expectInteger(
@@ -2125,7 +2131,12 @@ export class MapService {
       context.bindings.map((binding) => ({
         assetId: binding.assetId,
         firstGid: binding.firstGid,
-        tileCount: binding.tileCount,
+        // Collection ranges span the sparse id space; missing ids fail
+        // closed when the used tiles are collected.
+        tileCount:
+          binding.collection === true
+            ? binding.gidSpan
+            : binding.tileCount,
         name: binding.name,
       })),
       {
@@ -2175,6 +2186,160 @@ export class MapService {
           `Preview source ${assetId} disappeared from the map context.`,
           { assetId },
         );
+      }
+      if (binding.collection === true) {
+        const usedIds = collectSceneCollectionIds(
+          scene,
+          binding,
+          context.orientation,
+        );
+        if (
+          atlases.length + usedIds.length >
+          MAX_PREVIEW_ATLASES
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `Preview sources exceed the ${MAX_PREVIEW_ATLASES} atlas budget; every distinct collection tile image counts as one source.`,
+            { limit: MAX_PREVIEW_ATLASES },
+          );
+        }
+        const tilesetSnapshot =
+          await this.store.readSnapshot(
+            binding.path,
+          );
+        if (
+          tilesetSnapshot.revision !==
+          binding.revision
+        ) {
+          throw new TiledMcpError(
+            "DEPENDENCY_REVISION_CONFLICT",
+            `${binding.path} changed while the preview was being prepared.`,
+            {
+              assetId: binding.assetId,
+              expectedRevision: binding.revision,
+              actualRevision:
+                tilesetSnapshot.revision,
+            },
+          );
+        }
+        const tilesetDocument =
+          this.store.parseSnapshot(
+            tilesetSnapshot,
+          ).document;
+        const collectionSources =
+          await this.loadCollectionTileSources(
+            binding,
+            tilesetDocument,
+            usedIds,
+          );
+        for (const [
+          index,
+          tile,
+        ] of collectionSources.tiles.entries()) {
+          if (
+            tile.width !== tileWidth ||
+            tile.height !== tileHeight
+          ) {
+            throw unsupportedRenderFeature(
+              "collection-tile-size",
+              "Native preview renders collection tiles only at the exact map grid size.",
+              {
+                assetId: binding.assetId,
+                path: binding.path,
+                localId: tile.localId,
+                tileSize: {
+                  width: tile.width,
+                  height: tile.height,
+                },
+                mapGrid: {
+                  width: tileWidth,
+                  height: tileHeight,
+                },
+              },
+            );
+          }
+          aggregateImageBytes +=
+            collectionSources.byteLengths[
+              index
+            ] ?? 0;
+          aggregateDecodedPixels +=
+            tile.width * tile.height;
+          if (
+            aggregateImageBytes >
+            MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES
+          ) {
+            throw new TiledMcpError(
+              "RESULT_LIMIT_EXCEEDED",
+              `Preview atlas inputs exceed the ${MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES} byte aggregate limit.`,
+              {
+                actual: aggregateImageBytes,
+                limit:
+                  MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
+              },
+            );
+          }
+          if (
+            !Number.isSafeInteger(
+              aggregateDecodedPixels,
+            ) ||
+            aggregateDecodedPixels >
+              MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS
+          ) {
+            throw new TiledMcpError(
+              "RESULT_LIMIT_EXCEEDED",
+              `Preview atlases exceed the ${MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS} decoded-pixel aggregate limit.`,
+              {
+                actual: aggregateDecodedPixels,
+                limit:
+                  MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
+              },
+            );
+          }
+          const sourceImage =
+            collectionSources.images[index] as {
+              path: string;
+              revision: string;
+              format: SafeImageFormat;
+              pixelSize: {
+                width: number;
+                height: number;
+              };
+            };
+          atlases.push({
+            assetId: binding.assetId,
+            firstGid:
+              binding.firstGid + tile.localId,
+            tileCount: 1,
+            rgba: tile.rgba,
+            format: sourceImage.format,
+            geometry: {
+              imagePath: tile.imagePath,
+              imageWidth: tile.width,
+              imageHeight: tile.height,
+              tileWidth: tile.width,
+              tileHeight: tile.height,
+              tileCount: 1,
+              columns: 1,
+              margin: 0,
+              spacing: 0,
+            },
+            collectionLocalId: tile.localId,
+          });
+          sources.push({
+            assetId: binding.assetId,
+            tileset: {
+              path: binding.path,
+              revision: binding.revision,
+            },
+            image: {
+              path: sourceImage.path,
+              revision: sourceImage.revision,
+              format: sourceImage.format,
+              pixelSize: sourceImage.pixelSize,
+            },
+          });
+        }
+        continue;
       }
       const loaded = await this.loadPreviewAtlas(
         binding,
@@ -15376,6 +15541,89 @@ function assertChunkedRegionBounded(
       { layerId: layer.id, x, y, width, height },
     );
   }
+}
+
+/**
+ * Distinct sparse local ids of one collection binding actually used by
+ * the preview scene: region-clipped tile-layer cells plus resolved tile
+ * objects, ascending.
+ */
+function collectSceneCollectionIds(
+  scene: PreviewScene,
+  binding: TilesetBinding,
+  orientation: MapOrientation,
+): number[] {
+  const ids = new Set<number>();
+  const lastGid =
+    binding.firstGid + binding.gidSpan - 1;
+  const record = (baseGid: number): void => {
+    if (
+      baseGid < binding.firstGid ||
+      baseGid > lastGid
+    ) {
+      return;
+    }
+    const localId = baseGid - binding.firstGid;
+    if (binding.localIds?.has(localId) !== true) {
+      throw new TiledMcpError(
+        "GID_OUT_OF_RANGE",
+        `GID ${baseGid} points at a removed image-collection tile.`,
+        {
+          gid: baseGid,
+          assetId: binding.assetId,
+          localId,
+        },
+      );
+    }
+    ids.add(localId);
+  };
+  const region = scene.region;
+  for (const layer of scene.layers) {
+    const minX = Math.max(region.x, layer.x);
+    const minY = Math.max(region.y, layer.y);
+    const maxX = Math.min(
+      region.x + region.width,
+      layer.x + layer.width,
+    );
+    const maxY = Math.min(
+      region.y + region.height,
+      layer.y + layer.height,
+    );
+    for (let y = minY; y < maxY; y += 1) {
+      for (let x = minX; x < maxX; x += 1) {
+        const gid =
+          layer.data[
+            (y - layer.y) * layer.width +
+              (x - layer.x)
+          ];
+        if (
+          typeof gid !== "number" ||
+          gid === 0
+        ) {
+          continue;
+        }
+        record(
+          decodeGid(gid, orientation).baseGid,
+        );
+      }
+    }
+  }
+  for (const objectLayer of scene.objectLayers) {
+    for (const object of objectLayer.objects) {
+      if (
+        object.tileRender?.assetId ===
+        binding.assetId
+      ) {
+        record(
+          binding.firstGid +
+            object.tileRender.localId,
+        );
+      }
+    }
+  }
+  return [...ids].sort(
+    (left, right) => left - right,
+  );
 }
 
 /**

@@ -155,6 +155,13 @@ export interface NativePreviewAtlas {
   format: SafeImageFormat;
   geometry: AtlasGeometry;
   transparentColor?: RgbColor;
+  /**
+   * Present exactly for a single-tile source of an image-collection
+   * tileset: the sparse local id this source renders. Grid sampling is
+   * unaffected (the degenerate geometry starts at local id 0), but
+   * object rendering must select the source carrying its tile.
+   */
+  collectionLocalId?: number;
 }
 
 export interface NativePreviewOverlayInput {
@@ -3214,7 +3221,11 @@ function drawBaseTileObject(
   }
   const atlas = input.atlases.find(
     (candidate) =>
-      candidate.assetId === render.assetId,
+      candidate.assetId === render.assetId &&
+      (candidate.collectionLocalId ===
+        undefined ||
+        candidate.collectionLocalId ===
+          render.localId),
   );
   if (atlas === undefined) {
     throw new TiledMcpError(
@@ -3225,7 +3236,9 @@ function drawBaseTileObject(
   }
   const crop = getAtlasTileCrop(
     atlas.geometry,
-    render.localId,
+    atlas.collectionLocalId === undefined
+      ? render.localId
+      : 0,
   );
   const [ta, tb, tc, td, te, tf] =
     render.transform;

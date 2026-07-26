@@ -99,8 +99,12 @@ revision-pinned image into largest-tile-sized labeled cells under the
 \`explicit-local-id-collection-selection-v1\` profile), and
 \`tiled_update_tile\` edits their per-tile metadata, and
 \`tiled_render_tileset_sheet\` renders ascending sparse-id pages of at
-most 64 tiles, each from its own verified, revision-pinned image; only
-the native map preview still rejects collections.
+most 64 tiles, each from its own verified, revision-pinned image.
+\`tiled_render_preview\` draws collection tiles too — cells and tile
+objects — as long as every used tile image exactly matches the map grid
+size (larger or smaller collection tiles fail closed); each distinct
+used tile image counts against the preview's atlas-source budget, and a
+GID pointing at a removed sparse id fails closed.
 Collection details replace the \`atlas\`/\`image\` blocks with a
 \`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
 returned metadata page entry carries its verified per-tile image —

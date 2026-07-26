@@ -286,6 +286,41 @@ describe("image-collection tileset details and search", () => {
     });
   });
 
+  it("renders native previews from grid-sized collection tiles", async () => {
+    const harness = await createHarness(roots);
+    const rendered =
+      await harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        region: { x: 0, y: 0, width: 1, height: 1 },
+      });
+    expect(rendered.png.byteLength).toBeGreaterThan(
+      0,
+    );
+    expect(rendered.result).toMatchObject({
+      sources: [
+        expect.objectContaining({
+          image: expect.objectContaining({
+            path: "tiles/prop-a.png",
+            pixelSize: { width: 16, height: 16 },
+          }),
+        }),
+      ],
+    });
+
+    // Tile 7 is 24x32 while the map grid is 16x16.
+    await expect(
+      harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        region: { x: 0, y: 0, width: 2, height: 2 },
+      }),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_RENDER_FEATURE",
+      details: expect.objectContaining({
+        feature: "collection-tile-size",
+      }),
+    });
+  });
+
   it("updates collection tile metadata while preserving per-tile images", async () => {
     const harness = await createHarness(roots);
     const summary =

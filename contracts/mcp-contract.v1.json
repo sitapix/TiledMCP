@@ -109,14 +109,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1",
+        "revision": "sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05",
         "serverVersion": "0.0.1",
-        "size": 80501
+        "size": 80780
       },
-      "byteLength": 80501,
+      "byteLength": 80780,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1",
+      "sha256": "sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05",
       "uri": "tiled://guide"
     }
   ],
@@ -144,9 +144,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:3a93c5fcb6911822d15f15e20643e3b4750bfe4f4d36d7e81fad95de73ff09c1",
+        "revision": "sha256:2d76197e0ad223a6d72891eac6c43b0d38044cd540b42d2ae9d9e1be9094ed05",
         "serverVersion": "0.0.1",
-        "size": 80501
+        "size": 80780
       },
       "annotations": {
         "audience": [
@@ -158,7 +158,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 80501,
+      "size": 80780,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -12514,8 +12514,12 @@
                         "const": "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
                         "type": "string"
                       },
+                      "collectionPreviewTiles": {
+                        "const": "grid-sized-only-each-used-tile-counts-as-one-atlas-source",
+                        "type": "string"
+                      },
                       "collectionTilesets": {
-                        "const": "summary-region-object-details-search-sheet-reads-metadata-updates-sparse-ids-fail-closed",
+                        "const": "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
                         "type": "string"
                       },
                       "compressions": {
@@ -12629,6 +12633,7 @@
                       "chunkedReplaceScan",
                       "chunkedFloodFillBounds",
                       "collectionTilesets",
+                      "collectionPreviewTiles",
                       "writeProfile",
                       "writeCompression",
                       "explicitTranscode",
