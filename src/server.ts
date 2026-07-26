@@ -2469,7 +2469,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           infiniteMaps:
             "readable-never-editable",
           collectionTilesets:
-            "summary-region-object-reads-only-sparse-ids-fail-closed",
+            "summary-region-object-details-search-reads-sparse-ids-fail-closed",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:
@@ -3299,7 +3299,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews.",
+        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -3340,7 +3340,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Find tiles by explicit semantics",
       description:
-        "Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.",
+        "Searches one referenced external TSJ (atlas or image-collection) for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

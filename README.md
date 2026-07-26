@@ -86,10 +86,14 @@ edit/tileset edit/tileset create/file delete change set（目标路径两两不�
 `.tiledmcp/transactions/` 下的崩溃可恢复 redo journal 提交，全部目标落盘或全不
 落盘，启动对账自动回滚（提交点前）或前滚（提交点后），被外部写者改坏的单目标降
 级为披露 conflict。
-image-collection tileset（逐 tile 独立图片、无根图集）获得**语义读取核心**支持：
+image-collection tileset（逐 tile 独立图片、无根图集）获得**语义读取**支持：
 `tiled_get_map_summary`（binding 报 `collection:true`，`gidSpan` 覆盖稀疏最大
-id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object` 可用；指向已
-删除 collection id 的 GID fail closed；编辑/渲染/tileset 详情继续拒绝。
+id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object`、
+`tiled_get_tileset` 与 `tiled_find_tiles` 可用。collection 详情以 `collection`
+块（`maxLocalId`、最大 tile 尺寸语义）取代 atlas 几何，返回页内每个 tile 的图
+片经安全检查验证并 pin revision（声明尺寸与实际不符即 fail closed）；分页与检
+索按稀疏 local id 升序。指向已删除 collection id 的 GID、per-tile 图片
+subrect、collection 上的 Wang set 均 fail closed；编辑与渲染路径继续拒绝。
 压缩/base64 tile data 已获得**只读**支持（M2 第一步）：`tiled_get_region`、
 `tiled_render_preview`、`tiled_analyze_usage` 与 `tiled_render_map` 按 Tiled
 1.12.2 读取器语义解码 `encoding:"base64"` + gzip/zlib/zstd 的有限 tile layer

@@ -47,17 +47,21 @@ const TILESET_GRID_ORIENTATIONS = ["orthogonal", "isometric"] as const;
 export interface SummarizeTilesetDocumentInput {
   document: JsonObject;
   path: string;
-  imagePath: string;
+  /** Root atlas image path; absent exactly for image-collection tilesets. */
+  imagePath?: string;
   name: string;
   nameTruncated: boolean;
   tileCount: number;
   startTileId: number;
   limit: number;
+  /** Present exactly for image-collection tilesets. */
+  collection?: TilesetCollectionProfile;
 }
 
 interface TileMetadataSummary {
   localId: number;
   sourceIndex: number;
+  image?: CollectionTileImage;
   className?: string;
   classNameSource?: "class" | "type";
   classNameTruncated?: true;
@@ -198,10 +202,87 @@ export function assertAtlasTileDefinition(
   }
 }
 
+/**
+ * Sparse local-id space of an image-collection tileset. `idSpan` is the
+ * exclusive upper bound (max existing local id + 1, the binding's gidSpan).
+ */
+export interface TilesetCollectionProfile {
+  localIds: ReadonlySet<number>;
+  idSpan: number;
+}
+
+export interface CollectionTileImage {
+  source: string;
+  declaredWidth?: number;
+  declaredHeight?: number;
+}
+
+/**
+ * Validates one image-collection tile definition and returns its per-tile
+ * image reference. Tiled 1.12.2 renders a collection tile at its image
+ * rect; sub-rectangle members (`x`/`y`/`width`/`height`) fail closed here
+ * rather than being approximated by the full image.
+ */
+export function readCollectionTileDefinition(
+  tile: JsonObject,
+  path: string,
+  localId: number,
+): CollectionTileImage {
+  for (const field of [
+    "x",
+    "y",
+    "width",
+    "height",
+  ]) {
+    if (tile[field] !== undefined) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        "Image-collection tile sub-rectangles are not supported; each tile must use its full image.",
+        { path, localId, field },
+      );
+    }
+  }
+  const source = tile.image;
+  if (
+    typeof source !== "string" ||
+    source.length === 0
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${path} tile ${localId} must carry a per-tile image in an image-collection tileset.`,
+      { path, localId },
+    );
+  }
+  const image: CollectionTileImage = { source };
+  for (const [field, key] of [
+    ["imagewidth", "declaredWidth"],
+    ["imageheight", "declaredHeight"],
+  ] as const) {
+    const size = tile[field];
+    if (size === undefined) {
+      continue;
+    }
+    if (
+      typeof size !== "number" ||
+      !Number.isSafeInteger(size) ||
+      size <= 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${path} tile ${localId} ${field} must be a positive integer.`,
+        { path, localId, field },
+      );
+    }
+    image[key] = size;
+  }
+  return image;
+}
+
 export function summarizeTilesetDocument(
   input: SummarizeTilesetDocumentInput,
 ): Record<string, unknown> {
-  const { document, path, imagePath, tileCount, startTileId, limit } = input;
+  const { document, path, imagePath, tileCount, startTileId, limit, collection } =
+    input;
   if (document.type !== "tileset") {
     throw new TiledMcpError(
       "INVALID_DOCUMENT",
@@ -209,14 +290,15 @@ export function summarizeTilesetDocument(
       { path },
     );
   }
+  const idSpan = collection?.idSpan ?? tileCount;
   if (
     !Number.isSafeInteger(startTileId) ||
     startTileId < 0 ||
-    startTileId >= tileCount
+    startTileId >= idSpan
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `startTileId must be between 0 and ${tileCount - 1}.`,
+      `startTileId must be between 0 and ${idSpan - 1}.`,
       { path, startTileId, tileCount },
     );
   }
@@ -245,30 +327,80 @@ export function summarizeTilesetDocument(
       { path, expectedTileCount: tileCount, actualTileCount: declaredTileCount },
     );
   }
-  const columns = positiveInteger(document.columns, `${path}.columns`);
-  const imageWidth = positiveInteger(
-    document.imagewidth,
-    `${path}.imagewidth`,
-  );
-  const imageHeight = positiveInteger(
-    document.imageheight,
-    `${path}.imageheight`,
-  );
-  const margin = nonNegativeInteger(document.margin ?? 0, `${path}.margin`);
-  const spacing = nonNegativeInteger(document.spacing ?? 0, `${path}.spacing`);
-  validateAtlasGeometry({
-    imagePath,
-    imageWidth,
-    imageHeight,
-    tileWidth,
-    tileHeight,
-    tileCount,
-    columns,
-    margin,
-    spacing,
-  });
+  let atlas:
+    | {
+        imagePath: string;
+        columns: number;
+        imageWidth: number;
+        imageHeight: number;
+        margin: number;
+        spacing: number;
+      }
+    | undefined;
+  if (collection === undefined) {
+    if (imagePath === undefined) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${path} is missing its resolved atlas image path.`,
+        { path },
+      );
+    }
+    const columns = positiveInteger(document.columns, `${path}.columns`);
+    const imageWidth = positiveInteger(
+      document.imagewidth,
+      `${path}.imagewidth`,
+    );
+    const imageHeight = positiveInteger(
+      document.imageheight,
+      `${path}.imageheight`,
+    );
+    const margin = nonNegativeInteger(document.margin ?? 0, `${path}.margin`);
+    const spacing = nonNegativeInteger(document.spacing ?? 0, `${path}.spacing`);
+    validateAtlasGeometry({
+      imagePath,
+      imageWidth,
+      imageHeight,
+      tileWidth,
+      tileHeight,
+      tileCount,
+      columns,
+      margin,
+      spacing,
+    });
+    atlas = { imagePath, columns, imageWidth, imageHeight, margin, spacing };
+  } else {
+    // Tiled 1.12.2 keeps columns at 0 for collections and computes
+    // tilewidth/tileheight as the maximum tile size; margin, spacing, and
+    // transparentcolor have no collection semantics and fail closed.
+    const columns = nonNegativeInteger(
+      document.columns ?? 0,
+      `${path}.columns`,
+    );
+    if (columns !== 0) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${path}.columns must be 0 for an image-collection tileset.`,
+        { path, columns },
+      );
+    }
+    for (const field of [
+      "margin",
+      "spacing",
+      "transparentcolor",
+    ] as const) {
+      const value = document[field];
+      if (value !== undefined && value !== 0) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_TILESET",
+          `${path}.${field} has no image-collection semantics in this profile.`,
+          { path, field },
+        );
+      }
+    }
+  }
 
   const transparentColor =
+    collection !== undefined ||
     document.transparentcolor === undefined
       ? undefined
       : expectString(
@@ -313,6 +445,7 @@ export function summarizeTilesetDocument(
       tileCount,
       seenTileIds,
       budget,
+      collection,
     ),
   );
   tileSummaries.sort(
@@ -331,6 +464,16 @@ export function summarizeTilesetDocument(
   const nextTile = hasMore ? eligibleTiles[selectedTiles.length] : undefined;
 
   const wangValues = optionalArray(document.wangsets, `${path}.wangsets`);
+  if (
+    collection !== undefined &&
+    wangValues.length > 0
+  ) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_TILESET",
+      `${path} carries Wang sets; image-collection Wang semantics are not supported in this profile.`,
+      { path, wangSets: wangValues.length },
+    );
+  }
   if (wangValues.length > MAX_TILESET_WANG_SETS) {
     throw new TiledMcpError(
       "RESULT_LIMIT_EXCEEDED",
@@ -391,8 +534,14 @@ export function summarizeTilesetDocument(
         "tile-scalar-values-with-omission-markers-others-counts-only",
       collision:
         "bounded-shape-geometry-with-omission-markers",
-      wangSets: "overview-only",
-      sourceImage: "declared-metadata-only",
+      wangSets:
+        collection === undefined
+          ? "overview-only"
+          : "fail-closed",
+      sourceImage:
+        collection === undefined
+          ? "declared-metadata-only"
+          : "per-tile-returned-page-verified",
     },
     tileset: {
       path,
@@ -408,19 +557,33 @@ export function summarizeTilesetDocument(
           }),
       tileSize: { width: tileWidth, height: tileHeight },
       tileCount,
-      atlas: {
-        columns,
-        rows: tileCount / columns,
-        margin,
-        spacing,
-      },
-      image: {
-        path: imagePath,
-        declaredPixelSize: { width: imageWidth, height: imageHeight },
-        ...(transparentColor === undefined
-          ? {}
-          : { transparentColor }),
-      },
+      ...(atlas === undefined
+        ? {
+            collection: {
+              sparseLocalIds: true,
+              maxLocalId: idSpan - 1,
+              tileSizeSemantics:
+                "maximum-tile-image-size",
+            },
+          }
+        : {
+            atlas: {
+              columns: atlas.columns,
+              rows: tileCount / atlas.columns,
+              margin: atlas.margin,
+              spacing: atlas.spacing,
+            },
+            image: {
+              path: atlas.imagePath,
+              declaredPixelSize: {
+                width: atlas.imageWidth,
+                height: atlas.imageHeight,
+              },
+              ...(transparentColor === undefined
+                ? {}
+                : { transparentColor }),
+            },
+          }),
       rendering,
       propertyCount: properties.length,
       featureCounts: {
@@ -483,10 +646,16 @@ function summarizeTile(
   tileCount: number,
   seenTileIds: Set<number>,
   budget: TilesetScanBudget,
+  collection?: TilesetCollectionProfile,
 ): TileMetadataSummary {
   const context = `${path}.tiles[${sourceIndex}]`;
   const localId = expectInteger(tile.id, `${context}.id`);
-  if (localId < 0 || localId >= tileCount) {
+  if (
+    localId < 0 ||
+    (collection === undefined
+      ? localId >= tileCount
+      : !collection.localIds.has(localId))
+  ) {
     throw new TiledMcpError(
       "INVALID_DOCUMENT",
       `${context}.id is outside the tileset local ID range.`,
@@ -502,7 +671,16 @@ function summarizeTile(
   }
   seenTileIds.add(localId);
 
-  assertAtlasTileDefinition(tile, path, localId);
+  let image: CollectionTileImage | undefined;
+  if (collection === undefined) {
+    assertAtlasTileDefinition(tile, path, localId);
+  } else {
+    image = readCollectionTileDefinition(
+      tile,
+      path,
+      localId,
+    );
+  }
 
   const tileClass = readTilesetTileClass(tile, context);
   const probability =
@@ -543,11 +721,13 @@ function summarizeTile(
           path,
           tileCount,
           budget,
+          collection,
         );
 
   return {
     localId,
     sourceIndex,
+    ...(image === undefined ? {} : { image }),
     ...(tileClass === undefined
       ? {}
       : {
@@ -944,6 +1124,7 @@ function summarizeAnimation(
   path: string,
   tileCount: number,
   budget: TilesetScanBudget,
+  collection?: TilesetCollectionProfile,
 ): TileMetadataSummary["animation"] {
   const frames = expectArray(value, `${tileContext}.animation`);
   budget.animationFrames += frames.length;
@@ -964,7 +1145,12 @@ function summarizeAnimation(
       frame.tileid,
       `${tileContext}.animation[${frameIndex}].tileid`,
     );
-    if (tileId < 0 || tileId >= tileCount) {
+    if (
+      tileId < 0 ||
+      (collection === undefined
+        ? tileId >= tileCount
+        : !collection.localIds.has(tileId))
+    ) {
       throw new TiledMcpError(
         "INVALID_DOCUMENT",
         `${tileContext}.animation[${frameIndex}].tileid is outside the tileset local ID range.`,

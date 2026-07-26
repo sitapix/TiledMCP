@@ -11,7 +11,9 @@ import {
   MAX_TILESET_METADATA_ENTRIES,
   MAX_TILESET_PROPERTY_ENTRIES,
   assertAtlasTileDefinition,
+  readCollectionTileDefinition,
   readTilesetTileClass,
+  type TilesetCollectionProfile,
   type TilesetTileClass,
 } from "./tilesetDetails.js";
 
@@ -77,6 +79,8 @@ export interface SearchTilesetDocumentInput {
   query: TileFindQuery;
   startTileId: number;
   limit: number;
+  /** Present exactly for image-collection tilesets. */
+  collection?: TilesetCollectionProfile;
 }
 
 interface ParsedTileProperty {
@@ -121,7 +125,9 @@ export function searchTilesetDocument(
     query,
     startTileId,
     limit,
+    collection,
   } = input;
+  const idSpan = collection?.idSpan ?? tileCount;
   if (document.type !== "tileset") {
     throw new TiledMcpError(
       "INVALID_DOCUMENT",
@@ -143,11 +149,11 @@ export function searchTilesetDocument(
   if (
     !Number.isSafeInteger(startTileId) ||
     startTileId < 0 ||
-    startTileId >= tileCount
+    startTileId >= idSpan
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `startTileId must be between 0 and ${tileCount - 1}.`,
+      `startTileId must be between 0 and ${idSpan - 1}.`,
       { path, startTileId, tileCount },
     );
   }
@@ -210,7 +216,12 @@ export function searchTilesetDocument(
     const tile = expectObject(value, `${path}.tiles[${sourceIndex}]`);
     const context = `${path}.tiles[${sourceIndex}]`;
     const localId = expectInteger(tile.id, `${context}.id`);
-    if (localId < 0 || localId >= tileCount) {
+    if (
+      localId < 0 ||
+      (collection === undefined
+        ? localId >= tileCount
+        : !collection.localIds.has(localId))
+    ) {
       throw new TiledMcpError(
         "INVALID_DOCUMENT",
         `${context}.id is outside the tileset local ID range.`,
@@ -226,7 +237,15 @@ export function searchTilesetDocument(
     }
     seenTileIds.add(localId);
 
-    assertAtlasTileDefinition(tile, path, localId);
+    if (collection === undefined) {
+      assertAtlasTileDefinition(tile, path, localId);
+    } else {
+      readCollectionTileDefinition(
+        tile,
+        path,
+        localId,
+      );
+    }
     const tileClass = readTilesetTileClass(tile, context);
     const parsedProperties = needsProperties
       ? readTileProperties(

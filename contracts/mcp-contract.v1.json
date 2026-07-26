@@ -109,14 +109,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
+        "revision": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
         "serverVersion": "0.0.1",
-        "size": 77549
+        "size": 77972
       },
-      "byteLength": 77549,
+      "byteLength": 77972,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
+      "sha256": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
       "uri": "tiled://guide"
     }
   ],
@@ -144,9 +144,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:2ad55a1b88ff2a8ede8c1d71d8917fadc11d0bd53c74b6aa17dcda032ae9b490",
+        "revision": "sha256:c9ec685a5664b08c10f7f5066b66a43f42ae14f58e1bf882d28912376d9b97f2",
         "serverVersion": "0.0.1",
-        "size": 77549
+        "size": 77972
       },
       "annotations": {
         "audience": [
@@ -158,7 +158,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 77549,
+      "size": 77972,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -7104,7 +7104,7 @@
         "readOnlyHint": true,
         "title": "Read local Tiled project data"
       },
-      "description": "Searches one referenced external TSJ for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.",
+      "description": "Searches one referenced external TSJ (atlas or image-collection) for exact tile classes or explicitly serialized scalar properties and returns bounded TileRefs ordered by local ID.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -12470,7 +12470,7 @@
                         "type": "string"
                       },
                       "collectionTilesets": {
-                        "const": "summary-region-object-reads-only-sparse-ids-fail-closed",
+                        "const": "summary-region-object-details-search-reads-sparse-ids-fail-closed",
                         "type": "string"
                       },
                       "compressions": {
@@ -16515,7 +16515,7 @@
         "readOnlyHint": true,
         "title": "Read local Tiled project data"
       },
-      "description": "Returns a bounded semantic summary of one external atlas TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews.",
+      "description": "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -16594,800 +16594,901 @@
           "result": {
             "anyOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "binding": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "firstGid": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
+                      "binding": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "firstGid",
+                          "lastGid",
+                          "gidSpan"
+                        ],
+                        "type": "object"
                       },
-                      "gidSpan": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
+                      "map": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
                       },
-                      "lastGid": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "firstGid",
-                      "lastGid",
-                      "gidSpan"
-                    ],
-                    "type": "object"
-                  },
-                  "map": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "projection": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "classResolution": {
-                        "const": "name-only",
-                        "type": "string"
-                      },
-                      "collision": {
-                        "const": "bounded-shape-geometry-with-omission-markers",
-                        "type": "string"
-                      },
-                      "kind": {
-                        "const": "bounded-semantic-summary",
-                        "type": "string"
-                      },
-                      "properties": {
-                        "const": "tile-scalar-values-with-omission-markers-others-counts-only",
-                        "type": "string"
-                      },
-                      "sourceImage": {
-                        "const": "declared-metadata-only",
-                        "type": "string"
-                      },
-                      "tileClassField": {
-                        "const": "type-with-class-compatibility-fallback",
-                        "type": "string"
-                      },
-                      "wangSets": {
-                        "const": "overview-only",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "classResolution",
-                      "tileClassField",
-                      "properties",
-                      "collision",
-                      "wangSets",
-                      "sourceImage"
-                    ],
-                    "type": "object"
-                  },
-                  "snapshotConsistency": {
-                    "const": "non-atomic-read-set",
-                    "type": "string"
-                  },
-                  "source": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "pattern": "^asset_[0-9a-f]{24}$",
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "assetId",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "tileMetadata": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "hasEarlier": {
-                        "type": "boolean"
-                      },
-                      "hasMore": {
-                        "type": "boolean"
-                      },
-                      "items": {
-                        "items": {
-                          "additionalProperties": false,
+                      "projection": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "classResolution": {
+                            "const": "name-only",
+                            "type": "string"
+                          },
+                          "collision": {
+                            "const": "bounded-shape-geometry-with-omission-markers",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "bounded-semantic-summary",
+                            "type": "string"
+                          },
                           "properties": {
-                            "animation": {
+                            "const": "tile-scalar-values-with-omission-markers-others-counts-only",
+                            "type": "string"
+                          },
+                          "sourceImage": {
+                            "const": "declared-metadata-only",
+                            "type": "string"
+                          },
+                          "tileClassField": {
+                            "const": "type-with-class-compatibility-fallback",
+                            "type": "string"
+                          },
+                          "wangSets": {
+                            "const": "overview-only",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "classResolution",
+                          "tileClassField",
+                          "properties",
+                          "collision",
+                          "wangSets",
+                          "sourceImage"
+                        ],
+                        "type": "object"
+                      },
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "tileMetadata": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "hasEarlier": {
+                            "type": "boolean"
+                          },
+                          "hasMore": {
+                            "type": "boolean"
+                          },
+                          "items": {
+                            "items": {
                               "additionalProperties": false,
                               "properties": {
-                                "frameCount": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "frames": {
-                                  "items": {
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "durationMs": {
-                                        "exclusiveMinimum": 0,
-                                        "maximum": 9007199254740991,
-                                        "type": "integer"
-                                      },
-                                      "tileId": {
-                                        "maximum": 9007199254740991,
-                                        "minimum": 0,
-                                        "type": "integer"
-                                      }
+                                "animation": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "frameCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
                                     },
-                                    "required": [
-                                      "tileId",
-                                      "durationMs"
-                                    ],
-                                    "type": "object"
+                                    "frames": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "durationMs": {
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991,
+                                            "type": "integer"
+                                          },
+                                          "tileId": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "tileId",
+                                          "durationMs"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 16,
+                                      "type": "array"
+                                    },
+                                    "framesTruncated": {
+                                      "type": "boolean"
+                                    },
+                                    "totalDurationMs": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
                                   },
-                                  "maxItems": 16,
-                                  "type": "array"
+                                  "required": [
+                                    "frameCount",
+                                    "totalDurationMs",
+                                    "frames",
+                                    "framesTruncated"
+                                  ],
+                                  "type": "object"
                                 },
-                                "framesTruncated": {
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameSource": {
+                                  "enum": [
+                                    "class",
+                                    "type"
+                                  ],
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
                                   "type": "boolean"
                                 },
-                                "totalDurationMs": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "frameCount",
-                                "totalDurationMs",
-                                "frames",
-                                "framesTruncated"
-                              ],
-                              "type": "object"
-                            },
-                            "className": {
-                              "type": "string"
-                            },
-                            "classNameSource": {
-                              "enum": [
-                                "class",
-                                "type"
-                              ],
-                              "type": "string"
-                            },
-                            "classNameTruncated": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "collision": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "objectCount": {
+                                "collision": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "objectCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "shapes": {
+                                      "items": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "height": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "rotation": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "shape": {
+                                                "enum": [
+                                                  "rectangle",
+                                                  "point",
+                                                  "ellipse",
+                                                  "capsule",
+                                                  "text"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "textBoundsOnly": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "width": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "x": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "y": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "shape",
+                                              "x",
+                                              "y",
+                                              "width",
+                                              "height",
+                                              "rotation"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "pointCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "points": {
+                                                "items": {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "x": {
+                                                      "maximum": 1000000000,
+                                                      "minimum": -1000000000,
+                                                      "type": "number"
+                                                    },
+                                                    "y": {
+                                                      "maximum": 1000000000,
+                                                      "minimum": -1000000000,
+                                                      "type": "number"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "x",
+                                                    "y"
+                                                  ],
+                                                  "type": "object"
+                                                },
+                                                "maxItems": 256,
+                                                "type": "array"
+                                              },
+                                              "pointsOmitted": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "rotation": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "shape": {
+                                                "enum": [
+                                                  "polygon",
+                                                  "polyline"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "x": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "y": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "shape",
+                                              "x",
+                                              "y",
+                                              "rotation",
+                                              "pointCount"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "geometryOmitted": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "reason": {
+                                                "enum": [
+                                                  "tile-object",
+                                                  "template"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "geometryOmitted",
+                                              "reason"
+                                            ],
+                                            "type": "object"
+                                          }
+                                        ]
+                                      },
+                                      "maxItems": 128,
+                                      "type": "array"
+                                    },
+                                    "shapesTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "objectCount",
+                                    "shapes"
+                                  ],
+                                  "type": "object"
+                                },
+                                "localId": {
                                   "maximum": 9007199254740991,
                                   "minimum": 0,
                                   "type": "integer"
                                 },
-                                "shapes": {
+                                "probability": {
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                "properties": {
                                   "items": {
                                     "anyOf": [
                                       {
                                         "additionalProperties": false,
                                         "properties": {
-                                          "className": {
-                                            "type": "string"
-                                          },
-                                          "classNameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "height": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "id": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "index": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
                                           "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
                                             "type": "string"
                                           },
-                                          "nameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "propertyCount": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "rotation": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "shape": {
+                                          "type": {
                                             "enum": [
-                                              "rectangle",
-                                              "point",
-                                              "ellipse",
-                                              "capsule",
-                                              "text"
+                                              "string",
+                                              "int",
+                                              "float",
+                                              "bool",
+                                              "color",
+                                              "file"
                                             ],
                                             "type": "string"
                                           },
-                                          "textBoundsOnly": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "width": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "x": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "y": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          }
-                                        },
-                                        "required": [
-                                          "index",
-                                          "shape",
-                                          "x",
-                                          "y",
-                                          "width",
-                                          "height",
-                                          "rotation"
-                                        ],
-                                        "type": "object"
-                                      },
-                                      {
-                                        "additionalProperties": false,
-                                        "properties": {
-                                          "className": {
-                                            "type": "string"
-                                          },
-                                          "classNameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "id": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "index": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "name": {
-                                            "type": "string"
-                                          },
-                                          "nameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "pointCount": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "points": {
-                                            "items": {
-                                              "additionalProperties": false,
-                                              "properties": {
-                                                "x": {
-                                                  "maximum": 1000000000,
-                                                  "minimum": -1000000000,
-                                                  "type": "number"
-                                                },
-                                                "y": {
-                                                  "maximum": 1000000000,
-                                                  "minimum": -1000000000,
-                                                  "type": "number"
-                                                }
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
                                               },
-                                              "required": [
-                                                "x",
-                                                "y"
-                                              ],
-                                              "type": "object"
-                                            },
-                                            "maxItems": 256,
-                                            "type": "array"
-                                          },
-                                          "pointsOmitted": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "propertyCount": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "rotation": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "shape": {
-                                            "enum": [
-                                              "polygon",
-                                              "polyline"
-                                            ],
-                                            "type": "string"
-                                          },
-                                          "x": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
-                                          },
-                                          "y": {
-                                            "maximum": 1000000000,
-                                            "minimum": -1000000000,
-                                            "type": "number"
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
                                           }
                                         },
                                         "required": [
-                                          "index",
-                                          "shape",
-                                          "x",
-                                          "y",
-                                          "rotation",
-                                          "pointCount"
+                                          "name",
+                                          "type",
+                                          "value"
                                         ],
                                         "type": "object"
                                       },
                                       {
                                         "additionalProperties": false,
                                         "properties": {
-                                          "className": {
-                                            "type": "string"
-                                          },
-                                          "classNameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "geometryOmitted": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "id": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
-                                          "index": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
-                                          },
                                           "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
                                             "type": "string"
                                           },
-                                          "nameTruncated": {
-                                            "const": true,
-                                            "type": "boolean"
-                                          },
-                                          "propertyCount": {
-                                            "maximum": 9007199254740991,
-                                            "minimum": 0,
-                                            "type": "integer"
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
                                           },
                                           "reason": {
                                             "enum": [
-                                              "tile-object",
-                                              "template"
+                                              "complex-type",
+                                              "custom-propertytype",
+                                              "oversized-value"
                                             ],
                                             "type": "string"
+                                          },
+                                          "type": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "valueCodePoints": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueOmitted": {
+                                            "const": true,
+                                            "type": "boolean"
                                           }
                                         },
                                         "required": [
-                                          "index",
-                                          "geometryOmitted",
+                                          "name",
+                                          "type",
+                                          "valueOmitted",
                                           "reason"
                                         ],
                                         "type": "object"
                                       }
                                     ]
                                   },
-                                  "maxItems": 128,
                                   "type": "array"
                                 },
-                                "shapesTruncated": {
+                                "propertiesTruncated": {
                                   "const": true,
                                   "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "sourceIndex": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
-                                "objectCount",
-                                "shapes"
+                                "localId",
+                                "sourceIndex",
+                                "properties",
+                                "propertyCount"
                               ],
                               "type": "object"
                             },
-                            "localId": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "probability": {
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            "properties": {
-                              "items": {
-                                "anyOf": [
-                                  {
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "name": {
-                                        "maxLength": 512,
-                                        "minLength": 1,
-                                        "type": "string"
-                                      },
-                                      "type": {
-                                        "enum": [
-                                          "string",
-                                          "int",
-                                          "float",
-                                          "bool",
-                                          "color",
-                                          "file"
-                                        ],
-                                        "type": "string"
-                                      },
-                                      "value": {
-                                        "anyOf": [
-                                          {
-                                            "maxLength": 4096,
-                                            "type": "string"
-                                          },
-                                          {
-                                            "type": "number"
-                                          },
-                                          {
-                                            "type": "boolean"
-                                          }
-                                        ]
-                                      }
-                                    },
-                                    "required": [
-                                      "name",
-                                      "type",
-                                      "value"
-                                    ],
-                                    "type": "object"
-                                  },
-                                  {
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "name": {
-                                        "maxLength": 512,
-                                        "minLength": 1,
-                                        "type": "string"
-                                      },
-                                      "propertytype": {
-                                        "maxLength": 1024,
-                                        "type": "string"
-                                      },
-                                      "reason": {
-                                        "enum": [
-                                          "complex-type",
-                                          "custom-propertytype",
-                                          "oversized-value"
-                                        ],
-                                        "type": "string"
-                                      },
-                                      "type": {
-                                        "maxLength": 64,
-                                        "minLength": 1,
-                                        "type": "string"
-                                      },
-                                      "valueCodePoints": {
-                                        "maximum": 9007199254740991,
-                                        "minimum": 0,
-                                        "type": "integer"
-                                      },
-                                      "valueOmitted": {
-                                        "const": true,
-                                        "type": "boolean"
-                                      }
-                                    },
-                                    "required": [
-                                      "name",
-                                      "type",
-                                      "valueOmitted",
-                                      "reason"
-                                    ],
-                                    "type": "object"
-                                  }
-                                ]
-                              },
-                              "type": "array"
-                            },
-                            "propertiesTruncated": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "propertyCount": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "sourceIndex": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
+                            "maxItems": 128,
+                            "type": "array"
                           },
-                          "required": [
-                            "localId",
-                            "sourceIndex",
-                            "properties",
-                            "propertyCount"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 128,
-                        "type": "array"
-                      },
-                      "limit": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 128,
-                        "type": "integer"
-                      },
-                      "nextStartTileId": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "order": {
-                        "const": "local-id",
-                        "type": "string"
-                      },
-                      "returned": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "startTileId": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "total": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "truncated": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "order",
-                      "startTileId",
-                      "limit",
-                      "total",
-                      "returned",
-                      "hasEarlier",
-                      "hasMore",
-                      "truncated",
-                      "items"
-                    ],
-                    "type": "object"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "atlas": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "columns": {
+                          "limit": {
                             "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
+                            "maximum": 128,
                             "type": "integer"
                           },
-                          "margin": {
+                          "nextStartTileId": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
                           },
-                          "rows": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
+                          "order": {
+                            "const": "local-id",
+                            "type": "string"
                           },
-                          "spacing": {
+                          "returned": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "startTileId": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "total": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "truncated": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
-                          "columns",
-                          "rows",
-                          "margin",
-                          "spacing"
+                          "order",
+                          "startTileId",
+                          "limit",
+                          "total",
+                          "returned",
+                          "hasEarlier",
+                          "hasMore",
+                          "truncated",
+                          "items"
                         ],
                         "type": "object"
                       },
-                      "className": {
-                        "type": "string"
-                      },
-                      "classNameTruncated": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "featureCounts": {
+                      "tileset": {
                         "additionalProperties": false,
                         "properties": {
-                          "animatedTiles": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "animationFrames": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "collisionObjects": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "collisionTiles": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "metadataTiles": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "propertyTiles": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileProperties": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "wangSets": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "metadataTiles",
-                          "animatedTiles",
-                          "animationFrames",
-                          "collisionTiles",
-                          "collisionObjects",
-                          "propertyTiles",
-                          "tileProperties",
-                          "wangSets"
-                        ],
-                        "type": "object"
-                      },
-                      "image": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "declaredPixelSize": {
+                          "atlas": {
                             "additionalProperties": false,
                             "properties": {
-                              "height": {
+                              "columns": {
                                 "exclusiveMinimum": 0,
                                 "maximum": 9007199254740991,
                                 "type": "integer"
                               },
-                              "width": {
+                              "margin": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "rows": {
                                 "exclusiveMinimum": 0,
                                 "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "spacing": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
                                 "type": "integer"
                               }
                             },
                             "required": [
-                              "width",
-                              "height"
+                              "columns",
+                              "rows",
+                              "margin",
+                              "spacing"
                             ],
                             "type": "object"
+                          },
+                          "className": {
+                            "type": "string"
+                          },
+                          "classNameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "featureCounts": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "animatedTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "animationFrames": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "collisionObjects": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "collisionTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "metadataTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "propertyTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "tileProperties": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "wangSets": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "metadataTiles",
+                              "animatedTiles",
+                              "animationFrames",
+                              "collisionTiles",
+                              "collisionObjects",
+                              "propertyTiles",
+                              "tileProperties",
+                              "wangSets"
+                            ],
+                            "type": "object"
+                          },
+                          "image": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "declaredPixelSize": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "transparentColor": {
+                                "pattern": "^#[0-9a-f]{6}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "declaredPixelSize"
+                            ],
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
                           },
                           "path": {
                             "minLength": 1,
                             "type": "string"
                           },
-                          "transparentColor": {
-                            "pattern": "^#[0-9a-f]{6}$",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "path",
-                          "declaredPixelSize"
-                        ],
-                        "type": "object"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "nameTruncated": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "propertyCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "rendering": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "fillMode": {
-                            "enum": [
-                              "stretch",
-                              "preserve-aspect-fit"
-                            ],
-                            "type": "string"
+                          "propertyCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
                           },
-                          "grid": {
+                          "rendering": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "fillMode": {
+                                "enum": [
+                                  "stretch",
+                                  "preserve-aspect-fit"
+                                ],
+                                "type": "string"
+                              },
+                              "grid": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "orientation": {
+                                    "enum": [
+                                      "orthogonal",
+                                      "isometric"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "orientation",
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "objectAlignment": {
+                                "enum": [
+                                  "unspecified",
+                                  "topleft",
+                                  "top",
+                                  "topright",
+                                  "left",
+                                  "center",
+                                  "right",
+                                  "bottomleft",
+                                  "bottom",
+                                  "bottomright"
+                                ],
+                                "type": "string"
+                              },
+                              "tileOffset": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "x": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": -9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "y": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": -9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y"
+                                ],
+                                "type": "object"
+                              },
+                              "tileRenderSize": {
+                                "enum": [
+                                  "tile",
+                                  "grid"
+                                ],
+                                "type": "string"
+                              },
+                              "transformations": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "flipH": {
+                                    "type": "boolean"
+                                  },
+                                  "flipV": {
+                                    "type": "boolean"
+                                  },
+                                  "preferUntransformed": {
+                                    "type": "boolean"
+                                  },
+                                  "rotate": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "flipH",
+                                  "flipV",
+                                  "rotate",
+                                  "preferUntransformed"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "tileRenderSize",
+                              "fillMode"
+                            ],
+                            "type": "object"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tileSize": {
                             "additionalProperties": false,
                             "properties": {
                               "height": {
                                 "exclusiveMinimum": 0,
                                 "maximum": 9007199254740991,
                                 "type": "integer"
-                              },
-                              "orientation": {
-                                "enum": [
-                                  "orthogonal",
-                                  "isometric"
-                                ],
-                                "type": "string"
                               },
                               "width": {
                                 "exclusiveMinimum": 0,
@@ -17396,230 +17497,1159 @@
                               }
                             },
                             "required": [
-                              "orientation",
                               "width",
                               "height"
                             ],
                             "type": "object"
-                          },
-                          "objectAlignment": {
-                            "enum": [
-                              "unspecified",
-                              "topleft",
-                              "top",
-                              "topright",
-                              "left",
-                              "center",
-                              "right",
-                              "bottomleft",
-                              "bottom",
-                              "bottomright"
-                            ],
-                            "type": "string"
-                          },
-                          "tileOffset": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "x": {
-                                "maximum": 9007199254740991,
-                                "minimum": -9007199254740991,
-                                "type": "integer"
-                              },
-                              "y": {
-                                "maximum": 9007199254740991,
-                                "minimum": -9007199254740991,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "x",
-                              "y"
-                            ],
-                            "type": "object"
-                          },
-                          "tileRenderSize": {
-                            "enum": [
-                              "tile",
-                              "grid"
-                            ],
-                            "type": "string"
-                          },
-                          "transformations": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "flipH": {
-                                "type": "boolean"
-                              },
-                              "flipV": {
-                                "type": "boolean"
-                              },
-                              "preferUntransformed": {
-                                "type": "boolean"
-                              },
-                              "rotate": {
-                                "type": "boolean"
-                              }
-                            },
-                            "required": [
-                              "flipH",
-                              "flipV",
-                              "rotate",
-                              "preferUntransformed"
-                            ],
-                            "type": "object"
                           }
                         },
                         "required": [
-                          "tileRenderSize",
-                          "fillMode"
+                          "path",
+                          "name",
+                          "tileSize",
+                          "tileCount",
+                          "rendering",
+                          "propertyCount",
+                          "featureCounts",
+                          "atlas",
+                          "image"
                         ],
                         "type": "object"
-                      },
-                      "tileCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "tileSize": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "height": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "width": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "width",
-                          "height"
-                        ],
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "name",
-                      "tileSize",
-                      "tileCount",
-                      "atlas",
-                      "image",
-                      "rendering",
-                      "propertyCount",
-                      "featureCounts"
-                    ],
-                    "type": "object"
-                  },
-                  "truncated": {
-                    "type": "boolean"
-                  },
-                  "wangSets": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "items": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "className": {
-                              "type": "string"
-                            },
-                            "classNameTruncated": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "colorCount": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "name": {
-                              "type": "string"
-                            },
-                            "nameTruncated": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "propertyCount": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "sourceIndex": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "type": {
-                              "enum": [
-                                "corner",
-                                "edge",
-                                "mixed"
-                              ],
-                              "type": "string"
-                            },
-                            "wangTileCount": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "sourceIndex",
-                            "name",
-                            "type",
-                            "colorCount",
-                            "wangTileCount",
-                            "propertyCount"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 32,
-                        "type": "array"
-                      },
-                      "order": {
-                        "const": "source",
-                        "type": "string"
-                      },
-                      "returned": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "total": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
                       },
                       "truncated": {
                         "type": "boolean"
+                      },
+                      "wangSets": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "colorCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "nameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "sourceIndex": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "type": {
+                                  "enum": [
+                                    "corner",
+                                    "edge",
+                                    "mixed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "wangTileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "sourceIndex",
+                                "name",
+                                "type",
+                                "colorCount",
+                                "wangTileCount",
+                                "propertyCount"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 32,
+                            "type": "array"
+                          },
+                          "order": {
+                            "const": "source",
+                            "type": "string"
+                          },
+                          "returned": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "total": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "order",
+                          "total",
+                          "returned",
+                          "truncated",
+                          "items"
+                        ],
+                        "type": "object"
                       }
                     },
                     "required": [
-                      "order",
-                      "total",
-                      "returned",
+                      "map",
+                      "source",
+                      "binding",
                       "truncated",
-                      "items"
+                      "snapshotConsistency",
+                      "projection",
+                      "tileset",
+                      "tileMetadata",
+                      "wangSets"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "binding": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "firstGid",
+                          "lastGid",
+                          "gidSpan"
+                        ],
+                        "type": "object"
+                      },
+                      "map": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "projection": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "classResolution": {
+                            "const": "name-only",
+                            "type": "string"
+                          },
+                          "collision": {
+                            "const": "bounded-shape-geometry-with-omission-markers",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "bounded-semantic-summary",
+                            "type": "string"
+                          },
+                          "properties": {
+                            "const": "tile-scalar-values-with-omission-markers-others-counts-only",
+                            "type": "string"
+                          },
+                          "sourceImage": {
+                            "const": "per-tile-returned-page-verified",
+                            "type": "string"
+                          },
+                          "tileClassField": {
+                            "const": "type-with-class-compatibility-fallback",
+                            "type": "string"
+                          },
+                          "wangSets": {
+                            "const": "fail-closed",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "classResolution",
+                          "tileClassField",
+                          "properties",
+                          "collision",
+                          "wangSets",
+                          "sourceImage"
+                        ],
+                        "type": "object"
+                      },
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
+                      },
+                      "source": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "revision"
+                        ],
+                        "type": "object"
+                      },
+                      "tileMetadata": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "hasEarlier": {
+                            "type": "boolean"
+                          },
+                          "hasMore": {
+                            "type": "boolean"
+                          },
+                          "items": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "animation": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "frameCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "frames": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "durationMs": {
+                                            "exclusiveMinimum": 0,
+                                            "maximum": 9007199254740991,
+                                            "type": "integer"
+                                          },
+                                          "tileId": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "tileId",
+                                          "durationMs"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 16,
+                                      "type": "array"
+                                    },
+                                    "framesTruncated": {
+                                      "type": "boolean"
+                                    },
+                                    "totalDurationMs": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "frameCount",
+                                    "totalDurationMs",
+                                    "frames",
+                                    "framesTruncated"
+                                  ],
+                                  "type": "object"
+                                },
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameSource": {
+                                  "enum": [
+                                    "class",
+                                    "type"
+                                  ],
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "collision": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "objectCount": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "shapes": {
+                                      "items": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "height": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "rotation": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "shape": {
+                                                "enum": [
+                                                  "rectangle",
+                                                  "point",
+                                                  "ellipse",
+                                                  "capsule",
+                                                  "text"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "textBoundsOnly": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "width": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "x": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "y": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "shape",
+                                              "x",
+                                              "y",
+                                              "width",
+                                              "height",
+                                              "rotation"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "pointCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "points": {
+                                                "items": {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "x": {
+                                                      "maximum": 1000000000,
+                                                      "minimum": -1000000000,
+                                                      "type": "number"
+                                                    },
+                                                    "y": {
+                                                      "maximum": 1000000000,
+                                                      "minimum": -1000000000,
+                                                      "type": "number"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "x",
+                                                    "y"
+                                                  ],
+                                                  "type": "object"
+                                                },
+                                                "maxItems": 256,
+                                                "type": "array"
+                                              },
+                                              "pointsOmitted": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "rotation": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "shape": {
+                                                "enum": [
+                                                  "polygon",
+                                                  "polyline"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "x": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              },
+                                              "y": {
+                                                "maximum": 1000000000,
+                                                "minimum": -1000000000,
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "shape",
+                                              "x",
+                                              "y",
+                                              "rotation",
+                                              "pointCount"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "className": {
+                                                "type": "string"
+                                              },
+                                              "classNameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "geometryOmitted": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "id": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "index": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "nameTruncated": {
+                                                "const": true,
+                                                "type": "boolean"
+                                              },
+                                              "propertyCount": {
+                                                "maximum": 9007199254740991,
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "reason": {
+                                                "enum": [
+                                                  "tile-object",
+                                                  "template"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "index",
+                                              "geometryOmitted",
+                                              "reason"
+                                            ],
+                                            "type": "object"
+                                          }
+                                        ]
+                                      },
+                                      "maxItems": 128,
+                                      "type": "array"
+                                    },
+                                    "shapesTruncated": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "objectCount",
+                                    "shapes"
+                                  ],
+                                  "type": "object"
+                                },
+                                "image": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "path": {
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "pixelSize": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "height": {
+                                          "exclusiveMinimum": 0,
+                                          "maximum": 9007199254740991,
+                                          "type": "integer"
+                                        },
+                                        "width": {
+                                          "exclusiveMinimum": 0,
+                                          "maximum": 9007199254740991,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "width",
+                                        "height"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "revision": {
+                                      "pattern": "^sha256:[0-9a-f]{64}$",
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "path",
+                                    "revision",
+                                    "pixelSize"
+                                  ],
+                                  "type": "object"
+                                },
+                                "localId": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "probability": {
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                "properties": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "enum": [
+                                              "string",
+                                              "int",
+                                              "float",
+                                              "bool",
+                                              "color",
+                                              "file"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "value"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "complex-type",
+                                              "custom-propertytype",
+                                              "oversized-value"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "valueCodePoints": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueOmitted": {
+                                            "const": true,
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "valueOmitted",
+                                          "reason"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "type": "array"
+                                },
+                                "propertiesTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "sourceIndex": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "localId",
+                                "sourceIndex",
+                                "properties",
+                                "propertyCount",
+                                "image"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 128,
+                            "type": "array"
+                          },
+                          "limit": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 128,
+                            "type": "integer"
+                          },
+                          "nextStartTileId": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "order": {
+                            "const": "local-id",
+                            "type": "string"
+                          },
+                          "returned": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "startTileId": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "total": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "order",
+                          "startTileId",
+                          "limit",
+                          "total",
+                          "returned",
+                          "hasEarlier",
+                          "hasMore",
+                          "truncated",
+                          "items"
+                        ],
+                        "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "className": {
+                            "type": "string"
+                          },
+                          "classNameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "collection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "maxLocalId": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "sparseLocalIds": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "tileSizeSemantics": {
+                                "const": "maximum-tile-image-size",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sparseLocalIds",
+                              "maxLocalId",
+                              "tileSizeSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          "featureCounts": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "animatedTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "animationFrames": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "collisionObjects": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "collisionTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "metadataTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "propertyTiles": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "tileProperties": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "wangSets": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "metadataTiles",
+                              "animatedTiles",
+                              "animationFrames",
+                              "collisionTiles",
+                              "collisionObjects",
+                              "propertyTiles",
+                              "tileProperties",
+                              "wangSets"
+                            ],
+                            "type": "object"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "propertyCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "rendering": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "fillMode": {
+                                "enum": [
+                                  "stretch",
+                                  "preserve-aspect-fit"
+                                ],
+                                "type": "string"
+                              },
+                              "grid": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "orientation": {
+                                    "enum": [
+                                      "orthogonal",
+                                      "isometric"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "orientation",
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "objectAlignment": {
+                                "enum": [
+                                  "unspecified",
+                                  "topleft",
+                                  "top",
+                                  "topright",
+                                  "left",
+                                  "center",
+                                  "right",
+                                  "bottomleft",
+                                  "bottom",
+                                  "bottomright"
+                                ],
+                                "type": "string"
+                              },
+                              "tileOffset": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "x": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": -9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "y": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": -9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y"
+                                ],
+                                "type": "object"
+                              },
+                              "tileRenderSize": {
+                                "enum": [
+                                  "tile",
+                                  "grid"
+                                ],
+                                "type": "string"
+                              },
+                              "transformations": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "flipH": {
+                                    "type": "boolean"
+                                  },
+                                  "flipV": {
+                                    "type": "boolean"
+                                  },
+                                  "preferUntransformed": {
+                                    "type": "boolean"
+                                  },
+                                  "rotate": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "flipH",
+                                  "flipV",
+                                  "rotate",
+                                  "preferUntransformed"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "tileRenderSize",
+                              "fillMode"
+                            ],
+                            "type": "object"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tileSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "name",
+                          "tileSize",
+                          "tileCount",
+                          "rendering",
+                          "propertyCount",
+                          "featureCounts",
+                          "collection"
+                        ],
+                        "type": "object"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      },
+                      "wangSets": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "colorCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "nameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "sourceIndex": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "type": {
+                                  "enum": [
+                                    "corner",
+                                    "edge",
+                                    "mixed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "wangTileCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "sourceIndex",
+                                "name",
+                                "type",
+                                "colorCount",
+                                "wangTileCount",
+                                "propertyCount"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 32,
+                            "type": "array"
+                          },
+                          "order": {
+                            "const": "source",
+                            "type": "string"
+                          },
+                          "returned": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "total": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "order",
+                          "total",
+                          "returned",
+                          "truncated",
+                          "items"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "map",
+                      "source",
+                      "binding",
+                      "truncated",
+                      "snapshotConsistency",
+                      "projection",
+                      "tileset",
+                      "tileMetadata",
+                      "wangSets"
                     ],
                     "type": "object"
                   }
-                },
-                "required": [
-                  "map",
-                  "source",
-                  "binding",
-                  "projection",
-                  "tileset",
-                  "tileMetadata",
-                  "wangSets",
-                  "truncated",
-                  "snapshotConsistency"
-                ],
-                "type": "object"
+                ]
               },
               {
                 "additionalProperties": false,

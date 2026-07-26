@@ -70,9 +70,15 @@ outside the editable profile. Maps referencing image-collection tilesets
 (per-tile images, no root atlas) are readable through
 \`tiled_get_map_summary\` (bindings report \`collection:true\` with the
 sparse-id \`gidSpan\`), \`tiled_get_region\`, \`tiled_list_objects\`,
-and \`tiled_get_object\`; a GID pointing at a removed collection id
-fails closed, and every edit, render, and tileset-detail path keeps
-rejecting collection tilesets. Inspect
+\`tiled_get_object\`, \`tiled_get_tileset\`, and \`tiled_find_tiles\`.
+Collection details replace the \`atlas\`/\`image\` blocks with a
+\`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
+returned metadata page entry carries its verified per-tile image —
+resolved path, revision, and actual pixel size, checked against any
+declared dimensions. Pagination and search order sparse local ids
+ascending. A GID pointing at a removed collection id fails closed;
+per-tile image sub-rectangles, Wang sets on collections, and every edit
+and render path keep rejecting collection tilesets. Inspect
 \`tileDataReadCapabilities\` for the frozen policy strings.
 
 ## Filesystem threat model

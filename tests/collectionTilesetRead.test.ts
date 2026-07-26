@@ -112,7 +112,7 @@ describe("image-collection tileset read support", () => {
     });
   });
 
-  it("keeps edits, previews, and tileset details fail-closed", async () => {
+  it("keeps edits and previews fail-closed", async () => {
     const harness = await createHarness(roots);
     const summary =
       await harness.service.getSummary(MAP_PATH);
@@ -145,20 +145,6 @@ describe("image-collection tileset read support", () => {
       code: "UNSUPPORTED_TILESET",
     });
 
-    const assetId = Object.keys(
-      summary.dependencyRevisions as Record<
-        string,
-        string
-      >,
-    )[0]!;
-    await expect(
-      harness.service.getTileset({
-        mapPath: MAP_PATH,
-        tilesetAssetId: assetId,
-      }),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_TILESET",
-    });
   });
 
   it("fails closed on malformed collection entries", async () => {

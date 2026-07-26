@@ -286,57 +286,151 @@ const wangSetSummaryOutputSchema = z
   })
   .strict();
 
-const tilesetDetailSuccessOutputSchema = z
-  .object({
-    map: mapSnapshotOutputSchema,
-    source: tilesetSourceOutputSchema,
-    binding: z
+const collectionTilesetMetadataItemOutputSchema =
+  tilesetMetadataItemOutputSchema.extend({
+    image: z
       .object({
-        firstGid: positiveIntegerOutputSchema,
-        lastGid: positiveIntegerOutputSchema,
-        gidSpan: positiveIntegerOutputSchema,
-      })
-      .strict(),
-    projection: z
-      .object({
-        kind: z.literal(
-          "bounded-semantic-summary",
-        ),
-        classResolution: z.literal("name-only"),
-        tileClassField: z.literal(
-          "type-with-class-compatibility-fallback",
-        ),
-        properties: z.literal(
-          "tile-scalar-values-with-omission-markers-others-counts-only",
-        ),
-        collision: z.literal(
-          "bounded-shape-geometry-with-omission-markers",
-        ),
-        wangSets: z.literal("overview-only"),
-        sourceImage: z.literal(
-          "declared-metadata-only",
-        ),
-      })
-      .strict(),
-    tileset: z
-      .object({
+        source: z.string().min(1),
         path: projectPathOutputSchema,
-        name: z.string(),
-        nameTruncated: z
-          .literal(true)
-          .optional(),
-        className: z.string().optional(),
-        classNameTruncated: z
-          .literal(true)
-          .optional(),
-        tileSize: z
+        revision: revisionOutputSchema,
+        pixelSize: z
           .object({
             width: positiveIntegerOutputSchema,
-            height:
-              positiveIntegerOutputSchema,
+            height: positiveIntegerOutputSchema,
           })
           .strict(),
-        tileCount: positiveIntegerOutputSchema,
+      })
+      .strict(),
+  });
+
+const tilesetDetailProjectionOutputSchema = <
+  WangSets extends string,
+  SourceImage extends string,
+>(
+  wangSets: WangSets,
+  sourceImage: SourceImage,
+) =>
+  z
+    .object({
+      kind: z.literal(
+        "bounded-semantic-summary",
+      ),
+      classResolution: z.literal("name-only"),
+      tileClassField: z.literal(
+        "type-with-class-compatibility-fallback",
+      ),
+      properties: z.literal(
+        "tile-scalar-values-with-omission-markers-others-counts-only",
+      ),
+      collision: z.literal(
+        "bounded-shape-geometry-with-omission-markers",
+      ),
+      wangSets: z.literal(wangSets),
+      sourceImage: z.literal(sourceImage),
+    })
+    .strict();
+
+const tilesetDetailTilesetBaseShape = {
+  path: projectPathOutputSchema,
+  name: z.string(),
+  nameTruncated: z.literal(true).optional(),
+  className: z.string().optional(),
+  classNameTruncated: z.literal(true).optional(),
+  tileSize: z
+    .object({
+      width: positiveIntegerOutputSchema,
+      height: positiveIntegerOutputSchema,
+    })
+    .strict(),
+  tileCount: positiveIntegerOutputSchema,
+  rendering: tilesetRenderingOutputSchema,
+  propertyCount: nonnegativeIntegerOutputSchema,
+  featureCounts: z
+    .object({
+      metadataTiles:
+        nonnegativeIntegerOutputSchema,
+      animatedTiles:
+        nonnegativeIntegerOutputSchema,
+      animationFrames:
+        nonnegativeIntegerOutputSchema,
+      collisionTiles:
+        nonnegativeIntegerOutputSchema,
+      collisionObjects:
+        nonnegativeIntegerOutputSchema,
+      propertyTiles:
+        nonnegativeIntegerOutputSchema,
+      tileProperties:
+        nonnegativeIntegerOutputSchema,
+      wangSets: nonnegativeIntegerOutputSchema,
+    })
+    .strict(),
+} as const;
+
+const tilesetDetailTileMetadataOutputSchema = <
+  Item extends z.ZodType,
+>(
+  itemSchema: Item,
+) =>
+  z
+    .object({
+      order: z.literal("local-id"),
+      startTileId:
+        nonnegativeIntegerOutputSchema,
+      limit: positiveIntegerOutputSchema.max(
+        MAX_TILESET_METADATA_LIMIT,
+      ),
+      total: nonnegativeIntegerOutputSchema,
+      returned: nonnegativeIntegerOutputSchema,
+      hasEarlier: z.boolean(),
+      hasMore: z.boolean(),
+      truncated: z.boolean(),
+      nextStartTileId:
+        nonnegativeIntegerOutputSchema.optional(),
+      items: z
+        .array(itemSchema)
+        .max(MAX_TILESET_METADATA_LIMIT),
+    })
+    .strict();
+
+const tilesetDetailWangSetsOutputSchema = z
+  .object({
+    order: z.literal("source"),
+    total: nonnegativeIntegerOutputSchema,
+    returned: nonnegativeIntegerOutputSchema,
+    truncated: z.boolean(),
+    items: z
+      .array(wangSetSummaryOutputSchema)
+      .max(MAX_TILESET_WANG_SET_SUMMARIES),
+  })
+  .strict();
+
+const tilesetDetailEnvelopeShape = {
+  map: mapSnapshotOutputSchema,
+  source: tilesetSourceOutputSchema,
+  binding: z
+    .object({
+      firstGid: positiveIntegerOutputSchema,
+      lastGid: positiveIntegerOutputSchema,
+      gidSpan: positiveIntegerOutputSchema,
+    })
+    .strict(),
+  truncated: z.boolean(),
+  snapshotConsistency: z.literal(
+    "non-atomic-read-set",
+  ),
+} as const;
+
+const atlasTilesetDetailSuccessOutputSchema = z
+  .object({
+    ...tilesetDetailEnvelopeShape,
+    projection:
+      tilesetDetailProjectionOutputSchema(
+        "overview-only",
+        "declared-metadata-only",
+      ),
+    tileset: z
+      .object({
+        ...tilesetDetailTilesetBaseShape,
         atlas: z
           .object({
             columns:
@@ -359,75 +453,53 @@ const tilesetDetailSuccessOutputSchema = z
               .optional(),
           })
           .strict(),
-        rendering:
-          tilesetRenderingOutputSchema,
-        propertyCount:
-          nonnegativeIntegerOutputSchema,
-        featureCounts: z
-          .object({
-            metadataTiles:
-              nonnegativeIntegerOutputSchema,
-            animatedTiles:
-              nonnegativeIntegerOutputSchema,
-            animationFrames:
-              nonnegativeIntegerOutputSchema,
-            collisionTiles:
-              nonnegativeIntegerOutputSchema,
-            collisionObjects:
-              nonnegativeIntegerOutputSchema,
-            propertyTiles:
-              nonnegativeIntegerOutputSchema,
-            tileProperties:
-              nonnegativeIntegerOutputSchema,
-            wangSets:
-              nonnegativeIntegerOutputSchema,
-          })
-          .strict(),
       })
       .strict(),
-    tileMetadata: z
-      .object({
-        order: z.literal("local-id"),
-        startTileId:
-          nonnegativeIntegerOutputSchema,
-        limit: positiveIntegerOutputSchema.max(
-          MAX_TILESET_METADATA_LIMIT,
-        ),
-        total: nonnegativeIntegerOutputSchema,
-        returned:
-          nonnegativeIntegerOutputSchema,
-        hasEarlier: z.boolean(),
-        hasMore: z.boolean(),
-        truncated: z.boolean(),
-        nextStartTileId:
-          nonnegativeIntegerOutputSchema.optional(),
-        items: z
-          .array(
-            tilesetMetadataItemOutputSchema,
-          )
-          .max(MAX_TILESET_METADATA_LIMIT),
-      })
-      .strict(),
-    wangSets: z
-      .object({
-        order: z.literal("source"),
-        total: nonnegativeIntegerOutputSchema,
-        returned:
-          nonnegativeIntegerOutputSchema,
-        truncated: z.boolean(),
-        items: z
-          .array(wangSetSummaryOutputSchema)
-          .max(
-            MAX_TILESET_WANG_SET_SUMMARIES,
-          ),
-      })
-      .strict(),
-    truncated: z.boolean(),
-    snapshotConsistency: z.literal(
-      "non-atomic-read-set",
-    ),
+    tileMetadata:
+      tilesetDetailTileMetadataOutputSchema(
+        tilesetMetadataItemOutputSchema,
+      ),
+    wangSets: tilesetDetailWangSetsOutputSchema,
   })
   .strict();
+
+const collectionTilesetDetailSuccessOutputSchema =
+  z
+    .object({
+      ...tilesetDetailEnvelopeShape,
+      projection:
+        tilesetDetailProjectionOutputSchema(
+          "fail-closed",
+          "per-tile-returned-page-verified",
+        ),
+      tileset: z
+        .object({
+          ...tilesetDetailTilesetBaseShape,
+          collection: z
+            .object({
+              sparseLocalIds: z.literal(true),
+              maxLocalId:
+                nonnegativeIntegerOutputSchema,
+              tileSizeSemantics: z.literal(
+                "maximum-tile-image-size",
+              ),
+            })
+            .strict(),
+        })
+        .strict(),
+      tileMetadata:
+        tilesetDetailTileMetadataOutputSchema(
+          collectionTilesetMetadataItemOutputSchema,
+        ),
+      wangSets:
+        tilesetDetailWangSetsOutputSchema,
+    })
+    .strict();
+
+const tilesetDetailSuccessOutputSchema = z.union([
+  atlasTilesetDetailSuccessOutputSchema,
+  collectionTilesetDetailSuccessOutputSchema,
+]);
 
 export const tilesetDetailToolOutputSchema =
   toolOutputSchema(
