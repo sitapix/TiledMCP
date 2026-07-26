@@ -2496,7 +2496,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           chunkedFloodFillBounds:
             "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:
-            "summary-region-object-details-search-reads-sparse-ids-fail-closed",
+            "summary-region-object-details-search-reads-metadata-updates-sparse-ids-fail-closed",
           writeProfile:
             "arrays-editable-encoded-rewritten-in-kind",
           writeCompression:
@@ -4067,7 +4067,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview per-tile metadata updates",
       description:
-        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, the atlas image, GID layout, and referencing maps are never touched.",
+        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, images, GID layout, and referencing maps are never touched, and collection updates can only target existing sparse tile entries.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { TiledMcpError } from "../errors.js";
+import type { TilesetCollectionProfile } from "./tilesetDetails.js";
 import {
   stableJson,
   type JsonObject,
@@ -214,6 +215,7 @@ export function applyTileMetadataUpdates(
   tileCount: number,
   updates: readonly TileMetadataUpdate[],
   tilesetPath: string,
+  collection?: TilesetCollectionProfile,
 ): {
   summary: TilesetEditSummary;
   patches: TilesetEditSourcePatches;
@@ -253,7 +255,11 @@ export function applyTileMetadataUpdates(
         { updateIndex },
       );
     }
-    if (update.tileId >= tileCount) {
+    if (
+      collection === undefined
+        ? update.tileId >= tileCount
+        : !collection.localIds.has(update.tileId)
+    ) {
       throw new TiledMcpError(
         "TILE_ID_OUT_OF_RANGE",
         `updates[${updateIndex}].tileId ${update.tileId} is outside the tileset local ID range.`,
@@ -276,6 +282,7 @@ export function applyTileMetadataUpdates(
       update.patch,
       tileCount,
       `updates[${updateIndex}].patch`,
+      collection,
     );
     collisionPoints += tileCollisionPointCount(
       update.patch.collision,
@@ -724,6 +731,7 @@ function validateTilePatch(
   patch: TileMetadataPatch,
   tileCount: number,
   context: string,
+  collection?: TilesetCollectionProfile,
 ): void {
   if (
     typeof patch !== "object" ||
@@ -786,6 +794,7 @@ function validateTilePatch(
       patch.animation,
       tileCount,
       `${context}.animation`,
+      collection,
     );
   }
   if (
@@ -1192,6 +1201,7 @@ function validateAnimationFrames(
   frames: readonly TileAnimationFrameInput[],
   tileCount: number,
   context: string,
+  collection?: TilesetCollectionProfile,
 ): void {
   if (
     !Array.isArray(frames) ||
@@ -1226,7 +1236,11 @@ function validateAnimationFrames(
         `${context}[${frameIndex}].tileId must be a nonnegative integer.`,
       );
     }
-    if (frame.tileId >= tileCount) {
+    if (
+      collection === undefined
+        ? frame.tileId >= tileCount
+        : !collection.localIds.has(frame.tileId)
+    ) {
       throw new TiledMcpError(
         "TILE_ID_OUT_OF_RANGE",
         `${context}[${frameIndex}].tileId ${frame.tileId} is outside the tileset local ID range.`,

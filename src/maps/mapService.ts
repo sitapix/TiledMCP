@@ -2883,6 +2883,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        allowCollectionTilesets: true,
         expectedMapRevision:
           input.expectedMapRevision,
       },
@@ -2918,6 +2919,7 @@ export class MapService {
         input.updates,
       ) as TileMetadataUpdate[],
       binding.path,
+      collectionProfileOf(binding),
     );
     const unsignedPlan: Omit<TilesetEditPlan, "id"> = {
       kind: "tilesetEdit",
@@ -2978,6 +2980,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       plan.mapPath,
       {
+        allowCollectionTilesets: true,
         expectedMapRevision: plan.mapRevision,
         persistIdentity: true,
       },
@@ -3012,6 +3015,7 @@ export class MapService {
         plan.updates,
       ) as TileMetadataUpdate[],
       binding.path,
+      collectionProfileOf(binding),
     );
     if (
       stableJson(
@@ -3852,28 +3856,42 @@ export class MapService {
         },
       );
     }
-    const imageReference = expectString(
-      tileset.document.image,
-      `${binding.path}.image`,
-    );
-    const imagePath =
-      await this.resolver.resolveReference(
-        binding.path,
-        imageReference,
-      );
     // Reuse the bounded semantic scanner as the tileset write-profile gate;
-    // it rejects non-atlas tiles, duplicate or out-of-range ids, and
+    // it rejects malformed tiles, duplicate or out-of-range ids, and
     // malformed probability/animation metadata before any mutation.
-    summarizeTilesetDocument({
-      document: tileset.document,
-      path: binding.path,
-      imagePath,
-      name: binding.name,
-      nameTruncated: binding.nameTruncated,
-      tileCount: binding.tileCount,
-      startTileId: 0,
-      limit: 1,
-    });
+    const collection = collectionProfileOf(binding);
+    if (collection === undefined) {
+      const imageReference = expectString(
+        tileset.document.image,
+        `${binding.path}.image`,
+      );
+      const imagePath =
+        await this.resolver.resolveReference(
+          binding.path,
+          imageReference,
+        );
+      summarizeTilesetDocument({
+        document: tileset.document,
+        path: binding.path,
+        imagePath,
+        name: binding.name,
+        nameTruncated: binding.nameTruncated,
+        tileCount: binding.tileCount,
+        startTileId: 0,
+        limit: 1,
+      });
+    } else {
+      summarizeTilesetDocument({
+        document: tileset.document,
+        path: binding.path,
+        name: binding.name,
+        nameTruncated: binding.nameTruncated,
+        tileCount: binding.tileCount,
+        startTileId: 0,
+        limit: 1,
+        collection,
+      });
+    }
     return {
       document: tileset.document,
       source: tileset.source,
@@ -15149,6 +15167,28 @@ function assertChunkedRegionBounded(
       { layerId: layer.id, x, y, width, height },
     );
   }
+}
+
+/**
+ * Sparse-id profile of a collection binding, or undefined for atlases.
+ */
+function collectionProfileOf(binding: {
+  collection?: true;
+  localIds?: ReadonlySet<number>;
+  gidSpan: number;
+}):
+  | { localIds: ReadonlySet<number>; idSpan: number }
+  | undefined {
+  if (
+    binding.collection !== true ||
+    binding.localIds === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    localIds: binding.localIds,
+    idSpan: binding.gidSpan,
+  };
 }
 
 /**

@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3a0ae48db3b1ab0a086dda0f3d11aaf6f2c3ed408c955de0845a575eec5bb0a1",
+    "revision": "sha256:e5773d14cf9518cd3b00e5e6865f113884ad4d75504adaeddf355c795911e71d",
     "serverVersion": "0.0.1",
-    "size": 80056
+    "size": 80365
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 80056,
+  "size": 80365,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 80056 UTF-8 bytes, revision `sha256:3a0ae48db3b1ab0a086dda0f3d11aaf6f2c3ed408c955de0845a575eec5bb0a1`.
+Content contract: `text`, 80365 UTF-8 bytes, revision `sha256:e5773d14cf9518cd3b00e5e6865f113884ad4d75504adaeddf355c795911e71d`.
 
 Resource templates: none.
 
@@ -12784,7 +12784,7 @@ Output schema:
                   "type": "string"
                 },
                 "collectionTilesets": {
-                  "const": "summary-region-object-details-search-reads-sparse-ids-fail-closed",
+                  "const": "summary-region-object-details-search-reads-metadata-updates-sparse-ids-fail-closed",
                   "type": "string"
                 },
                 "compressions": {
@@ -35490,7 +35490,7 @@ Output schema:
 
 Availability: `core`
 
-Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external atlas TSJ, then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, the atlas image, GID layout, and referencing maps are never touched.
+Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, images, GID layout, and referencing maps are never touched, and collection updates can only target existing sparse tile entries.
 
 Annotations:
 

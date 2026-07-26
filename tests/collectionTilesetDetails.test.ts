@@ -225,6 +225,101 @@ describe("image-collection tileset details and search", () => {
     });
   });
 
+  it("updates collection tile metadata while preserving per-tile images", async () => {
+    const harness = await createHarness(roots);
+    const summary =
+      (await harness.service.getSummary(
+        MAP_PATH,
+      )) as {
+      revision: string;
+      tilesets: { revision: string }[];
+    };
+    const plan =
+      await harness.service.planUpdateTile({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        expectedMapRevision: summary.revision,
+        expectedTilesetRevision: (
+          summary.tilesets[0] as {
+            revision: string;
+          }
+        ).revision,
+        updates: [
+          {
+            tileId: 7,
+            patch: {
+              probability: 4,
+              animation: [
+                { tileId: 0, durationMs: 120 },
+                { tileId: 7, durationMs: 80 },
+              ],
+            },
+          },
+        ],
+      });
+    await harness.service.applyTilesetEdit(plan);
+    const details =
+      await harness.service.getTileset({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        startTileId: 7,
+      });
+    expect(details).toMatchObject({
+      tileMetadata: {
+        items: [
+          {
+            localId: 7,
+            probability: 4,
+            className: "Prop",
+            animation: {
+              frameCount: 2,
+              frames: [
+                { tileId: 0, durationMs: 120 },
+                { tileId: 7, durationMs: 80 },
+              ],
+            },
+            image: {
+              source: "prop-b.png",
+              pixelSize: {
+                width: 24,
+                height: 32,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    // Sparse membership guards both the update target and frame refs.
+    const fresh =
+      (await harness.service.getSummary(
+        MAP_PATH,
+      )) as {
+      revision: string;
+      tilesets: { revision: string }[];
+    };
+    await expect(
+      harness.service.planUpdateTile({
+        mapPath: MAP_PATH,
+        tilesetAssetId: harness.assetId,
+        expectedMapRevision: fresh.revision,
+        expectedTilesetRevision: (
+          fresh.tilesets[0] as {
+            revision: string;
+          }
+        ).revision,
+        updates: [
+          {
+            tileId: 3,
+            patch: { probability: 2 },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "TILE_ID_OUT_OF_RANGE",
+    });
+  });
+
   it("fails closed on dimension mismatch, sub-rectangles, and Wang sets", async () => {
     const mismatch = await createHarness(roots, {
       tiles: [

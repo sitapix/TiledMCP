@@ -96,8 +96,9 @@ sparse-id \`gidSpan\`), \`tiled_get_region\`, \`tiled_list_objects\`,
 \`tiled_get_object\`, \`tiled_get_tileset\`, \`tiled_find_tiles\`, and
 \`tiled_render_tiles\` (each selected tile renders from its own verified,
 revision-pinned image into largest-tile-sized labeled cells under the
-\`explicit-local-id-collection-selection-v1\` profile;
-\`tiled_render_tileset_sheet\` keeps rejecting collections).
+\`explicit-local-id-collection-selection-v1\` profile), and
+\`tiled_update_tile\` edits their per-tile metadata;
+\`tiled_render_tileset_sheet\` keeps rejecting collections.
 Collection details replace the \`atlas\`/\`image\` blocks with a
 \`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
 returned metadata page entry carries its verified per-tile image —
@@ -418,7 +419,11 @@ follows a rename automatically.
 ## Update tile metadata safely
 
 \`tiled_update_tile\` is the dedicated preview tool for per-tile metadata in
-one currently referenced external atlas TSJ. It is the first tileset write
+one currently referenced external TSJ, atlas or image-collection. A
+collection update can only target existing sparse tile entries (their
+per-tile image members are never touched, and creating or removing
+collection tiles stays fail-closed), and animation frames must reference
+existing sparse ids. It is the first tileset write
 surface: address the tileset with \`mapPath\` plus the opaque
 \`tilesetAssetId\`, and pin both \`expectedMapRevision\` and
 \`expectedTilesetRevision\`. The returned change set's \`expectedRevision\` is
