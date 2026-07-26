@@ -551,8 +551,9 @@ checkpoint 再 unlink**，结果里的 `checkpointId` 就是恢复入口：
 
 事务提交经崩溃可恢复 redo journal：提交点之前进程崩溃，重启对账把所有目标回滚
 到原状；之后崩溃则前滚补完。同时最多 4 个事务 pending；不想继续的事务等它过期
-即可，成员锁自动释放。会破坏其他成员 revision pin 的组合（改写别人 pin 的地
-图、编辑别人 pin 的 tileset）在事务 preview 即被拒绝。
+即可，成员锁自动释放。成员之间可以互相 pin（如编辑 tileset + 同步更新依赖它
+的地图），只要所有成员在同一状态上 preview——pin 与对应成员 base revision 不
+一致的组合在事务 preview 即被拒绝，重新 preview 陈旧成员即可。
 
 创建即挂载走唯一放行的耦合：
 

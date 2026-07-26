@@ -289,7 +289,7 @@ describe("create+attach transaction coupling", () => {
     });
   });
 
-  it("rejects members whose commit would break another member's pins", async () => {
+  it("commits pre-state-consistent coupled members atomically and rejects mismatched pins", async () => {
     const harness = await createHarness(roots);
 
     // Learn the terrain binding from the second map's summary.
@@ -312,47 +312,8 @@ describe("create+attach transaction coupling", () => {
       [terrainAssetId]: terrainRevision,
     };
 
-    // tileset edit pinned through a map another member deletes
-    const deleteAnnex = harness.registry.put(
-      await harness.service.planDeleteFile({
-        path: SECOND_MAP_PATH,
-      }),
-    );
-    const tilesetEditViaAnnex =
-      harness.registry.put(
-        await harness.service.planUpdateTile({
-          mapPath: SECOND_MAP_PATH,
-          tilesetAssetId: terrainAssetId,
-          expectedMapRevision: (
-            await harness.store.readSnapshot(
-              SECOND_MAP_PATH,
-            )
-          ).revision,
-          expectedTilesetRevision:
-            terrainRevision,
-          updates: [
-            {
-              tileId: 0,
-              patch: { probability: 2 },
-            },
-          ],
-        }),
-      );
-    expect(() =>
-      harness.registry.previewTransaction([
-        deleteAnnex.changeSetId,
-        tilesetEditViaAnnex.changeSetId,
-      ]),
-    ).toThrow(
-      expect.objectContaining({
-        code: "INVALID_ARGUMENT",
-        details: expect.objectContaining({
-          mapPath: SECOND_MAP_PATH,
-        }),
-      }),
-    );
-
-    // map edit + tileset edit through the same map co-fire on the pin
+    // A map edit and a tileset edit previewed against the same state may
+    // commit together even though the map edit pins the edited tileset.
     const mapEditAnnex = harness.registry.put(
       await planMapUpdate(
         harness,
@@ -360,21 +321,6 @@ describe("create+attach transaction coupling", () => {
         terrainPins,
       ),
     );
-    expect(() =>
-      harness.registry.previewTransaction([
-        mapEditAnnex.changeSetId,
-        tilesetEditViaAnnex.changeSetId,
-      ]),
-    ).toThrow(
-      expect.objectContaining({
-        code: "INVALID_ARGUMENT",
-        details: expect.objectContaining({
-          assetId: terrainAssetId,
-        }),
-      }),
-    );
-
-    // map edit that pins a tileset another member edits (via a third map)
     const tilesetEditViaThird =
       harness.registry.put(
         await harness.service.planUpdateTile({
@@ -395,16 +341,122 @@ describe("create+attach transaction coupling", () => {
           ],
         }),
       );
-    expect(() =>
+    const transaction =
       harness.registry.previewTransaction([
         mapEditAnnex.changeSetId,
         tilesetEditViaThird.changeSetId,
+      ]);
+    const result = (await applyLikeServer(
+      harness,
+      transaction.changeSetId,
+      transaction.expectedRevision,
+    )) as { kind: string; results: unknown[] };
+    expect(result).toMatchObject({
+      kind: "transaction",
+      results: [
+        { path: SECOND_MAP_PATH, changed: true },
+        {
+          path: TERRAIN_TILESET_PATH,
+          changed: true,
+        },
+      ],
+    });
+    const terrainAfter = JSON.parse(
+      (
+        await readFile(
+          join(
+            harness.root,
+            TERRAIN_TILESET_PATH,
+          ),
+        )
+      ).toString("utf8"),
+    ) as {
+      tiles?: Array<{
+        id: number;
+        probability?: number;
+      }>;
+    };
+    expect(
+      terrainAfter.tiles?.find(
+        ({ id }) => id === 0,
+      )?.probability,
+    ).toBe(3);
+
+    // A pin recorded against an older state is rejected at preview.
+    const staleTilesetEdit =
+      harness.registry.put(
+        await harness.service.planUpdateTile({
+          mapPath: SECOND_MAP_PATH,
+          tilesetAssetId: terrainAssetId,
+          expectedMapRevision: (
+            await harness.store.readSnapshot(
+              SECOND_MAP_PATH,
+            )
+          ).revision,
+          expectedTilesetRevision: (
+            await harness.store.readSnapshot(
+              TERRAIN_TILESET_PATH,
+            )
+          ).revision,
+          updates: [
+            {
+              tileId: 1,
+              patch: { probability: 2 },
+            },
+          ],
+        }),
+      );
+    // Move the map forward so the stale member's map pin diverges.
+    await harness.registry.apply(
+      harness.registry.put(
+        await planMapUpdate(
+          harness,
+          SECOND_MAP_PATH,
+          {
+            [terrainAssetId]: (
+              await harness.store.readSnapshot(
+                TERRAIN_TILESET_PATH,
+              )
+            ).revision,
+          },
+          { renderOrder: "left-up" },
+        ),
+      ).changeSetId,
+      (
+        await harness.store.readSnapshot(
+          SECOND_MAP_PATH,
+        )
+      ).revision,
+      async (plan) => {
+        if (plan.kind !== "mapEdit") {
+          throw new Error("expected map edit");
+        }
+        return harness.service.applyEdits(plan);
+      },
+    );
+    const freshMapEdit = harness.registry.put(
+      await planMapUpdate(
+        harness,
+        SECOND_MAP_PATH,
+        {
+          [terrainAssetId]: (
+            await harness.store.readSnapshot(
+              TERRAIN_TILESET_PATH,
+            )
+          ).revision,
+        },
+      ),
+    );
+    expect(() =>
+      harness.registry.previewTransaction([
+        freshMapEdit.changeSetId,
+        staleTilesetEdit.changeSetId,
       ]),
     ).toThrow(
       expect.objectContaining({
         code: "INVALID_ARGUMENT",
         details: expect.objectContaining({
-          assetId: terrainAssetId,
+          mapPath: SECOND_MAP_PATH,
         }),
       }),
     );
@@ -481,14 +533,14 @@ async function planMapUpdate(
     string,
     string
   > = {},
+  patch: Record<string, string> = {
+    backgroundColor: "#11223344",
+  },
 ) {
   const snapshot =
     await harness.store.readSnapshot(mapPath);
   const operations: UpdateMapOperation[] = [
-    {
-      type: "updateMap",
-      patch: { backgroundColor: "#11223344" },
-    },
+    { type: "updateMap", patch },
   ];
   return harness.service.planEdits(
     mapPath,

@@ -2435,7 +2435,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           perTargetCheckpoints:
             "committed-before-promotion",
           memberCoupling:
-            "rejected-except-create-attach-prospective-pin",
+            "pre-state-consistent-pins-allowed-mismatched-pins-rejected",
           createAttachCoupling:
             "add-tileset-preview-accepts-pending-create-change-set",
         },

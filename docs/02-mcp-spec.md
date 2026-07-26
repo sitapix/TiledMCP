@@ -756,11 +756,11 @@ store lock 下只清理该安全普通 crash temp，避免随机 control temp �
 跨文件原子提交不引入新的嵌套操作语言，而是组合既有已批准 change set：输入为
 `{changeSetIds: [...]}`——2..16 个已存在、未 apply、目标路径两两不同的文档提交类
 change set（`mapEdit` / `tilesetEdit` / `tilesetCreate` / `fileDelete`；
-checkpoint restore/prune/裁决类计划不可入组）。会破坏其他成员 revision pin 的
-组合在 preview 即被拒绝——tilesetEdit 成员 pin 的地图不得被同事务改写或删除、
-mapEdit 依赖 pin 的 tileset 不得被同事务编辑；唯一放行的耦合是 create+attach：
-mapEdit 成员的 add-tileset operation 恰以同事务 tilesetCreate 成员的
-prospective 内容 revision 为 pin。事务 apply 时 create 成员先重放，其内容直接
+checkpoint restore/prune/裁决类计划不可入组）。成员对另一成员目标的 pin 必须
+与该成员自己的 base revision 一致（全体成员共享同一 pre-state：任意串行顺序
+应用于 pre-state 都得到提交结果），不一致即在 preview 拒绝——因此"编辑
+tileset + 同步更新依赖它的地图"这类耦合组合可以原子提交；attach 一个同事务
+创建的 tileset 则必须精确 pin 其 prospective 内容 revision（create+attach）。事务 apply 时 create 成员先重放，其内容直接
 充当 attach 成员的依赖来源（prospective assetId 是确定性路径哈希，与文件落盘
 后的首次真实分配一致）。preview 返回 `kind:"transaction"`
 change set：每个成员一条 `transactionMember` operation（`planKind`、

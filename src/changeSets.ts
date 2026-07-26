@@ -369,33 +369,50 @@ function transactionTargetForPlan(
 }
 
 /**
- * Rejects member combinations whose own commit would break another
- * member's revision pins. The only permitted coupling is create+attach: a
- * map edit whose add-tileset operation pins exactly the prospective
- * content revision of a tileset-create member in the same transaction.
+ * Rejects member combinations whose pins disagree about the shared
+ * pre-state. Every member both validates and commits against the same
+ * pre-transaction snapshot, so a pin onto another member's target is
+ * sound exactly when it equals that member's own pinned base revision —
+ * any serial order of the members applied to the pre-state yields the
+ * committed result. Mismatched pins mean the members were previewed
+ * against different states and could never commit together. Attaching a
+ * tileset another member creates additionally requires the exact
+ * prospective content pin (create+attach).
  */
 function assertTransactionMemberCoupling(
   plans: readonly ChangeSetPlan[],
   targets: readonly TransactionPlanTarget[],
 ): void {
-  const targetPaths = new Set(
-    targets.map((target) => target.path),
+  const targetByPath = new Map(
+    targets.map((target) => [
+      target.path,
+      target,
+    ]),
   );
   for (const [index, plan] of plans.entries()) {
     const memberChangeSetId =
       targets[index]?.memberChangeSetId ?? null;
-    if (
-      plan.kind === "tilesetEdit" &&
-      targetPaths.has(plan.mapPath)
-    ) {
-      throw new TiledMcpError(
-        "INVALID_ARGUMENT",
-        "A tileset-edit member pins a map that another member of the same transaction rewrites or deletes.",
-        {
-          changeSetId: memberChangeSetId,
-          mapPath: plan.mapPath,
-        },
+    if (plan.kind === "tilesetEdit") {
+      const pinned = targetByPath.get(
+        plan.mapPath,
       );
+      if (
+        pinned !== undefined &&
+        plan.mapRevision !==
+          pinned.expectedRevision
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "A tileset-edit member pins a map at a different revision than the member that rewrites or deletes it; preview both against the same state.",
+          {
+            changeSetId: memberChangeSetId,
+            mapPath: plan.mapPath,
+            pinnedRevision: plan.mapRevision,
+            memberBaseRevision:
+              pinned.expectedRevision,
+          },
+        );
+      }
     }
     if (plan.kind !== "mapEdit") {
       continue;
@@ -410,19 +427,24 @@ function assertTransactionMemberCoupling(
       ) {
         continue;
       }
+      const pinnedRevision =
+        plan.dependencyRevisions[
+          otherPlan.assetId
+        ];
       if (
-        Object.hasOwn(
-          plan.dependencyRevisions,
-          otherPlan.assetId,
-        )
+        pinnedRevision !== undefined &&
+        pinnedRevision !== otherPlan.baseRevision
       ) {
         throw new TiledMcpError(
           "INVALID_ARGUMENT",
-          "A map-edit member pins a tileset that another member of the same transaction edits.",
+          "A map-edit member pins a tileset at a different revision than the member that edits it; preview both against the same state.",
           {
             changeSetId: memberChangeSetId,
             tilesetPath: otherPlan.tilesetPath,
             assetId: otherPlan.assetId,
+            pinnedRevision,
+            memberBaseRevision:
+              otherPlan.baseRevision,
           },
         );
       }

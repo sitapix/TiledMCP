@@ -1,7 +1,13 @@
 # 跨文件 WAL 事务设计（M2）
 
-状态：**S1（存储核心）、S2（wire 层）与 S3（create+attach 耦合放行）已实施**；
-第 6 节决策点 D1–D5 全部按推荐通过。S4 需另行拍板。实现入口：
+状态：**S1（存储核心）、S2（wire 层）、S3（create+attach 耦合放行）与
+S4A（pre-state 一致 pin 耦合放行）已实施**；第 6 节决策点 D1–D5 全部按推荐通
+过。S4A 的实施结论：所有成员都对同一 pre-state 验证并原子提交，成员对另一成
+员目标的 pin 只要等于该成员自己的 base revision（即共享 pre-state）就是安全
+的——任意串行顺序在 pre-state 上应用都得到提交结果，因此不需要"计划 pin 改
+写"，preview 校验从"禁止耦合"收窄为"pin 与成员 pre-state 不一致才拒绝"。
+S4B（同文件多计划合并）**维持排除**：`tiled_preview_edits` 单计划已承载同文
+件多操作批量，链式 prospective pin 的复杂度没有对应价值。实现入口：
 `DocumentStore.commitTransaction` / `recoverTransactions`
 （src/storage/documentStore.ts、src/storage/transactions.ts）与
 `ChangeSetRegistry.previewTransaction` + `MapService.applyTransaction`
@@ -91,10 +97,10 @@ tests/transactions.test.ts（逐步骤崩溃注入）、tests/transactionWire.te
 - 新 preview 工具 `tiled_preview_transaction`：输入
   `{changeSetIds: [2..16 个已存在且未 apply 的 change set id]}`。
 - 校验：成员必须是文档提交类计划（`mapEdit` / `tilesetEdit` / `tilesetCreate` /
-  `fileDelete`）；目标路径两两不同（V1 不合并同文件多计划）；成员之间无 pin 耦
-  合（成员 A 的 apply 不得使成员 B 的任何 revision pin 失效）——唯一放行的耦合
-  是场景 2（create+attach，attach pin 的正是 create 的 prospective revision）。
-  checkpoint 类计划、restore 类计划 V1 排除。
+  `fileDelete`）；目标路径两两不同（同文件批量走单计划多操作，不合并多计划）；
+  成员对另一成员目标的 pin 必须等于该成员的 base revision（共享 pre-state 一
+  致性，S4A），attach 一个同事务创建的 tileset 则必须精确 pin 其 prospective
+  revision（场景 2）。checkpoint 类计划、restore 类计划排除。
 - 返回 `transaction` change set：域分隔 digest 固化全部成员的计划 digest 与目标
   pin 集，`expectedRevision` 采用聚合 digest（有序 `{path, revision}` 对的
   SHA-256，与 batch prune 的聚合 pin 先例一致）。

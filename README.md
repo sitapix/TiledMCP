@@ -910,9 +910,9 @@ redo journal 提交——manifest 原子改写为 committed 是唯一提交点�
 与 wire 层端到端测试覆盖每个协议步骤。策略字符串冻结于
 `transactionCapabilities`。
 
-会破坏其他成员 revision pin 的成员组合在事务 preview 即被拒绝（如成员 A 改写
-成员 B 的 tilesetEdit 所 pin 的地图、或 mapEdit 依赖 pin 的 tileset 被同事务
-编辑）；唯一放行的耦合是 **create+attach**：`tiled_add_tileset_to_map` 接受可
+成员对另一成员目标的 pin 与该成员 base revision 不一致的组合在事务 preview
+即被拒绝；一致（全体成员共享同一 pre-state）则放行——"编辑 tileset + 同步更
+新依赖它的地图"可以原子提交。attach 尚不存在的 tileset 走 **create+attach**：`tiled_add_tileset_to_map` 接受可
 选 `createChangeSetId`，用 pending `tiled_create_tileset` 计划重放出的
 prospective TSJ 内容顶替尚不存在的文件——挂载计划 pin 的正是 create 计划的
 prospective 内容 revision，prospective assetId 也是确定性路径哈希、与文件落盘

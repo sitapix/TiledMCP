@@ -1327,11 +1327,15 @@ unapplied change sets — map edits, tileset edits, tileset creations, and
 file deletions, with pairwise-distinct target paths — into one expiring
 transaction change set. Preview locks every member against individual
 apply (\`CHANGE_SET_OWNED\`); the lock releases if the transaction
-expires. Member combinations whose own commit would break another
-member's revision pins are rejected; the only permitted coupling is
-create+attach, where a map edit's add-tileset operation pins exactly the
-prospective content revision of a tileset-create member in the same
-transaction (see \`createChangeSetId\` above). The preview's \`expectedRevision\` is an aggregate digest over
+expires. Members may pin each other's targets — for example a tileset
+edit plus a map edit that depends on that tileset — as long as every
+such pin equals the pinned member's own base revision: all members
+validate and commit against one shared pre-state, so any serial order
+applied to it yields the committed result. Mismatched pins mean the
+members were previewed against different states and are rejected at
+preview; re-preview the stale member. Attaching a tileset another
+member creates requires the exact prospective content pin
+(create+attach, see \`createChangeSetId\` above). The preview's \`expectedRevision\` is an aggregate digest over
 the ordered member target pins, since a multi-file proposal has no single
 current revision. After approval, pass it with the transaction's
 changeSetId to \`tiled_apply_change_set\`: every member plan is replayed
