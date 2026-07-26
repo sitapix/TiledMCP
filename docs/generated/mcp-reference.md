@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
+    "revision": "sha256:81904aaa371d0441de92a2a83270b3a957aa2ae719e9cca7b2725a40d54b2e8f",
     "serverVersion": "0.0.1",
-    "size": 78226
+    "size": 78726
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 78226,
+  "size": 78726,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 78226 UTF-8 bytes, revision `sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506`.
+Content contract: `text`, 78726 UTF-8 bytes, revision `sha256:81904aaa371d0441de92a2a83270b3a957aa2ae719e9cca7b2725a40d54b2e8f`.
 
 Resource templates: none.
 
@@ -12735,7 +12735,24 @@ Output schema:
                   "type": "string"
                 },
                 "chunkedLayers": {
-                  "const": "read-only-summary-region-usage-preview",
+                  "const": "summary-region-usage-preview-reads-set-tiles-stamp-writes",
+                  "type": "string"
+                },
+                "chunkedWriteOperations": {
+                  "items": [
+                    {
+                      "const": "setTiles",
+                      "type": "string"
+                    },
+                    {
+                      "const": "stampPattern",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "chunkedWriteProfile": {
+                  "const": "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
                   "type": "string"
                 },
                 "collectionTilesets": {
@@ -12772,7 +12789,7 @@ Output schema:
                   "type": "string"
                 },
                 "infiniteMaps": {
-                  "const": "readable-never-editable",
+                  "const": "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
                   "type": "string"
                 },
                 "maxChunksPerLayer": {
@@ -12844,6 +12861,8 @@ Output schema:
                 "outsideChunkCells",
                 "maxChunksPerLayer",
                 "infiniteMaps",
+                "chunkedWriteProfile",
+                "chunkedWriteOperations",
                 "collectionTilesets",
                 "writeProfile",
                 "writeCompression",
@@ -27023,6 +27042,12 @@ Output schema:
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
                     "createdObjectIds": {
                       "items": {
                         "$ref": "#/definitions/ChangeSetPositiveId"
@@ -28071,6 +28096,12 @@ Output schema:
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
                     },
                     "createdObjectIds": {
                       "items": {

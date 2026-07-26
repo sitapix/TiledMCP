@@ -2459,7 +2459,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxDecodedBytesPerLayer:
             MAX_DECODED_TILE_DATA_BYTES,
           chunkedLayers:
-            "read-only-summary-region-usage-preview",
+            "summary-region-usage-preview-reads-set-tiles-stamp-writes",
           chunkCoordinates:
             "absolute-tile-space-negative-allowed",
           chunkOverlap: "fail-closed",
@@ -2467,7 +2467,13 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxChunksPerLayer:
             MAX_TILE_LAYER_CHUNKS,
           infiniteMaps:
-            "readable-never-editable",
+            "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
+          chunkedWriteProfile:
+            "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
+          chunkedWriteOperations: [
+            "setTiles",
+            "stampPattern",
+          ],
           collectionTilesets:
             "summary-region-object-details-search-reads-sparse-ids-fail-closed",
           writeProfile:

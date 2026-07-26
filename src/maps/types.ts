@@ -420,6 +420,12 @@ export interface MapEditPlan {
     cellWrites: number;
     affectedLayerIds: number[];
     affectedTileLayerIds: number[];
+    /**
+     * Subset of affectedTileLayerIds stored as infinite chunked layers;
+     * their write-back replaces the chunks member and bounds instead of
+     * a dense data member.
+     */
+    chunkedTileLayerIds?: number[];
     affectedObjectLayerIds: number[];
     createdObjectIds: number[];
     updatedObjectIds: number[];

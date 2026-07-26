@@ -183,13 +183,31 @@ describe("infinite chunked map read-only support", () => {
     });
   });
 
-  it("keeps every edit and preview path fail-closed on infinite maps", async () => {
+  it("allows non-tile edits while chunk-unaware tile operations stay fail-closed", async () => {
     const harness = await createHarness(
       roots,
       defaultChunks(),
     );
     const summary =
       await harness.service.getSummary(MAP_PATH);
+
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      summary.dependencyRevisions as Record<
+        string,
+        string
+      >,
+      [
+        {
+          type: "updateMap",
+          patch: { renderOrder: "right-up" },
+        },
+      ],
+    );
+    expect(
+      plan.summary.mapUpdates?.[0],
+    ).toMatchObject({ wouldChange: true });
 
     await expect(
       harness.service.planEdits(
@@ -201,13 +219,18 @@ describe("infinite chunked map read-only support", () => {
         >,
         [
           {
-            type: "updateMap",
-            patch: { renderOrder: "right-up" },
+            type: "fillRegion",
+            layerId: LAYER_ID,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            tile: null,
           },
         ],
       ),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_MAP_PROFILE",
+      code: "UNSUPPORTED_TILE_ENCODING",
     });
 
     await expect(
@@ -226,6 +249,119 @@ describe("infinite chunked map read-only support", () => {
     ).rejects.toMatchObject({
       code: "FILE_IN_USE",
     });
+  });
+
+  it("edits chunked layers through setTiles and serializes canonical chunks", async () => {
+    const harness = await createHarness(
+      roots,
+      defaultChunks(),
+    );
+    const summary =
+      await harness.service.getSummary(MAP_PATH);
+    const dependencyRevisions =
+      summary.dependencyRevisions as Record<
+        string,
+        string
+      >;
+    const assetId = Object.keys(
+      dependencyRevisions,
+    )[0] as string;
+
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      dependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: LAYER_ID,
+          cells: [
+            {
+              x: 20,
+              y: -30,
+              tile: {
+                tileset: {
+                  kind: "external",
+                  assetId,
+                },
+                localId: 0,
+              },
+            },
+            { x: -2, y: -1, tile: null },
+          ],
+        },
+      ],
+    );
+    expect(plan.summary).toMatchObject({
+      cellWrites: 2,
+      affectedTileLayerIds: [LAYER_ID],
+      chunkedTileLayerIds: [LAYER_ID],
+    });
+
+    await harness.service.applyEdits(plan);
+    const mapAfter = JSON.parse(
+      (
+        await readFile(
+          join(harness.root, MAP_PATH),
+        )
+      ).toString("utf8"),
+    ) as {
+      layers: Array<{
+        id: number;
+        chunks: Array<{
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          data: number[];
+        }>;
+        width: number;
+        height: number;
+        startx: number;
+        starty: number;
+      }>;
+    };
+    const layer = mapAfter.layers.find(
+      ({ id }) => id === LAYER_ID,
+    );
+    if (layer === undefined) {
+      throw new Error("expected the layer");
+    }
+    // Canonical 16x16 rebucketing sorted by (y, x): the new cell at
+    // (20,-30), the surviving (-1,-1)=2, and (0,0)=3; the erased (-2,-1)
+    // no longer occupies a chunk.
+    expect(
+      layer.chunks.map(({ x, y }) => [x, y]),
+    ).toEqual([
+      [16, -32],
+      [-16, -16],
+      [0, 0],
+    ]);
+    expect(layer).toMatchObject({
+      startx: -16,
+      starty: -32,
+      width: 48,
+      height: 48,
+    });
+    for (const chunk of layer.chunks) {
+      expect(chunk.width).toBe(16);
+      expect(chunk.height).toBe(16);
+      expect(chunk.data).toHaveLength(256);
+    }
+    const chunkAt = (
+      cx: number,
+      cy: number,
+    ): number[] =>
+      (layer.chunks.find(
+        ({ x, y }) => x === cx && y === cy,
+      ) as { data: number[] }).data;
+    expect(
+      chunkAt(16, -32)[2 * 16 + 4],
+    ).toBe(1);
+    expect(
+      chunkAt(-16, -16)[15 * 16 + 15],
+    ).toBe(2);
+    expect(chunkAt(0, 0)[0]).toBe(3);
   });
 
   it("fails closed on overlapping chunks and chunk overflow", async () => {

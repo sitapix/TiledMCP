@@ -48,8 +48,14 @@ import {
   decodeEncodedTileLayerData,
   encodeTileLayerCells,
   readChunkedRegionGids,
+  createChunkedCellView,
   readChunkedTileLayerStructure,
+  readChunkedViewGid,
+  readMapChunkSize,
   resolveTileLayerCells,
+  serializeChunkedCells,
+  writeChunkedViewGid,
+  type ChunkedCellView,
 } from "./tileData.js";
 import {
   patchJsonDocumentSource,
@@ -448,6 +454,8 @@ interface TileLayerView {
   width: number;
   height: number;
   data: JsonValue[];
+  /** Present exactly for infinite chunked layers. */
+  chunked?: ChunkedCellView;
 }
 
 interface ObjectLayerView {
@@ -3973,6 +3981,7 @@ export class MapService {
     operations: readonly MapEditOperation[],
   ): Promise<MapEditPlan> {
     const context = await this.loadEditableContext(mapPath, {
+      allowInfinite: true,
       expectedMapRevision: expectedRevision,
       expectedDependencyRevisions,
     });
@@ -4048,6 +4057,7 @@ export class MapService {
     }
 
     const context = await this.loadEditableContext(plan.mapPath, {
+      allowInfinite: true,
       expectedMapRevision: plan.baseRevision,
       expectedDependencyRevisions: plan.dependencyRevisions,
       persistIdentity: true,
@@ -6065,6 +6075,7 @@ function validateAndSummarizeOperations(
   let objectPropertyPatchBytes = 0;
   const affectedLayerIds = new Set<number>();
   const affectedTileLayerIds = new Set<number>();
+  const chunkedTileLayerIds = new Set<number>();
   const affectedObjectLayerIds = new Set<number>();
   const createdObjectIds = new Set<number>();
   const updatedObjectIds = new Set<number>();
@@ -6243,6 +6254,13 @@ function validateAndSummarizeOperations(
         new Set(["height", "offsetX", "offsetY", "type", "width"]),
         operationContext,
       );
+      if (map.infinite === true) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+          "Infinite maps have no resizable canvas; their nominal width and height do not bound chunked storage.",
+          { path: mapPath },
+        );
+      }
       const input = readResizeMapInput(
         operation as unknown as Record<string, unknown>,
         operationContext,
@@ -6395,17 +6413,34 @@ function validateAndSummarizeOperations(
           { limit: MAX_CELL_WRITES },
         );
       }
-      const layer = findTileLayer(map, operation.layerId, mapPath);
+      const layer = findTileLayer(map, operation.layerId, mapPath, "edit", true);
       affectedLayerIds.add(layer.id);
       affectedTileLayerIds.add(layer.id);
       cellWrites += operation.cells.length;
       for (const [cellIndex, cell] of operation.cells.entries()) {
         assertSafeInteger(cell.x, `operations[${operationIndex}].cells[${cellIndex}].x`);
         assertSafeInteger(cell.y, `operations[${operationIndex}].cells[${cellIndex}].y`);
-        assertRegionInsideLayer(layer, cell.x, cell.y, 1, 1);
+        if (layer.chunked === undefined) {
+          assertRegionInsideLayer(layer, cell.x, cell.y, 1, 1);
+        } else if (
+          Math.abs(cell.x) > 1_000_000_000 ||
+          Math.abs(cell.y) > 1_000_000_000
+        ) {
+          throw new TiledMcpError(
+            "REGION_OUT_OF_BOUNDS",
+            `operations[${operationIndex}].cells[${cellIndex}] is outside the bounded infinite-map coordinate range.`,
+            { layerId: layer.id, x: cell.x, y: cell.y },
+          );
+        }
         const gid = tileRefToGid(cell.tile, orientation, bindings);
         writeLayerGid(layer, cell.x, cell.y, gid);
       }
+      finalizeChunkedTileLayerWrite(
+        layer,
+        map,
+        mapPath,
+        chunkedTileLayerIds,
+      );
     } else if (operation.type === "fillRegion") {
       assertSafeInteger(operation.layerId, `operations[${operationIndex}].layerId`);
       assertSafeInteger(operation.x, `operations[${operationIndex}].x`);
@@ -7034,14 +7069,27 @@ function validateAndSummarizeOperations(
         map,
         operation.layerId,
         mapPath,
+        "edit",
+        true,
       );
-      assertRegionInsideLayer(
-        layer,
-        operation.x,
-        operation.y,
-        width,
-        height,
-      );
+      if (layer.chunked === undefined) {
+        assertRegionInsideLayer(
+          layer,
+          operation.x,
+          operation.y,
+          width,
+          height,
+        );
+      } else {
+        assertChunkedRegionBounded(
+          layer,
+          operationIndex,
+          operation.x,
+          operation.y,
+          width,
+          height,
+        );
+      }
 
       const resolvedRows: number[][] = [];
       let nonEmptyCellCount = 0;
@@ -7102,6 +7150,12 @@ function validateAndSummarizeOperations(
       if (changedCellCount > 0) {
         affectedLayerIds.add(layer.id);
         affectedTileLayerIds.add(layer.id);
+        finalizeChunkedTileLayerWrite(
+          layer,
+          map,
+          mapPath,
+          chunkedTileLayerIds,
+        );
       }
       cellWrites += patternCellCount;
       tileStamps.push({
@@ -7582,6 +7636,13 @@ function validateAndSummarizeOperations(
     affectedTileLayerIds: [...affectedTileLayerIds].sort(
       (left, right) => left - right,
     ),
+    ...(chunkedTileLayerIds.size === 0
+      ? {}
+      : {
+          chunkedTileLayerIds: [
+            ...chunkedTileLayerIds,
+          ].sort((left, right) => left - right),
+        }),
     affectedObjectLayerIds: [...affectedObjectLayerIds].sort(
       (left, right) => left - right,
     ),
@@ -9919,6 +9980,7 @@ function findTileLayer(
   layerId: number,
   mapPath: string,
   mode: "read" | "edit" = "edit",
+  allowChunked = false,
 ): TileLayerView {
   const layers = expectArray(map.layers, `${mapPath}.layers`);
   const located = findLayerRecursive(
@@ -9939,6 +10001,20 @@ function findTileLayer(
       path: mapPath,
       layerId,
     });
+  }
+  if (allowChunked && "chunks" in found) {
+    return {
+      object: found,
+      path: located.path,
+      id: expectInteger(found.id, `layer ${layerId}.id`),
+      name: typeof found.name === "string" ? found.name : `Layer ${layerId}`,
+      x: readOptionalInteger(found.x, `layer ${layerId}.x`, 0),
+      y: readOptionalInteger(found.y, `layer ${layerId}.y`, 0),
+      width: readOptionalInteger(found.width, `layer ${layerId}.width`, 0),
+      height: readOptionalInteger(found.height, `layer ${layerId}.height`, 0),
+      data: [],
+      chunked: createChunkedCellView(found, layerId, mapPath),
+    };
   }
   const width = expectInteger(found.width, `layer ${layerId}.width`);
   const height = expectInteger(found.height, `layer ${layerId}.height`);
@@ -14365,7 +14441,13 @@ function sourcePatchPathsForSummary(
   mapPath: string,
 ): JsonSourcePath[] {
   const paths: JsonSourcePath[] = [];
+  const chunkedIds = new Set(
+    summary.chunkedTileLayerIds ?? [],
+  );
   for (const layerId of summary.affectedTileLayerIds) {
+    if (chunkedIds.has(layerId)) {
+      continue;
+    }
     paths.push([...findTileLayer(map, layerId, mapPath).path, "data"]);
   }
   for (const layerId of summary.affectedObjectLayerIds) {
@@ -14531,6 +14613,24 @@ function sourceObjectMemberPatchesForSummary(
 ): JsonObjectMemberPatch[] {
   const patches: JsonObjectMemberPatch[] = [];
   const seen = new Set<string>();
+  for (const layerId of summary.chunkedTileLayerIds ?? []) {
+    const layerPath = findTileLayer(
+      map,
+      layerId,
+      mapPath,
+      "edit",
+      true,
+    ).path;
+    for (const key of [
+      "chunks",
+      "width",
+      "height",
+      "startx",
+      "starty",
+    ]) {
+      patches.push({ path: layerPath, key });
+    }
+  }
   for (const update of summary.mapUpdates ?? []) {
     for (const field of update.changedFields) {
       if (!isMapPatchField(field)) {
@@ -14685,6 +14785,9 @@ function findLayerRecursive(
 }
 
 function readLayerGid(layer: TileLayerView, x: number, y: number): number {
+  if (layer.chunked !== undefined) {
+    return readChunkedViewGid(layer.chunked, x, y);
+  }
   const index = (y - layer.y) * layer.width + (x - layer.x);
   const value = layer.data[index];
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
@@ -14698,9 +14801,80 @@ function readLayerGid(layer: TileLayerView, x: number, y: number): number {
 }
 
 function writeLayerGid(layer: TileLayerView, x: number, y: number, gid: number): void {
+  if (layer.chunked !== undefined) {
+    writeChunkedViewGid(layer.chunked, x, y, gid);
+    return;
+  }
   const index = (y - layer.y) * layer.width + (x - layer.x);
   layer.data[index] = gid;
   layer.object.data = layer.data;
+}
+
+/**
+ * Asserts one written rectangle of a chunked layer stays inside the
+ * bounded infinite-map coordinate range; dense layers keep their exact
+ * in-bounds check at the call sites.
+ */
+function assertChunkedRegionBounded(
+  layer: TileLayerView,
+  operationIndex: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  if (
+    Math.abs(x) > 1_000_000_000 ||
+    Math.abs(y) > 1_000_000_000 ||
+    Math.abs(x + width - 1) > 1_000_000_000 ||
+    Math.abs(y + height - 1) > 1_000_000_000
+  ) {
+    throw new TiledMcpError(
+      "REGION_OUT_OF_BOUNDS",
+      `operations[${operationIndex}] writes outside the bounded infinite-map coordinate range.`,
+      { layerId: layer.id, x, y, width, height },
+    );
+  }
+}
+
+/**
+ * Serializes a written chunked layer back into its map object in Tiled
+ * 1.12.2 canonical save form and records it for the chunked write-back
+ * member patches. Net no-op writes leave the stored members untouched.
+ */
+function finalizeChunkedTileLayerWrite(
+  layer: TileLayerView,
+  map: JsonObject,
+  mapPath: string,
+  chunkedTileLayerIds: Set<number>,
+): void {
+  if (layer.chunked === undefined) {
+    return;
+  }
+  chunkedTileLayerIds.add(layer.id);
+  if (!layer.chunked.dirty) {
+    return;
+  }
+  const chunkSize = readMapChunkSize(map, mapPath);
+  const serialized = serializeChunkedCells({
+    cells: layer.chunked.cells,
+    chunkWidth: chunkSize.width,
+    chunkHeight: chunkSize.height,
+    encoding:
+      layer.object.encoding === "base64" ? "base64" : "array",
+    compression:
+      layer.object.compression === undefined ||
+      layer.object.compression === ""
+        ? ""
+        : String(layer.object.compression),
+    layerId: layer.id,
+    mapPath,
+  });
+  layer.object.chunks = serialized.chunks as unknown as JsonValue;
+  layer.object.width = serialized.width;
+  layer.object.height = serialized.height;
+  layer.object.startx = serialized.startX;
+  layer.object.starty = serialized.startY;
 }
 
 function readReplaceTilesRegion(

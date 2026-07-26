@@ -1596,6 +1596,9 @@ const mapEditSummaryBaseShape = {
   affectedTileLayerIds: z.array(
     positiveIdOutputSchema,
   ),
+  chunkedTileLayerIds: z
+    .array(positiveIdOutputSchema)
+    .optional(),
   affectedObjectLayerIds: z.array(
     positiveIdOutputSchema,
   ),

@@ -64,9 +64,16 @@ coordinate labels are supported) and the render profile reports
 stored data, and apply re-encodes each actually-written layer with its
 own stored encoding and compression — never transcoding — while
 untouched layers and exact net no-op writes keep their original bytes.
-Resizing an encoded map and every edit on infinite maps still fail
-closed, and \`tiled_validate\` keeps reporting chunked storage as
-outside the editable profile. Maps referencing image-collection tilesets
+Infinite chunked layers accept \`setTiles\` and \`stampPattern\`
+edits with bounded absolute coordinates: an edited chunked layer
+serializes in Tiled 1.12.2's own canonical save form — cells rebucketed
+into chunksize-aligned chunks (default 16x16), empty chunks dropped,
+(y,x) ordering, bounds recomputed — while untouched layers keep their
+exact bytes and per-chunk data re-encodes with the layer's own stored
+encoding, never transcoding. Resizing, flood fills, tile replacement,
+and region copies on chunked layers still fail closed, as does resizing
+an encoded map, and \`tiled_validate\` keeps reporting chunked storage
+as outside the fully editable profile. Maps referencing image-collection tilesets
 (per-tile images, no root atlas) are readable through
 \`tiled_get_map_summary\` (bindings report \`collection:true\` with the
 sparse-id \`gidSpan\`), \`tiled_get_region\`, \`tiled_list_objects\`,

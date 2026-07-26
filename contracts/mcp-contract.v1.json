@@ -109,14 +109,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
+        "revision": "sha256:81904aaa371d0441de92a2a83270b3a957aa2ae719e9cca7b2725a40d54b2e8f",
         "serverVersion": "0.0.1",
-        "size": 78226
+        "size": 78726
       },
-      "byteLength": 78226,
+      "byteLength": 78726,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
+      "sha256": "sha256:81904aaa371d0441de92a2a83270b3a957aa2ae719e9cca7b2725a40d54b2e8f",
       "uri": "tiled://guide"
     }
   ],
@@ -144,9 +144,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:26b4ceee94ffcdf847d3a83d8adcef212b9f6be745c89a9eec7acfc078d4a506",
+        "revision": "sha256:81904aaa371d0441de92a2a83270b3a957aa2ae719e9cca7b2725a40d54b2e8f",
         "serverVersion": "0.0.1",
-        "size": 78226
+        "size": 78726
       },
       "annotations": {
         "audience": [
@@ -158,7 +158,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 78226,
+      "size": 78726,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -12466,7 +12466,24 @@
                         "type": "string"
                       },
                       "chunkedLayers": {
-                        "const": "read-only-summary-region-usage-preview",
+                        "const": "summary-region-usage-preview-reads-set-tiles-stamp-writes",
+                        "type": "string"
+                      },
+                      "chunkedWriteOperations": {
+                        "items": [
+                          {
+                            "const": "setTiles",
+                            "type": "string"
+                          },
+                          {
+                            "const": "stampPattern",
+                            "type": "string"
+                          }
+                        ],
+                        "type": "array"
+                      },
+                      "chunkedWriteProfile": {
+                        "const": "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
                         "type": "string"
                       },
                       "collectionTilesets": {
@@ -12503,7 +12520,7 @@
                         "type": "string"
                       },
                       "infiniteMaps": {
-                        "const": "readable-never-editable",
+                        "const": "set-tiles-and-stamp-editable-other-tile-operations-fail-closed",
                         "type": "string"
                       },
                       "maxChunksPerLayer": {
@@ -12575,6 +12592,8 @@
                       "outsideChunkCells",
                       "maxChunksPerLayer",
                       "infiniteMaps",
+                      "chunkedWriteProfile",
+                      "chunkedWriteOperations",
                       "collectionTilesets",
                       "writeProfile",
                       "writeCompression",
@@ -26361,6 +26380,12 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "chunkedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
                           "createdObjectIds": {
                             "items": {
                               "$ref": "#/definitions/ChangeSetPositiveId"
@@ -27409,6 +27434,12 @@
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "chunkedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
                           },
                           "createdObjectIds": {
                             "items": {

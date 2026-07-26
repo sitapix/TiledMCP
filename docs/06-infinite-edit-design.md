@@ -1,6 +1,6 @@
 # 无限地图编辑设计（M2）
 
-状态：**设计定稿，未实施**。对应已批准工作项"无限地图编辑（chunk 保持写回）"。
+状态：**已实施**（S1 核心 + S2 接线 + S3 契约；tests/chunkedCellView.test.ts 与 tests/infiniteMapRead.test.ts 覆盖）。对应已批准工作项"无限地图编辑（chunk 保持写回）"。
 语义全部对照 Tiled 1.12.2 源码
 （src/libtiled/tilelayer.{h,cpp}、maptovariantconverter.cpp）考证。
 
