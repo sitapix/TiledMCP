@@ -37,9 +37,27 @@ export interface PropertyWrite {
   value: string | number | boolean;
 }
 
+export const MAX_CLASS_MEMBER_WRITES_PER_TARGET = 16;
+export const MAX_CLASS_MEMBER_PATH_DEPTH = 8;
+
+/**
+ * Overwrites one existing scalar member inside an existing class
+ * property value, keeping its JSON type. Introducing missing members is
+ * impossible without the project's class definitions (they carry the
+ * Tiled type annotations), so absent members fail closed.
+ */
+export interface ClassMemberWrite {
+  property: string;
+  path: string[];
+  value: string | number | boolean;
+}
+
 export interface PropertiesPatch {
   set?: PropertyWrite[] | undefined;
   remove?: string[] | undefined;
+  setClassMembers?:
+    | ClassMemberWrite[]
+    | undefined;
 }
 
 /**
@@ -121,23 +139,31 @@ export function validatePropertiesPatch(
   }
   assertExactKeys(
     patch as unknown as Record<string, unknown>,
-    ["remove", "set"],
+    ["remove", "set", "setClassMembers"],
     context,
     true,
   );
   const sets = patch.set ?? [];
   const removes = patch.remove ?? [];
+  const classWrites =
+    patch.setClassMembers ?? [];
   if (
     !Array.isArray(sets) ||
     !Array.isArray(removes) ||
-    sets.length + removes.length === 0 ||
+    !Array.isArray(classWrites) ||
+    sets.length +
+      removes.length +
+      classWrites.length ===
+      0 ||
     sets.length > MAX_PROPERTY_SETS_PER_TARGET ||
     removes.length >
-      MAX_PROPERTY_REMOVES_PER_TARGET
+      MAX_PROPERTY_REMOVES_PER_TARGET ||
+    classWrites.length >
+      MAX_CLASS_MEMBER_WRITES_PER_TARGET
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context} must contain at least one entry, at most ${MAX_PROPERTY_SETS_PER_TARGET} set entries, and at most ${MAX_PROPERTY_REMOVES_PER_TARGET} removals.`,
+      `${context} must contain at least one entry, at most ${MAX_PROPERTY_SETS_PER_TARGET} set entries, at most ${MAX_PROPERTY_REMOVES_PER_TARGET} removals, and at most ${MAX_CLASS_MEMBER_WRITES_PER_TARGET} class member writes.`,
     );
   }
   const seenNames = new Set<string>();
@@ -196,6 +222,96 @@ export function validatePropertiesPatch(
       name,
       `${context}.remove[${index}]`,
     );
+  }
+  const seenMemberPaths = new Set<string>();
+  for (const [
+    index,
+    write,
+  ] of classWrites.entries()) {
+    const writeContext = `${context}.setClassMembers[${index}]`;
+    assertExactKeys(
+      write as unknown as Record<
+        string,
+        unknown
+      >,
+      ["path", "property", "value"],
+      writeContext,
+    );
+    if (
+      typeof write.property !== "string" ||
+      write.property.length === 0 ||
+      !hasAtMostCodePoints(
+        write.property,
+        MAX_PROPERTY_NAME_CODE_POINTS,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.property must be a non-empty string of at most ${MAX_PROPERTY_NAME_CODE_POINTS} Unicode code points.`,
+      );
+    }
+    if (seenNames.has(write.property)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.property targets ${JSON.stringify(write.property)}, which the same patch already sets or removes.`,
+      );
+    }
+    if (
+      !Array.isArray(write.path) ||
+      write.path.length < 1 ||
+      write.path.length >
+        MAX_CLASS_MEMBER_PATH_DEPTH
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.path must contain between 1 and ${MAX_CLASS_MEMBER_PATH_DEPTH} member names.`,
+      );
+    }
+    for (const [
+      segmentIndex,
+      segment,
+    ] of write.path.entries()) {
+      if (
+        typeof segment !== "string" ||
+        segment.length === 0 ||
+        !hasAtMostCodePoints(
+          segment,
+          MAX_PROPERTY_NAME_CODE_POINTS,
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${writeContext}.path[${segmentIndex}] must be a non-empty string of at most ${MAX_PROPERTY_NAME_CODE_POINTS} Unicode code points.`,
+        );
+      }
+    }
+    const value = write.value;
+    const scalarOk =
+      typeof value === "boolean" ||
+      (typeof value === "number" &&
+        Number.isFinite(value)) ||
+      (typeof value === "string" &&
+        hasAtMostCodePoints(
+          value,
+          MAX_PROPERTY_VALUE_CODE_POINTS,
+        ));
+    if (!scalarOk) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.value must be a bounded scalar.`,
+      );
+    }
+    const memberKey = JSON.stringify([
+      write.property,
+      ...write.path,
+    ]);
+    if (seenMemberPaths.has(memberKey)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext} repeats member path ${write.property}.${write.path.join(".")}.`,
+      );
+    }
+    seenMemberPaths.add(memberKey);
   }
 }
 
@@ -722,6 +838,79 @@ export function applyPropertiesPatch(
     }
   }
 
+  let classMembersSet = 0;
+  for (const write of patch.setClassMembers ??
+    []) {
+    const index = byName.get(write.property);
+    if (index === undefined) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} has no property ${JSON.stringify(write.property)} to write class members into.`,
+        { ...details, name: write.property },
+      );
+    }
+    const entry = entries[index] as JsonObject;
+    if (entry.type !== "class") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} is not a class property.`,
+        { ...details, name: write.property },
+      );
+    }
+    let cursor: JsonValue | undefined =
+      entry.value;
+    for (
+      let level = 0;
+      level < write.path.length;
+      level += 1
+    ) {
+      const key = write.path[level] as string;
+      if (
+        typeof cursor !== "object" ||
+        cursor === null ||
+        Array.isArray(cursor) ||
+        !Object.prototype.hasOwnProperty.call(
+          cursor,
+          key,
+        )
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_PROPERTY_WRITE",
+          `${label} property ${JSON.stringify(write.property)} has no serialized member at ${write.path.slice(0, level + 1).join(".")}; introducing members requires the project's class definitions.`,
+          {
+            ...details,
+            name: write.property,
+            memberPath: write.path,
+          },
+        );
+      }
+      const container = cursor as JsonObject;
+      if (level === write.path.length - 1) {
+        const current = container[key];
+        if (
+          typeof current !== typeof write.value ||
+          typeof current === "object"
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_PROPERTY_WRITE",
+            `${label} property ${JSON.stringify(write.property)} member ${write.path.join(".")} holds a ${typeof current}; the overwrite must keep the serialized JSON type.`,
+            {
+              ...details,
+              name: write.property,
+              memberPath: write.path,
+            },
+          );
+        }
+        if (current !== write.value) {
+          container[key] = write.value;
+          classMembersSet += 1;
+        }
+      } else {
+        cursor = container[key];
+      }
+    }
+  }
+
   const removeNames = new Set(patch.remove ?? []);
   let propertiesRemoved = 0;
   const working: JsonValue[] = [];
@@ -733,7 +922,7 @@ export function applyPropertiesPatch(
     }
     working.push(value);
   }
-  let propertiesSet = 0;
+  let propertiesSet = classMembersSet;
   for (const write of patch.set ?? []) {
     const existingIndex = working.findIndex(
       (value) =>

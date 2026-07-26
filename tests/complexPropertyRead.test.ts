@@ -119,6 +119,123 @@ describe("complex custom-property reading", () => {
     });
   });
 
+  it("overwrites existing nested class members and fails closed on new ones", async () => {
+    const service = await createService(roots, [
+      {
+        name: "loot",
+        type: "class",
+        propertytype: "LootTable",
+        value: {
+          gold: 25,
+          nested: { rare: true },
+        },
+      },
+    ]);
+    const summary = (await service.getSummary(
+      MAP_PATH,
+    )) as { revision: string };
+    const plan = await service.planEdits(
+      MAP_PATH,
+      summary.revision,
+      {},
+      [
+        {
+          type: "updateObject",
+          objectId: 1,
+          patch: {
+            properties: {
+              setClassMembers: [
+                {
+                  property: "loot",
+                  path: ["gold"],
+                  value: 40,
+                },
+                {
+                  property: "loot",
+                  path: ["nested", "rare"],
+                  value: false,
+                },
+              ],
+            },
+          },
+        },
+      ] as never,
+    );
+    await service.applyEdits(plan);
+    const detail = await service.getObject({
+      mapPath: MAP_PATH,
+      objectId: 1,
+    });
+    expect(detail.object).toMatchObject({
+      properties: [
+        {
+          name: "loot",
+          type: "class",
+          value: {
+            gold: 40,
+            nested: { rare: false },
+          },
+        },
+      ],
+    });
+
+    const fresh = (await service.getSummary(
+      MAP_PATH,
+    )) as { revision: string };
+    await expect(
+      service.planEdits(
+        MAP_PATH,
+        fresh.revision,
+        {},
+        [
+          {
+            type: "updateObject",
+            objectId: 1,
+            patch: {
+              properties: {
+                setClassMembers: [
+                  {
+                    property: "loot",
+                    path: ["silver"],
+                    value: 1,
+                  },
+                ],
+              },
+            },
+          },
+        ] as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    await expect(
+      service.planEdits(
+        MAP_PATH,
+        fresh.revision,
+        {},
+        [
+          {
+            type: "updateObject",
+            objectId: 1,
+            patch: {
+              properties: {
+                setClassMembers: [
+                  {
+                    property: "loot",
+                    path: ["gold"],
+                    value: "rich",
+                  },
+                ],
+              },
+            },
+          },
+        ] as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+  });
+
   it("fails closed on values inconsistent with their declared complex type", async () => {
     const service = await createService(roots, [
       {

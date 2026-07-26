@@ -175,7 +175,7 @@ manifest 永远不由该策略删除。整体接口仍以 0.0.x Draft 发布；�
 
 目标是以 **TMJ/TSJ（JSON）无损读写**为地基，把 **Tiled CLI 与一次性脚本执行**作为格式转换、AutoMapping、Wang 编辑和兼容性验证后端，逐步提供面向结果的高层编辑工具与回滚安全网，并把**视觉闭环做成一等能力**：模型借助带 id 标注的 tileset 索引图选料，改完后渲染自查、对比确认。
 
-首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的分页 tileset sheet 与稀疏 tile 选集渲染、基础 tile/rectangle/point/ellipse/capsule、有界 polygon/polyline 与 text 对象编辑、单对象详情读取、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复，和把已批准 change set 组合原子提交的跨文件可恢复事务；无限地图的 chunked tile layer 已支持除 resize 外的全部 tile 操作（按 Tiled 规范化保存形态写回；floodFill 以已用 chunk 并集为界），有限 tile layer 可经独占 `transcodeTileLayer` operation 在 csv 与 base64+gzip/zlib/zstd 间显式转码。复杂属性读取已落地：嵌套 class/list 值以有界 raw JSON 投影（class 成员类型注解存于项目 class 定义而非 TMJ，披露为 `valueSemantics`），enum 与对象引用逐字投影，仅超限条目保留 `valueOmitted`；属性写入仍限标量。JSON world 的显式成员列表读取已可用（`tiled_list_world_maps`）；world 成员编辑、Wang 与程序化生成将在基础读写闭环稳定后分期加入。
+首个 MVP 聚焦**有限尺寸的正交 TMJ + 外部图集式 TSJ**：当前已完成安全路径解析、地图摘要与区域读取、显式 tile metadata 语义检索、带 ID 的分页 tileset sheet 与稀疏 tile 选集渲染、基础 tile/rectangle/point/ellipse/capsule、有界 polygon/polyline 与 text 对象编辑、单对象详情读取、map/layer 局部成员更新、局部 JSON range patch、校验、预览，以及带 revision 检查、启动对账和两阶段批准的单文件精确快照恢复，和把已批准 change set 组合原子提交的跨文件可恢复事务；无限地图的 chunked tile layer 已支持除 resize 外的全部 tile 操作（按 Tiled 规范化保存形态写回；floodFill 以已用 chunk 并集为界），有限 tile layer 可经独占 `transcodeTileLayer` operation 在 csv 与 base64+gzip/zlib/zstd 间显式转码。复杂属性读取已落地：嵌套 class/list 值以有界 raw JSON 投影（class 成员类型注解存于项目 class 定义而非 TMJ，披露为 `valueSemantics`），enum 与对象引用逐字投影，仅超限条目保留 `valueOmitted`；属性写入支持标量与 `setClassMembers`（覆写既有 class 值内既有标量成员、保持 JSON 类型；缺失成员与改型 fail closed——引入新成员需要项目 class 定义）。JSON world 的显式成员列表读取已可用（`tiled_list_world_maps`）；world 成员编辑、Wang 与程序化生成将在基础读写闭环稳定后分期加入。
 
 ## 快速开始
 

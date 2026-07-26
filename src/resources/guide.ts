@@ -505,8 +505,11 @@ class definitions, not in the TMJ, disclosed as
 \`valueSemantics: "raw-untyped-members"\`), list values as Tiled's
 typed element wrappers — and only oversized entries carry an explicit
 \`valueOmitted\` marker. The same projection serves
-\`tiled_get_object\` for map objects; property writes stay
-scalar-only.
+\`tiled_get_object\` for map objects. Property writes cover scalars
+plus \`setClassMembers\`: overwriting an existing serialized scalar
+member inside an existing class value, keeping its JSON type — absent
+members and type changes fail closed, since introducing members needs
+the project's class definitions.
 
 ## Detach an unused tileset safely
 
