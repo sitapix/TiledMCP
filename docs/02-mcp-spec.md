@@ -1935,9 +1935,11 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
   未知成员、负尺寸或 tileset 非默认 `fillmode` 一律 fail closed。
 - native v1 支持静态 external atlas、透明色、layer opacity、orthogonal H/V/D 与 bit 29
   忽略；D 总是先于 H/V，非方形 tile 的 D 暂时 fail closed。atlas tile 尺寸必须与 map
-  grid 相同。blend/tint、parallax、非零 pixel offset、非默认 group opacity、动画、
+  grid 相同。blend/tint、parallax、非零 pixel offset、非默认 group opacity、
   per-tile image subrect、tileoffset、`tilerendersize:grid` 和
-  非有限/非正交地图不做近似；image-collection tile 按自身尺寸绘制（cell 左下
+  非有限/非正交地图不做近似；动画 tile 绘制其自身基础图块图像——与
+  TmxRasterizer 的静态输出一致（官方渲染器不设 ShowTileAnimations 即忽略动画
+  帧），这是精确的官方静态语义而非近似；image-collection tile 按自身尺寸绘制（cell 左下
   角锚点、向上溢出、画布裁剪，对齐 `tilerendersize:"tile"` 的官方 cell 渲染器
   语义），逐 tile 图片计入 atlas 源预算。
 - native preview 上限为 region 20,000 cells、128 个 tile layer、64 个 highlight

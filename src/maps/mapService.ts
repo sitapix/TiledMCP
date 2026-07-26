@@ -6100,17 +6100,9 @@ export class MapService {
             },
           );
         }
-        if (tile.animation !== undefined) {
-          throw unsupportedRenderFeature(
-            "animated-tile",
-            "Native preview v1 renders only static tiles.",
-            {
-              assetId: binding.assetId,
-              path: binding.path,
-              tileIndex: index,
-            },
-          );
-        }
+        // Animated tiles draw their own base tile image: TmxRasterizer
+        // never sets ShowTileAnimations, so the static reference output
+        // ignores animation frames too.
       }
     }
 

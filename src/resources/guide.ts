@@ -117,6 +117,9 @@ bottom-left and overflowing upward exactly like Tiled's
 \`tilerendersize: "tile"\` cell renderer, clipped by the output canvas;
 each distinct used tile image counts against the preview's atlas-source
 budget, and a GID pointing at a removed sparse id fails closed.
+Animated tiles draw their own base tile image in previews — exactly what
+TmxRasterizer's static output shows, since the official renderer ignores
+animation frames unless its editor-only animation flag is set.
 Collection details replace the \`atlas\`/\`image\` blocks with a
 \`collection\` block (\`maxLocalId\`, max-tile-size semantics) and each
 returned metadata page entry carries its verified per-tile image —
