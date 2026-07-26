@@ -563,3 +563,293 @@ export function readChunkedRegionGids(
   }
   return out;
 }
+
+export const TILED_DEFAULT_CHUNK_SIZE = 16;
+export const TILED_MIN_CHUNK_SIZE = 4;
+
+/**
+ * Reads the map's serialization chunk size with Tiled 1.12.2 reader
+ * semantics: a missing or zero editorsettings.chunksize member means the
+ * 16x16 default, and explicit positive values are raised to the minimum
+ * of 4. Negative or non-integer values fail closed instead of guessing,
+ * and a chunk larger than the per-chunk decode budget is rejected.
+ */
+export function readMapChunkSize(
+  map: JsonObject,
+  mapPath: string,
+): { width: number; height: number } {
+  const editorSettings = map.editorsettings;
+  const chunkSize =
+    typeof editorSettings === "object" &&
+    editorSettings !== null &&
+    !Array.isArray(editorSettings)
+      ? (editorSettings as JsonObject).chunksize
+      : undefined;
+  const readAxis = (field: "width" | "height"): number => {
+    const value =
+      typeof chunkSize === "object" &&
+      chunkSize !== null &&
+      !Array.isArray(chunkSize)
+        ? (chunkSize as JsonObject)[field]
+        : undefined;
+    if (value === undefined || value === 0) {
+      return TILED_DEFAULT_CHUNK_SIZE;
+    }
+    if (
+      typeof value !== "number" ||
+      !Number.isSafeInteger(value) ||
+      value < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${mapPath} editorsettings.chunksize.${field} must be a nonnegative integer.`,
+        { path: mapPath, field },
+      );
+    }
+    return Math.max(TILED_MIN_CHUNK_SIZE, value);
+  };
+  const width = readAxis("width");
+  const height = readAxis("height");
+  if (width * height * 4 > MAX_DECODED_TILE_DATA_BYTES) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `${mapPath} editorsettings.chunksize exceeds the per-chunk decode budget.`,
+      {
+        path: mapPath,
+        limit: MAX_DECODED_TILE_DATA_BYTES,
+      },
+    );
+  }
+  return { width, height };
+}
+
+function chunkedCellKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+export interface ChunkedCellView {
+  /** Sparse nonzero cells keyed by absolute "x,y". */
+  cells: Map<string, number>;
+  structure: ChunkedTileLayerStructure;
+  dirty: boolean;
+}
+
+/**
+ * Decodes every chunk of an infinite tile layer into one sparse
+ * absolute-coordinate cell view. Overlap, budget, and shape validation
+ * come from the structural reader; every stored cell must be a uint32.
+ */
+export function createChunkedCellView(
+  layer: JsonObject,
+  layerId: number,
+  mapPath: string,
+): ChunkedCellView {
+  const structure = readChunkedTileLayerStructure(
+    layer,
+    layerId,
+    mapPath,
+  );
+  const cells = new Map<string, number>();
+  for (const chunk of structure.chunks) {
+    const decoded = decodeChunkCells(
+      chunk,
+      layer,
+      layerId,
+      mapPath,
+    );
+    for (const [index, value] of decoded.entries()) {
+      if (
+        typeof value !== "number" ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        value > 0xffffffff
+      ) {
+        throw new TiledMcpError(
+          "INVALID_TILE_DATA",
+          `Layer ${layerId} has a non-uint32 GID in a chunk at index ${index}.`,
+          { path: mapPath, layerId, index },
+        );
+      }
+      if (value === 0) {
+        continue;
+      }
+      cells.set(
+        chunkedCellKey(
+          chunk.x + (index % chunk.width),
+          chunk.y + Math.floor(index / chunk.width),
+        ),
+        value,
+      );
+    }
+  }
+  return { cells, structure, dirty: false };
+}
+
+export function readChunkedViewGid(
+  view: ChunkedCellView,
+  x: number,
+  y: number,
+): number {
+  return view.cells.get(chunkedCellKey(x, y)) ?? 0;
+}
+
+export function writeChunkedViewGid(
+  view: ChunkedCellView,
+  x: number,
+  y: number,
+  gid: number,
+): void {
+  const key = chunkedCellKey(x, y);
+  const previous = view.cells.get(key) ?? 0;
+  if (previous === gid) {
+    return;
+  }
+  if (gid === 0) {
+    view.cells.delete(key);
+  } else {
+    view.cells.set(key, gid);
+  }
+  view.dirty = true;
+}
+
+export interface SerializedChunkedLayer {
+  chunks: JsonObject[];
+  startX: number;
+  startY: number;
+  width: number;
+  height: number;
+  chunkCount: number;
+  nonEmptyCellCount: number;
+}
+
+/**
+ * Serializes sparse cells in Tiled 1.12.2 canonical save form: nonzero
+ * cells are rebucketed into floor-aligned chunkWidth x chunkHeight
+ * rectangles, empty chunks are dropped, chunks sort by (y, x), and the
+ * layer bounds become the union of the written chunk rectangles. Chunk
+ * data encodes with the layer's own stored encoding and compression.
+ */
+export function serializeChunkedCells(input: {
+  cells: ReadonlyMap<string, number>;
+  chunkWidth: number;
+  chunkHeight: number;
+  encoding: "array" | "base64";
+  compression: string;
+  layerId: number;
+  mapPath: string;
+}): SerializedChunkedLayer {
+  const {
+    cells,
+    chunkWidth,
+    chunkHeight,
+    layerId,
+    mapPath,
+  } = input;
+  const floorAlign = (
+    value: number,
+    size: number,
+  ): number => value - (((value % size) + size) % size);
+  const buckets = new Map<
+    string,
+    { x: number; y: number; dense: number[] }
+  >();
+  let nonEmptyCellCount = 0;
+  for (const [key, gid] of cells) {
+    if (gid === 0) {
+      continue;
+    }
+    nonEmptyCellCount += 1;
+    const comma = key.indexOf(",");
+    const x = Number(key.slice(0, comma));
+    const y = Number(key.slice(comma + 1));
+    if (
+      !Number.isSafeInteger(x) ||
+      !Number.isSafeInteger(y) ||
+      Math.abs(x) > 1_000_000_000 ||
+      Math.abs(y) > 1_000_000_000
+    ) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `Layer ${layerId} has a cell outside the bounded coordinate range.`,
+        { path: mapPath, layerId },
+      );
+    }
+    const chunkX = floorAlign(x, chunkWidth);
+    const chunkY = floorAlign(y, chunkHeight);
+    const bucketKey = chunkedCellKey(chunkX, chunkY);
+    let bucket = buckets.get(bucketKey);
+    if (bucket === undefined) {
+      if (buckets.size >= MAX_TILE_LAYER_CHUNKS) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `layer ${layerId} would serialize more than ${MAX_TILE_LAYER_CHUNKS} chunks.`,
+          {
+            path: mapPath,
+            layerId,
+            limit: MAX_TILE_LAYER_CHUNKS,
+          },
+        );
+      }
+      bucket = {
+        x: chunkX,
+        y: chunkY,
+        dense: new Array<number>(
+          chunkWidth * chunkHeight,
+        ).fill(0),
+      };
+      buckets.set(bucketKey, bucket);
+    }
+    bucket.dense[
+      (y - chunkY) * chunkWidth + (x - chunkX)
+    ] = gid;
+  }
+  const ordered = [...buckets.values()].sort(
+    (left, right) =>
+      left.y - right.y || left.x - right.x,
+  );
+  const chunks = ordered.map((bucket) => ({
+    x: bucket.x,
+    y: bucket.y,
+    width: chunkWidth,
+    height: chunkHeight,
+    data:
+      input.encoding === "array"
+        ? bucket.dense
+        : encodeTileLayerCells(
+            bucket.dense,
+            input.compression,
+            layerId,
+            mapPath,
+          ),
+  }));
+  if (ordered.length === 0) {
+    return {
+      chunks: [],
+      startX: 0,
+      startY: 0,
+      width: 0,
+      height: 0,
+      chunkCount: 0,
+      nonEmptyCellCount: 0,
+    };
+  }
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const bucket of ordered) {
+    minX = Math.min(minX, bucket.x);
+    minY = Math.min(minY, bucket.y);
+    maxX = Math.max(maxX, bucket.x + chunkWidth);
+    maxY = Math.max(maxY, bucket.y + chunkHeight);
+  }
+  return {
+    chunks,
+    startX: minX,
+    startY: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+    chunkCount: ordered.length,
+    nonEmptyCellCount,
+  };
+}
