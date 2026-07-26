@@ -285,19 +285,33 @@ export function measurePropertiesPatchBytes(
 export type ProjectedProperty =
   | {
       name: string;
-      type: PropertyWriteType;
+      type: PropertyWriteType | "object";
+      propertytype?: string;
       value: string | number | boolean;
+    }
+  | {
+      name: string;
+      type: "class" | "list";
+      propertytype?: string;
+      /**
+       * Bounded raw JSON. Class members carry no per-member type
+       * annotations in TMJ (their semantics live in the project's class
+       * definitions); list elements are Tiled's typed
+       * `{type, value[, propertytype]}` wrappers, passed through as-is.
+       */
+      value: JsonValue;
+      valueSemantics:
+        | "raw-untyped-members"
+        | "typed-elements";
     }
   | {
       name: string;
       type: string;
       propertytype?: string;
       valueOmitted: true;
-      reason:
-        | "complex-type"
-        | "custom-propertytype"
-        | "oversized-value";
+      reason: "oversized-value";
       valueCodePoints?: number;
+      valueBytes?: number;
     };
 
 export interface ProjectedProperties {
@@ -314,6 +328,77 @@ export interface ProjectedProperties {
  * with an explicit omission marker instead of an approximated value.
  * Malformed entries fail closed exactly like the write path.
  */
+const MAX_COMPLEX_PROPERTY_VALUE_BYTES = 16_384;
+const MAX_COMPLEX_PROPERTY_VALUE_DEPTH = 8;
+const MAX_COMPLEX_PROPERTY_VALUE_NODES = 256;
+
+/**
+ * Bounds one nested class/list property value: canonical JSON bytes,
+ * nesting depth, and total node count. Exceeding any budget reports the
+ * whole entry as omitted rather than truncating inner members.
+ */
+function boundComplexPropertyValue(
+  value: JsonValue,
+  label: string,
+  name: string,
+  details: PropertyTargetDetails,
+  typeName: "class" | "list",
+): { omitted: boolean; valueBytes: number } {
+  if (
+    typeName === "class"
+      ? typeof value !== "object" ||
+        value === null ||
+        Array.isArray(value)
+      : !Array.isArray(value)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${label} property ${JSON.stringify(name)} has a value inconsistent with its declared type.`,
+      { ...details, name, type: typeName },
+    );
+  }
+  const valueBytes = Buffer.byteLength(
+    JSON.stringify(value),
+    "utf8",
+  );
+  if (
+    valueBytes > MAX_COMPLEX_PROPERTY_VALUE_BYTES
+  ) {
+    return { omitted: true, valueBytes };
+  }
+  let nodes = 0;
+  const walk = (
+    current: JsonValue,
+    depth: number,
+  ): boolean => {
+    nodes += 1;
+    if (
+      depth > MAX_COMPLEX_PROPERTY_VALUE_DEPTH ||
+      nodes > MAX_COMPLEX_PROPERTY_VALUE_NODES
+    ) {
+      return false;
+    }
+    if (
+      typeof current === "object" &&
+      current !== null
+    ) {
+      const children = Array.isArray(current)
+        ? current
+        : Object.values(current);
+      for (const child of children) {
+        if (!walk(child, depth + 1)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  if (!walk(value, 1)) {
+    return { omitted: true, valueBytes };
+  }
+  return { omitted: false, valueBytes };
+}
+
 export function projectScalarProperties(
   target: JsonObject,
   label: string,
@@ -388,35 +473,83 @@ export function projectScalarProperties(
         truncated: true,
       };
     }
-    if (entry.propertytype !== undefined) {
+    if (
+      entry.propertytype !== undefined &&
+      typeof entry.propertytype !== "string"
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(name)} has a malformed propertytype.`,
+        { ...details, name },
+      );
+    }
+    const propertyType = entry.propertytype as
+      | string
+      | undefined;
+    if (
+      typeName === "class" ||
+      typeName === "list"
+    ) {
+      const rawValue =
+        entry.value === undefined
+          ? typeName === "class"
+            ? ({} as JsonValue)
+            : ([] as JsonValue)
+          : entry.value;
+      const bounded = boundComplexPropertyValue(
+        rawValue,
+        label,
+        name,
+        details,
+        typeName,
+      );
+      if (bounded.omitted) {
+        entries.push({
+          name,
+          type: typeName,
+          ...(propertyType === undefined
+            ? {}
+            : { propertytype: propertyType }),
+          valueOmitted: true,
+          reason: "oversized-value",
+          valueBytes: bounded.valueBytes,
+        });
+      } else {
+        entries.push({
+          name,
+          type: typeName,
+          ...(propertyType === undefined
+            ? {}
+            : { propertytype: propertyType }),
+          value: rawValue,
+          valueSemantics:
+            typeName === "class"
+              ? "raw-untyped-members"
+              : "typed-elements",
+        });
+      }
+      continue;
+    }
+    if (typeName === "object") {
+      const reference = entry.value ?? 0;
       if (
-        typeof entry.propertytype !== "string"
+        typeof reference !== "number" ||
+        !Number.isSafeInteger(reference) ||
+        reference < 0
       ) {
         throw new TiledMcpError(
           "INVALID_DOCUMENT",
-          `${label} property ${JSON.stringify(name)} has a malformed propertytype.`,
+          `${label} property ${JSON.stringify(name)} has a malformed object reference.`,
           { ...details, name },
         );
       }
       entries.push({
         name,
-        type: typeName,
-        propertytype: entry.propertytype,
-        valueOmitted: true,
-        reason: "custom-propertytype",
-      });
-      continue;
-    }
-    if (
-      !(
-        PROPERTY_WRITE_TYPES as readonly string[]
-      ).includes(typeName)
-    ) {
-      entries.push({
-        name,
-        type: typeName,
-        valueOmitted: true,
-        reason: "complex-type",
+        type: "object",
+        ...(propertyType === undefined
+          ? {}
+          : { propertytype: propertyType }),
+        value: reference,
       });
       continue;
     }
@@ -459,6 +592,9 @@ export function projectScalarProperties(
     entries.push({
       name,
       type: scalarType,
+      ...(propertyType === undefined
+        ? {}
+        : { propertytype: propertyType }),
       value: entryValue as
         | string
         | number

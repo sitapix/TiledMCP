@@ -255,15 +255,13 @@ describe("tileset detail safety limits", () => {
         {
           name: "linked",
           type: "object",
-          valueOmitted: true,
-          reason: "complex-type",
+          value: 7,
         },
         {
           name: "style",
           type: "string",
           propertytype: "GroundStyle",
-          valueOmitted: true,
-          reason: "custom-propertytype",
+          value: "grass",
         },
         {
           name: "big",
@@ -276,7 +274,7 @@ describe("tileset detail safety limits", () => {
     });
     expect(result.projection).toMatchObject({
       properties:
-        "tile-scalar-values-with-omission-markers-others-counts-only",
+        "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
     });
   });
 

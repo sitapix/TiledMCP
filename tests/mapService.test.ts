@@ -873,7 +873,7 @@ describe("MapService", () => {
         classResolution: "name-only",
         tileClassField: "type-with-class-compatibility-fallback",
         properties:
-          "tile-scalar-values-with-omission-markers-others-counts-only",
+          "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
         collision:
           "bounded-shape-geometry-with-omission-markers",
         wangSets: "overview-only",

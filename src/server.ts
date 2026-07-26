@@ -3352,7 +3352,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
+        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -3801,7 +3801,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Get map object",
       description:
-        "Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.",
+        "Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: scalar, enum, and object-reference values verbatim, nested class and list values as bounded raw JSON (class member types live in the project's class definitions, not in the TMJ), and only oversized entries carry an explicit valueOmitted marker. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

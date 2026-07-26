@@ -634,15 +634,13 @@ describe("map object property editing", () => {
         {
           name: "linked",
           type: "object",
-          valueOmitted: true,
-          reason: "complex-type",
+          value: GATE_ID,
         },
         {
           name: "style",
           type: "string",
           propertytype: "DoorStyle",
-          valueOmitted: true,
-          reason: "custom-propertytype",
+          value: "iron",
         },
       ],
       propertyCount: 2,

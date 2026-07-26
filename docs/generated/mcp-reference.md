@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3a9bd21e457b19dd326d7bda1ef06ce345d716134d599a168c50a18762ef0321",
+    "revision": "sha256:af6c8b3c1e7851114fbd2342a3094ffb6db6dd084a8ef724f271886a014bedb8",
     "serverVersion": "0.0.1",
-    "size": 81490
+    "size": 81713
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 81490,
+  "size": 81713,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 81490 UTF-8 bytes, revision `sha256:3a9bd21e457b19dd326d7bda1ef06ce345d716134d599a168c50a18762ef0321`.
+Content contract: `text`, 81713 UTF-8 bytes, revision `sha256:af6c8b3c1e7851114fbd2342a3094ffb6db6dd084a8ef724f271886a014bedb8`.
 
 Resource templates: none.
 
@@ -14812,7 +14812,7 @@ Output schema:
 
 Availability: `core`
 
-Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: built-in scalar values verbatim, while class, enum, list, object, and oversized entries carry an explicit valueOmitted marker instead of an approximated value. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.
+Returns one supported object with complete shape-specific geometry, effective text styling, and its custom properties in document order: scalar, enum, and object-reference values verbatim, nested class and list values as bounded raw JSON (class member types live in the project's class definitions, not in the TMJ), and only oversized entries carry an explicit valueOmitted marker. A JSON (.tj) template instance expands with Tiled 1.12.2 syncWithTemplate merge rules and reports its revision-pinned template source; tile templates, XML templates, and template property merging fail closed.
 
 Annotations:
 
@@ -14895,6 +14895,37 @@ Output schema:
         {
           "additionalProperties": {
             "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "__schema1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema1"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema1"
           },
           "propertyNames": {
             "type": "string"
@@ -14985,6 +15016,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -14992,7 +15027,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -15030,18 +15066,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -15175,6 +15250,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -15182,7 +15261,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -15220,18 +15300,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -15363,6 +15482,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -15370,7 +15493,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -15408,18 +15532,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -15558,6 +15721,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -15565,7 +15732,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -15603,18 +15771,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -15773,6 +15980,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -15780,7 +15991,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -15818,18 +16030,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -15982,6 +16233,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -15989,7 +16244,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -16027,18 +16283,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -16203,6 +16498,10 @@ Output schema:
                                 "minLength": 1,
                                 "type": "string"
                               },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
                               "type": {
                                 "enum": [
                                   "string",
@@ -16210,7 +16509,8 @@ Output schema:
                                   "float",
                                   "bool",
                                   "color",
-                                  "file"
+                                  "file",
+                                  "object"
                                 ],
                                 "type": "string"
                               },
@@ -16248,18 +16548,57 @@ Output schema:
                                 "maxLength": 1024,
                                 "type": "string"
                               },
-                              "reason": {
+                              "type": {
                                 "enum": [
-                                  "complex-type",
-                                  "custom-propertytype",
-                                  "oversized-value"
+                                  "class",
+                                  "list"
                                 ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
                                 "type": "string"
                               },
                               "type": {
                                 "maxLength": 64,
                                 "minLength": 1,
                                 "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
                               },
                               "valueCodePoints": {
                                 "maximum": 9007199254740991,
@@ -16533,7 +16872,7 @@ Output schema:
                 },
                 "details": {
                   "additionalProperties": {
-                    "$ref": "#/definitions/__schema0"
+                    "$ref": "#/definitions/__schema1"
                   },
                   "propertyNames": {
                     "type": "string"
@@ -17024,7 +17363,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile scalar custom-property values (complex, enum, and oversized entries carry explicit valueOmitted markers), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.
+Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.
 
 Annotations:
 
@@ -17128,6 +17467,37 @@ Output schema:
           "type": "object"
         }
       ]
+    },
+    "__schema1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema1"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema1"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
     }
   },
   "properties": {
@@ -17198,7 +17568,7 @@ Output schema:
                       "type": "string"
                     },
                     "properties": {
-                      "const": "tile-scalar-values-with-omission-markers-others-counts-only",
+                      "const": "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
                       "type": "string"
                     },
                     "sourceImage": {
@@ -17602,6 +17972,10 @@ Output schema:
                                       "minLength": 1,
                                       "type": "string"
                                     },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
                                     "type": {
                                       "enum": [
                                         "string",
@@ -17609,7 +17983,8 @@ Output schema:
                                         "float",
                                         "bool",
                                         "color",
-                                        "file"
+                                        "file",
+                                        "object"
                                       ],
                                       "type": "string"
                                     },
@@ -17647,18 +18022,57 @@ Output schema:
                                       "maxLength": 1024,
                                       "type": "string"
                                     },
-                                    "reason": {
+                                    "type": {
                                       "enum": [
-                                        "complex-type",
-                                        "custom-propertytype",
-                                        "oversized-value"
+                                        "class",
+                                        "list"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "$ref": "#/definitions/__schema0"
+                                    },
+                                    "valueSemantics": {
+                                      "enum": [
+                                        "raw-untyped-members",
+                                        "typed-elements"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value",
+                                    "valueSemantics"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "const": "oversized-value",
                                       "type": "string"
                                     },
                                     "type": {
                                       "maxLength": 64,
                                       "minLength": 1,
                                       "type": "string"
+                                    },
+                                    "valueBytes": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
                                     },
                                     "valueCodePoints": {
                                       "maximum": 9007199254740991,
@@ -18226,7 +18640,7 @@ Output schema:
                       "type": "string"
                     },
                     "properties": {
-                      "const": "tile-scalar-values-with-omission-markers-others-counts-only",
+                      "const": "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
                       "type": "string"
                     },
                     "sourceImage": {
@@ -18674,6 +19088,10 @@ Output schema:
                                       "minLength": 1,
                                       "type": "string"
                                     },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
                                     "type": {
                                       "enum": [
                                         "string",
@@ -18681,7 +19099,8 @@ Output schema:
                                         "float",
                                         "bool",
                                         "color",
-                                        "file"
+                                        "file",
+                                        "object"
                                       ],
                                       "type": "string"
                                     },
@@ -18719,18 +19138,57 @@ Output schema:
                                       "maxLength": 1024,
                                       "type": "string"
                                     },
-                                    "reason": {
+                                    "type": {
                                       "enum": [
-                                        "complex-type",
-                                        "custom-propertytype",
-                                        "oversized-value"
+                                        "class",
+                                        "list"
                                       ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "$ref": "#/definitions/__schema0"
+                                    },
+                                    "valueSemantics": {
+                                      "enum": [
+                                        "raw-untyped-members",
+                                        "typed-elements"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value",
+                                    "valueSemantics"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "const": "oversized-value",
                                       "type": "string"
                                     },
                                     "type": {
                                       "maxLength": 64,
                                       "minLength": 1,
                                       "type": "string"
+                                    },
+                                    "valueBytes": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
                                     },
                                     "valueCodePoints": {
                                       "maximum": 9007199254740991,
@@ -19308,7 +19766,7 @@ Output schema:
                 },
                 "details": {
                   "additionalProperties": {
-                    "$ref": "#/definitions/__schema0"
+                    "$ref": "#/definitions/__schema1"
                   },
                   "propertyNames": {
                     "type": "string"

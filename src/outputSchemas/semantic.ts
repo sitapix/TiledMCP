@@ -320,7 +320,7 @@ const tilesetDetailProjectionOutputSchema = <
         "type-with-class-compatibility-fallback",
       ),
       properties: z.literal(
-        "tile-scalar-values-with-omission-markers-others-counts-only",
+        "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
       ),
       collision: z.literal(
         "bounded-shape-geometry-with-omission-markers",

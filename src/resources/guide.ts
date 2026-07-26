@@ -497,16 +497,21 @@ custom properties they carried; read the current shapes first —
 Tile geometry, the atlas image, and GID layout stay outside this tool.
 Before writing
 properties, read them back with \`tiled_get_tileset\`: each paged tile
-entry lists its scalar custom-property values verbatim in document order,
-while class, enum (\`propertytype\`), list, object, and oversized entries
-carry an explicit \`valueOmitted\` marker — the same projection
-\`tiled_get_object\` uses for map objects.
+entry lists its custom-property values in document order — scalars,
+enums (\`propertytype\`), and object references verbatim, nested class
+values as bounded raw JSON (their member types live in the project's
+class definitions, not in the TMJ, disclosed as
+\`valueSemantics: "raw-untyped-members"\`), list values as Tiled's
+typed element wrappers — and only oversized entries carry an explicit
+\`valueOmitted\` marker. The same projection serves
+\`tiled_get_object\` for map objects; property writes stay
+scalar-only.
 
 ## Detach an unused tileset safely
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 28 core tools or 29
+operation, not a standalone tool, so the registry remains 29 core tools or 30
 when the rasterizer is available. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
@@ -646,13 +651,13 @@ dimension/path rules, and source-patch scope; inspect
 payload is canonical compact JSON UTF-8, capped at 256 KiB per change set and
 2 MiB pending. \`tiled_get_object\` is the bounded read-before-update tool; it
 returns complete path points, effective text defaults, and the object's
-custom properties in document order — built-in scalar values verbatim,
-while class, enum (\`propertytype\`), list, object, and oversized string
-entries are listed by name and type with an explicit \`valueOmitted\`
-marker rather than an approximated value, and at most 128 entries are
-projected with a \`propertiesTruncated\` flag beyond that. It still does
-not return raw JSON, vendor fields, tile objects, or templates. The registry is
-28 core tools or 29 with the rasterizer. The native preview base image now
+custom properties in document order — scalar, enum, and
+object-reference values verbatim, nested class and list values as
+bounded raw JSON with explicit \`valueSemantics\` markers, and only
+oversized entries with a \`valueOmitted\` marker — with at most 128
+entries projected and a \`propertiesTruncated\` flag beyond that. It
+still does not return vendor fields or tile objects. The registry is
+29 core tools or 30 with the rasterizer. The native preview base image now
 renders visible object layers too (profile \`base-object-layers-v1\`):
 basic shapes draw with Tiled's group color (else gray), a 50-alpha fill, a
 one-pixel black shadow, Tiled's topdown-or-index draw order, layer-times-

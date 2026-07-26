@@ -76,7 +76,12 @@ export const projectedPropertyOutputSchema =
           "bool",
           "color",
           "file",
+          "object",
         ]),
+        propertytype: z
+          .string()
+          .max(1_024)
+          .optional(),
         value: z.union([
           z
             .string()
@@ -91,18 +96,45 @@ export const projectedPropertyOutputSchema =
     z
       .object({
         name: projectedPropertyNameOutputSchema,
+        type: z.enum(["class", "list"]),
+        propertytype: z
+          .string()
+          .max(1_024)
+          .optional(),
+        value: z.json(),
+        valueSemantics: z.enum([
+          "raw-untyped-members",
+          "typed-elements",
+        ]),
+      })
+      .strict()
+      .superRefine((entry, context) => {
+        const expected =
+          entry.type === "class"
+            ? "raw-untyped-members"
+            : "typed-elements";
+        if (entry.valueSemantics !== expected) {
+          context.addIssue({
+            code: "custom",
+            path: ["valueSemantics"],
+            message:
+              "Complex property value semantics must match the declared type",
+          });
+        }
+      }),
+    z
+      .object({
+        name: projectedPropertyNameOutputSchema,
         type: z.string().min(1).max(64),
         propertytype: z
           .string()
           .max(1_024)
           .optional(),
         valueOmitted: z.literal(true),
-        reason: z.enum([
-          "complex-type",
-          "custom-propertytype",
-          "oversized-value",
-        ]),
+        reason: z.literal("oversized-value"),
         valueCodePoints:
+          nonnegativeIntegerOutputSchema.optional(),
+        valueBytes:
           nonnegativeIntegerOutputSchema.optional(),
       })
       .strict(),
