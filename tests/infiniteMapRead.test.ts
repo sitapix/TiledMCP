@@ -219,18 +219,14 @@ describe("infinite chunked map read-only support", () => {
         >,
         [
           {
-            type: "fillRegion",
-            layerId: LAYER_ID,
-            x: 0,
-            y: 0,
-            width: 1,
-            height: 1,
-            tile: null,
+            type: "resizeMap",
+            width: 4,
+            height: 4,
           },
         ],
       ),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_TILE_ENCODING",
+      code: "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
     });
 
     await expect(
@@ -362,6 +358,155 @@ describe("infinite chunked map read-only support", () => {
       chunkAt(-16, -16)[15 * 16 + 15],
     ).toBe(2);
     expect(chunkAt(0, 0)[0]).toBe(3);
+  });
+
+  it("fills, flood-fills, replaces, and copies chunked cells", async () => {
+    const harness = await createHarness(
+      roots,
+      defaultChunks(),
+    );
+    const summary =
+      await harness.service.getSummary(MAP_PATH);
+    const dependencyRevisions =
+      summary.dependencyRevisions as Record<
+        string,
+        string
+      >;
+    const assetId = Object.keys(
+      dependencyRevisions,
+    )[0] as string;
+    const tile = (localId: number) => ({
+      tileset: {
+        kind: "external" as const,
+        assetId,
+      },
+      localId,
+    });
+
+    // Flood fill from (-1,-1)=gid 2 within the used-chunk bounds.
+    const flood = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      dependencyRevisions,
+      [
+        {
+          type: "floodFill",
+          layerId: LAYER_ID,
+          x: -1,
+          y: -1,
+          tile: tile(3),
+        },
+      ],
+    );
+    expect(
+      flood.summary.tileFloodFills?.[0],
+    ).toMatchObject({
+      changedCellCount: 1,
+      wouldChange: true,
+    });
+
+    // A seed outside the used chunk bounds fills nothing.
+    const outside =
+      await harness.service.planEdits(
+        MAP_PATH,
+        summary.revision as string,
+        dependencyRevisions,
+        [
+          {
+            type: "floodFill",
+            layerId: LAYER_ID,
+            x: 100,
+            y: 100,
+            tile: tile(3),
+          },
+        ],
+      );
+    expect(
+      outside.summary.tileFloodFills?.[0],
+    ).toMatchObject({
+      changedCellCount: 0,
+      wouldChange: false,
+    });
+
+    // Replace gid 1 (tile 0) with tile 3 across the sparse layer.
+    const replace =
+      await harness.service.planEdits(
+        MAP_PATH,
+        summary.revision as string,
+        dependencyRevisions,
+        [
+          {
+            type: "replaceTiles",
+            layerId: LAYER_ID,
+            mappings: [
+              { from: tile(0), to: tile(3) },
+            ],
+          },
+        ],
+      );
+    expect(
+      replace.summary.tileReplacements?.[0],
+    ).toMatchObject({
+      scannedCellCount: 3,
+      replacedCellCount: 1,
+    });
+    await harness.service.applyEdits(replace);
+
+    // Copy the two-cell block at (-2,-1) onto (10,10) and fill (12,10).
+    const after =
+      await harness.service.getSummary(MAP_PATH);
+    const combined =
+      await harness.service.planEdits(
+        MAP_PATH,
+        after.revision as string,
+        after.dependencyRevisions as Record<
+          string,
+          string
+        >,
+        [
+          {
+            type: "copyRegion",
+            source: {
+              layerId: LAYER_ID,
+              x: -2,
+              y: -1,
+              width: 2,
+              height: 1,
+            },
+            destination: {
+              layerId: LAYER_ID,
+              x: 10,
+              y: 10,
+            },
+          },
+          {
+            type: "fillRegion",
+            layerId: LAYER_ID,
+            x: 12,
+            y: 10,
+            width: 1,
+            height: 1,
+            tile: tile(1),
+          },
+        ],
+      );
+    await harness.service.applyEdits(combined);
+    const region =
+      await harness.service.getRegion({
+        mapPath: MAP_PATH,
+        layerId: LAYER_ID,
+        x: 10,
+        y: 10,
+        width: 3,
+        height: 1,
+      });
+    expect(region.rows).toEqual([
+      [
+        expect.objectContaining({ localId: 3 }),
+        expect.objectContaining({ localId: 1 }),
+        expect.objectContaining({ localId: 1 }),
+      ],
+    ]);
   });
 
   it("fails closed on overlapping chunks and chunk overflow", async () => {

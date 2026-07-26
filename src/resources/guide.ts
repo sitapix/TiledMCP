@@ -73,17 +73,22 @@ uncompressed base64) while every cell keeps its exact GID. It must be
 the only operation in its change set and a same-target request is a
 no-op that leaves the stored bytes untouched; transcoding a chunked
 layer rewrites every chunk in kind and normalizes the chunk structure.
-Infinite chunked layers accept \`setTiles\`, \`stampPattern\`, and
-\`floodFill\` edits with bounded absolute coordinates (a flood fill is
-bounded by the used-chunk union, and a seed outside it fills nothing,
-matching the Tiled editor): an edited chunked layer
+Infinite chunked layers accept every tile operation except
+\`resizeMap\` — \`setTiles\`, \`fillRegion\`, \`stampPattern\`,
+\`floodFill\`, \`copyRegion\`, \`replaceTiles\`, and
+\`transcodeTileLayer\` — with bounded absolute coordinates. A flood
+fill is bounded by the used-chunk union and a seed outside it fills
+nothing, matching the Tiled editor; a replace without an explicit region
+covers the used-chunk union and scans only the stored nonzero cells, so
+its scannedCellCount reports checked stored cells. Copies may mix dense
+and chunked layers in either direction: an edited chunked layer
 serializes in Tiled 1.12.2's own canonical save form — cells rebucketed
 into chunksize-aligned chunks (default 16x16), empty chunks dropped,
 (y,x) ordering, bounds recomputed — while untouched layers keep their
 exact bytes and per-chunk data re-encodes with the layer's own stored
-encoding, never transcoding implicitly. Resizing, tile replacement, and
-region copies on chunked layers still fail closed, as does resizing an
-encoded map, and \`tiled_validate\` keeps reporting chunked storage
+encoding, never transcoding implicitly. Resizing an infinite map fails
+closed (its nominal bounds do not bound chunked storage), as does
+resizing an encoded map, and \`tiled_validate\` keeps reporting chunked storage
 as outside the fully editable profile. Maps referencing image-collection tilesets
 (per-tile images, no root atlas) are readable through
 \`tiled_get_map_summary\` (bindings report \`collection:true\` with the

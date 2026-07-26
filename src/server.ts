@@ -2479,15 +2479,20 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxChunksPerLayer:
             MAX_TILE_LAYER_CHUNKS,
           infiniteMaps:
-            "set-tiles-stamp-flood-fill-transcode-editable-other-tile-operations-fail-closed",
+            "all-tile-operations-editable-except-resize",
           chunkedWriteProfile:
             "tiled-canonical-rebucket-chunksize-drop-empty-sort-y-x-bounds-union",
           chunkedWriteOperations: [
             "setTiles",
+            "fillRegion",
             "stampPattern",
             "floodFill",
+            "copyRegion",
+            "replaceTiles",
             "transcodeTileLayer",
           ],
+          chunkedReplaceScan:
+            "stored-nonzero-cells-only",
           chunkedFloodFillBounds:
             "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:

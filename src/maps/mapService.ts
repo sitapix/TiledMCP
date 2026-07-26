@@ -6569,14 +6569,31 @@ function validateAndSummarizeOperations(
           { limit: MAX_CELL_WRITES },
         );
       }
-      const layer = findTileLayer(map, operation.layerId, mapPath);
-      assertRegionInsideLayer(
-        layer,
-        operation.x,
-        operation.y,
-        operation.width,
-        operation.height,
+      const layer = findTileLayer(
+        map,
+        operation.layerId,
+        mapPath,
+        "edit",
+        true,
       );
+      if (layer.chunked === undefined) {
+        assertRegionInsideLayer(
+          layer,
+          operation.x,
+          operation.y,
+          operation.width,
+          operation.height,
+        );
+      } else {
+        assertChunkedRegionBounded(
+          layer,
+          operationIndex,
+          operation.x,
+          operation.y,
+          operation.width,
+          operation.height,
+        );
+      }
       affectedLayerIds.add(layer.id);
       affectedTileLayerIds.add(layer.id);
       cellWrites += regionCells;
@@ -6586,6 +6603,12 @@ function validateAndSummarizeOperations(
           writeLayerGid(layer, x, y, gid);
         }
       }
+      finalizeChunkedTileLayerWrite(
+        layer,
+        map,
+        mapPath,
+        chunkedTileLayerIds,
+      );
     } else if (operation.type === "floodFill") {
       assertExactObjectKeys(
         operation as unknown as Record<string, unknown>,
@@ -7006,26 +7029,54 @@ function validateAndSummarizeOperations(
         map,
         operation.source.layerId,
         mapPath,
+        "edit",
+        true,
       );
       const destinationLayer = findTileLayer(
         map,
         operation.destination.layerId,
         mapPath,
+        "edit",
+        true,
       );
-      assertRegionInsideLayer(
-        sourceLayer,
-        operation.source.x,
-        operation.source.y,
-        operation.source.width,
-        operation.source.height,
-      );
-      assertRegionInsideLayer(
-        destinationLayer,
-        operation.destination.x,
-        operation.destination.y,
-        operation.source.width,
-        operation.source.height,
-      );
+      if (sourceLayer.chunked === undefined) {
+        assertRegionInsideLayer(
+          sourceLayer,
+          operation.source.x,
+          operation.source.y,
+          operation.source.width,
+          operation.source.height,
+        );
+      } else {
+        assertChunkedRegionBounded(
+          sourceLayer,
+          operationIndex,
+          operation.source.x,
+          operation.source.y,
+          operation.source.width,
+          operation.source.height,
+        );
+      }
+      if (
+        destinationLayer.chunked === undefined
+      ) {
+        assertRegionInsideLayer(
+          destinationLayer,
+          operation.destination.x,
+          operation.destination.y,
+          operation.source.width,
+          operation.source.height,
+        );
+      } else {
+        assertChunkedRegionBounded(
+          destinationLayer,
+          operationIndex,
+          operation.destination.x,
+          operation.destination.y,
+          operation.source.width,
+          operation.source.height,
+        );
+      }
 
       const sourceGids: number[] = [];
       const destinationGids: number[] = [];
@@ -7119,6 +7170,12 @@ function validateAndSummarizeOperations(
         affectedLayerIds.add(destinationLayer.id);
         affectedTileLayerIds.add(
           destinationLayer.id,
+        );
+        finalizeChunkedTileLayerWrite(
+          destinationLayer,
+          map,
+          mapPath,
+          chunkedTileLayerIds,
         );
       }
       const overlapsSource =
@@ -7350,15 +7407,28 @@ function validateAndSummarizeOperations(
         map,
         operation.layerId,
         mapPath,
+        "edit",
+        true,
       );
+      const chunkedBounds =
+        layer.chunked === undefined
+          ? null
+          : chunkedFillBounds(layer.chunked);
       const region =
         operation.region === undefined
-          ? {
-              x: layer.x,
-              y: layer.y,
-              width: layer.width,
-              height: layer.height,
-            }
+          ? layer.chunked === undefined
+            ? {
+                x: layer.x,
+                y: layer.y,
+                width: layer.width,
+                height: layer.height,
+              }
+            : (chunkedBounds ?? {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+              })
           : readReplaceTilesRegion(
               operation.region,
               operationIndex,
@@ -7372,31 +7442,45 @@ function validateAndSummarizeOperations(
           `operations[${operationIndex}].region endpoints must be safe integers.`,
         );
       }
-      assertRegionInsideLayer(
-        layer,
-        region.x,
-        region.y,
-        region.width,
-        region.height,
-      );
-      const scannedCellCount = region.width * region.height;
-      if (
-        !Number.isSafeInteger(scannedCellCount) ||
-        tileOperationScans + scannedCellCount >
-          MAX_TILE_OPERATION_SCANS
-      ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
-          {
-            limit: MAX_TILE_OPERATION_SCANS,
-            actual:
-              tileOperationScans +
-              scannedCellCount,
-          },
+      if (layer.chunked === undefined) {
+        assertRegionInsideLayer(
+          layer,
+          region.x,
+          region.y,
+          region.width,
+          region.height,
+        );
+      } else if (region.width > 0) {
+        assertChunkedRegionBounded(
+          layer,
+          operationIndex,
+          region.x,
+          region.y,
+          region.width,
+          region.height,
         );
       }
-      tileOperationScans += scannedCellCount;
+      let scannedCellCount =
+        region.width * region.height;
+      if (layer.chunked === undefined) {
+        if (
+          !Number.isSafeInteger(scannedCellCount) ||
+          tileOperationScans + scannedCellCount >
+            MAX_TILE_OPERATION_SCANS
+        ) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
+            {
+              limit: MAX_TILE_OPERATION_SCANS,
+              actual:
+                tileOperationScans +
+                scannedCellCount,
+            },
+          );
+        }
+        tileOperationScans += scannedCellCount;
+      }
 
       const replacements = new Map<number, number>();
       const sourceMappingIndexes = new Map<number, number>();
@@ -7446,41 +7530,95 @@ function validateAndSummarizeOperations(
       }
 
       let replacedCellCount = 0;
-      for (
-        let y = region.y;
-        y < region.y + region.height;
-        y += 1
-      ) {
-        for (
-          let x = region.x;
-          x < region.x + region.width;
-          x += 1
+      const applyReplacement = (
+        x: number,
+        y: number,
+        currentGid: number,
+      ): void => {
+        // Replacement interprets every scanned cell, so malformed or
+        // unbound GIDs fail closed even when they are not a mapping source.
+        gidToTileRef(currentGid, orientation, bindings);
+        const replacement = replacements.get(currentGid);
+        if (replacement === undefined) {
+          return;
+        }
+        if (
+          cellWrites + replacedCellCount + 1 >
+          MAX_CELL_WRITES
         ) {
-          const currentGid = readLayerGid(layer, x, y);
-          // Replacement interprets every scanned cell, so malformed or
-          // unbound GIDs fail closed even when they are not a mapping source.
-          gidToTileRef(currentGid, orientation, bindings);
-          const replacement = replacements.get(currentGid);
-          if (replacement === undefined) {
+          throw new TiledMcpError(
+            "RESULT_LIMIT_EXCEEDED",
+            `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+            { limit: MAX_CELL_WRITES },
+          );
+        }
+        writeLayerGid(layer, x, y, replacement);
+        replacedCellCount += 1;
+      };
+      if (layer.chunked === undefined) {
+        for (
+          let y = region.y;
+          y < region.y + region.height;
+          y += 1
+        ) {
+          for (
+            let x = region.x;
+            x < region.x + region.width;
+            x += 1
+          ) {
+            applyReplacement(
+              x,
+              y,
+              readLayerGid(layer, x, y),
+            );
+          }
+        }
+      } else {
+        // Sparse layers scan only their stored nonzero cells: mapping
+        // sources are nonzero tiles, so empty cells can never match.
+        scannedCellCount = 0;
+        for (const [key, currentGid] of [
+          ...layer.chunked.cells,
+        ]) {
+          const comma = key.indexOf(",");
+          const x = Number(key.slice(0, comma));
+          const y = Number(key.slice(comma + 1));
+          if (
+            x < region.x ||
+            y < region.y ||
+            x >= region.x + region.width ||
+            y >= region.y + region.height
+          ) {
             continue;
           }
           if (
-            cellWrites + replacedCellCount + 1 >
-            MAX_CELL_WRITES
+            tileOperationScans +
+              scannedCellCount +
+              1 >
+            MAX_TILE_OPERATION_SCANS
           ) {
             throw new TiledMcpError(
               "RESULT_LIMIT_EXCEEDED",
-              `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-              { limit: MAX_CELL_WRITES },
+              `A change set may perform at most ${MAX_TILE_OPERATION_SCANS} tile-cell reads across replaceTiles, floodFill and copyRegion operations.`,
+              {
+                limit: MAX_TILE_OPERATION_SCANS,
+              },
             );
           }
-          writeLayerGid(layer, x, y, replacement);
-          replacedCellCount += 1;
+          scannedCellCount += 1;
+          applyReplacement(x, y, currentGid);
         }
+        tileOperationScans += scannedCellCount;
       }
       if (replacedCellCount > 0) {
         affectedLayerIds.add(layer.id);
         affectedTileLayerIds.add(layer.id);
+        finalizeChunkedTileLayerWrite(
+          layer,
+          map,
+          mapPath,
+          chunkedTileLayerIds,
+        );
       }
       cellWrites += replacedCellCount;
       tileReplacements.push({

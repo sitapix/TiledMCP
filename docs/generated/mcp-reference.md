@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:9ae61e7f6c42db41d7104cc74558fa65c97886be3444e9e2924d18ea76d9404c",
+    "revision": "sha256:3a0ae48db3b1ab0a086dda0f3d11aaf6f2c3ed408c955de0845a575eec5bb0a1",
     "serverVersion": "0.0.1",
-    "size": 79723
+    "size": 80056
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 79723,
+  "size": 80056,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 79723 UTF-8 bytes, revision `sha256:9ae61e7f6c42db41d7104cc74558fa65c97886be3444e9e2924d18ea76d9404c`.
+Content contract: `text`, 80056 UTF-8 bytes, revision `sha256:3a0ae48db3b1ab0a086dda0f3d11aaf6f2c3ed408c955de0845a575eec5bb0a1`.
 
 Resource templates: none.
 
@@ -12742,10 +12742,18 @@ Output schema:
                   "const": "summary-region-usage-preview-reads-set-tiles-stamp-writes",
                   "type": "string"
                 },
+                "chunkedReplaceScan": {
+                  "const": "stored-nonzero-cells-only",
+                  "type": "string"
+                },
                 "chunkedWriteOperations": {
                   "items": [
                     {
                       "const": "setTiles",
+                      "type": "string"
+                    },
+                    {
+                      "const": "fillRegion",
                       "type": "string"
                     },
                     {
@@ -12754,6 +12762,14 @@ Output schema:
                     },
                     {
                       "const": "floodFill",
+                      "type": "string"
+                    },
+                    {
+                      "const": "copyRegion",
+                      "type": "string"
+                    },
+                    {
+                      "const": "replaceTiles",
                       "type": "string"
                     },
                     {
@@ -12805,7 +12821,7 @@ Output schema:
                   "type": "string"
                 },
                 "infiniteMaps": {
-                  "const": "set-tiles-stamp-flood-fill-transcode-editable-other-tile-operations-fail-closed",
+                  "const": "all-tile-operations-editable-except-resize",
                   "type": "string"
                 },
                 "maxChunksPerLayer": {
@@ -12879,6 +12895,7 @@ Output schema:
                 "infiniteMaps",
                 "chunkedWriteProfile",
                 "chunkedWriteOperations",
+                "chunkedReplaceScan",
                 "chunkedFloodFillBounds",
                 "collectionTilesets",
                 "writeProfile",
