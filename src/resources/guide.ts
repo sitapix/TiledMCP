@@ -621,6 +621,16 @@ one change set may contain at most 8,192 path points, and all pending change
 sets together retain at most 65,536. No-op values, later replacements, and
 later deletes do not refund this intent budget.
 
+A tile draft (\`shape:"tile"\`) carries a \`tile\` reference — the same
+external-tileset \`TileRef\` used by tile-layer writes, including optional
+flip-bit \`transform\` — and the server encodes it into the object's \`gid\`
+exactly like a tile-layer cell (GidMapper::cellToGid). \`width\` and
+\`height\` are required positive numbers: the editor's tile-size default is
+a GUI convenience this service never approximates, so read the tileset
+details first to size the object like its tile. Anchoring follows
+MapObject::alignment — with \`objectalignment\` unspecified, orthogonal tile
+objects anchor bottom-left.
+
 Text uses flat wire fields: required \`text\`, optional dimensions, and optional
 \`fontFamily\`, \`pixelSize\`, \`color\`, \`bold\`, \`italic\`, \`underline\`,
 \`strikeout\`, \`kerning\`, \`wrap\`, \`horizontalAlignment\`, and
@@ -632,8 +642,11 @@ characters. Font families are non-empty, at most 256 scalars and 1,024 bytes,
 and permit no control characters. Both reject unpaired surrogates. Pixel size
 is an integer from 1 through 999.
 
-All seven shapes can be updated or safely deleted. \`updateObject.patch\` has no
-shape field, so an update cannot change shape. For polygon/polyline targets,
+All eight shapes can be updated or safely deleted. \`updateObject.patch\` has no
+shape field, so an update cannot change shape. A \`tile\` patch wholly
+replaces an existing tile object's reference (tileset, local id, and flip
+bits); it is rejected on every other shape, so shape objects never become
+tile objects. For polygon/polyline targets,
 \`points\` replaces the complete ordered array; append, splice, and index
 patches are unsupported. It may accompany common fields, while \`width\` and
 \`height\` remain invalid and points on a non-path target fail with a shape

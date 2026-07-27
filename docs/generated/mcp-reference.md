@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3cdd4caafb9b1f142042b3f804dd5540b2f5d5ad3927d66a774eb9e02b5bed7f",
+    "revision": "sha256:e7336d46e00ef55ea8952679bdabf531aa6085756d667cccd5e9085441516e56",
     "serverVersion": "0.0.1",
-    "size": 84544
+    "size": 85330
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 84544,
+  "size": 85330,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 84544 UTF-8 bytes, revision `sha256:3cdd4caafb9b1f142042b3f804dd5540b2f5d5ad3927d66a774eb9e02b5bed7f`.
+Content contract: `text`, 85330 UTF-8 bytes, revision `sha256:e7336d46e00ef55ea8952679bdabf531aa6085756d667cccd5e9085441516e56`.
 
 Resource templates: none.
 
@@ -16875,6 +16875,334 @@ Output schema:
                     "verticalAlignment"
                   ],
                   "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "className": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "classNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "height": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "id": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerId": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "layerName": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "layerNameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "nameTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "opacity": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "properties": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "string",
+                                  "int",
+                                  "float",
+                                  "bool",
+                                  "color",
+                                  "file",
+                                  "object"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "maxLength": 4096,
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "class",
+                                  "list"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {
+                                "$ref": "#/definitions/__schema0"
+                              },
+                              "valueSemantics": {
+                                "enum": [
+                                  "raw-untyped-members",
+                                  "typed-elements"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "value",
+                              "valueSemantics"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "name": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "propertytype": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "reason": {
+                                "const": "oversized-value",
+                                "type": "string"
+                              },
+                              "type": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "valueBytes": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueCodePoints": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "valueOmitted": {
+                                "const": true,
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "type",
+                              "valueOmitted",
+                              "reason"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 128,
+                      "type": "array"
+                    },
+                    "propertiesTruncated": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "propertyCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "rotation": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "shape": {
+                      "const": "tile",
+                      "type": "string"
+                    },
+                    "tile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "localId": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "tileset": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assetId": {
+                                  "pattern": "^asset_[0-9a-f]{24}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "external",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "assetId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "embedded",
+                                  "type": "string"
+                                },
+                                "sourceIndex": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "sourceIndex"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "transform": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "flipD": {
+                              "type": "boolean"
+                            },
+                            "flipH": {
+                              "type": "boolean"
+                            },
+                            "flipV": {
+                              "type": "boolean"
+                            },
+                            "kind": {
+                              "const": "orthogonal",
+                              "type": "string"
+                            },
+                            "rawFlags": {
+                              "maximum": 4294967295,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "flipH",
+                            "flipV",
+                            "flipD",
+                            "rawFlags"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "tileset",
+                        "localId",
+                        "transform"
+                      ],
+                      "type": "object"
+                    },
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "width": {
+                      "maximum": 1000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    },
+                    "y": {
+                      "maximum": 1000000000,
+                      "minimum": -1000000000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "layerId",
+                    "layerName",
+                    "name",
+                    "className",
+                    "x",
+                    "y",
+                    "rotation",
+                    "visible",
+                    "opacity",
+                    "properties",
+                    "propertyCount",
+                    "shape",
+                    "width",
+                    "height",
+                    "tile"
+                  ],
+                  "type": "object"
                 }
               ]
             },
@@ -25888,7 +26216,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
+Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches and tile objects (a shape:"tile" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can replace an existing tile object's reference, and shape objects never become tile objects) without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
 
 Annotations:
 
@@ -27361,6 +27689,123 @@ Input schema:
                       "text"
                     ],
                     "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "className": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "height": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "name": {
+                        "maxLength": 1024,
+                        "type": "string"
+                      },
+                      "opacity": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "rotation": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "shape": {
+                        "const": "tile",
+                        "type": "string"
+                      },
+                      "tile": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "localId": {
+                            "maximum": 268435455,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "tileset": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assetId": {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "kind": {
+                                "const": "external",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "assetId"
+                            ],
+                            "type": "object"
+                          },
+                          "transform": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "flipD": {
+                                "type": "boolean"
+                              },
+                              "flipH": {
+                                "type": "boolean"
+                              },
+                              "flipV": {
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "const": "orthogonal",
+                                "type": "string"
+                              },
+                              "rawFlags": {
+                                "maximum": 4294967295,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "tileset",
+                          "localId"
+                        ],
+                        "type": "object"
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "width": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "x": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      },
+                      "y": {
+                        "maximum": 1000000000,
+                        "minimum": -1000000000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "x",
+                      "y",
+                      "tile",
+                      "width",
+                      "height"
+                    ],
+                    "type": "object"
                   }
                 ]
               },
@@ -27665,6 +28110,64 @@ Input schema:
                   "text": {
                     "maxLength": 8192,
                     "type": "string"
+                  },
+                  "tile": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "localId": {
+                        "maximum": 268435455,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "external",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "assetId"
+                        ],
+                        "type": "object"
+                      },
+                      "transform": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "flipD": {
+                            "type": "boolean"
+                          },
+                          "flipH": {
+                            "type": "boolean"
+                          },
+                          "flipV": {
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "const": "orthogonal",
+                            "type": "string"
+                          },
+                          "rawFlags": {
+                            "maximum": 4294967295,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "tileset",
+                      "localId"
+                    ],
+                    "type": "object"
                   },
                   "underline": {
                     "type": "boolean"
@@ -29731,6 +30234,85 @@ Output schema:
                           "object"
                         ],
                         "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "tile",
+                                "type": "string"
+                              },
+                              "tile": {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "tile",
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "tile",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
                       }
                     ]
                   },
@@ -29762,7 +30344,8 @@ Output schema:
                             "kerning",
                             "horizontalAlignment",
                             "verticalAlignment",
-                            "properties"
+                            "properties",
+                            "tile"
                           ],
                           "type": "string"
                         },
@@ -30007,6 +30590,13 @@ Output schema:
                           "text": {
                             "maxLength": 8192,
                             "type": "string"
+                          },
+                          "tile": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              }
+                            ]
                           },
                           "underline": {
                             "type": "boolean"

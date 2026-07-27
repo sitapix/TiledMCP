@@ -85,7 +85,14 @@
 `embeddedIndex` 寻址返回与外部 atlas 相同的有界详情投影（内容由 map revision
 本身 pin，无独立 assetId/revision）；内嵌 image-collection、pre-1.5 `terrains`
 字段 fail closed，一切编辑/渲染/检索路径对内嵌条目继续明确拒绝，不会静默降级。
-tile object 的创建/语义编辑尚未实现。JSON（.tj）对象模板获得**读取展开**支持：
+tile object（`gid` 引用对象）获得**创建与语义编辑**支持：`createObject` 的
+`shape:"tile"` 草稿以 TileRef（external binding + local id + 翻转位）经与 tile
+layer cell 完全一致的 `cellToGid` 编码写入 `gid`，`width`/`height` 必须显式给出
+（编辑器的"默认取 tile 尺寸"是 GUI 便利，本服务不近似——先读 tileset 详情）；
+`updateObject` 可整体替换既有 tile object 的 `tile` 引用并 patch 位置/尺寸/公共
+字段，shape 对象绝不会变身 tile object；`tiled_get_object` 对 tile object 返回
+解码后的 tile 引用与显式翻转位；删除同样放行。锚点语义对照
+`MapObject::alignment`（`unspecified` 正交回落 bottom-left）。JSON（.tj）对象模板获得**读取展开**支持：
 `tiled_get_object` 按 Tiled 1.12.2 `syncWithTemplate` 精确合并规则展开模板实例
 （非空 name、全正 size、显式 rotation/opacity/visible、任一 shape 成员覆盖模
 板，text 成员只覆盖文本不覆盖形状），结果携带 pin 了 revision 的 template 块；

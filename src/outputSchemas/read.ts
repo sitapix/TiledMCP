@@ -667,6 +667,15 @@ const objectDetailsTextOutputSchema = z
       textObjectVerticalAlignmentOutputSchema,
   })
   .strict();
+const objectDetailsTileOutputSchema = z
+  .object({
+    ...objectDetailsCommonOutputShape,
+    shape: z.literal("tile"),
+    width: objectDetailsExtentOutputSchema,
+    height: objectDetailsExtentOutputSchema,
+    tile: resolvedTileRefOutputSchema,
+  })
+  .strict();
 const objectDetailsResultOutputSchema = z
   .object({
     mapPath: projectPathOutputSchema,
@@ -681,6 +690,7 @@ const objectDetailsResultOutputSchema = z
       objectDetailsPolygonOutputSchema,
       objectDetailsPolylineOutputSchema,
       objectDetailsTextOutputSchema,
+      objectDetailsTileOutputSchema,
     ]),
     template: z
       .object({

@@ -41,8 +41,8 @@ union 为 `setTiles`、`fillRegion`、`replaceTiles`、`createObject`、
 change set 的 `resizeMap`。
 `tiled_create_layer` 使用独立的单操作 planner，不向这个通用 union 暴露可伪造的
 `layerId`、父容器路径或最终插入位置。
-对象写入支持 rectangle/point/ellipse/capsule、有界 polygon/polyline path 与有界
-text；模板与 tile object 仍会明确拒绝。
+对象写入支持 rectangle/point/ellipse/capsule、有界 polygon/polyline path、有界
+text 与 tile object（`gid` 经 `cellToGid` 编码、尺寸必须显式）；模板对象仍会明确拒绝。
 其余仍是 roadmap，不得从下文候选表推断为可调用能力。
 
 这一切片已有严格输入 schema、每个工具各自的完整字段级 closed output schema、四项
@@ -1167,7 +1167,7 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 |---|---|---|
 | `tiled_list_objects` | **已实现基础版**；有界列出全部或指定 object layer，返回精简视图 | `mapPath`, `layerId?`, `limit?` |
 | `tiled_get_object` | **已实现**；按全图唯一 ID 返回一个有界、严格 shape 判别的 editable semantic projection；path 返回完整 points，text 返回解析缺省后的完整样式，自定义属性按文档序回读（标量逐字、复杂/超长条目 `valueOmitted` 标记、≤128 条）；tile/template 拒绝 | `mapPath`, `objectId` |
-| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline/text | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?\|text?`, `name?`, `class?`, `rotation?` |
+| `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline/text/tile（tile 草稿以 TileRef 经 `cellToGid` 编码写 `gid`、翻转位与 tile layer cell 完全一致，`width`/`height` 必须显式；`updateObject` 可整体替换既有 tile object 的 `tile` 引用，shape 对象绝不变身；锚点对照 `MapObject::alignment` unspecified→正交 bottom-left） | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?\|text?\|tile?`, `name?`, `class?`, `rotation?` |
 | `tiled_update_object` | 候选独立入口；当前通过 `updateObject` operation 修改基础对象字段 | `mapPath`, `objectId`, `patch` |
 | `tiled_delete_object` | 候选独立入口；当前通过带醒目 destructive 摘要的 `deleteObjects` operation 提供；拒绝留下 object/list 引用，class 属性存在时 fail closed | `mapPath`, `objectIds` |
 | `tiled_instantiate_template` | 从 `.tx`/`.tj` 模板实例化对象（后续候选） | `mapPath`, `layerId`, `templatePath`, `x`, `y`, `overrides?` |

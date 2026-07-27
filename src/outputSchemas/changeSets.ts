@@ -321,6 +321,15 @@ const polylineObjectDraftOutputSchema = z
       .max(MAX_OBJECT_SHAPE_POINTS),
   })
   .strict();
+const tileObjectDraftOutputSchema = z
+  .object({
+    shape: z.literal("tile"),
+    ...objectCommonOutputShape,
+    tile: previewTileRefOutputSchema,
+    width: objectExtentOutputSchema,
+    height: objectExtentOutputSchema,
+  })
+  .strict();
 const textObjectDraftOutputSchema = z
   .object({
     shape: z.literal("text"),
@@ -429,6 +438,7 @@ const objectPatchOutputSchema = z
     y: objectCoordinateOutputSchema.optional(),
     width: objectExtentOutputSchema.optional(),
     height: objectExtentOutputSchema.optional(),
+    tile: previewTileRefOutputSchema.optional(),
     points: z
       .array(objectPathPointOutputSchema)
       .min(MIN_POLYLINE_OBJECT_POINTS)
@@ -815,6 +825,14 @@ const createObjectOperationPreviewOutputSchema =
         object: textObjectDraftOutputSchema,
       })
       .strict(),
+    z
+      .object({
+        type: z.literal("createObject"),
+        layerId: positiveIdOutputSchema,
+        shape: z.literal("tile"),
+        object: tileObjectDraftOutputSchema,
+      })
+      .strict(),
   ]);
 
 const updateObjectOperationPreviewOutputSchema = z
@@ -846,6 +864,7 @@ const updateObjectOperationPreviewOutputSchema = z
         "horizontalAlignment",
         "verticalAlignment",
         "properties",
+        "tile",
       ]),
     ),
     patch: objectPatchOutputSchema,

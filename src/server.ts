@@ -927,6 +927,16 @@ const pointObjectSchema = z
   })
   .strict();
 
+const tileObjectSchema = z
+  .object({
+    shape: z.literal("tile"),
+    ...objectCommonShape,
+    tile: tileRefSchema,
+    width: objectExtentSchema,
+    height: objectExtentSchema,
+  })
+  .strict();
+
 const ellipseObjectSchema = z
   .object({
     shape: z.literal("ellipse"),
@@ -1011,6 +1021,7 @@ const createObjectSchema = z
       polygonObjectSchema,
       polylineObjectSchema,
       textObjectSchema,
+      tileObjectSchema,
     ]),
   })
   .strict();
@@ -1120,6 +1131,7 @@ const objectPatchSchema = z
     y: objectCoordinateSchema.optional(),
     width: objectExtentSchema.optional(),
     height: objectExtentSchema.optional(),
+    tile: tileRefSchema.optional(),
     points: z
       .array(objectPathPointSchema)
       .min(MIN_POLYLINE_OBJECT_POINTS)
@@ -4333,7 +4345,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches and tile objects (a shape:\"tile\" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can replace an existing tile object's reference, and shape objects never become tile objects) without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

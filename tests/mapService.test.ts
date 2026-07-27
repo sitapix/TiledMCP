@@ -28,6 +28,7 @@ import {
 import {
   GID_DIAGONAL_OR_HEX_60,
   GID_FLIP_HORIZONTAL,
+  GID_FLIP_VERTICAL,
 } from "../src/maps/gid.js";
 import { MapService } from "../src/maps/mapService.js";
 import type { TileFindQuery } from "../src/maps/tileSearch.js";
@@ -3457,7 +3458,6 @@ describe("MapService", () => {
 
   it.each([
     ["template", "template", "../templates/enemy.tx"],
-    ["tile", "gid", 1],
   ] as const)(
     "rejects semantic updates to a complex %s object",
     async (_label, feature, value) => {
@@ -3504,6 +3504,269 @@ describe("MapService", () => {
       });
     },
   );
+
+  it("moves an existing tile object while preserving its gid", async () => {
+    const map = baseMap();
+    const objectLayer = (map.layers as JsonObject[])[1];
+    const objects = objectLayer?.objects as JsonObject[];
+    objects.push({
+      id: 3,
+      name: "Crate",
+      type: "",
+      x: 0,
+      y: 16,
+      width: 16,
+      height: 16,
+      rotation: 0,
+      visible: true,
+      gid: 1,
+    });
+    map.nextobjectid = 4;
+    await writeJson(join(harness.root, MAP_PATH), map);
+
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      await getMapRevision(harness.service),
+      await getDependencyRevisions(harness.service),
+      [
+        {
+          type: "updateObject",
+          objectId: 3,
+          patch: { x: 8, y: 24 },
+        },
+      ],
+    );
+    await harness.service.applyEdits(plan);
+    const after = JSON.parse(
+      (await readFile(join(harness.root, MAP_PATH))).toString("utf8"),
+    ) as JsonObject;
+    const savedLayer = (after.layers as JsonObject[])[1];
+    const saved = (savedLayer?.objects as JsonObject[]).find(
+      (object) => object.id === 3,
+    );
+    expect(saved).toMatchObject({
+      x: 8,
+      y: 24,
+      gid: 1,
+      width: 16,
+      height: 16,
+    });
+  });
+
+  it("creates a tile object with an encoded flip transform and reads it back", async () => {
+    const summary = await harness.service.getSummary(MAP_PATH);
+    const assetId = (
+      summary.tilesets as SummaryTileset[]
+    )[0]!.assetId;
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      summary.dependencyRevisions as Record<string, string>,
+      [
+        {
+          type: "createObject",
+          layerId: OBJECT_LAYER_ID,
+          object: {
+            shape: "tile",
+            x: 32,
+            y: 48,
+            name: "Barrel",
+            width: 16,
+            height: 16,
+            tile: {
+              tileset: { kind: "external", assetId },
+              localId: 2,
+              transform: { flipH: true },
+            },
+          },
+        },
+      ],
+    );
+    const preview = new ChangeSetRegistry().put(plan);
+    expect(preview.operations[0]).toMatchObject({
+      type: "createObject",
+      shape: "tile",
+      object: {
+        shape: "tile",
+        tile: {
+          tileset: { kind: "external", assetId },
+          localId: 2,
+        },
+      },
+    });
+
+    await harness.service.applyEdits(plan);
+    const after = JSON.parse(
+      (await readFile(join(harness.root, MAP_PATH))).toString("utf8"),
+    ) as JsonObject;
+    const savedLayer = (after.layers as JsonObject[])[1];
+    const saved = (savedLayer?.objects as JsonObject[]).find(
+      (object) => object.name === "Barrel",
+    );
+    expect(saved).toMatchObject({
+      x: 32,
+      y: 48,
+      width: 16,
+      height: 16,
+      gid: (GID_FLIP_HORIZONTAL | 3) >>> 0,
+    });
+    expect(after.nextobjectid).toBe(4);
+
+    const details = await harness.service.getObject({
+      mapPath: MAP_PATH,
+      objectId: saved?.id as number,
+    });
+    expect(details.object).toMatchObject({
+      shape: "tile",
+      width: 16,
+      height: 16,
+      tile: {
+        tileset: { kind: "external", assetId },
+        localId: 2,
+        transform: expect.objectContaining({
+          flipH: true,
+          flipV: false,
+        }),
+      },
+    });
+  });
+
+  it("replaces a tile object's reference and deletes tile objects", async () => {
+    const map = baseMap();
+    const objectLayer = (map.layers as JsonObject[])[1];
+    const objects = objectLayer?.objects as JsonObject[];
+    objects.push({
+      id: 3,
+      name: "Crate",
+      type: "",
+      x: 0,
+      y: 16,
+      width: 16,
+      height: 16,
+      rotation: 0,
+      visible: true,
+      gid: 1,
+    });
+    map.nextobjectid = 4;
+    await writeJson(join(harness.root, MAP_PATH), map);
+    const summary = await harness.service.getSummary(MAP_PATH);
+    const assetId = (
+      summary.tilesets as SummaryTileset[]
+    )[0]!.assetId;
+
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      summary.dependencyRevisions as Record<string, string>,
+      [
+        {
+          type: "updateObject",
+          objectId: 3,
+          patch: {
+            tile: {
+              tileset: { kind: "external", assetId },
+              localId: 3,
+              transform: { flipV: true },
+            },
+          },
+        },
+      ],
+    );
+    await harness.service.applyEdits(plan);
+    let after = JSON.parse(
+      (await readFile(join(harness.root, MAP_PATH))).toString("utf8"),
+    ) as JsonObject;
+    let savedLayer = (after.layers as JsonObject[])[1];
+    expect(
+      (savedLayer?.objects as JsonObject[]).find(
+        (object) => object.id === 3,
+      ),
+    ).toMatchObject({
+      gid: (GID_FLIP_VERTICAL | 4) >>> 0,
+    });
+
+    const deletePlan = await harness.service.planEdits(
+      MAP_PATH,
+      await getMapRevision(harness.service),
+      await getDependencyRevisions(harness.service),
+      [{ type: "deleteObjects", objectIds: [3] }],
+    );
+    await harness.service.applyEdits(deletePlan);
+    after = JSON.parse(
+      (await readFile(join(harness.root, MAP_PATH))).toString("utf8"),
+    ) as JsonObject;
+    savedLayer = (after.layers as JsonObject[])[1];
+    expect(
+      (savedLayer?.objects as JsonObject[]).some(
+        (object) => object.id === 3,
+      ),
+    ).toBe(false);
+  });
+
+  it("fails tile object edits closed on bad references and misuse", async () => {
+    const summary = await harness.service.getSummary(MAP_PATH);
+    const assetId = (
+      summary.tilesets as SummaryTileset[]
+    )[0]!.assetId;
+    const revision = summary.revision as string;
+    const dependencies =
+      summary.dependencyRevisions as Record<string, string>;
+    const draftOf = (tile: JsonObject, size?: number) => ({
+      type: "createObject" as const,
+      layerId: OBJECT_LAYER_ID,
+      object: {
+        shape: "tile" as const,
+        x: 0,
+        y: 0,
+        width: size ?? 16,
+        height: size ?? 16,
+        tile,
+      } as never,
+    });
+
+    await expect(
+      harness.service.planEdits(MAP_PATH, revision, dependencies, [
+        draftOf({
+          tileset: { kind: "external", assetId: "asset_missing000000000" },
+          localId: 0,
+        }),
+      ]),
+    ).rejects.toMatchObject({ code: "TILESET_NOT_IN_MAP" });
+    await expect(
+      harness.service.planEdits(MAP_PATH, revision, dependencies, [
+        draftOf({
+          tileset: { kind: "external", assetId },
+          localId: 99,
+        }),
+      ]),
+    ).rejects.toMatchObject({ code: "TILE_ID_OUT_OF_RANGE" });
+    await expect(
+      harness.service.planEdits(MAP_PATH, revision, dependencies, [
+        draftOf(
+          {
+            tileset: { kind: "external", assetId },
+            localId: 0,
+          },
+          0,
+        ),
+      ]),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    // Shape objects never become tile objects.
+    await expect(
+      harness.service.planEdits(MAP_PATH, revision, dependencies, [
+        {
+          type: "updateObject",
+          objectId: 2,
+          patch: {
+            tile: {
+              tileset: { kind: "external", assetId },
+              localId: 0,
+            },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({ code: "OBJECT_SHAPE_MISMATCH" });
+  });
 
   it("rejects a tampered change set before writing", async () => {
     const absoluteMapPath = join(harness.root, MAP_PATH);

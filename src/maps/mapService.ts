@@ -547,7 +547,8 @@ type BasicEditableObjectShape =
   | "capsule"
   | "polygon"
   | "polyline"
-  | "text";
+  | "text"
+  | "tile";
 
 export interface CreateMapInput {
   mapPath: string;
@@ -3540,6 +3541,8 @@ export class MapService {
         effectiveLocation,
         shape,
         context.loaded.path,
+        context.orientation,
+        context.bindings,
       ),
       ...(templateBlock === undefined
         ? {}
@@ -8724,6 +8727,8 @@ function validateAndSummarizeOperations(
         mapPath,
         `operations[${operationIndex}].object`,
         getObjectIndex(),
+        orientation,
+        bindings,
       );
       textObjectPayloadBytes +=
         measureTextObjectPayloadBytes(
@@ -8761,6 +8766,8 @@ function validateAndSummarizeOperations(
         mapPath,
         `operations[${operationIndex}].patch`,
         getObjectIndex(),
+        orientation,
+        bindings,
       );
       textObjectPayloadBytes +=
         measureTextObjectPayloadBytes(
@@ -13643,6 +13650,8 @@ function createBasicObject(
   mapPath: string,
   context: string,
   index: ObjectEditIndex,
+  orientation: MapOrientation,
+  bindings: readonly TilesetBinding[],
 ): ObjectLocation {
   if (!isRecordValue(draft)) {
     throw new TiledMcpError("INVALID_ARGUMENT", `${context} must be an object.`);
@@ -13669,7 +13678,8 @@ function createBasicObject(
     draft.shape === "rectangle" ||
     draft.shape === "ellipse" ||
     draft.shape === "capsule" ||
-    draft.shape === "text";
+    draft.shape === "text" ||
+    draft.shape === "tile";
   const object: JsonObject = {
     height: hasDimensions ? (draft.height ?? 0) : 0,
     id: nextObjectId,
@@ -13693,6 +13703,12 @@ function createBasicObject(
           Record<string, unknown>
         >,
       ),
+    );
+  } else if (draft.shape === "tile") {
+    object.gid = tileRefToGid(
+      draft.tile,
+      orientation,
+      bindings,
     );
   } else if (draft.shape !== "rectangle") {
     object[draft.shape] = true;
@@ -13720,6 +13736,8 @@ function updateBasicObject(
   mapPath: string,
   context: string,
   index: ObjectEditIndex,
+  orientation: MapOrientation,
+  bindings: readonly TilesetBinding[],
 ): ObjectLocation {
   if (!isRecordValue(patch)) {
     throw new TiledMcpError("INVALID_ARGUMENT", `${context} must be an object.`);
@@ -13740,6 +13758,7 @@ function updateBasicObject(
     "opacity",
     "points",
     "properties",
+    "tile",
     ...TEXT_OBJECT_FIELDS,
   ]);
   if (keys.length === 0) {
@@ -13806,6 +13825,18 @@ function updateBasicObject(
       { path: mapPath, objectId, shape },
     );
   }
+  const hasTilePatch =
+    Object.prototype.hasOwnProperty.call(
+      patch,
+      "tile",
+    );
+  if (hasTilePatch && shape !== "tile") {
+    throw new TiledMcpError(
+      "OBJECT_SHAPE_MISMATCH",
+      "The tile reference can be replaced only on existing tile objects.",
+      { path: mapPath, objectId, shape },
+    );
+  }
   assertObjectPatch(patch, context);
   if (hasPointsPatch) {
     assertObjectPathPoints(
@@ -13813,6 +13844,13 @@ function updateBasicObject(
       shape as "polygon" | "polyline",
       `${context}.points`,
       "INVALID_ARGUMENT",
+    );
+  }
+  if (hasTilePatch) {
+    location.object.gid = tileRefToGid(
+      patch.tile as TileRef,
+      orientation,
+      bindings,
     );
   }
   const hasPropertiesPatch =
@@ -13853,6 +13891,7 @@ function updateBasicObject(
     if (
       key === "points" ||
       key === "properties" ||
+      key === "tile" ||
       textObjectFields.has(key)
     ) {
       continue;
@@ -14053,11 +14092,12 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     draft.shape !== "capsule" &&
     draft.shape !== "polygon" &&
     draft.shape !== "polyline" &&
-    draft.shape !== "text"
+    draft.shape !== "text" &&
+    draft.shape !== "tile"
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context}.shape must be rectangle, point, ellipse, capsule, polygon, polyline or text.`,
+      `${context}.shape must be rectangle, point, ellipse, capsule, polygon, polyline, text or tile.`,
     );
   }
   if (draft.shape === "polygon" || draft.shape === "polyline") {
@@ -14068,6 +14108,10 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
     for (const field of TEXT_OBJECT_FIELDS) {
       commonKeys.add(field);
     }
+  } else if (draft.shape === "tile") {
+    commonKeys.add("tile");
+    commonKeys.add("width");
+    commonKeys.add("height");
   } else if (draft.shape !== "point") {
     commonKeys.add("width");
     commonKeys.add("height");
@@ -14088,6 +14132,24 @@ function assertObjectDraft(draft: ObjectDraft, context: string): void {
       `${context}.points`,
       "INVALID_ARGUMENT",
     );
+  } else if (draft.shape === "tile") {
+    for (const dimension of [
+      "width",
+      "height",
+    ] as const) {
+      const value = draft[dimension];
+      assertObjectSize(
+        value,
+        `${context}.${dimension}`,
+      );
+      if ((value as number) <= 0) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `${context}.${dimension} must be an explicit positive number for a tile object.`,
+          { dimension },
+        );
+      }
+    }
   } else if (draft.shape !== "point") {
     const sizedDraft = draft as ObjectDraft & {
       width?: unknown;
@@ -15449,7 +15511,6 @@ function assertBasicEditableObject(
 ): BasicEditableObjectShape {
   const unsupportedKeys = [
     "template",
-    "gid",
   ];
   const unsupported = unsupportedKeys.find((key) =>
     Object.prototype.hasOwnProperty.call(object, key),
@@ -15469,6 +15530,44 @@ function assertBasicEditableObject(
     "polyline",
     "text",
   ] as const;
+  if (
+    Object.prototype.hasOwnProperty.call(
+      object,
+      "gid",
+    )
+  ) {
+    const conflicting = shapeMarkers.find(
+      (marker) =>
+        Object.prototype.hasOwnProperty.call(
+          object,
+          marker,
+        ),
+    );
+    if (conflicting !== undefined) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `Object ${objectId} combines gid with the ${conflicting} shape marker.`,
+        {
+          path: mapPath,
+          objectId,
+          feature: conflicting,
+        },
+      );
+    }
+    assertStoredObjectNumber(
+      object.x,
+      `object ${objectId}.x`,
+      mapPath,
+      objectId,
+    );
+    assertStoredObjectNumber(
+      object.y,
+      `object ${objectId}.y`,
+      mapPath,
+      objectId,
+    );
+    return "tile";
+  }
   const presentShapeMarkers =
     shapeMarkers.filter((marker) =>
       Object.prototype.hasOwnProperty.call(
@@ -15716,6 +15815,8 @@ function describeEditableObject(
   location: ObjectLocation,
   shape: BasicEditableObjectShape,
   mapPath: string,
+  orientation: MapOrientation,
+  bindings: readonly TilesetBinding[],
 ): Record<string, unknown> {
   const objectId = expectInteger(
     location.object.id,
@@ -15798,6 +15899,30 @@ function describeEditableObject(
       width: displayNumber(location.object.width, 0),
       height: displayNumber(location.object.height, 0),
       ...text,
+    };
+  }
+  if (shape === "tile") {
+    const gid = expectInteger(
+      location.object.gid,
+      `object ${objectId}.gid`,
+    );
+    const tile = gidToTileRef(
+      gid,
+      orientation,
+      bindings,
+    );
+    if (tile === null) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `Object ${objectId} carries an empty gid.`,
+        { path: mapPath, objectId },
+      );
+    }
+    return {
+      ...common,
+      width: displayNumber(location.object.width, 0),
+      height: displayNumber(location.object.height, 0),
+      tile,
     };
   }
   return common;

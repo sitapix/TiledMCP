@@ -230,6 +230,24 @@ export type ObjectDraft =
          */
         width?: number;
         height?: number;
+    })
+  | (ObjectCommonInput & {
+      shape: "tile";
+      /**
+       * External tileset reference serialized as the object's `gid` with
+       * the same flip-bit encoding as tile-layer cells
+       * (GidMapper::cellToGid). The referenced tileset must already be
+       * bound to the map.
+       */
+      tile: TileRef;
+      /**
+       * Explicit pixel size, required: Tiled always serializes a tile
+       * object's own width/height, and the editor's tile-size default is
+       * a GUI convenience this service never approximates. Read the
+       * tileset details first to size the object like its tile.
+       */
+      width: number;
+      height: number;
     });
 
 export interface CreateObjectOperation {
@@ -263,6 +281,12 @@ export interface UpdateObjectOperation {
      * are preserved.
      */
     properties?: PropertiesPatch;
+    /**
+     * Whole replacement of an existing tile object's `gid` (tileset,
+     * local id, and flip bits). Only objects that already carry a gid
+     * accept this patch; shape objects never become tile objects.
+     */
+    tile?: TileRef;
   } & Partial<ObjectTextFieldsInput>;
 }
 

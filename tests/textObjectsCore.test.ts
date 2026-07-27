@@ -544,7 +544,7 @@ describe("bounded text-object core", () => {
     });
   });
 
-  it("returns bounded discriminated details for all editable shapes and rejects tile objects", async () => {
+  it("returns bounded discriminated details for all editable shapes and fails dangling tile objects closed", async () => {
     const map = baseMap();
     const layer = requireObjectLayer(map);
     layer.objects = [
@@ -639,13 +639,15 @@ describe("bounded text-object core", () => {
         ],
       },
     });
+    // Tile objects are readable now, so this fixture's gid — which no
+    // bound tileset covers — surfaces as a dangling GID instead.
     await expect(
       harness.service.getObject({
         mapPath: MAP_PATH,
         objectId: 4,
       }),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_OBJECT_PROFILE",
+      code: "GID_OUT_OF_RANGE",
     });
   });
 
