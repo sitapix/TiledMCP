@@ -63,6 +63,12 @@ export interface SummarizeTilesetDocumentInput {
   limit: number;
   /** Present exactly for image-collection tilesets. */
   collection?: TilesetCollectionProfile;
+  /**
+   * Present exactly for embedded (inline) map tilesets: the original
+   * `tilesets[]` array index. The projection then identifies the tileset by
+   * that index instead of a standalone file path.
+   */
+  embeddedSourceIndex?: number;
 }
 
 interface TileMetadataSummary {
@@ -292,7 +298,14 @@ export function summarizeTilesetDocument(
 ): Record<string, unknown> {
   const { document, path, imagePath, tileCount, startTileId, limit, collection } =
     input;
-  if (document.type !== "tileset") {
+  // Tiled writes `type: "tileset"` only to standalone files; embedded map
+  // entries omit it, so they are exempt unless a conflicting value appears.
+  if (
+    input.embeddedSourceIndex === undefined
+      ? document.type !== "tileset"
+      : document.type !== undefined &&
+        document.type !== "tileset"
+  ) {
     throw new TiledMcpError(
       "INVALID_DOCUMENT",
       `${path} is not a Tiled tileset.`,
@@ -560,7 +573,13 @@ export function summarizeTilesetDocument(
           : "per-tile-returned-page-verified",
     },
     tileset: {
-      path,
+      ...(input.embeddedSourceIndex === undefined
+        ? { path }
+        : {
+            embedded: {
+              sourceIndex: input.embeddedSourceIndex,
+            },
+          }),
       name: input.name,
       ...(input.nameTruncated ? { nameTruncated: true } : {}),
       ...(className === undefined

@@ -415,6 +415,29 @@ const mapSummaryResultOutputSchema = z
     tilesets: z.array(
       mapTilesetBindingOutputSchema,
     ).max(4_096),
+    embeddedTilesets: z
+      .array(
+        z
+          .object({
+            kind: z.literal("embedded"),
+            sourceIndex:
+              nonnegativeIntegerOutputSchema,
+            name: z.string(),
+            nameTruncated: z
+              .literal(true)
+              .optional(),
+            firstGid:
+              positiveIntegerOutputSchema,
+            tileCount:
+              positiveIntegerOutputSchema,
+            gidSpan:
+              positiveIntegerOutputSchema,
+            lastPotentialGid:
+              positiveIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(4_096),
     dependencyRevisions:
       dependencyRevisionsOutputSchema,
     editableProfile: z.enum([

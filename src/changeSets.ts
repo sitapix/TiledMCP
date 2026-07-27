@@ -4458,7 +4458,12 @@ function previewTileRefsEqual(
   }
   return (
     left.tileset.kind === right.tileset.kind &&
-    left.tileset.assetId === right.tileset.assetId &&
+    (left.tileset.kind === "external"
+      ? right.tileset.kind === "external" &&
+        left.tileset.assetId === right.tileset.assetId
+      : right.tileset.kind === "embedded" &&
+        left.tileset.sourceIndex ===
+          right.tileset.sourceIndex) &&
     left.localId === right.localId &&
     (left.transform?.kind ?? "orthogonal") ===
       (right.transform?.kind ?? "orthogonal") &&

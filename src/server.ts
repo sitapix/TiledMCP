@@ -114,6 +114,7 @@ import {
   MAX_STAMP_PATTERN_CELLS,
   MAX_STAMP_PATTERN_EDGE,
   MAX_TILE_OPERATION_SCANS,
+  MAX_TILESET_COUNT,
   MAX_USAGE_DISTINCT_TILES,
   MAX_USAGE_LAYER_SUMMARIES,
   MAX_USAGE_RESULT_BYTES,
@@ -2569,6 +2570,21 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "template-shape-marker-unexpanded",
           templatePin: "path-and-raw-revision",
         },
+        embeddedTilesetCapabilities: {
+          readTools: [
+            "tiled_get_map_summary",
+            "tiled_get_region",
+            "tiled_get_tileset",
+          ],
+          detailLocator:
+            "map-path-plus-embedded-index",
+          profile: "embedded-atlas-only",
+          imageCollections: "fail-closed",
+          legacyTerrains: "fail-closed",
+          pin: "map-revision-only",
+          editable: false,
+          renderable: false,
+        },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           pageIndexBase: 0,
@@ -3414,7 +3430,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a Tiled map summary",
       description:
-        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker.",
+        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Embedded (inline) atlas tilesets are listed separately with their tilesets[] index and GID range; they are pinned by the map revision and stay read-only. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema: mapSummaryToolOutputSchema,
       annotations: READ_ONLY,
@@ -3429,11 +3445,21 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
+        "Returns a bounded semantic summary of one tileset referenced by a map — an external TSJ selected by tilesetAssetId, or an embedded (inline) atlas tileset selected by its original tilesets[] index via embeddedIndex (exactly one selector is required; embedded content is pinned by the map revision itself). Includes sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets, per-tile sub-rectangles, and embedded image-collection tilesets fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          tilesetAssetId: z.string().min(1).max(128),
+          tilesetAssetId: z
+            .string()
+            .min(1)
+            .max(128)
+            .optional(),
+          embeddedIndex: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_TILESET_COUNT - 1)
+            .optional(),
           startTileId: z
             .number()
             .int()
@@ -3452,11 +3478,22 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         tilesetDetailToolOutputSchema,
       annotations: READ_ONLY,
     },
-    async ({ mapPath, tilesetAssetId, startTileId, limit }) =>
+    async ({
+      mapPath,
+      tilesetAssetId,
+      embeddedIndex,
+      startTileId,
+      limit,
+    }) =>
       executeTool(() =>
         maps.getTileset({
           mapPath,
-          tilesetAssetId,
+          ...(tilesetAssetId === undefined
+            ? {}
+            : { tilesetAssetId }),
+          ...(embeddedIndex === undefined
+            ? {}
+            : { embeddedIndex }),
           startTileId,
           limit,
         }),
@@ -3528,7 +3565,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a tile region",
       description:
-        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty.",
+        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Cells referencing an embedded (inline) tileset return a read-only {kind:\"embedded\", sourceIndex} reference instead of an asset ID. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

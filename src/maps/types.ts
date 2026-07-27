@@ -6,10 +6,20 @@ import type {
 } from "./textObjects.js";
 
 export interface TileRef {
-  tileset: {
-    kind: "external";
-    assetId: string;
-  };
+  tileset:
+    | {
+        kind: "external";
+        assetId: string;
+      }
+    | {
+        /**
+         * A tileset embedded inline in the map document. Read-only: region
+         * reads may return embedded references, but every edit operation
+         * accepts only external references and fails closed otherwise.
+         */
+        kind: "embedded";
+        sourceIndex: number;
+      };
   localId: number;
   transform?: Partial<TileTransform>;
 }

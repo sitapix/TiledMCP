@@ -397,8 +397,7 @@ const tilesetDetailProjectionOutputSchema = <
     })
     .strict();
 
-const tilesetDetailTilesetBaseShape = {
-  path: projectPathOutputSchema,
+const tilesetDetailTilesetCoreShape = {
   name: z.string(),
   nameTruncated: z.literal(true).optional(),
   className: z.string().optional(),
@@ -429,6 +428,33 @@ const tilesetDetailTilesetBaseShape = {
       tileProperties:
         nonnegativeIntegerOutputSchema,
       wangSets: nonnegativeIntegerOutputSchema,
+    })
+    .strict(),
+} as const;
+
+const tilesetDetailTilesetBaseShape = {
+  path: projectPathOutputSchema,
+  ...tilesetDetailTilesetCoreShape,
+} as const;
+
+const tilesetDetailAtlasBlockShape = {
+  atlas: z
+    .object({
+      columns: positiveIntegerOutputSchema,
+      rows: positiveIntegerOutputSchema,
+      margin: nonnegativeIntegerOutputSchema,
+      spacing: nonnegativeIntegerOutputSchema,
+    })
+    .strict(),
+  image: z
+    .object({
+      path: projectPathOutputSchema,
+      declaredPixelSize:
+        declaredPixelSizeOutputSchema,
+      transparentColor: z
+        .string()
+        .regex(/^#[0-9a-f]{6}$/iu)
+        .optional(),
     })
     .strict(),
 } as const;
@@ -498,28 +524,7 @@ const atlasTilesetDetailSuccessOutputSchema = z
     tileset: z
       .object({
         ...tilesetDetailTilesetBaseShape,
-        atlas: z
-          .object({
-            columns:
-              positiveIntegerOutputSchema,
-            rows: positiveIntegerOutputSchema,
-            margin:
-              nonnegativeIntegerOutputSchema,
-            spacing:
-              nonnegativeIntegerOutputSchema,
-          })
-          .strict(),
-        image: z
-          .object({
-            path: projectPathOutputSchema,
-            declaredPixelSize:
-              declaredPixelSizeOutputSchema,
-            transparentColor: z
-              .string()
-              .regex(/^#[0-9a-f]{6}$/iu)
-              .optional(),
-          })
-          .strict(),
+        ...tilesetDetailAtlasBlockShape,
       })
       .strict(),
     tileMetadata:
@@ -529,6 +534,44 @@ const atlasTilesetDetailSuccessOutputSchema = z
     wangSets: tilesetDetailWangSetsOutputSchema,
   })
   .strict();
+
+const embeddedTilesetDetailSuccessOutputSchema =
+  z
+    .object({
+      ...tilesetDetailEnvelopeShape,
+      source: z
+        .object({
+          kind: z.literal("embedded"),
+          sourceIndex:
+            nonnegativeIntegerOutputSchema,
+          revision: revisionOutputSchema,
+        })
+        .strict(),
+      projection:
+        tilesetDetailProjectionOutputSchema(
+          "expanded-colors-and-sampled-wang-tiles",
+          "declared-metadata-only",
+        ),
+      tileset: z
+        .object({
+          embedded: z
+            .object({
+              sourceIndex:
+                nonnegativeIntegerOutputSchema,
+            })
+            .strict(),
+          ...tilesetDetailTilesetCoreShape,
+          ...tilesetDetailAtlasBlockShape,
+        })
+        .strict(),
+      tileMetadata:
+        tilesetDetailTileMetadataOutputSchema(
+          tilesetMetadataItemOutputSchema,
+        ),
+      wangSets:
+        tilesetDetailWangSetsOutputSchema,
+    })
+    .strict();
 
 const collectionTilesetDetailSuccessOutputSchema =
   z
@@ -566,6 +609,7 @@ const collectionTilesetDetailSuccessOutputSchema =
 const tilesetDetailSuccessOutputSchema = z.union([
   atlasTilesetDetailSuccessOutputSchema,
   collectionTilesetDetailSuccessOutputSchema,
+  embeddedTilesetDetailSuccessOutputSchema,
 ]);
 
 export const tilesetDetailToolOutputSchema =

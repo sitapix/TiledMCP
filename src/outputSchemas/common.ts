@@ -195,12 +195,21 @@ export const resolvedOrthogonalTransformOutputSchema =
 
 export const tileRefOutputSchema = z
   .object({
-    tileset: z
-      .object({
-        kind: z.literal("external"),
-        assetId: assetIdOutputSchema,
-      })
-      .strict(),
+    tileset: z.union([
+      z
+        .object({
+          kind: z.literal("external"),
+          assetId: assetIdOutputSchema,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("embedded"),
+          sourceIndex:
+            nonnegativeIntegerOutputSchema,
+        })
+        .strict(),
+    ]),
     localId: nonnegativeIntegerOutputSchema,
     transform: tileTransformOutputSchema.optional(),
   })

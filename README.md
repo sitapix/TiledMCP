@@ -79,8 +79,13 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-内嵌 tileset 与 tile object 的创建/语义编辑尚未实现；对应的不支持操作会被明确
-拒绝，不会静默降级。JSON（.tj）对象模板获得**读取展开**支持：
+内嵌（inline）tileset 获得**只读语义核心**：map summary 单独列出内嵌 atlas 条目
+（`tilesets[]` index + GID 范围），region 读取对其返回只读
+`{kind:"embedded", sourceIndex}` tile 引用，`tiled_get_tileset` 以
+`embeddedIndex` 寻址返回与外部 atlas 相同的有界详情投影（内容由 map revision
+本身 pin，无独立 assetId/revision）；内嵌 image-collection、pre-1.5 `terrains`
+字段 fail closed，一切编辑/渲染/检索路径对内嵌条目继续明确拒绝，不会静默降级。
+tile object 的创建/语义编辑尚未实现。JSON（.tj）对象模板获得**读取展开**支持：
 `tiled_get_object` 按 Tiled 1.12.2 `syncWithTemplate` 精确合并规则展开模板实例
 （非空 name、全正 size、显式 rotation/opacity/visible、任一 shape 成员覆盖模
 板，text 成员只覆盖文本不覆盖形状），结果携带 pin 了 revision 的 template 块；
@@ -244,7 +249,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_checkpoint_restore` | 校验单文件 checkpoint 并生成 destructive 恢复 change set；不直接写盘 |
 | `tiled_get_map_summary` | 读取 revision、根显示/元数据、图层树和 tileset asset id |
 | `tiled_analyze_usage` | 只读统计整张地图的 tile 使用、图层密度、变换位和未使用 local ID |
-| `tiled_get_tileset` | 按 map + asset id 读取有界 atlas/稀疏 tile metadata（含 per-tile 标量属性值）/Wang 语义展开 |
+| `tiled_get_tileset` | 按 map + asset id（或内嵌条目的 `embeddedIndex`）读取有界 atlas/稀疏 tile metadata（含 per-tile 标量属性值）/Wang 语义展开 |
 | `tiled_find_tiles` | 按 map + asset id 精确检索显式 class/property metadata，返回分页 `TileRef` |
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |
 | `tiled_render_tileset_sheet` | 按 `tilesetAssetId` 返回带 local ID 的分页 PNG sheet |

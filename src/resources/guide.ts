@@ -235,8 +235,13 @@ For an existing map:
    before treating a class as complete.
 2. Call \`tiled_get_tileset\` with that \`mapPath\` and the selected
    \`tilesetAssetId\` when class names, animation summaries, collision counts,
-   or Wang terrain semantics matter. Its tile metadata page is sparse and
-   ordered by local ID. Tile classes use the current Tiled \`tiles[].type\`
+   or Wang terrain semantics matter. For a tileset embedded inline in the
+   map, pass its \`tilesets[]\` index as \`embeddedIndex\` instead (exactly
+   one selector): the summary lists embedded atlas entries separately, the
+   region tool returns read-only \`{kind:"embedded", sourceIndex}\` tile
+   references for them, their content is pinned by the map revision itself,
+   and every edit or render path keeps them fail closed. Its tile metadata
+   page is sparse and ordered by local ID. Tile classes use the current Tiled \`tiles[].type\`
    field, with \`class\` accepted only as a Tiled 1.9 compatibility fallback.
    Each atlas Wang set expands its full color list (1-based indexes,
    probability, image tile, properties) plus a bounded \`wangtiles\` sample

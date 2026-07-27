@@ -155,7 +155,14 @@ render 前后会重新加载并比较 map 与全部 external TSJ revisions，
 atlas TSJ projection 以 Tiled 1.12 为语义基线：tile class 的当前磁盘字段是
 `tiles[].type`，`tiles[].class` 仅作为 Tiled 1.9 兼容输入。详情响应只携带所选 TSJ 的
 `source.assetId` / `source.revision`，不复制 map 的完整 `dependencyRevisions`；
-mutation 所需的完整依赖 revision 必须另从 map summary/region 获取。外部 TSJ 的
+mutation 所需的完整依赖 revision 必须另从 map summary/region 获取。
+内嵌（inline）tileset 走同一投影但只读：`allowEmbeddedTilesets` 是
+summary/region/详情三个只读路径显式 opt-in 的内部 guard（与 `allowInfinite`、
+`allowCollectionTilesets` 同型），其余路径遇内嵌条目保持既有 fail closed。内嵌
+条目与外部 TSJ 文档同构（对照官方 writer：独立文件独有的 `type`/`version` 成员
+豁免）、root image 相对 map 文件解析、GID 范围与外部 binding 合并做重叠检查；
+内容由 map revision 本身 pin，无 assetId、不进 `dependencyRevisions`；内嵌
+image-collection 与 pre-1.5 `terrains` fail closed。外部 TSJ 的
 `name` 必须是字符串；名称、class 名和 Wang 名等显示值按 Unicode code point 有界截断。
 已知 rendering 字段使用封闭枚举验证，包括 `objectalignment`、`tilerendersize`、
 `fillmode` 和 `grid.orientation`，未知字符串不能冒充已理解的 Tiled rendering 语义。

@@ -197,7 +197,7 @@ export const MAX_CELL_WRITES = 100_000;
 const MAX_REGION_CELLS = 20_000;
 const MAX_LAYER_COUNT = 10_000;
 const MAX_LAYER_DEPTH = 64;
-const MAX_TILESET_COUNT = 4_096;
+export const MAX_TILESET_COUNT = 4_096;
 const MAX_TOTAL_DEPENDENCY_BYTES = 64 * 1024 * 1024;
 const MAX_DIAGNOSTICS = 1_000;
 const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 1_024;
@@ -347,6 +347,8 @@ interface EditableContext {
   orientation: "orthogonal";
   infinite: boolean;
   bindings: TilesetBinding[];
+  /** Non-empty only when the caller opted in via allowEmbeddedTilesets. */
+  embeddedBindings: EmbeddedTilesetBinding[];
   dependencyRevisions: Record<string, string>;
 }
 
@@ -375,6 +377,12 @@ interface EditableContextRevisionGuards {
    * default fail-closed gate.
    */
   allowCollectionTilesets?: boolean;
+  /**
+   * Read-only tools that understand embedded (inline) map tilesets opt in
+   * explicitly; every other path keeps the default fail-closed gate, so an
+   * embedded tileset can never reach an edit planner or renderer.
+   */
+  allowEmbeddedTilesets?: boolean;
 }
 
 interface TilesetBinding {
@@ -393,6 +401,22 @@ interface TilesetBinding {
    */
   collection?: true;
   localIds?: ReadonlySet<number>;
+}
+
+/**
+ * A tileset embedded directly in a map's `tilesets[]` entry (no `source`).
+ * Its content lives inside the map bytes, so the map revision is its only
+ * pin; it never appears in `dependencyRevisions` and has no asset ID.
+ */
+export interface EmbeddedTilesetBinding {
+  kind: "embedded";
+  sourceIndex: number;
+  firstGid: number;
+  tileCount: number;
+  gidSpan: number;
+  name: string;
+  nameTruncated: boolean;
+  document: JsonObject;
 }
 
 interface TilesetBindingCandidate {
@@ -586,7 +610,10 @@ export interface RenderTilesInput {
 
 export interface GetTilesetInput {
   mapPath: string;
-  tilesetAssetId: string;
+  /** Exactly one of tilesetAssetId (external) or embeddedIndex is required. */
+  tilesetAssetId?: string;
+  /** Original `tilesets[]` array index of an embedded (inline) tileset. */
+  embeddedIndex?: number;
   startTileId?: number;
   limit?: number;
 }
@@ -763,6 +790,7 @@ export class MapService {
     const context = await this.loadEditableContext(mapPath, {
       allowInfinite: true,
       allowCollectionTilesets: true,
+      allowEmbeddedTilesets: true,
     });
     const rootProperties = summarizeMapRootProperties(
       context.loaded.document,
@@ -800,6 +828,21 @@ export class MapService {
           ? { collection: true }
           : {}),
       })),
+      embeddedTilesets: context.embeddedBindings.map(
+        (embedded) => ({
+          kind: "embedded",
+          sourceIndex: embedded.sourceIndex,
+          name: embedded.name,
+          ...(embedded.nameTruncated
+            ? { nameTruncated: true }
+            : {}),
+          firstGid: embedded.firstGid,
+          tileCount: embedded.tileCount,
+          gidSpan: embedded.gidSpan,
+          lastPotentialGid:
+            embedded.firstGid + embedded.gidSpan - 1,
+        }),
+      ),
       dependencyRevisions: context.dependencyRevisions,
       editableProfile: context.infinite
         ? "infinite-orthogonal-tmj-read-only-chunked"
@@ -886,6 +929,29 @@ export class MapService {
   }
 
   async getTileset(input: GetTilesetInput): Promise<Record<string, unknown>> {
+    if (
+      input.tilesetAssetId !== undefined &&
+      input.embeddedIndex !== undefined
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Provide exactly one of tilesetAssetId or embeddedIndex.",
+      );
+    }
+    if (input.embeddedIndex !== undefined) {
+      return this.getEmbeddedTilesetDetails(
+        input.mapPath,
+        input.embeddedIndex,
+        input.startTileId,
+        input.limit,
+      );
+    }
+    if (input.tilesetAssetId === undefined) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Provide exactly one of tilesetAssetId or embeddedIndex.",
+      );
+    }
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
     });
@@ -980,6 +1046,113 @@ export class MapService {
         firstGid: binding.firstGid,
         lastGid: binding.firstGid + binding.gidSpan - 1,
         gidSpan: binding.gidSpan,
+      },
+      ...projection,
+      snapshotConsistency: "non-atomic-read-set",
+    };
+    assertTilesetDetailResultSize(result);
+    return result;
+  }
+
+  /**
+   * Details projection for a tileset embedded inline in the map document.
+   * The map revision is the only pin: the embedded content has no asset ID,
+   * no independent revision, and never appears in dependencyRevisions. Its
+   * root image resolves relative to the map file, exactly like Tiled's
+   * embedded-variant reader.
+   */
+  private async getEmbeddedTilesetDetails(
+    mapPath: string,
+    embeddedIndex: number,
+    startTileId?: number,
+    limit?: number,
+  ): Promise<Record<string, unknown>> {
+    assertSafeInteger(embeddedIndex, "embeddedIndex");
+    const context = await this.loadEditableContext(mapPath, {
+      allowCollectionTilesets: true,
+      allowEmbeddedTilesets: true,
+    });
+    const embedded = context.embeddedBindings.find(
+      (candidate) =>
+        candidate.sourceIndex === embeddedIndex,
+    );
+    if (embedded === undefined) {
+      throw new TiledMcpError(
+        "TILESET_NOT_IN_MAP",
+        `${context.loaded.path} has no embedded tileset at tilesets[${embeddedIndex}].`,
+        {
+          path: context.loaded.path,
+          embeddedIndex,
+          embeddedIndexes:
+            context.embeddedBindings.map(
+              (candidate) => candidate.sourceIndex,
+            ),
+        },
+      );
+    }
+    const entryContext = `${context.loaded.path}.tilesets[${embedded.sourceIndex}]`;
+    const imageReference = expectString(
+      embedded.document.image,
+      `${entryContext}.image`,
+    );
+    const imagePath =
+      await this.resolver.resolveReference(
+        context.loaded.path,
+        imageReference,
+      );
+    const imageStat = await stat(
+      await this.resolver.resolveExisting(imagePath),
+    );
+    if (!imageStat.isFile()) {
+      throw new TiledMcpError(
+        "INVALID_TILESET_IMAGE",
+        `${imagePath} is not a regular image file.`,
+        { path: imagePath },
+      );
+    }
+    const projection = summarizeTilesetDocument({
+      document: embedded.document,
+      path: entryContext,
+      imagePath,
+      name: embedded.name,
+      nameTruncated: embedded.nameTruncated,
+      tileCount: embedded.tileCount,
+      startTileId: startTileId ?? 0,
+      limit: limit ?? DEFAULT_TILESET_METADATA_LIMIT,
+      embeddedSourceIndex: embedded.sourceIndex,
+    });
+
+    await this.assertDependenciesUnchanged(context.bindings);
+    const currentMapRevision = await this.store.readRevision(
+      context.loaded.path,
+    );
+    if (currentMapRevision !== context.loaded.revision) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${context.loaded.path} changed while the tileset details were prepared.`,
+        {
+          path: context.loaded.path,
+          expectedRevision: context.loaded.revision,
+          actualRevision: currentMapRevision,
+        },
+      );
+    }
+
+    const result = {
+      map: {
+        path: context.loaded.path,
+        revision: context.loaded.revision,
+      },
+      source: {
+        kind: "embedded",
+        sourceIndex: embedded.sourceIndex,
+        revision: context.loaded.revision,
+      },
+      binding: {
+        firstGid: embedded.firstGid,
+        lastGid:
+          embedded.firstGid + embedded.gidSpan - 1,
+        gidSpan: embedded.gidSpan,
       },
       ...projection,
       snapshotConsistency: "non-atomic-read-set",
@@ -2898,6 +3071,7 @@ export class MapService {
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
       allowCollectionTilesets: true,
+      allowEmbeddedTilesets: true,
     });
     const rows: Array<Array<TileRef | null>> = [];
     let layerDescriptor: { id: number; name: string };
@@ -2945,6 +3119,7 @@ export class MapService {
               gid,
               context.orientation,
               context.bindings,
+              context.embeddedBindings,
             ),
           );
         }
@@ -2966,7 +3141,14 @@ export class MapService {
         const row: Array<TileRef | null> = [];
         for (let x = input.x; x < input.x + input.width; x += 1) {
           const gid = readLayerGid(layer, x, y);
-          row.push(gidToTileRef(gid, context.orientation, context.bindings));
+          row.push(
+            gidToTileRef(
+              gid,
+              context.orientation,
+              context.bindings,
+              context.embeddedBindings,
+            ),
+          );
         }
         rows.push(row);
       }
@@ -5318,6 +5500,7 @@ export class MapService {
     const layers = expectArray(map.layers, `${loaded.path}.layers`);
     assertEditableLayerIdentities(layers, loaded.path);
 
+    const embeddedBindings: EmbeddedTilesetBinding[] = [];
     const bindings = await this.loadTilesetBindings(
       loaded.path,
       expectArray(map.tilesets, `${loaded.path}.tilesets`),
@@ -5326,6 +5509,9 @@ export class MapService {
       revisionGuards.persistIdentity === true,
       revisionGuards.allowCollectionTilesets ===
         true,
+      revisionGuards.allowEmbeddedTilesets === true
+        ? embeddedBindings
+        : undefined,
     );
     const dependencyRevisions = Object.fromEntries(
       bindings.map((binding) => [binding.assetId, binding.revision]),
@@ -5343,6 +5529,7 @@ export class MapService {
       orientation,
       infinite,
       bindings,
+      embeddedBindings,
       dependencyRevisions,
     };
   }
@@ -5357,6 +5544,7 @@ export class MapService {
     expectedDependencyRevisions?: Record<string, string>,
     persistIdentity = false,
     allowCollectionTilesets = false,
+    embeddedSink?: EmbeddedTilesetBinding[],
   ): Promise<TilesetBinding[]> {
     if (entries.length > MAX_TILESET_COUNT) {
       throw new TiledMcpError(
@@ -5389,6 +5577,20 @@ export class MapService {
       }
       firstGids.add(firstGid);
       if (typeof entry.source !== "string") {
+        if (
+          embeddedSink !== undefined &&
+          entry.source === undefined
+        ) {
+          embeddedSink.push(
+            readEmbeddedTilesetBinding(
+              mapPath,
+              entry,
+              index,
+              firstGid,
+            ),
+          );
+          continue;
+        }
         throw new TiledMcpError(
           "UNSUPPORTED_TILESET",
           "MVP editing requires every map tileset to be an external TSJ atlas.",
@@ -5784,6 +5986,16 @@ export class MapService {
                   candidate.validation.gidSpan,
               };
             })
+            .concat(
+              (embeddedSink ?? []).map(
+                (embedded) => ({
+                  assetId: `embedded:${embedded.sourceIndex}`,
+                  firstGid: embedded.firstGid,
+                  tileCount: embedded.tileCount,
+                  gidSpan: embedded.gidSpan,
+                }),
+              ),
+            )
             .sort(
               (left, right) =>
                 left.firstGid -
@@ -9415,8 +9627,9 @@ function inspectTilesetUsage(
       bindings,
     );
     if (
-      tile?.tileset.assetId !==
-      tilesetAssetId
+      tile === null ||
+      tile.tileset.kind !== "external" ||
+      tile.tileset.assetId !== tilesetAssetId
     ) {
       return;
     }
@@ -10031,6 +10244,65 @@ function relativeProjectReference(
  * intervening local-ID gap. Preserve that high-water mark even though the M1
  * TileRef profile only exposes the contiguous atlas cells.
  */
+/**
+ * Validates one embedded map tileset entry for the read-only profile.
+ * Mirrors Tiled 1.12.2's embedded-variant reader: the entry carries the
+ * same members as an external TSJ document (minus `type`/`version`, which
+ * the writer emits only for standalone files) plus `firstgid`. Embedded
+ * image collections and the pre-1.5 `terrains` member fail closed.
+ */
+function readEmbeddedTilesetBinding(
+  mapPath: string,
+  entry: JsonObject,
+  sourceIndex: number,
+  firstGid: number,
+): EmbeddedTilesetBinding {
+  const context = `${mapPath}.tilesets[${sourceIndex}]`;
+  if (entry.terrains !== undefined) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_FORMAT",
+      `${context} uses the pre-1.5 terrains member; its Wang-set conversion semantics are not supported.`,
+      { path: mapPath, sourceIndex },
+    );
+  }
+  if (typeof entry.image !== "string") {
+    throw new TiledMcpError(
+      "UNSUPPORTED_TILESET",
+      `${context} is an embedded image-collection tileset; only embedded atlas tilesets are readable.`,
+      { path: mapPath, sourceIndex },
+    );
+  }
+  const tileCount = expectInteger(
+    entry.tilecount,
+    `${context}.tilecount`,
+  );
+  const gidSpan = tilesetGidSpan(
+    entry,
+    context,
+    tileCount,
+  );
+  if (firstGid + gidSpan - 1 > 0x0fffffff) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} has an invalid tilecount.`,
+      { path: mapPath, sourceIndex, tileCount, gidSpan },
+    );
+  }
+  const displayName = boundedDisplayString(
+    expectString(entry.name, `${context}.name`),
+  );
+  return {
+    kind: "embedded",
+    sourceIndex,
+    firstGid,
+    tileCount,
+    gidSpan,
+    name: displayName.value,
+    nameTruncated: displayName.truncated,
+    document: entry,
+  };
+}
+
 function tilesetGidSpan(
   document: JsonObject,
   path: string,
@@ -10605,12 +10877,19 @@ function tileRefToGid(
     tileRecord.transform,
     orientation,
   );
-  const binding = bindings.find((candidate) => candidate.assetId === tile.tileset.assetId);
+  const tilesetRef = tile.tileset;
+  if (tilesetRef.kind !== "external") {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "tile.tileset must identify an external tileset asset.",
+    );
+  }
+  const binding = bindings.find((candidate) => candidate.assetId === tilesetRef.assetId);
   if (!binding) {
     throw new TiledMcpError(
       "TILESET_NOT_IN_MAP",
-      `Tileset ${tile.tileset.assetId} is not referenced by this map.`,
-      { tilesetAssetId: tile.tileset.assetId },
+      `Tileset ${tilesetRef.assetId} is not referenced by this map.`,
+      { tilesetAssetId: tilesetRef.assetId },
     );
   }
   if (tile.localId < 0 || tile.localId >= binding.tileCount) {
@@ -10766,6 +11045,7 @@ function gidToTileRef(
   gid: number,
   orientation: MapOrientation,
   bindings: readonly TilesetBinding[],
+  embeddedBindings?: readonly EmbeddedTilesetBinding[],
 ): TileRef | null {
   const decoded = decodeGid(gid, orientation);
   if (decoded.baseGid === 0) {
@@ -10786,6 +11066,45 @@ function gidToTileRef(
   }
   const binding =
     bindingIndex < 0 ? undefined : bindings[bindingIndex];
+  let embeddedMatch: EmbeddedTilesetBinding | undefined;
+  if (embeddedBindings !== undefined) {
+    for (const candidate of embeddedBindings) {
+      if (
+        candidate.firstGid <= decoded.baseGid &&
+        (embeddedMatch === undefined ||
+          candidate.firstGid > embeddedMatch.firstGid)
+      ) {
+        embeddedMatch = candidate;
+      }
+    }
+  }
+  if (
+    embeddedMatch !== undefined &&
+    (binding === undefined ||
+      embeddedMatch.firstGid > binding.firstGid)
+  ) {
+    const localId =
+      decoded.baseGid - embeddedMatch.firstGid;
+    if (localId >= embeddedMatch.tileCount) {
+      throw new TiledMcpError(
+        "GID_OUT_OF_RANGE",
+        `GID ${decoded.baseGid} falls outside embedded tileset ${embeddedMatch.name}.`,
+        {
+          gid: decoded.baseGid,
+          embeddedSourceIndex:
+            embeddedMatch.sourceIndex,
+        },
+      );
+    }
+    return {
+      tileset: {
+        kind: "embedded",
+        sourceIndex: embeddedMatch.sourceIndex,
+      },
+      localId,
+      transform: decoded.transform,
+    };
+  }
   if (!binding) {
     throw new TiledMcpError("GID_OUT_OF_RANGE", `GID ${decoded.baseGid} has no tileset.`);
   }
@@ -14303,6 +14622,13 @@ function prepareTileObjectFrameEntry(
     "height",
     mapPath,
   );
+  if (tileRef.tileset.kind !== "external") {
+    throw new TiledMcpError(
+      "INTERNAL_ERROR",
+      "Preview scenes only reference external tilesets.",
+      { objectId },
+    );
+  }
   const transform = tileRef.transform as
     | {
         flipH?: boolean;
@@ -16664,6 +16990,13 @@ function analyzeUsageDocument(input: {
     );
     if (tile === null) {
       return false;
+    }
+    if (tile.tileset.kind !== "external") {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        "Usage analysis only references external tilesets.",
+        { context },
+      );
     }
     const counter = counterByAssetId.get(
       tile.tileset.assetId,
