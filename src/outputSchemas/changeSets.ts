@@ -31,6 +31,11 @@ import {
   MAX_TILE_PROPERTY_SETS_PER_TILE,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
 } from "../maps/tilesetEdits.js";
+import { MAX_TILESET_WANG_COLORS_PER_SET } from "../maps/tilesetDetails.js";
+import {
+  MAX_WANG_ASSIGNMENTS_PER_OPERATION,
+  MAX_WANG_EDIT_OPERATIONS,
+} from "../maps/wangEdits.js";
 import {
   MAX_PROPERTY_NAME_CODE_POINTS,
   MAX_PROPERTY_VALUE_CODE_POINTS,
@@ -3368,6 +3373,143 @@ const worldEditPreviewOutputSchema = z
 
 export const worldEditPreviewToolOutputSchema =
   toolOutputSchema(worldEditPreviewOutputSchema);
+
+const wangSetTypeOutputSchema = z.enum([
+  "corner",
+  "edge",
+  "mixed",
+]);
+
+const wangEditOperationPreviewOutputSchema =
+  z.discriminatedUnion("type", [
+    z
+      .object({
+        type: z.literal("addWangSet"),
+        destructive: z.literal(false),
+        warning: z.string(),
+        index: z.number().int().min(-1),
+        name: z.string().min(1),
+        wangSetType: wangSetTypeOutputSchema,
+        colorCount:
+          nonnegativeIntegerOutputSchema.max(
+            MAX_TILESET_WANG_COLORS_PER_SET,
+          ),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("addWangColor"),
+        destructive: z.literal(false),
+        warning: z.string(),
+        wangSetIndex:
+          nonnegativeIntegerOutputSchema,
+        colorIndex: z.number().int().min(-1),
+        name: z.string().min(1),
+        color: z
+          .string()
+          .regex(
+            /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu,
+          ),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("setWangTiles"),
+        destructive: z.boolean(),
+        warning: z.string(),
+        wangSetIndex:
+          nonnegativeIntegerOutputSchema,
+        assignmentCount:
+          positiveIntegerOutputSchema.max(
+            MAX_WANG_ASSIGNMENTS_PER_OPERATION,
+          ),
+        upserts: nonnegativeIntegerOutputSchema,
+        removals: nonnegativeIntegerOutputSchema,
+        noOps: nonnegativeIntegerOutputSchema,
+      })
+      .strict(),
+  ]);
+
+const wangEditSummaryOutputSchema = z
+  .object({
+    operationCount:
+      positiveIntegerOutputSchema.max(
+        MAX_WANG_EDIT_OPERATIONS,
+      ),
+    addedWangSets: z
+      .array(
+        z
+          .object({
+            index:
+              nonnegativeIntegerOutputSchema,
+            name: z.string().min(1),
+            colorCount:
+              nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(MAX_WANG_EDIT_OPERATIONS),
+    addedColors: z
+      .array(
+        z
+          .object({
+            wangSetIndex:
+              nonnegativeIntegerOutputSchema,
+            colorIndex:
+              positiveIntegerOutputSchema.max(
+                MAX_TILESET_WANG_COLORS_PER_SET,
+              ),
+          })
+          .strict(),
+      )
+      .max(MAX_WANG_EDIT_OPERATIONS),
+    assignmentChanges: z
+      .array(
+        z
+          .object({
+            wangSetIndex:
+              nonnegativeIntegerOutputSchema,
+            upserts:
+              nonnegativeIntegerOutputSchema,
+            removals:
+              nonnegativeIntegerOutputSchema,
+            noOps:
+              nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(MAX_WANG_EDIT_OPERATIONS),
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const wangEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("wangEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    mapPath: projectPathOutputSchema,
+    tilesetPath: projectPathOutputSchema,
+    assetId: assetIdOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    mapRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        wangEditOperationPreviewOutputSchema,
+      )
+      .min(1)
+      .max(MAX_WANG_EDIT_OPERATIONS),
+    summary: wangEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const wangEditPreviewToolOutputSchema =
+  toolOutputSchema(wangEditPreviewOutputSchema);
 
 export const previewTransactionToolOutputSchema =
   toolOutputSchema(

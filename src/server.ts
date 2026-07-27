@@ -200,6 +200,7 @@ import {
   previewEditsToolOutputSchema,
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
+  wangEditPreviewToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -239,6 +240,12 @@ import {
   MAX_TILE_UPDATES_PER_CHANGE_SET,
   TILE_PROPERTY_WRITE_TYPES,
 } from "./maps/tilesetEdits.js";
+import {
+  MAX_WANG_ASSIGNMENTS_PER_OPERATION,
+  MAX_WANG_EDIT_OPERATIONS,
+  MAX_WANG_NAME_CODE_POINTS,
+  MAX_WANG_SETS_PER_TILESET,
+} from "./maps/wangEdits.js";
 import {
   MAX_CLASS_MEMBER_PATH_DEPTH,
   MAX_CLASS_MEMBER_WRITES_PER_TARGET, measurePropertiesPatchBytes } from "./maps/propertyEdits.js";
@@ -1587,6 +1594,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_delete_file",
     "tiled_add_tileset_to_map",
     "tiled_update_tile",
+    "tiled_update_wangsets",
     "tiled_create_layer",
     "tiled_preview_edits",
     "tiled_preview_world_edits",
@@ -2609,6 +2617,27 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           listProjection:
             "template-shape-marker-unexpanded",
           templatePin: "path-and-raw-revision",
+        },
+        wangEditCapabilities: {
+          tool: "tiled_update_wangsets",
+          operations: [
+            "addWangSet",
+            "addWangColor",
+            "setWangTiles",
+          ],
+          maxOperations:
+            MAX_WANG_EDIT_OPERATIONS,
+          maxAssignmentsPerOperation:
+            MAX_WANG_ASSIGNMENTS_PER_OPERATION,
+          maxWangSetsPerTileset:
+            MAX_WANG_SETS_PER_TILESET,
+          maxColorsPerSet:
+            MAX_TILESET_WANG_COLORS_PER_SET,
+          assignmentSemantics:
+            "tiled-set-wang-id-all-zero-removes",
+          saveOrder: "ascending-tile-id",
+          collectionTilesets: "fail-closed",
+          legacyColorSets: "fail-closed",
         },
         embeddedTilesetCapabilities: {
           readTools: [
@@ -4293,6 +4322,169 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  const wangColorInputSchema = z
+    .object({
+      name: z
+        .string()
+        .min(1)
+        .max(MAX_WANG_NAME_CODE_POINTS * 2),
+      color: z
+        .string()
+        .regex(/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/iu),
+      probability: z
+        .number()
+        .finite()
+        .min(0)
+        .optional(),
+      imageTileId: z
+        .number()
+        .int()
+        .min(-1)
+        .max(0x0fffffff)
+        .optional(),
+    })
+    .strict();
+
+  register(
+    server,
+    registeredTools,
+    "tiled_update_wangsets",
+    {
+      title: "Preview Wang terrain edits",
+      description:
+        "Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          tilesetAssetId: z
+            .string()
+            .min(1)
+            .max(128),
+          expectedMapRevision: revisionSchema,
+          expectedTilesetRevision: revisionSchema,
+          operations: z
+            .array(
+              z.discriminatedUnion("type", [
+                z
+                  .object({
+                    type: z.literal("addWangSet"),
+                    name: z
+                      .string()
+                      .min(1)
+                      .max(
+                        MAX_WANG_NAME_CODE_POINTS *
+                          2,
+                      ),
+                    wangSetType: z.enum([
+                      "corner",
+                      "edge",
+                      "mixed",
+                    ]),
+                    className: z
+                      .string()
+                      .min(1)
+                      .max(
+                        MAX_WANG_NAME_CODE_POINTS *
+                          2,
+                      )
+                      .optional(),
+                    imageTileId: z
+                      .number()
+                      .int()
+                      .min(-1)
+                      .max(0x0fffffff)
+                      .optional(),
+                    colors: z
+                      .array(wangColorInputSchema)
+                      .max(254)
+                      .optional(),
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal(
+                      "addWangColor",
+                    ),
+                    wangSetIndex: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(
+                        MAX_WANG_SETS_PER_TILESET -
+                          1,
+                      ),
+                    color: wangColorInputSchema,
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal(
+                      "setWangTiles",
+                    ),
+                    wangSetIndex: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(
+                        MAX_WANG_SETS_PER_TILESET -
+                          1,
+                      ),
+                    assignments: z
+                      .array(
+                        z
+                          .object({
+                            tileId: z
+                              .number()
+                              .int()
+                              .min(0)
+                              .max(0x0fffffff),
+                            wangId: z
+                              .array(
+                                z
+                                  .number()
+                                  .int()
+                                  .min(0)
+                                  .max(254),
+                              )
+                              .length(8),
+                          })
+                          .strict(),
+                      )
+                      .min(1)
+                      .max(
+                        MAX_WANG_ASSIGNMENTS_PER_OPERATION,
+                      ),
+                  })
+                  .strict(),
+              ]),
+            )
+            .min(1)
+            .max(MAX_WANG_EDIT_OPERATIONS),
+        })
+        .strict(),
+      outputSchema:
+        wangEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      tilesetAssetId,
+      expectedMapRevision,
+      expectedTilesetRevision,
+      operations,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planWangsetEdits({
+          mapPath,
+          tilesetAssetId,
+          expectedMapRevision,
+          expectedTilesetRevision,
+          operations,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
   register(
     server,
     registeredTools,
@@ -4701,9 +4893,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                   ? maps.applyWorldEdits(
                                       plan,
                                     )
-                                  : maps.applyEdits(
-                                      plan,
-                                    ),
+                                  : plan.kind ===
+                                      "wangEdit"
+                                    ? maps.applyWangsetEdit(
+                                        plan,
+                                      )
+                                    : maps.applyEdits(
+                                        plan,
+                                      ),
         ),
       ),
   );

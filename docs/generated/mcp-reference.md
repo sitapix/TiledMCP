@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 31 tools
-- `with-tmxrasterizer`: 32 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 32 tools
+- `with-tmxrasterizer`: 33 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:e7336d46e00ef55ea8952679bdabf531aa6085756d667cccd5e9085441516e56",
+    "revision": "sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b",
     "serverVersion": "0.0.1",
-    "size": 85330
+    "size": 86585
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 85330,
+  "size": 86585,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 85330 UTF-8 bytes, revision `sha256:e7336d46e00ef55ea8952679bdabf531aa6085756d667cccd5e9085441516e56`.
+Content contract: `text`, 86585 UTF-8 bytes, revision `sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b`.
 
 Resource templates: none.
 
@@ -12545,6 +12545,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_update_wangsets",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_layer",
                       "type": "string"
                     },
@@ -12671,6 +12675,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_wangsets",
                       "type": "string"
                     },
                     {
@@ -14131,6 +14139,77 @@ Output schema:
                 "defaultTopTileLimit"
               ],
               "type": "object"
+            },
+            "wangEditCapabilities": {
+              "additionalProperties": false,
+              "properties": {
+                "assignmentSemantics": {
+                  "const": "tiled-set-wang-id-all-zero-removes",
+                  "type": "string"
+                },
+                "collectionTilesets": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "legacyColorSets": {
+                  "const": "fail-closed",
+                  "type": "string"
+                },
+                "maxAssignmentsPerOperation": {
+                  "const": 64,
+                  "type": "number"
+                },
+                "maxColorsPerSet": {
+                  "const": 254,
+                  "type": "number"
+                },
+                "maxOperations": {
+                  "const": 32,
+                  "type": "number"
+                },
+                "maxWangSetsPerTileset": {
+                  "const": 100,
+                  "type": "number"
+                },
+                "operations": {
+                  "items": [
+                    {
+                      "const": "addWangSet",
+                      "type": "string"
+                    },
+                    {
+                      "const": "addWangColor",
+                      "type": "string"
+                    },
+                    {
+                      "const": "setWangTiles",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "saveOrder": {
+                  "const": "ascending-tile-id",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "tiled_update_wangsets",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "operations",
+                "maxOperations",
+                "maxAssignmentsPerOperation",
+                "maxWangSetsPerTileset",
+                "maxColorsPerSet",
+                "assignmentSemantics",
+                "saveOrder",
+                "collectionTilesets",
+                "legacyColorSets"
+              ],
+              "type": "object"
             }
           },
           "required": [
@@ -14162,6 +14241,7 @@ Output schema:
             "transactionCapabilities",
             "tileDataReadCapabilities",
             "objectTemplateCapabilities",
+            "wangEditCapabilities",
             "embeddedTilesetCapabilities",
             "tilesetSheetCapabilities",
             "tileRenderCapabilities",
@@ -41819,6 +41899,833 @@ Output schema:
                 "updateCount",
                 "tileUpdates",
                 "tilesMemberAction",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "tilesetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "tilesetPath",
+            "assetId",
+            "expectedRevision",
+            "mapRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_update_wangsets`
+
+Availability: `core`
+
+Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: Create a corner Wang set with two colors and assign wangtiles in one previewed change set (an all-zero wangId removes an assignment).
+
+```json
+{
+  "arguments": {
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "mapPath": "maps/example.tmj",
+    "operations": [
+      {
+        "colors": [
+          {
+            "color": "#00aa00",
+            "name": "Grass"
+          },
+          {
+            "color": "#eedd88",
+            "name": "Sand",
+            "probability": 0.5
+          }
+        ],
+        "name": "Terrain",
+        "type": "addWangSet",
+        "wangSetType": "corner"
+      },
+      {
+        "assignments": [
+          {
+            "tileId": 0,
+            "wangId": [
+              0,
+              1,
+              0,
+              2,
+              0,
+              1,
+              0,
+              2
+            ]
+          },
+          {
+            "tileId": 1,
+            "wangId": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ],
+        "type": "setWangTiles",
+        "wangSetIndex": 0
+      }
+    ],
+    "tilesetAssetId": "asset_0123456789abcdef01234567"
+  },
+  "name": "tiled_update_wangsets"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedTilesetRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "className": {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "colors": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": {
+                      "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                      "type": "string"
+                    },
+                    "imageTileId": {
+                      "maximum": 268435455,
+                      "minimum": -1,
+                      "type": "integer"
+                    },
+                    "name": {
+                      "maxLength": 2048,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "probability": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 254,
+                "type": "array"
+              },
+              "imageTileId": {
+                "maximum": 268435455,
+                "minimum": -1,
+                "type": "integer"
+              },
+              "name": {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "const": "addWangSet",
+                "type": "string"
+              },
+              "wangSetType": {
+                "enum": [
+                  "corner",
+                  "edge",
+                  "mixed"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "name",
+              "wangSetType"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "additionalProperties": false,
+                "properties": {
+                  "color": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  },
+                  "imageTileId": {
+                    "maximum": 268435455,
+                    "minimum": -1,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "probability": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "color"
+                ],
+                "type": "object"
+              },
+              "type": {
+                "const": "addWangColor",
+                "type": "string"
+              },
+              "wangSetIndex": {
+                "maximum": 99,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "wangSetIndex",
+              "color"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "assignments": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "tileId": {
+                      "maximum": 268435455,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "wangId": {
+                      "items": {
+                        "maximum": 254,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "maxItems": 8,
+                      "minItems": 8,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "tileId",
+                    "wangId"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 64,
+                "minItems": 1,
+                "type": "array"
+              },
+              "type": {
+                "const": "setWangTiles",
+                "type": "string"
+              },
+              "wangSetIndex": {
+                "maximum": 99,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "wangSetIndex",
+              "assignments"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "type": "array"
+    },
+    "tilesetAssetId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "tilesetAssetId",
+    "expectedMapRevision",
+    "expectedTilesetRevision",
+    "operations"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "pattern": "^asset_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "wangEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "mapRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "colorCount": {
+                        "maximum": 254,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": -1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "addWangSet",
+                        "type": "string"
+                      },
+                      "wangSetType": {
+                        "enum": [
+                          "corner",
+                          "edge",
+                          "mixed"
+                        ],
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "index",
+                      "name",
+                      "wangSetType",
+                      "colorCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "color": {
+                        "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                        "type": "string"
+                      },
+                      "colorIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": -1,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "addWangColor",
+                        "type": "string"
+                      },
+                      "wangSetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "wangSetIndex",
+                      "colorIndex",
+                      "name",
+                      "color"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "assignmentCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 64,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "type": "boolean"
+                      },
+                      "noOps": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "removals": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "setWangTiles",
+                        "type": "string"
+                      },
+                      "upserts": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "wangSetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "wangSetIndex",
+                      "assignmentCount",
+                      "upserts",
+                      "removals",
+                      "noOps"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "addedColors": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "colorIndex": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 254,
+                        "type": "integer"
+                      },
+                      "wangSetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "wangSetIndex",
+                      "colorIndex"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                },
+                "addedWangSets": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "colorCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "index",
+                      "name",
+                      "colorCount"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                },
+                "assignmentChanges": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "noOps": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "removals": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "upserts": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "wangSetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "wangSetIndex",
+                      "upserts",
+                      "removals",
+                      "noOps"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 32,
+                  "type": "array"
+                },
+                "operationCount": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 32,
+                  "type": "integer"
+                },
+                "wouldChange": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "operationCount",
+                "addedWangSets",
+                "addedColors",
+                "assignmentChanges",
                 "wouldChange"
               ],
               "type": "object"

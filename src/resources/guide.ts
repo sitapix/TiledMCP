@@ -469,6 +469,27 @@ commits only the tileset file; maps are never touched, but pending map change
 sets pinned to the old tileset revision will conflict afterwards and must be
 re-previewed.
 
+## Edit Wang terrain sets
+
+\`tiled_update_wangsets\` previews sequential Wang edits on one currently
+referenced external atlas TSJ, pinned by \`expectedMapRevision\` and
+\`expectedTilesetRevision\` like \`tiled_update_tile\`. \`addWangSet\`
+appends a new set (name, corner/edge/mixed type, optional colors up to
+Tiled's 254-color limit; the set's image tile defaults to -1 and each
+color's probability defaults to 1, matching Tiled's constructors).
+\`addWangColor\` appends one color to an existing set; its 1-based index is
+what \`wangId\` slots reference. \`setWangTiles\` applies Tiled's
+\`setWangId\` semantics per assignment: an all-zero 8-slot \`wangId\`
+removes that tile's entry, an identical value is a no-op, and anything
+else upserts. Slots run clockwise from the top edge, alternating edges and
+corners, and each value must reference a color that exists at that point
+in the operation sequence — later operations observe earlier ones. The
+touched \`wangtiles\` member is rewritten in Tiled's canonical
+ascending-tileId save order. Image-collection tilesets and pre-1.5
+\`edgecolors\`/\`cornercolors\` sets fail closed; removals mark the preview
+operation destructive. Apply commits only the TSJ, and the plan can join a
+cross-file transaction like any tileset edit.
+
 One call carries 1–64 unique \`tileId\` updates, each patching any of
 \`probability\`, \`className\`, \`animation\`, \`collision\`, and
 \`properties\`. Setting \`probability\` to

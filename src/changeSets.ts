@@ -53,6 +53,10 @@ import {
 } from "./maps/fileDelete.js";
 import type { WorldEditPlan } from "./maps/worldRead.js";
 import {
+  assertWangEditPlan,
+  type WangEditPlan,
+} from "./maps/wangEdits.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -135,6 +139,7 @@ export type ChangeSetPlan =
   | TilesetCreatePlan
   | FileDeletePlan
   | WorldEditPlan
+  | WangEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -251,6 +256,16 @@ export interface WorldEditChangeSetPreview
   summary: WorldEditPlan["summary"];
 }
 
+export interface WangEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "wangEdit";
+  mapPath: string;
+  tilesetPath: string;
+  assetId: string;
+  mapRevision: string;
+  summary: WangEditPlan["summary"];
+}
+
 export const MIN_TRANSACTION_MEMBERS = 2;
 export const MAX_TRANSACTION_MEMBERS = 16;
 export const MAX_PENDING_TRANSACTIONS = 4;
@@ -262,6 +277,7 @@ export const TRANSACTION_WARNING =
 export type TransactionMemberPlanKind =
   | "mapEdit"
   | "tilesetEdit"
+  | "wangEdit"
   | "tilesetCreate"
   | "fileDelete";
 
@@ -350,6 +366,16 @@ function transactionTargetForPlan(
       expectedRevision: plan.baseRevision,
     };
   }
+  if (plan.kind === "wangEdit") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "wangEdit",
+      targetKind: "replace",
+      path: plan.tilesetPath,
+      expectedRevision: plan.baseRevision,
+    };
+  }
   if (plan.kind === "tilesetCreate") {
     return {
       memberChangeSetId,
@@ -401,7 +427,10 @@ function assertTransactionMemberCoupling(
   for (const [index, plan] of plans.entries()) {
     const memberChangeSetId =
       targets[index]?.memberChangeSetId ?? null;
-    if (plan.kind === "tilesetEdit") {
+    if (
+      plan.kind === "tilesetEdit" ||
+      plan.kind === "wangEdit"
+    ) {
       const pinned = targetByPath.get(
         plan.mapPath,
       );
@@ -684,6 +713,7 @@ export type ChangeSetPreview =
   | TilesetCreateChangeSetPreview
   | FileDeleteChangeSetPreview
   | WorldEditChangeSetPreview
+  | WangEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -1099,6 +1129,34 @@ type OperationPreview =
       warning: string;
       index: number;
       fileName: string;
+    }
+  | {
+      type: "addWangSet";
+      destructive: false;
+      warning: string;
+      index: number;
+      name: string;
+      wangSetType: "corner" | "edge" | "mixed";
+      colorCount: number;
+    }
+  | {
+      type: "addWangColor";
+      destructive: false;
+      warning: string;
+      wangSetIndex: number;
+      colorIndex: number;
+      name: string;
+      color: string;
+    }
+  | {
+      type: "setWangTiles";
+      destructive: boolean;
+      warning: string;
+      wangSetIndex: number;
+      assignmentCount: number;
+      upserts: number;
+      removals: number;
+      noOps: number;
     }
   | {
       type: "transactionMember";
@@ -2226,6 +2284,86 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "wangEdit") {
+    const plan = entry.plan;
+    assertWangEditPlan(plan);
+    const operations: OperationPreview[] = [];
+    for (const operation of plan.operations) {
+      if (operation.type === "addWangSet") {
+        const added =
+          plan.summary.addedWangSets.find(
+            (candidate) =>
+              candidate.name === operation.name,
+          );
+        operations.push({
+          type: "addWangSet",
+          destructive: false,
+          warning:
+            "This appends a new Wang set to the tileset; existing sets, tiles, and referencing maps are never modified.",
+          index: added?.index ?? -1,
+          name: operation.name,
+          wangSetType: operation.wangSetType,
+          colorCount:
+            operation.colors?.length ?? 0,
+        });
+      } else if (
+        operation.type === "addWangColor"
+      ) {
+        operations.push({
+          type: "addWangColor",
+          destructive: false,
+          warning:
+            "This appends one color to an existing Wang set; wangId slots referencing lower indexes keep their meaning.",
+          wangSetIndex: operation.wangSetIndex,
+          colorIndex:
+            plan.summary.addedColors.find(
+              (candidate) =>
+                candidate.wangSetIndex ===
+                operation.wangSetIndex,
+            )?.colorIndex ?? -1,
+          name: operation.color.name,
+          color: operation.color.color,
+        });
+      } else {
+        const change =
+          plan.summary.assignmentChanges.find(
+            (candidate) =>
+              candidate.wangSetIndex ===
+              operation.wangSetIndex,
+          );
+        operations.push({
+          type: "setWangTiles",
+          destructive:
+            (change?.removals ?? 0) > 0,
+          warning:
+            "This rewrites the Wang set's wangtiles member in Tiled's ascending-tileId save order; an all-zero wangId removes that tile's assignment.",
+          wangSetIndex: operation.wangSetIndex,
+          assignmentCount:
+            operation.assignments.length,
+          upserts: change?.upserts ?? 0,
+          removals: change?.removals ?? 0,
+          noOps: change?.noOps ?? 0,
+        });
+      }
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      mapPath: plan.mapPath,
+      tilesetPath: plan.tilesetPath,
+      assetId: plan.assetId,
+      expectedRevision: plan.baseRevision,
+      mapRevision: plan.mapRevision,
+      operations,
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "transaction") {
     const plan = entry.plan;
     const { id: planDigestId, ...unsigned } =
@@ -2662,6 +2800,9 @@ function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
     return { ...plan, updates: [] };
   }
   if (plan.kind === "worldEdit") {
+    return { ...plan, operations: [] };
+  }
+  if (plan.kind === "wangEdit") {
     return { ...plan, operations: [] };
   }
   return plan;

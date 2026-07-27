@@ -1537,8 +1537,8 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_get_wangsets` | **读取已并入 `tiled_get_tileset`**（atlas Wang set 完整颜色表 + 有界 wangtile 采样，见 §3.7）；不再作为独立工具规划 | `tilesetPath` |
-| `tiled_create_wangset` | 创建 wang set 与 wang color | `tilesetPath`, `name`, `type`(corner/edge/mixed), `colors: [{name, color, probability?}]` |
-| `tiled_assign_wangtiles` | 批量给 tile 分配 wangid（8 元素数组，顺时针 top 起） | `tilesetPath`, `wangsetName`, `assignments: [{tileId, wangId}]` |
+| `tiled_create_wangset` | **已并入 `tiled_update_wangsets`（第 32 个 core tool）**：`addWangSet`（name/corner-edge-mixed/可选颜色 ≤254、set image tile 缺省 -1）与 `addWangColor`（追加 1-based 颜色，probability 缺省 1、tile 缺省 -1，对照 WangColor 构造缺省）；走新 `wangEdit` change set（哈希域 `tiledmcp/wang-edit-plan/v1`，目标 TSJ replace，可入事务）；collection 与 pre-1.5 `edgecolors`/`cornercolors` fail closed | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `operations` |
+| `tiled_assign_wangtiles` | **已并入 `tiled_update_wangsets`**：`setWangTiles` 按官方 `setWangId` 语义逐条处理（全 0 wangid 移除既有条目、同值 no-op、否则 upsert；8 槽自上边缘顺时针、1-based 颜色索引按操作序贯生效），被触碰的 `wangtiles` 成员按官方 `sortedWangTiles` tileId 升序规范化重写；移除使 preview operation 标记 destructive | `mapPath`, `tilesetAssetId`, `expectedMapRevision`, `expectedTilesetRevision`, `operations: [{type:"setWangTiles", wangSetIndex, assignments}]` |
 | `tiled_paint_terrain` | **地形笔刷**：优先通过 one-shot Tiled adapter 调用官方 `TileLayer.wangEdit()` 完成匹配和邻格修补；可选自研后端用于无 Tiled 或固定 seed 场景，二者必须在结果中标明 backend | `mapPath`, `layerId`, `wangset`, `color`, `region\|path`, `seed?`, `backend?` |
 
 地形笔刷的产品价值是把 Tiled Terrain Brush 暴露为安全、可预览的高层操作；自研 Wang 匹配器不是 M1 的前置条件。

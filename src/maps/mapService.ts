@@ -144,6 +144,13 @@ import {
   type TilesetEditPlan,
 } from "./tilesetEdits.js";
 import {
+  applyWangEditOperations,
+  assertWangEditPlan,
+  wangEditPlanId,
+  type WangEditOperation,
+  type WangEditPlan,
+} from "./wangEdits.js";
+import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
   searchTilesetDocument,
@@ -617,6 +624,14 @@ export interface GetTilesetInput {
   embeddedIndex?: number;
   startTileId?: number;
   limit?: number;
+}
+
+export interface UpdateWangsetsInput {
+  mapPath: string;
+  tilesetAssetId: string;
+  expectedMapRevision: string;
+  expectedTilesetRevision: string;
+  operations: WangEditOperation[];
 }
 
 export interface UpdateTileInput {
@@ -3995,6 +4010,185 @@ export class MapService {
       applied.patches.insertions,
       applied.patches.memberPatches,
       applied.patches.deletions,
+      [],
+    );
+  }
+
+  async planWangsetEdits(
+    input: UpdateWangsetsInput,
+  ): Promise<WangEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    assertRequiredRevision(
+      input.expectedTilesetRevision,
+      "expectedTilesetRevision",
+    );
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        allowCollectionTilesets: true,
+        expectedMapRevision:
+          input.expectedMapRevision,
+      },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      input.tilesetAssetId,
+    );
+    if (
+      binding.revision !==
+      input.expectedTilesetRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} does not match the expected tileset revision.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision:
+            input.expectedTilesetRevision,
+          actualRevision: binding.revision,
+        },
+      );
+    }
+    if (binding.collection === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        `${binding.path} is an image-collection tileset; Wang edits support only atlas tilesets.`,
+        { assetId: binding.assetId },
+      );
+    }
+    const loaded =
+      await this.loadBoundTilesetForEdit(binding);
+    const edited = cloneJson(loaded.document);
+    const planned = applyWangEditOperations(
+      edited,
+      binding.path,
+      binding.tileCount,
+      structuredClone(
+        input.operations,
+      ) as WangEditOperation[],
+    );
+    const unsignedPlan: Omit<WangEditPlan, "id"> = {
+      kind: "wangEdit",
+      version: 1,
+      mapPath: context.loaded.path,
+      tilesetPath: binding.path,
+      assetId: binding.assetId,
+      baseRevision: binding.revision,
+      mapRevision: context.loaded.revision,
+      operations: structuredClone(
+        input.operations,
+      ) as WangEditOperation[],
+      summary: planned.summary,
+    };
+    await assertRevisionUnchanged(
+      this.store,
+      binding.path,
+      binding.revision,
+      "DEPENDENCY_REVISION_CONFLICT",
+      { assetId: binding.assetId },
+    );
+    await assertRevisionUnchanged(
+      this.store,
+      context.loaded.path,
+      context.loaded.revision,
+      "REVISION_CONFLICT",
+    );
+    return {
+      ...unsignedPlan,
+      id: wangEditPlanId(unsignedPlan),
+    };
+  }
+
+  async applyWangsetEdit(
+    plan: WangEditPlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    const patchedSource =
+      await this.prepareWangEditBytes(plan);
+    const result = await this.store.commitBytes(
+      plan.tilesetPath,
+      plan.baseRevision,
+      patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  /**
+   * Replays a wang edit plan against current project state and returns
+   * the patched TSJ bytes without committing them.
+   */
+  private async prepareWangEditBytes(
+    plan: WangEditPlan,
+  ): Promise<Buffer> {
+    assertWangEditPlan(plan);
+    const context = await this.loadEditableContext(
+      plan.mapPath,
+      {
+        allowCollectionTilesets: true,
+        expectedMapRevision: plan.mapRevision,
+        persistIdentity: true,
+      },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      plan.assetId,
+    );
+    if (
+      binding.path !== plan.tilesetPath ||
+      binding.revision !== plan.baseRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${plan.tilesetPath} no longer matches the pinned tileset binding.`,
+        {
+          assetId: plan.assetId,
+          expectedRevision: plan.baseRevision,
+          actualRevision: binding.revision,
+        },
+      );
+    }
+    if (binding.collection === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        `${binding.path} is an image-collection tileset; Wang edits support only atlas tilesets.`,
+        { assetId: plan.assetId },
+      );
+    }
+    const loaded =
+      await this.loadBoundTilesetForEdit(binding);
+    const edited = cloneJson(loaded.document);
+    const applied = applyWangEditOperations(
+      edited,
+      binding.path,
+      binding.tileCount,
+      structuredClone(
+        plan.operations,
+      ) as WangEditOperation[],
+    );
+    if (
+      stableJson(
+        applied.summary as unknown as JsonValue,
+      ) !==
+      stableJson(plan.summary as unknown as JsonValue)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The wang edit summary does not match its operations.",
+      );
+    }
+    return patchJsonDocumentSource(
+      loaded.source,
+      edited,
+      [],
+      plan.tilesetPath,
+      [],
+      applied.patches.memberPatches,
+      [],
       [],
     );
   }

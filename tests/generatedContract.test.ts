@@ -222,10 +222,10 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(31);
-    expect(fullTools).toHaveLength(32);
-    expect(new Set(coreTools).size).toBe(31);
-    expect(new Set(fullTools).size).toBe(32);
+    expect(coreTools).toHaveLength(32);
+    expect(fullTools).toHaveLength(33);
+    expect(new Set(coreTools).size).toBe(32);
+    expect(new Set(fullTools).size).toBe(33);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -248,8 +248,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(32);
-    expect(new Set(toolNames).size).toBe(32);
+    expect(toolDefinitions).toHaveLength(33);
+    expect(new Set(toolNames).size).toBe(33);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );

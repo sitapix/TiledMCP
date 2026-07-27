@@ -173,6 +173,13 @@ index 即 wangid 引用值；单 set 上限 254 色 = `WangId::MAX_COLOR_COUNT`�
 官方加载器会报错拒绝的形态（非 8 槽 wangid、颜色引用越界）与我们额外收紧的
 形态（重复/越界 tileid、pre-1.5 `edgecolors`/`cornercolors` 颜色重映射）均
 fail closed；collection tileset 上的 Wang set 维持既有整体 fail closed。
+Wang 写入走独立 `wangEdit` change set（`tiled_update_wangsets`）：操作序贯应用
+（后续操作可引用前面新增的颜色），`addWangSet`/`addWangColor` 按官方构造缺省
+（set tile -1、color probability 1/tile -1）与 writer 成员序生成，
+`setWangTiles` 精确对齐 `WangSet::setWangId`（全 0 移除、同值 no-op、否则
+upsert），被触碰的 `wangtiles` 成员按 `sortedWangTiles` 升序规范化整体重写；
+source patch 恒为单一根级 `wangsets` 成员同步（插入与逐 set 成员补丁的路径会
+重叠，patcher 拒绝混用——world `maps` 成员先例）。
 
 tile semantic search 使用 `mapPath + tilesetAssetId` 绑定当前 map 引用，只扫描 TSJ 中
 显式存在的稀疏 `tiles[]`。class 解析与详情共用 `type` 优先、`class` 兼容回退规则；
