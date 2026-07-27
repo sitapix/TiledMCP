@@ -546,16 +546,22 @@ class definitions, not in the TMJ, disclosed as
 typed element wrappers — and only oversized entries carry an explicit
 \`valueOmitted\` marker. The same projection serves
 \`tiled_get_object\` for map objects. Property writes cover scalars
-plus \`setClassMembers\`: overwriting an existing serialized scalar
-member inside an existing class value, keeping its JSON type — absent
+plus \`setClassMembers\` — overwriting an existing serialized scalar
+member inside an existing class value, keeping its JSON type; absent
 members and type changes fail closed, since introducing members needs
-the project's class definitions.
+the project's class definitions — and \`setListElements\`: overwriting
+an existing element's scalar value inside an existing list property,
+keeping both the serialized JSON type and the element's Tiled \`type\`
+annotation (int elements demand integers, color elements demand
+#rrggbb/#aarrggbb, object elements demand nonnegative ids). Appending
+or removing elements and touching enum-wrapped (\`propertytype\`) or
+nested class/list elements fail closed.
 
 ## Detach an unused tileset safely
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 29 core tools or 30
+operation, not a standalone tool, so the registry remains 32 core tools or 33
 when the rasterizer is available. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
@@ -714,7 +720,7 @@ bounded raw JSON with explicit \`valueSemantics\` markers, and only
 oversized entries with a \`valueOmitted\` marker — with at most 128
 entries projected and a \`propertiesTruncated\` flag beyond that. It
 still does not return vendor fields or tile objects. The registry is
-29 core tools or 30 with the rasterizer. The native preview base image now
+32 core tools or 33 with the rasterizer. The native preview base image now
 renders visible object layers too (profile \`base-object-layers-v1\`):
 basic shapes draw with Tiled's group color (else gray), a 50-alpha fill, a
 one-pixel black shadow, Tiled's topdown-or-index draw order, layer-times-
@@ -731,7 +737,7 @@ curve styling, and class colors.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
 This is the thirteenth generic operation, not a standalone tool, so the
-registry remains 28 core tools or 29 when the rasterizer is available. The
+registry remains 32 core tools or 33 when the rasterizer is available. The
 strict, non-empty patch may contain:
 
 - \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
@@ -755,7 +761,7 @@ restore the original serialized values produce a file-level exact-byte no-op.
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
 seventh operation in the generic preview union, not a standalone tool, so the
-registry remains 28 core tools or 29 when the rasterizer is available. The
+registry remains 32 core tools or 33 when the rasterizer is available. The
 patch must contain at least one field and may contain only:
 
 - \`name\`, \`className\`, \`visible\`, and \`opacity\`;
@@ -787,7 +793,7 @@ layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
 an existing layer. It is the eighth generic operation, not a standalone tool,
-so the registry remains 28 core tools or 29 with the rasterizer. A
+so the registry remains 32 core tools or 33 with the rasterizer. A
 \`deleteLayer\` change set must contain exactly this one operation; do not mix
 it with tile, object, or layer updates.
 
@@ -814,7 +820,7 @@ revision-pinned approval, checkpoint, and apply flow remains mandatory.
 
 Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
 or move it into or out of a Group. This is the ninth generic operation, not a
-standalone tool, so the registry remains 28 core tools or 29 with the
+standalone tool, so the registry remains 32 core tools or 33 with the
 rasterizer. A move change set must contain exactly one operation and cannot be
 mixed with tile, object, update, delete, or another move.
 
@@ -852,7 +858,7 @@ atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
-operation, not a standalone tool, so the registry remains 28 core tools or 29
+operation, not a standalone tool, so the registry remains 32 core tools or 33
 with the rasterizer. A duplicate change set must contain exactly one operation.
 
 \`destination\` has exactly three branches:
@@ -940,7 +946,7 @@ apply not to rewrite the map.
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
 dense rectangular tile stamp. This is the eleventh generic operation, not a
-standalone tool, so the registry remains 28 core tools or 29 with the
+standalone tool, so the registry remains 32 core tools or 33 with the
 rasterizer. The row-major pattern must be non-empty and rectangular: every
 row is non-empty and has the same width, with no sparse holes or
 \`undefined\`. Width and height are each capped at 256 and the complete
@@ -971,7 +977,7 @@ and revision.
 
 Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
 paint-bucket edit. This is the twelfth generic operation, not a standalone
-tool, so the registry remains 28 core tools or 29 with the rasterizer.
+tool, so the registry remains 32 core tools or 33 with the rasterizer.
 \`x\` and \`y\` are an absolute seed coordinate inside the finite tile
 layer. Connectivity is always four-way; there is no connectivity input and
 diagonal-only cells are not connected.

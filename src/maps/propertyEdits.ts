@@ -39,6 +39,7 @@ export interface PropertyWrite {
 
 export const MAX_CLASS_MEMBER_WRITES_PER_TARGET = 16;
 export const MAX_CLASS_MEMBER_PATH_DEPTH = 8;
+export const MAX_LIST_ELEMENT_WRITES_PER_TARGET = 16;
 
 /**
  * Overwrites one existing scalar member inside an existing class
@@ -52,11 +53,27 @@ export interface ClassMemberWrite {
   value: string | number | boolean;
 }
 
+/**
+ * Overwrites one existing element's scalar value inside an existing list
+ * property, keeping both the serialized JSON type and the element's Tiled
+ * `type` annotation. Elements are Tiled's typed `{type, value}` maps;
+ * appending or removing elements and touching enum-wrapped
+ * (`propertytype`) or nested class/list elements fail closed.
+ */
+export interface ListElementWrite {
+  property: string;
+  index: number;
+  value: string | number | boolean;
+}
+
 export interface PropertiesPatch {
   set?: PropertyWrite[] | undefined;
   remove?: string[] | undefined;
   setClassMembers?:
     | ClassMemberWrite[]
+    | undefined;
+  setListElements?:
+    | ListElementWrite[]
     | undefined;
 }
 
@@ -139,7 +156,12 @@ export function validatePropertiesPatch(
   }
   assertExactKeys(
     patch as unknown as Record<string, unknown>,
-    ["remove", "set", "setClassMembers"],
+    [
+      "remove",
+      "set",
+      "setClassMembers",
+      "setListElements",
+    ],
     context,
     true,
   );
@@ -147,23 +169,29 @@ export function validatePropertiesPatch(
   const removes = patch.remove ?? [];
   const classWrites =
     patch.setClassMembers ?? [];
+  const listWrites =
+    patch.setListElements ?? [];
   if (
     !Array.isArray(sets) ||
     !Array.isArray(removes) ||
     !Array.isArray(classWrites) ||
+    !Array.isArray(listWrites) ||
     sets.length +
       removes.length +
-      classWrites.length ===
+      classWrites.length +
+      listWrites.length ===
       0 ||
     sets.length > MAX_PROPERTY_SETS_PER_TARGET ||
     removes.length >
       MAX_PROPERTY_REMOVES_PER_TARGET ||
     classWrites.length >
-      MAX_CLASS_MEMBER_WRITES_PER_TARGET
+      MAX_CLASS_MEMBER_WRITES_PER_TARGET ||
+    listWrites.length >
+      MAX_LIST_ELEMENT_WRITES_PER_TARGET
   ) {
     throw new TiledMcpError(
       "INVALID_ARGUMENT",
-      `${context} must contain at least one entry, at most ${MAX_PROPERTY_SETS_PER_TARGET} set entries, at most ${MAX_PROPERTY_REMOVES_PER_TARGET} removals, and at most ${MAX_CLASS_MEMBER_WRITES_PER_TARGET} class member writes.`,
+      `${context} must contain at least one entry, at most ${MAX_PROPERTY_SETS_PER_TARGET} set entries, at most ${MAX_PROPERTY_REMOVES_PER_TARGET} removals, at most ${MAX_CLASS_MEMBER_WRITES_PER_TARGET} class member writes, and at most ${MAX_LIST_ELEMENT_WRITES_PER_TARGET} list element writes.`,
     );
   }
   const seenNames = new Set<string>();
@@ -312,6 +340,76 @@ export function validatePropertiesPatch(
       );
     }
     seenMemberPaths.add(memberKey);
+  }
+  const seenElementKeys = new Set<string>();
+  for (const [
+    index,
+    write,
+  ] of listWrites.entries()) {
+    const writeContext = `${context}.setListElements[${index}]`;
+    assertExactKeys(
+      write as unknown as Record<
+        string,
+        unknown
+      >,
+      ["index", "property", "value"],
+      writeContext,
+    );
+    if (
+      typeof write.property !== "string" ||
+      write.property.length === 0 ||
+      !hasAtMostCodePoints(
+        write.property,
+        MAX_PROPERTY_NAME_CODE_POINTS,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.property must be a non-empty string of at most ${MAX_PROPERTY_NAME_CODE_POINTS} Unicode code points.`,
+      );
+    }
+    if (seenNames.has(write.property)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.property targets ${JSON.stringify(write.property)}, which the same patch already sets or removes.`,
+      );
+    }
+    if (
+      !Number.isSafeInteger(write.index) ||
+      write.index < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.index must be a nonnegative integer.`,
+      );
+    }
+    const value = write.value;
+    const scalarOk =
+      typeof value === "boolean" ||
+      (typeof value === "number" &&
+        Number.isFinite(value)) ||
+      (typeof value === "string" &&
+        hasAtMostCodePoints(
+          value,
+          MAX_PROPERTY_VALUE_CODE_POINTS,
+        ));
+    if (!scalarOk) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext}.value must be a bounded scalar.`,
+      );
+    }
+    const elementKey = JSON.stringify([
+      write.property,
+      write.index,
+    ]);
+    if (seenElementKeys.has(elementKey)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${writeContext} repeats element ${write.property}[${write.index}].`,
+      );
+    }
+    seenElementKeys.add(elementKey);
   }
 }
 
@@ -911,6 +1009,136 @@ export function applyPropertiesPatch(
     }
   }
 
+  let listElementsSet = 0;
+  for (const write of patch.setListElements ??
+    []) {
+    const index = byName.get(write.property);
+    if (index === undefined) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} has no property ${JSON.stringify(write.property)} to write list elements into.`,
+        { ...details, name: write.property },
+      );
+    }
+    const entry = entries[index] as JsonObject;
+    if (entry.type !== "list") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} is not a list property.`,
+        { ...details, name: write.property },
+      );
+    }
+    const elements = entry.value ?? [];
+    if (!Array.isArray(elements)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(write.property)} has a malformed list value.`,
+        { ...details, name: write.property },
+      );
+    }
+    if (write.index >= elements.length) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} has no element ${write.index}; appending elements requires their Tiled type annotation and is not supported.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+          elementCount: elements.length,
+        },
+      );
+    }
+    const element = elements[write.index];
+    if (
+      typeof element !== "object" ||
+      element === null ||
+      Array.isArray(element)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(write.property)} element ${write.index} is not a typed {type, value} map.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+        },
+      );
+    }
+    const elementEntry = element as JsonObject;
+    const elementType = elementEntry.type;
+    if (
+      typeof elementType !== "string" ||
+      !KNOWN_PROPERTY_TYPES.has(elementType)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${label} property ${JSON.stringify(write.property)} element ${write.index} has an unrecognized type.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+        },
+      );
+    }
+    if (
+      elementEntry.propertytype !== undefined ||
+      elementType === "class" ||
+      elementType === "list"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} element ${write.index} uses a custom or nested type; only built-in scalar elements can be overwritten.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+          type: elementType,
+        },
+      );
+    }
+    const current = elementEntry.value;
+    if (
+      typeof current !== typeof write.value ||
+      typeof current === "object"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} element ${write.index} holds a ${typeof current}; the overwrite must keep the serialized JSON type.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+        },
+      );
+    }
+    if (
+      (elementType === "int" &&
+        !Number.isSafeInteger(write.value)) ||
+      (elementType === "object" &&
+        (!Number.isSafeInteger(write.value) ||
+          (write.value as number) < 0)) ||
+      (elementType === "color" &&
+        !PROPERTY_COLOR_PATTERN.test(
+          write.value as string,
+        ))
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_PROPERTY_WRITE",
+        `${label} property ${JSON.stringify(write.property)} element ${write.index} is a ${elementType} element; the overwrite must satisfy that Tiled type.`,
+        {
+          ...details,
+          name: write.property,
+          elementIndex: write.index,
+          type: elementType,
+        },
+      );
+    }
+    if (current !== write.value) {
+      elementEntry.value = write.value;
+      listElementsSet += 1;
+    }
+  }
+
   const removeNames = new Set(patch.remove ?? []);
   let propertiesRemoved = 0;
   const working: JsonValue[] = [];
@@ -922,7 +1150,8 @@ export function applyPropertiesPatch(
     }
     working.push(value);
   }
-  let propertiesSet = classMembersSet;
+  let propertiesSet =
+    classMembersSet + listElementsSet;
   for (const write of patch.set ?? []) {
     const existingIndex = working.findIndex(
       (value) =>

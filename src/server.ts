@@ -248,7 +248,9 @@ import {
 } from "./maps/wangEdits.js";
 import {
   MAX_CLASS_MEMBER_PATH_DEPTH,
-  MAX_CLASS_MEMBER_WRITES_PER_TARGET, measurePropertiesPatchBytes } from "./maps/propertyEdits.js";
+  MAX_CLASS_MEMBER_WRITES_PER_TARGET,
+  MAX_LIST_ELEMENT_WRITES_PER_TARGET,
+  measurePropertiesPatchBytes } from "./maps/propertyEdits.js";
 import {
   checkpointListToolOutputSchema,
   listFilesToolOutputSchema,
@@ -1102,6 +1104,18 @@ const classMemberWriteSchema = z
   })
   .strict();
 
+const listElementWriteSchema = z
+  .object({
+    property: tilePropertyNameSchema,
+    index: z.number().int().min(0).max(100_000),
+    value: z.union([
+      z.string().max(4_096),
+      z.number().finite(),
+      z.boolean(),
+    ]),
+  })
+  .strict();
+
 const tilePropertiesPatchSchema = z
   .object({
     set: z
@@ -1119,16 +1133,22 @@ const tilePropertiesPatchSchema = z
       .min(1)
       .max(MAX_CLASS_MEMBER_WRITES_PER_TARGET)
       .optional(),
+    setListElements: z
+      .array(listElementWriteSchema)
+      .min(1)
+      .max(MAX_LIST_ELEMENT_WRITES_PER_TARGET)
+      .optional(),
   })
   .strict()
   .refine(
     (patch) =>
       patch.set !== undefined ||
       patch.remove !== undefined ||
-      patch.setClassMembers !== undefined,
+      patch.setClassMembers !== undefined ||
+      patch.setListElements !== undefined,
     {
       message:
-        "Tile properties patch must contain set, remove, or setClassMembers entries",
+        "Tile properties patch must contain set, remove, setClassMembers, or setListElements entries",
     },
   );
 

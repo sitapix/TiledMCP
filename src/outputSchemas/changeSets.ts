@@ -37,6 +37,9 @@ import {
   MAX_WANG_EDIT_OPERATIONS,
 } from "../maps/wangEdits.js";
 import {
+  MAX_CLASS_MEMBER_PATH_DEPTH,
+  MAX_CLASS_MEMBER_WRITES_PER_TARGET,
+  MAX_LIST_ELEMENT_WRITES_PER_TARGET,
   MAX_PROPERTY_NAME_CODE_POINTS,
   MAX_PROPERTY_VALUE_CODE_POINTS,
 } from "../maps/propertyEdits.js";
@@ -413,6 +416,12 @@ const propertyWriteOutputSchema = z
       .strict(),
   ]);
 
+const scalarWriteValueOutputSchema = z.union([
+  z.string().max(4_096),
+  z.number().finite(),
+  z.boolean(),
+]);
+
 const propertiesPatchOutputSchema = z
   .object({
     set: z
@@ -425,15 +434,49 @@ const propertiesPatchOutputSchema = z
       .min(1)
       .max(MAX_TILE_PROPERTY_REMOVES_PER_TILE)
       .optional(),
+    setClassMembers: z
+      .array(
+        z
+          .object({
+            property: propertyNameOutputSchema,
+            path: z
+              .array(propertyNameOutputSchema)
+              .min(1)
+              .max(MAX_CLASS_MEMBER_PATH_DEPTH),
+            value: scalarWriteValueOutputSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_CLASS_MEMBER_WRITES_PER_TARGET)
+      .optional(),
+    setListElements: z
+      .array(
+        z
+          .object({
+            property: propertyNameOutputSchema,
+            index:
+              nonnegativeIntegerOutputSchema.max(
+                100_000,
+              ),
+            value: scalarWriteValueOutputSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_LIST_ELEMENT_WRITES_PER_TARGET)
+      .optional(),
   })
   .strict()
   .refine(
     (patch) =>
       patch.set !== undefined ||
-      patch.remove !== undefined,
+      patch.remove !== undefined ||
+      patch.setClassMembers !== undefined ||
+      patch.setListElements !== undefined,
     {
       message:
-        "Properties patch must contain set or remove entries",
+        "Properties patch must contain set, remove, setClassMembers, or setListElements entries",
     },
   );
 

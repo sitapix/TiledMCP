@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b",
+    "revision": "sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c",
     "serverVersion": "0.0.1",
-    "size": 86585
+    "size": 87002
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 86585,
+  "size": 87002,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 86585 UTF-8 bytes, revision `sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b`.
+Content contract: `text`, 87002 UTF-8 bytes, revision `sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c`.
 
 Resource templates: none.
 
@@ -28175,6 +28175,46 @@ Input schema:
                         "maxItems": 16,
                         "minItems": 1,
                         "type": "array"
+                      },
+                      "setListElements": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "index": {
+                              "maximum": 100000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "property": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 4096,
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "property",
+                            "index",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 16,
+                        "minItems": 1,
+                        "type": "array"
                       }
                     },
                     "type": "object"
@@ -30651,6 +30691,91 @@ Output schema:
                                   ]
                                 },
                                 "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setClassMembers": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "path": {
+                                      "items": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "maxItems": 8,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "path",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setListElements": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "index": {
+                                      "maximum": 100000,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "index",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
                                 "minItems": 1,
                                 "type": "array"
                               }
@@ -41404,6 +41529,46 @@ Input schema:
                           "required": [
                             "property",
                             "path",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 16,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "setListElements": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "index": {
+                              "maximum": 100000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "property": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 4096,
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "property",
+                            "index",
                             "value"
                           ],
                           "type": "object"

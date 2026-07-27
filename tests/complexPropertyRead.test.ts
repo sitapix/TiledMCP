@@ -236,6 +236,170 @@ describe("complex custom-property reading", () => {
     });
   });
 
+  it("overwrites typed list elements in place and fails closed on misuse", async () => {
+    const service = await createService(roots, [
+      {
+        name: "waypoints",
+        type: "list",
+        value: [
+          { type: "string", value: "spawn" },
+          { type: "int", value: 3 },
+          {
+            type: "string",
+            propertytype: "Biome",
+            value: "forest",
+          },
+          {
+            type: "list",
+            value: [
+              { type: "int", value: 1 },
+            ],
+          },
+        ],
+      },
+    ]);
+    const summary = (await service.getSummary(
+      MAP_PATH,
+    )) as { revision: string };
+    const plan = await service.planEdits(
+      MAP_PATH,
+      summary.revision,
+      {},
+      [
+        {
+          type: "updateObject",
+          objectId: 1,
+          patch: {
+            properties: {
+              setListElements: [
+                {
+                  property: "waypoints",
+                  index: 0,
+                  value: "castle",
+                },
+                {
+                  property: "waypoints",
+                  index: 1,
+                  value: 7,
+                },
+              ],
+            },
+          },
+        },
+      ] as never,
+    );
+    await service.applyEdits(plan);
+    const detail = await service.getObject({
+      mapPath: MAP_PATH,
+      objectId: 1,
+    });
+    expect(detail.object).toMatchObject({
+      properties: [
+        {
+          name: "waypoints",
+          type: "list",
+          valueSemantics: "typed-elements",
+          value: [
+            { type: "string", value: "castle" },
+            { type: "int", value: 7 },
+            {
+              type: "string",
+              propertytype: "Biome",
+              value: "forest",
+            },
+            {
+              type: "list",
+              value: [
+                { type: "int", value: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const fresh = (await service.getSummary(
+      MAP_PATH,
+    )) as { revision: string };
+    const attempt = (
+      writes: Array<{
+        property: string;
+        index: number;
+        value: string | number | boolean;
+      }>,
+    ) =>
+      service.planEdits(MAP_PATH, fresh.revision, {}, [
+        {
+          type: "updateObject",
+          objectId: 1,
+          patch: {
+            properties: {
+              setListElements: writes,
+            },
+          },
+        },
+      ] as never);
+
+    // Out of bounds: appending needs the element's Tiled type annotation.
+    await expect(
+      attempt([
+        {
+          property: "waypoints",
+          index: 9,
+          value: "x",
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    // Enum-wrapped and nested elements stay untouchable.
+    await expect(
+      attempt([
+        {
+          property: "waypoints",
+          index: 2,
+          value: "desert",
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    await expect(
+      attempt([
+        {
+          property: "waypoints",
+          index: 3,
+          value: "x",
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    // JSON type and the element's Tiled type must both hold.
+    await expect(
+      attempt([
+        {
+          property: "waypoints",
+          index: 1,
+          value: "seven",
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+    await expect(
+      attempt([
+        {
+          property: "waypoints",
+          index: 1,
+          value: 7.5,
+        },
+      ]),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_PROPERTY_WRITE",
+    });
+  });
+
   it("fails closed on values inconsistent with their declared complex type", async () => {
     const service = await createService(roots, [
       {

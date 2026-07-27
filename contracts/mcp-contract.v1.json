@@ -115,14 +115,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b",
+        "revision": "sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c",
         "serverVersion": "0.0.1",
-        "size": 86585
+        "size": 87002
       },
-      "byteLength": 86585,
+      "byteLength": 87002,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b",
+      "sha256": "sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c",
       "uri": "tiled://guide"
     }
   ],
@@ -150,9 +150,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d87f5773d328325a14089f33235ed1e27a3798b6de92198319e09a23b6be936b",
+        "revision": "sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c",
         "serverVersion": "0.0.1",
-        "size": 86585
+        "size": 87002
       },
       "annotations": {
         "audience": [
@@ -164,7 +164,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 86585,
+      "size": 87002,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -27502,6 +27502,46 @@
                               "maxItems": 16,
                               "minItems": 1,
                               "type": "array"
+                            },
+                            "setListElements": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "index": {
+                                    "maximum": 100000,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "property": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 4096,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "property",
+                                  "index",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 16,
+                              "minItems": 1,
+                              "type": "array"
                             }
                           },
                           "type": "object"
@@ -29974,6 +30014,91 @@
                                         ]
                                       },
                                       "maxItems": 32,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    },
+                                    "setClassMembers": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "path": {
+                                            "items": {
+                                              "maxLength": 512,
+                                              "minLength": 1,
+                                              "type": "string"
+                                            },
+                                            "maxItems": 8,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "property": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "property",
+                                          "path",
+                                          "value"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 16,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    },
+                                    "setListElements": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "index": {
+                                            "maximum": 100000,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "property": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "property",
+                                          "index",
+                                          "value"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 16,
                                       "minItems": 1,
                                       "type": "array"
                                     }
@@ -40400,6 +40525,46 @@
                                 "required": [
                                   "property",
                                   "path",
+                                  "value"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 16,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "setListElements": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "index": {
+                                    "maximum": 100000,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "property": {
+                                    "maxLength": 512,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "maxLength": 4096,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "property",
+                                  "index",
                                   "value"
                                 ],
                                 "type": "object"
