@@ -1489,16 +1489,42 @@ const tileMetadataPatchSchema = z
     },
   );
 
-const tileMetadataUpdateSchema = z
-  .object({
-    tileId: z
-      .number()
-      .int()
-      .min(0)
-      .max(0x0fffffff),
-    patch: tileMetadataPatchSchema,
-  })
-  .strict();
+const tileMetadataUpdateSchema = z.union([
+  z
+    .object({
+      tileId: z
+        .number()
+        .int()
+        .min(0)
+        .max(0x0fffffff),
+      patch: tileMetadataPatchSchema,
+    })
+    .strict(),
+  z
+    .object({
+      tileId: z
+        .number()
+        .int()
+        .min(0)
+        .max(0x0fffffff),
+      createCollectionTile: z
+        .object({
+          image: z.string().min(1).max(4_096),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      tileId: z
+        .number()
+        .int()
+        .min(0)
+        .max(0x0fffffff),
+      removeCollectionTile: z.literal(true),
+    })
+    .strict(),
+]);
 
 const mapEditSchema = z.discriminatedUnion("type", [
   updateMapSchema,
@@ -2542,6 +2568,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "used-chunk-union-seed-outside-fills-nothing",
           collectionTilesets:
             "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
+          collectionTileEntryEdits:
+            "create-from-verified-image-and-remove-unreferenced-exclusive-structural-updates-last-entry-fail-closed",
           collectionPreviewTiles:
             "own-size-bottom-left-cell-anchor-upward-overflow-each-used-tile-counts-as-one-atlas-source",
           writeProfile:
@@ -4199,7 +4227,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview per-tile metadata updates",
       description:
-        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, images, GID layout, and referencing maps are never touched, and collection updates can only target existing sparse tile entries.",
+        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

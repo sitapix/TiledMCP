@@ -2803,6 +2803,8 @@ const tilePatchFieldOutputSchema = z.enum([
   "animation",
   "collision",
   "properties",
+  "createCollectionTile",
+  "removeCollectionTile",
 ]);
 const tileEntryActionOutputSchema = z.enum([
   "insert",
@@ -2847,9 +2849,31 @@ const tileUpdateAccountingShape = {
 const updateTileOperationPreviewOutputSchema = z
   .object({
     type: z.literal("updateTile"),
-    destructive: z.literal(false),
+    destructive: z.boolean(),
     warning: z.string(),
     ...tileUpdateAccountingShape,
+  })
+  .strict();
+
+const collectionStructureSummaryOutputSchema = z
+  .object({
+    action: z.enum(["create", "remove"]),
+    tileId: nonnegativeIntegerOutputSchema,
+    tileCountBefore:
+      positiveIntegerOutputSchema,
+    tileCountAfter: positiveIntegerOutputSchema,
+    tileSizeBefore: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    tileSizeAfter: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
   })
   .strict();
 
@@ -2877,6 +2901,8 @@ const tilesetEditSummaryOutputSchema = z
       "remove",
       "none",
     ]),
+    collectionStructure:
+      collectionStructureSummaryOutputSchema.optional(),
     wouldChange: z.boolean(),
   })
   .strict();

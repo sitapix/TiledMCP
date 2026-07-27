@@ -55,9 +55,11 @@ export type {
 } from "./propertyEdits.js";
 
 const TILESET_EDIT_PLAN_HASH_DOMAIN =
-  "tiledmcp/tileset-edit-plan/v1\0";
+  "tiledmcp/tileset-edit-plan/v2\0";
 const UPDATE_TILE_WARNING =
   "This rewrites only the targeted per-tile metadata members inside one external tileset. It never changes tile geometry, the atlas image, GID layout, or referencing maps, but pending map change sets pinned to the old tileset revision will conflict after apply.";
+const COLLECTION_STRUCTURAL_WARNING =
+  "This inserts or removes one image-collection tile entry and rewrites the tileset's tilecount and maximum tile size, changing the collection's GID span. Referencing maps are never rewritten; pending change sets pinned to the old tileset revision will conflict after apply.";
 
 export interface TileAnimationFrameInput {
   tileId: number;
@@ -116,9 +118,30 @@ export interface TileMetadataPatch {
   properties?: PropertiesPatch | undefined;
 }
 
+export interface CollectionTileCreateInput {
+  /** Image reference exactly as serialized in the TSJ (tileset-relative). */
+  image: string;
+  /**
+   * Verified actual pixel size of the referenced image. The planner reads
+   * the image and injects these before building the plan; replay re-reads
+   * the image and fails closed on any mismatch, so declarations are never
+   * trusted. Absent only on the wire before planning.
+   */
+  imageWidth?: number;
+  imageHeight?: number;
+}
+
+/**
+ * Exactly one of `patch` (metadata rewrite), `createCollectionTile`
+ * (append a new image-collection tile entry), or `removeCollectionTile`
+ * (delete an existing entry) must be present. Structural collection
+ * updates must be the only update in their change set.
+ */
 export interface TileMetadataUpdate {
   tileId: number;
-  patch: TileMetadataPatch;
+  patch?: TileMetadataPatch;
+  createCollectionTile?: CollectionTileCreateInput;
+  removeCollectionTile?: true;
 }
 
 export type TileEntryAction =
@@ -148,16 +171,26 @@ export type TilesMemberAction =
   | "remove"
   | "none";
 
+export interface CollectionStructureSummary {
+  action: "create" | "remove";
+  tileId: number;
+  tileCountBefore: number;
+  tileCountAfter: number;
+  tileSizeBefore: { width: number; height: number };
+  tileSizeAfter: { width: number; height: number };
+}
+
 export interface TilesetEditSummary {
   updateCount: number;
   tileUpdates: TileUpdateSummary[];
   tilesMemberAction: TilesMemberAction;
+  collectionStructure?: CollectionStructureSummary;
   wouldChange: boolean;
 }
 
 export interface TilesetEditPlan {
   kind: "tilesetEdit";
-  version: 1;
+  version: 2;
   id: string;
   mapPath: string;
   tilesetPath: string;
@@ -174,7 +207,8 @@ export interface TilesetEditPlan {
 
 export interface UpdateTileOperationPreview {
   type: "updateTile";
-  destructive: false;
+  /** True exactly for a removeCollectionTile structural update. */
+  destructive: boolean;
   warning: string;
   tileId: number;
   entryAction: TileEntryAction;
@@ -240,11 +274,6 @@ export function applyTileMetadataUpdates(
   const seenTileIds = new Set<number>();
   let collisionPoints = 0;
   for (const [updateIndex, update] of updates.entries()) {
-    assertExactKeys(
-      update as unknown as Record<string, unknown>,
-      ["patch", "tileId"],
-      `updates[${updateIndex}]`,
-    );
     if (
       !Number.isSafeInteger(update.tileId) ||
       update.tileId < 0
@@ -252,6 +281,38 @@ export function applyTileMetadataUpdates(
       throw new TiledMcpError(
         "INVALID_ARGUMENT",
         `updates[${updateIndex}].tileId must be a nonnegative integer.`,
+        { updateIndex },
+      );
+    }
+    if (seenTileIds.has(update.tileId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `updates[${updateIndex}] repeats tile ID ${update.tileId}.`,
+        { updateIndex, tileId: update.tileId },
+      );
+    }
+    seenTileIds.add(update.tileId);
+    if (
+      update.createCollectionTile !== undefined ||
+      update.removeCollectionTile !== undefined
+    ) {
+      validateCollectionStructuralUpdate(
+        update,
+        updateIndex,
+        collection,
+      );
+      continue;
+    }
+    assertExactKeys(
+      update as unknown as Record<string, unknown>,
+      ["patch", "tileId"],
+      `updates[${updateIndex}]`,
+    );
+    const patch = update.patch;
+    if (patch === undefined) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `updates[${updateIndex}] must carry exactly one of patch, createCollectionTile, or removeCollectionTile.`,
         { updateIndex },
       );
     }
@@ -270,22 +331,14 @@ export function applyTileMetadataUpdates(
         },
       );
     }
-    if (seenTileIds.has(update.tileId)) {
-      throw new TiledMcpError(
-        "INVALID_ARGUMENT",
-        `updates[${updateIndex}] repeats tile ID ${update.tileId}.`,
-        { updateIndex, tileId: update.tileId },
-      );
-    }
-    seenTileIds.add(update.tileId);
     validateTilePatch(
-      update.patch,
+      patch,
       tileCount,
       `updates[${updateIndex}].patch`,
       collection,
     );
     collisionPoints += tileCollisionPointCount(
-      update.patch.collision,
+      patch.collision,
     );
     if (
       collisionPoints >
@@ -348,10 +401,41 @@ export function applyTileMetadataUpdates(
     | { index: number; tileId: number }
     | undefined;
   let deletion: { index: number } | undefined;
+  let collectionStructure:
+    | CollectionStructureSummary
+    | undefined;
   for (const [updateIndex, update] of updates.entries()) {
     const existingIndex = entryIndexById.get(
       update.tileId,
     );
+    if (
+      update.createCollectionTile !== undefined ||
+      update.removeCollectionTile !== undefined
+    ) {
+      const structural = applyCollectionStructural(
+        document,
+        entries,
+        existingIndex,
+        update,
+        updateIndex,
+        tilesetPath,
+        sourceAscending,
+        memberPatches,
+      );
+      tileUpdates.push(structural.entry);
+      collectionStructure = structural.structure;
+      if (structural.entry.entryAction === "insert") {
+        insertion = {
+          index: structural.structuralIndex,
+          tileId: update.tileId,
+        };
+      } else {
+        deletion = {
+          index: structural.structuralIndex,
+        };
+      }
+      continue;
+    }
     const summary = applyOneTileUpdate(
       entries,
       existingIndex,
@@ -432,6 +516,9 @@ export function applyTileMetadataUpdates(
       updateCount: updates.length,
       tileUpdates,
       tilesMemberAction,
+      ...(collectionStructure === undefined
+        ? {}
+        : { collectionStructure }),
       wouldChange: tileUpdates.some(
         (entry) => entry.wouldChange,
       ),
@@ -442,6 +529,312 @@ export function applyTileMetadataUpdates(
       deletions,
     },
   };
+}
+
+function validateCollectionStructuralUpdate(
+  update: TileMetadataUpdate,
+  updateIndex: number,
+  collection: TilesetCollectionProfile | undefined,
+): void {
+  const context = `updates[${updateIndex}]`;
+  if (collection === undefined) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_TILESET",
+      `${context} edits image-collection tile entries, but the selected tileset is an atlas.`,
+      { updateIndex },
+    );
+  }
+  if (update.createCollectionTile !== undefined) {
+    assertExactKeys(
+      update as unknown as Record<string, unknown>,
+      ["createCollectionTile", "tileId"],
+      context,
+    );
+    const create = update.createCollectionTile;
+    assertExactKeys(
+      create as unknown as Record<string, unknown>,
+      ["image", "imageHeight", "imageWidth"],
+      `${context}.createCollectionTile`,
+    );
+    if (
+      typeof create.image !== "string" ||
+      create.image.length === 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.createCollectionTile.image must be a non-empty string.`,
+        { updateIndex },
+      );
+    }
+    if (
+      create.imageWidth === undefined ||
+      !Number.isSafeInteger(create.imageWidth) ||
+      create.imageWidth <= 0 ||
+      create.imageHeight === undefined ||
+      !Number.isSafeInteger(create.imageHeight) ||
+      create.imageHeight <= 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.createCollectionTile image dimensions must be positive integers.`,
+        { updateIndex },
+      );
+    }
+    if (collection.localIds.has(update.tileId)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${context}.tileId ${update.tileId} already exists in the collection.`,
+        { updateIndex, tileId: update.tileId },
+      );
+    }
+    return;
+  }
+  assertExactKeys(
+    update as unknown as Record<string, unknown>,
+    ["removeCollectionTile", "tileId"],
+    context,
+  );
+  if (update.removeCollectionTile !== true) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context}.removeCollectionTile must be true when present.`,
+      { updateIndex },
+    );
+  }
+  if (!collection.localIds.has(update.tileId)) {
+    throw new TiledMcpError(
+      "TILE_ID_OUT_OF_RANGE",
+      `${context}.tileId ${update.tileId} does not exist in the collection.`,
+      { updateIndex, tileId: update.tileId },
+    );
+  }
+  if (collection.localIds.size <= 1) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      `${context} would remove the collection's last tile entry; an empty image collection is not writable.`,
+      { updateIndex, tileId: update.tileId },
+    );
+  }
+}
+
+/**
+ * Applies one structural collection update and its root-member fallout:
+ * `tilecount` follows the entry count, and `tilewidth`/`tileheight` follow
+ * Tiled's maximum-tile-size semantics (`Tileset::addTile` only ever grows
+ * them; `removeTiles` triggers `updateTileSize`, a full recompute over the
+ * remaining entries' verified image sizes).
+ */
+function applyCollectionStructural(
+  document: JsonObject,
+  entries: JsonValue[],
+  existingIndex: number | undefined,
+  update: TileMetadataUpdate,
+  updateIndex: number,
+  tilesetPath: string,
+  sourceAscending: boolean,
+  memberPatches: JsonObjectMemberPatch[],
+): {
+  entry: TileUpdateSummary;
+  structuralIndex: number;
+  structure: CollectionStructureSummary;
+} {
+  const tileCountBefore = requiredRootInteger(
+    document,
+    "tilecount",
+    tilesetPath,
+  );
+  const tileSizeBefore = {
+    width: requiredRootInteger(
+      document,
+      "tilewidth",
+      tilesetPath,
+    ),
+    height: requiredRootInteger(
+      document,
+      "tileheight",
+      tilesetPath,
+    ),
+  };
+  if (update.createCollectionTile !== undefined) {
+    if (!sourceAscending) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        `${tilesetPath}.tiles is not sorted by ascending tile id, so a deterministic insertion position for tile ${update.tileId} cannot be chosen.`,
+        { path: tilesetPath, tileId: update.tileId },
+      );
+    }
+    const create = update.createCollectionTile;
+    const imageWidth = create.imageWidth;
+    const imageHeight = create.imageHeight;
+    if (
+      imageWidth === undefined ||
+      imageHeight === undefined
+    ) {
+      throw new TiledMcpError(
+        "INTERNAL_ERROR",
+        `Collection tile ${update.tileId} reached application without verified image dimensions.`,
+        { tileId: update.tileId },
+      );
+    }
+    let insertAt = entries.length;
+    for (const [index, value] of entries.entries()) {
+      const entry = value as JsonObject;
+      if ((entry.id as number) > update.tileId) {
+        insertAt = index;
+        break;
+      }
+    }
+    entries.splice(insertAt, 0, {
+      id: update.tileId,
+      image: create.image,
+      imageheight: imageHeight,
+      imagewidth: imageWidth,
+    });
+    const tileSizeAfter = {
+      width: Math.max(
+        tileSizeBefore.width,
+        imageWidth,
+      ),
+      height: Math.max(
+        tileSizeBefore.height,
+        imageHeight,
+      ),
+    };
+    applyRootStructuralPatches(
+      document,
+      memberPatches,
+      tileCountBefore + 1,
+      tileSizeBefore,
+      tileSizeAfter,
+    );
+    return {
+      entry: {
+        updateIndex,
+        tileId: update.tileId,
+        entryAction: "insert",
+        requestedFields: ["createCollectionTile"],
+        changedFields: ["createCollectionTile"],
+        wouldChange: true,
+      },
+      structuralIndex: insertAt,
+      structure: {
+        action: "create",
+        tileId: update.tileId,
+        tileCountBefore,
+        tileCountAfter: tileCountBefore + 1,
+        tileSizeBefore,
+        tileSizeAfter,
+      },
+    };
+  }
+  if (existingIndex === undefined) {
+    throw new TiledMcpError(
+      "INTERNAL_ERROR",
+      `Collection tile ${update.tileId} passed validation but has no tiles[] entry.`,
+      { tileId: update.tileId },
+    );
+  }
+  entries.splice(existingIndex, 1);
+  let maxWidth = 0;
+  let maxHeight = 0;
+  for (const [index, value] of entries.entries()) {
+    const entry = value as JsonObject;
+    const width = entry.imagewidth;
+    const height = entry.imageheight;
+    if (
+      typeof width !== "number" ||
+      !Number.isSafeInteger(width) ||
+      width <= 0 ||
+      typeof height !== "number" ||
+      !Number.isSafeInteger(height) ||
+      height <= 0
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        `${tilesetPath}.tiles[${index}] lacks positive declared image dimensions, so the collection tile size cannot be recomputed after a removal.`,
+        { path: tilesetPath, index },
+      );
+    }
+    maxWidth = Math.max(maxWidth, width);
+    maxHeight = Math.max(maxHeight, height);
+  }
+  const tileSizeAfter = {
+    width: maxWidth,
+    height: maxHeight,
+  };
+  applyRootStructuralPatches(
+    document,
+    memberPatches,
+    tileCountBefore - 1,
+    tileSizeBefore,
+    tileSizeAfter,
+  );
+  return {
+    entry: {
+      updateIndex,
+      tileId: update.tileId,
+      entryAction: "remove",
+      requestedFields: ["removeCollectionTile"],
+      changedFields: ["removeCollectionTile"],
+      wouldChange: true,
+    },
+    structuralIndex: existingIndex,
+    structure: {
+      action: "remove",
+      tileId: update.tileId,
+      tileCountBefore,
+      tileCountAfter: tileCountBefore - 1,
+      tileSizeBefore,
+      tileSizeAfter,
+    },
+  };
+}
+
+function requiredRootInteger(
+  document: JsonObject,
+  key: "tilecount" | "tilewidth" | "tileheight",
+  tilesetPath: string,
+): number {
+  const value = document[key];
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0
+  ) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${tilesetPath}.${key} must be a positive integer.`,
+      { path: tilesetPath, key },
+    );
+  }
+  return value;
+}
+
+function applyRootStructuralPatches(
+  document: JsonObject,
+  memberPatches: JsonObjectMemberPatch[],
+  tileCountAfter: number,
+  tileSizeBefore: { width: number; height: number },
+  tileSizeAfter: { width: number; height: number },
+): void {
+  document.tilecount = tileCountAfter;
+  memberPatches.push({ path: [], key: "tilecount" });
+  if (tileSizeAfter.width !== tileSizeBefore.width) {
+    document.tilewidth = tileSizeAfter.width;
+    memberPatches.push({
+      path: [],
+      key: "tilewidth",
+    });
+  }
+  if (
+    tileSizeAfter.height !== tileSizeBefore.height
+  ) {
+    document.tileheight = tileSizeAfter.height;
+    memberPatches.push({
+      path: [],
+      key: "tileheight",
+    });
+  }
 }
 
 function applyOneTileUpdate(
@@ -456,8 +849,16 @@ function applyOneTileUpdate(
   structuralIndex: number;
   touchedMemberKeys: string[];
 } {
+  const patch = update.patch;
+  if (patch === undefined) {
+    throw new TiledMcpError(
+      "INTERNAL_ERROR",
+      "A metadata tile update reached application without its patch.",
+      { tileId: update.tileId },
+    );
+  }
   const requestedFields = PATCH_FIELDS.filter(
-    (field) => update.patch[field] !== undefined,
+    (field) => patch[field] !== undefined,
   );
   const target =
     existingIndex === undefined
@@ -483,7 +884,7 @@ function applyOneTileUpdate(
     const change = applyTilePatchField(
       target,
       field,
-      update.patch[field],
+      patch[field],
       tilesetPath,
       update.tileId,
     );
@@ -1275,10 +1676,21 @@ function validateAnimationFrames(
 export function updateTileOperationPreview(
   summary: TileUpdateSummary,
 ): UpdateTileOperationPreview {
+  const structural =
+    summary.requestedFields.includes(
+      "createCollectionTile",
+    ) ||
+    summary.requestedFields.includes(
+      "removeCollectionTile",
+    );
   return {
     type: "updateTile",
-    destructive: false,
-    warning: UPDATE_TILE_WARNING,
+    destructive: summary.requestedFields.includes(
+      "removeCollectionTile",
+    ),
+    warning: structural
+      ? COLLECTION_STRUCTURAL_WARNING
+      : UPDATE_TILE_WARNING,
     tileId: summary.tileId,
     entryAction: summary.entryAction,
     requestedFields: [...summary.requestedFields],
@@ -1342,7 +1754,7 @@ export function assertTilesetEditPlan(
   );
   if (
     plan.kind !== "tilesetEdit" ||
-    plan.version !== 1 ||
+    plan.version !== 2 ||
     typeof plan.id !== "string" ||
     typeof plan.mapPath !== "string" ||
     typeof plan.tilesetPath !== "string" ||

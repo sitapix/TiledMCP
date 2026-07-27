@@ -1373,7 +1373,12 @@ nextObjectId，因此"全删重画"的新对象 id 恰好从旧最大值之后�
 确定性编号与之完全一致；dock 强制 `IndexOrder`，因此新容器写
 `draworder:"index"`；清空即撤销整个成员（`applyChanges` 对空组传 null）。对象
 成员集沿用 `createObject` 的冻结字母序形态。既有容器仅替换 `objects` 成员，其
-余成员（含未知成员）逐字保留。image-collection tileset 编辑仍是后续候选。
+余成员（含未知成员）逐字保留。image-collection tileset 的条目结构编辑走同一
+`tilesetEdit` 通道的独占 update：创建从项目图片安全检查注入实际像素尺寸
+（replay 重读比对，声明永不被信任），`tilecount` 与根 `tilewidth`/`tileheight`
+按 `Tileset::addTile`（只增不减）与 `updateTileSize`（删除后全量重算）语义联
+动；删除要求当前 map 无该 local id 的 GID 引用、项目内无其他资产引用该 TSJ
+（GID span 收缩不得悬空本计划看不见的引用），且拒绝删空集合。
 
 ### 6.18 Map object 标量属性编辑（共享 property 核心）
 

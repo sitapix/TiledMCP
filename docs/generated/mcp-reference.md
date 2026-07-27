@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:7835e4c6785a141c7505975f483be45ad1aaa9e6a3c1fdc5c4b8dac956cfea9f",
+    "revision": "sha256:3cdd4caafb9b1f142042b3f804dd5540b2f5d5ad3927d66a774eb9e02b5bed7f",
     "serverVersion": "0.0.1",
-    "size": 84115
+    "size": 84544
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 84115,
+  "size": 84544,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 84115 UTF-8 bytes, revision `sha256:7835e4c6785a141c7505975f483be45ad1aaa9e6a3c1fdc5c4b8dac956cfea9f`.
+Content contract: `text`, 84544 UTF-8 bytes, revision `sha256:3cdd4caafb9b1f142042b3f804dd5540b2f5d5ad3927d66a774eb9e02b5bed7f`.
 
 Resource templates: none.
 
@@ -12942,6 +12942,10 @@ Output schema:
                   "const": "own-size-bottom-left-cell-anchor-upward-overflow-each-used-tile-counts-as-one-atlas-source",
                   "type": "string"
                 },
+                "collectionTileEntryEdits": {
+                  "const": "create-from-verified-image-and-remove-unreferenced-exclusive-structural-updates-last-entry-fail-closed",
+                  "type": "string"
+                },
                 "collectionTilesets": {
                   "const": "summary-region-object-details-search-sheet-preview-reads-metadata-updates-sparse-ids-fail-closed",
                   "type": "string"
@@ -13057,6 +13061,7 @@ Output schema:
                 "chunkedReplaceScan",
                 "chunkedFloodFillBounds",
                 "collectionTilesets",
+                "collectionTileEntryEdits",
                 "collectionPreviewTiles",
                 "writeProfile",
                 "writeCompression",
@@ -40156,7 +40161,7 @@ Output schema:
 
 Availability: `core`
 
-Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, images, GID layout, and referencing maps are never touched, and collection updates can only target existing sparse tile entries.
+Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed.
 
 Annotations:
 
@@ -40244,514 +40249,566 @@ Input schema:
     },
     "updates": {
       "items": {
-        "additionalProperties": false,
-        "properties": {
-          "patch": {
+        "anyOf": [
+          {
             "additionalProperties": false,
             "properties": {
-              "animation": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "durationMs": {
-                          "maximum": 1000000000,
-                          "minimum": 1,
-                          "type": "integer"
+              "patch": {
+                "additionalProperties": false,
+                "properties": {
+                  "animation": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "durationMs": {
+                              "maximum": 1000000000,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "tileId": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "tileId",
+                            "durationMs"
+                          ],
+                          "type": "object"
                         },
-                        "tileId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
+                        "maxItems": 256,
+                        "minItems": 1,
+                        "type": "array"
                       },
-                      "required": [
-                        "tileId",
-                        "durationMs"
-                      ],
-                      "type": "object"
-                    },
-                    "maxItems": 256,
-                    "minItems": 1,
-                    "type": "array"
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "className": {
-                "anyOf": [
-                  {
-                    "type": "string"
+                  "className": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "collision": {
-                "anyOf": [
-                  {
+                  "collision": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "shapes": {
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "height": {
+                                      "maximum": 1000000000,
+                                      "minimum": 0,
+                                      "type": "number"
+                                    },
+                                    "name": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "enum": [
+                                        "rectangle",
+                                        "ellipse",
+                                        "capsule"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "width": {
+                                      "maximum": 1000000000,
+                                      "minimum": 0,
+                                      "type": "number"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "shape",
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "const": "point",
+                                      "type": "string"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "shape",
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "points": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "x": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          },
+                                          "y": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "x",
+                                          "y"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 256,
+                                      "minItems": 3,
+                                      "type": "array"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "const": "polygon",
+                                      "type": "string"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "shape",
+                                    "x",
+                                    "y",
+                                    "points"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "className": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    "points": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "x": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          },
+                                          "y": {
+                                            "maximum": 1000000000,
+                                            "minimum": -1000000000,
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "x",
+                                          "y"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 256,
+                                      "minItems": 2,
+                                      "type": "array"
+                                    },
+                                    "rotation": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "shape": {
+                                      "const": "polyline",
+                                      "type": "string"
+                                    },
+                                    "x": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "maximum": 1000000000,
+                                      "minimum": -1000000000,
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "shape",
+                                    "x",
+                                    "y",
+                                    "points"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "maxItems": 128,
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "shapes"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "probability": {
+                    "anyOf": [
+                      {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "properties": {
                     "additionalProperties": false,
                     "properties": {
-                      "shapes": {
+                      "remove": {
+                        "items": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "set": {
                         "items": {
                           "oneOf": [
                             {
                               "additionalProperties": false,
                               "properties": {
-                                "className": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                },
-                                "height": {
-                                  "maximum": 1000000000,
-                                  "minimum": 0,
-                                  "type": "number"
-                                },
                                 "name": {
-                                  "maxLength": 2048,
+                                  "maxLength": 512,
+                                  "minLength": 1,
                                   "type": "string"
                                 },
-                                "rotation": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "shape": {
+                                "type": {
                                   "enum": [
-                                    "rectangle",
-                                    "ellipse",
-                                    "capsule"
+                                    "string",
+                                    "file"
                                   ],
                                   "type": "string"
                                 },
-                                "width": {
-                                  "maximum": 1000000000,
-                                  "minimum": 0,
-                                  "type": "number"
-                                },
-                                "x": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "y": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
+                                "value": {
+                                  "maxLength": 2048,
+                                  "type": "string"
                                 }
                               },
                               "required": [
-                                "shape",
-                                "x",
-                                "y"
+                                "name",
+                                "type",
+                                "value"
                               ],
                               "type": "object"
                             },
                             {
                               "additionalProperties": false,
                               "properties": {
-                                "className": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                },
                                 "name": {
-                                  "maxLength": 2048,
+                                  "maxLength": 512,
+                                  "minLength": 1,
                                   "type": "string"
                                 },
-                                "rotation": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "shape": {
-                                  "const": "point",
+                                "type": {
+                                  "const": "int",
                                   "type": "string"
                                 },
-                                "x": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "y": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
+                                "value": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": -9007199254740991,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
-                                "shape",
-                                "x",
-                                "y"
+                                "name",
+                                "type",
+                                "value"
                               ],
                               "type": "object"
                             },
                             {
                               "additionalProperties": false,
                               "properties": {
-                                "className": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                },
                                 "name": {
-                                  "maxLength": 2048,
+                                  "maxLength": 512,
+                                  "minLength": 1,
                                   "type": "string"
                                 },
-                                "points": {
-                                  "items": {
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "x": {
-                                        "maximum": 1000000000,
-                                        "minimum": -1000000000,
-                                        "type": "number"
-                                      },
-                                      "y": {
-                                        "maximum": 1000000000,
-                                        "minimum": -1000000000,
-                                        "type": "number"
-                                      }
-                                    },
-                                    "required": [
-                                      "x",
-                                      "y"
-                                    ],
-                                    "type": "object"
-                                  },
-                                  "maxItems": 256,
-                                  "minItems": 3,
-                                  "type": "array"
-                                },
-                                "rotation": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "shape": {
-                                  "const": "polygon",
+                                "type": {
+                                  "const": "float",
                                   "type": "string"
                                 },
-                                "x": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "y": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
+                                "value": {
                                   "type": "number"
                                 }
                               },
                               "required": [
-                                "shape",
-                                "x",
-                                "y",
-                                "points"
+                                "name",
+                                "type",
+                                "value"
                               ],
                               "type": "object"
                             },
                             {
                               "additionalProperties": false,
                               "properties": {
-                                "className": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                },
                                 "name": {
-                                  "maxLength": 2048,
+                                  "maxLength": 512,
+                                  "minLength": 1,
                                   "type": "string"
                                 },
-                                "points": {
-                                  "items": {
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "x": {
-                                        "maximum": 1000000000,
-                                        "minimum": -1000000000,
-                                        "type": "number"
-                                      },
-                                      "y": {
-                                        "maximum": 1000000000,
-                                        "minimum": -1000000000,
-                                        "type": "number"
-                                      }
-                                    },
-                                    "required": [
-                                      "x",
-                                      "y"
-                                    ],
-                                    "type": "object"
-                                  },
-                                  "maxItems": 256,
-                                  "minItems": 2,
-                                  "type": "array"
-                                },
-                                "rotation": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "shape": {
-                                  "const": "polyline",
+                                "type": {
+                                  "const": "bool",
                                   "type": "string"
                                 },
-                                "x": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
-                                },
-                                "y": {
-                                  "maximum": 1000000000,
-                                  "minimum": -1000000000,
-                                  "type": "number"
+                                "value": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
-                                "shape",
-                                "x",
-                                "y",
-                                "points"
+                                "name",
+                                "type",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "name": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "color",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "type",
+                                "value"
                               ],
                               "type": "object"
                             }
                           ]
                         },
-                        "maxItems": 128,
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "setClassMembers": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "items": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "maxItems": 8,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "property": {
+                              "maxLength": 512,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 4096,
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "property",
+                            "path",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 16,
                         "minItems": 1,
                         "type": "array"
                       }
                     },
-                    "required": [
-                      "shapes"
-                    ],
                     "type": "object"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "probability": {
-                "anyOf": [
-                  {
-                    "maximum": 1000000000,
-                    "minimum": 0,
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "properties": {
-                "additionalProperties": false,
-                "properties": {
-                  "remove": {
-                    "items": {
-                      "maxLength": 512,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "maxItems": 32,
-                    "minItems": 1,
-                    "type": "array"
-                  },
-                  "set": {
-                    "items": {
-                      "oneOf": [
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "name": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "type": {
-                              "enum": [
-                                "string",
-                                "file"
-                              ],
-                              "type": "string"
-                            },
-                            "value": {
-                              "maxLength": 2048,
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "type",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "name": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "type": {
-                              "const": "int",
-                              "type": "string"
-                            },
-                            "value": {
-                              "maximum": 9007199254740991,
-                              "minimum": -9007199254740991,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "type",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "name": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "type": {
-                              "const": "float",
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "type",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "name": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "type": {
-                              "const": "bool",
-                              "type": "string"
-                            },
-                            "value": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "type",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "name": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "type": {
-                              "const": "color",
-                              "type": "string"
-                            },
-                            "value": {
-                              "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "type",
-                            "value"
-                          ],
-                          "type": "object"
-                        }
-                      ]
-                    },
-                    "maxItems": 32,
-                    "minItems": 1,
-                    "type": "array"
-                  },
-                  "setClassMembers": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "path": {
-                          "items": {
-                            "maxLength": 512,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "maxItems": 8,
-                          "minItems": 1,
-                          "type": "array"
-                        },
-                        "property": {
-                          "maxLength": 512,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {
-                          "anyOf": [
-                            {
-                              "maxLength": 4096,
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "property",
-                        "path",
-                        "value"
-                      ],
-                      "type": "object"
-                    },
-                    "maxItems": 16,
-                    "minItems": 1,
-                    "type": "array"
                   }
                 },
                 "type": "object"
+              },
+              "tileId": {
+                "maximum": 268435455,
+                "minimum": 0,
+                "type": "integer"
               }
             },
+            "required": [
+              "tileId",
+              "patch"
+            ],
             "type": "object"
           },
-          "tileId": {
-            "maximum": 268435455,
-            "minimum": 0,
-            "type": "integer"
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createCollectionTile": {
+                "additionalProperties": false,
+                "properties": {
+                  "image": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "type": "object"
+              },
+              "tileId": {
+                "maximum": 268435455,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "tileId",
+              "createCollectionTile"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "removeCollectionTile": {
+                "const": true,
+                "type": "boolean"
+              },
+              "tileId": {
+                "maximum": 268435455,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "tileId",
+              "removeCollectionTile"
+            ],
+            "type": "object"
           }
-        },
-        "required": [
-          "tileId",
-          "patch"
-        ],
-        "type": "object"
+        ]
       },
       "maxItems": 64,
       "minItems": 1,
@@ -40859,7 +40916,9 @@ Output schema:
                         "className",
                         "animation",
                         "collision",
-                        "properties"
+                        "properties",
+                        "createCollectionTile",
+                        "removeCollectionTile"
                       ],
                       "type": "string"
                     },
@@ -40872,7 +40931,6 @@ Output schema:
                     "type": "integer"
                   },
                   "destructive": {
-                    "const": false,
                     "type": "boolean"
                   },
                   "entryAction": {
@@ -40916,7 +40974,9 @@ Output schema:
                         "className",
                         "animation",
                         "collision",
-                        "properties"
+                        "properties",
+                        "createCollectionTile",
+                        "removeCollectionTile"
                       ],
                       "type": "string"
                     },
@@ -40967,6 +41027,82 @@ Output schema:
             "summary": {
               "additionalProperties": false,
               "properties": {
+                "collectionStructure": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "create",
+                        "remove"
+                      ],
+                      "type": "string"
+                    },
+                    "tileCountAfter": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileCountBefore": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileId": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "tileSizeAfter": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "width": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ],
+                      "type": "object"
+                    },
+                    "tileSizeBefore": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "height": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "width": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "width",
+                        "height"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "tileId",
+                    "tileCountBefore",
+                    "tileCountAfter",
+                    "tileSizeBefore",
+                    "tileSizeAfter"
+                  ],
+                  "type": "object"
+                },
                 "tileUpdates": {
                   "items": {
                     "additionalProperties": false,
@@ -40978,7 +41114,9 @@ Output schema:
                             "className",
                             "animation",
                             "collision",
-                            "properties"
+                            "properties",
+                            "createCollectionTile",
+                            "removeCollectionTile"
                           ],
                           "type": "string"
                         },
@@ -41031,7 +41169,9 @@ Output schema:
                             "className",
                             "animation",
                             "collision",
-                            "properties"
+                            "properties",
+                            "createCollectionTile",
+                            "removeCollectionTile"
                           ],
                           "type": "string"
                         },

@@ -103,7 +103,11 @@ image-collection tileset（逐 tile 独立图片、无根图集）获得**语义
 id）、`tiled_get_region`、`tiled_list_objects`、`tiled_get_object`、
 `tiled_get_tileset`、`tiled_find_tiles`、`tiled_render_tiles` 与
 `tiled_update_tile` 可用（选中 tile 逐个从各自图片渲染进按选集最大尺寸组格的
-标注单元；元数据编辑只能针对既有稀疏条目、per-tile image 成员绝不触碰；sheet 按稀疏
+标注单元；元数据编辑针对既有稀疏条目、per-tile image 成员绝不触碰；条目结构
+编辑经独占 update 支持：`createCollectionTile` 从项目图片新增稀疏条目（planner
+读图验证并 pin 实际像素尺寸，`tilecount` 与最大 tile 尺寸联动），
+`removeCollectionTile`（destructive）仅在当前 map 无该 id 引用、无其他项目资产
+引用该 TSJ 且非最后一个条目时删除；sheet 按稀疏
 id 升序分页、每页至多 64 tile；native preview 按 tile 自身尺寸绘制 collection tile——cell 左下角锚点、向上溢出、画布裁剪，与 Tiled 的 `tilerendersize:"tile"` 语义一致；动画 tile 绘制自身基础图块图像，与 TmxRasterizer 静态输出精确一致）。collection 详情以 `collection`
 块（`maxLocalId`、最大 tile 尺寸语义）取代 atlas 几何，返回页内每个 tile 的图
 片经安全检查验证并 pin revision（声明尺寸与实际不符即 fail closed）；分页与检
@@ -262,7 +266,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_create_tileset` | 预览从项目图片新建 external atlas TSJ；不直接写盘，apply 绝不覆盖已有文件 |
 | `tiled_delete_file` | 预览删除一个 TMJ/TSJ；引用扫描 fail closed，apply 先提交 checkpoint 再删除（可恢复） |
 | `tiled_add_tileset_to_map` | 预览把已有 external atlas TSJ 挂到 map；不直接写盘 |
-| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性/碰撞形状元数据更新；不直接写盘 |
+| `tiled_update_tile` | 预览单个已引用 TSJ 的 per-tile probability/class/动画/标量属性/碰撞形状元数据更新与 collection 条目创建/删除；不直接写盘 |
 | `tiled_create_layer` | 预览创建一个空 tile/object/image/group 图层；不直接写盘 |
 | `tiled_preview_edits` | 校验 map/tile/object/layer/tileset-reference 编辑并生成有 TTL 的 change set |
 | `tiled_preview_transaction` | 把 2..16 个已批准、目标路径两两不同的文档提交类 change set 组合成一个原子事务 change set，并锁定成员禁止单独 apply |

@@ -3765,27 +3765,33 @@ export class MapService {
       await this.loadBoundTilesetForEdit(
         binding,
       );
+    const guardedUpdates = structuredClone(
+      input.updates,
+    ) as TileMetadataUpdate[];
+    await this.guardCollectionStructuralUpdates(
+      context,
+      binding,
+      guardedUpdates,
+    );
     const edited = cloneJson(loaded.document);
     const planned = applyTileMetadataUpdates(
       edited,
       binding.tileCount,
       structuredClone(
-        input.updates,
+        guardedUpdates,
       ) as TileMetadataUpdate[],
       binding.path,
       collectionProfileOf(binding),
     );
     const unsignedPlan: Omit<TilesetEditPlan, "id"> = {
       kind: "tilesetEdit",
-      version: 1,
+      version: 2,
       mapPath: context.loaded.path,
       tilesetPath: binding.path,
       assetId: binding.assetId,
       baseRevision: binding.revision,
       mapRevision: context.loaded.revision,
-      updates: structuredClone(
-        input.updates,
-      ) as TileMetadataUpdate[],
+      updates: guardedUpdates,
       summary: planned.summary,
     };
     await assertRevisionUnchanged(
@@ -3805,6 +3811,95 @@ export class MapService {
       ...unsignedPlan,
       id: tilesetEditPlanId(unsignedPlan),
     };
+  }
+
+  /**
+   * Verifies structural collection updates against live project state.
+   * For creates, the referenced image is read and safely inspected; its
+   * actual pixel size is injected into the update (planning) or compared
+   * against the pinned size (replay), so declared dimensions are never
+   * trusted. For removes, the current map is scanned for any remaining
+   * reference to the removed local ID, and every other project asset
+   * referencing the tileset blocks the removal wholesale — a shrinking
+   * GID span must not strand references this plan cannot see.
+   */
+  private async guardCollectionStructuralUpdates(
+    context: EditableContext,
+    binding: TilesetBinding,
+    updates: TileMetadataUpdate[],
+  ): Promise<void> {
+    for (const update of updates) {
+      if (
+        update.createCollectionTile !== undefined
+      ) {
+        const create = update.createCollectionTile;
+        if (
+          typeof create.image !== "string" ||
+          create.image.length === 0
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            "createCollectionTile.image must be a non-empty string.",
+          );
+        }
+        const imagePath =
+          await this.resolver.resolveReference(
+            binding.path,
+            create.image,
+          );
+        const snapshot =
+          await readImageFileSnapshot(
+            this.resolver,
+            imagePath,
+            MAX_TILESET_IMAGE_BYTES,
+          );
+        const metadata = await inspectSafeImage({
+          bytes: snapshot.bytes,
+          path: snapshot.path,
+          limits: {
+            maxInputBytes:
+              MAX_TILESET_IMAGE_BYTES,
+            maxInputPixels:
+              MAX_TILESET_INPUT_PIXELS,
+            maxInputEdge: MAX_TILESET_INPUT_EDGE,
+          },
+        });
+        if (create.imageWidth === undefined) {
+          create.imageWidth = metadata.width;
+          create.imageHeight = metadata.height;
+        } else if (
+          create.imageWidth !== metadata.width ||
+          create.imageHeight !== metadata.height
+        ) {
+          throw new TiledMcpError(
+            "TILESET_IMAGE_DIMENSION_MISMATCH",
+            `${imagePath} is ${metadata.width}x${metadata.height} but the plan pinned ${create.imageWidth}x${create.imageHeight}.`,
+            {
+              path: imagePath,
+              actualWidth: metadata.width,
+              actualHeight: metadata.height,
+              plannedWidth: create.imageWidth,
+              plannedHeight: create.imageHeight,
+            },
+          );
+        }
+      } else if (
+        update.removeCollectionTile !== undefined
+      ) {
+        inspectTilesetUsage(
+          context.loaded.document,
+          context.bindings,
+          binding.assetId,
+          context.loaded.path,
+          update.tileId,
+        );
+        await this.scanDeleteReferences(
+          binding.path,
+          "tileset",
+          context.loaded.path,
+        );
+      }
+    }
   }
 
   async applyTilesetEdit(
@@ -3861,6 +3956,13 @@ export class MapService {
       await this.loadBoundTilesetForEdit(
         binding,
       );
+    await this.guardCollectionStructuralUpdates(
+      context,
+      binding,
+      structuredClone(
+        plan.updates,
+      ) as TileMetadataUpdate[],
+    );
     const edited = cloneJson(loaded.document);
     const applied = applyTileMetadataUpdates(
       edited,
@@ -4442,6 +4544,7 @@ export class MapService {
   private async scanDeleteReferences(
     targetPath: string,
     targetKind: "map" | "tileset",
+    excludeReferrerPath?: string,
   ): Promise<FileDeleteScanSummary> {
     const assets =
       await this.resolver.listAssets(10_000);
@@ -4463,7 +4566,10 @@ export class MapService {
       );
     }
     const referrers = assets.filter((asset) => {
-      if (asset.path === targetPath) {
+      if (
+        asset.path === targetPath ||
+        asset.path === excludeReferrerPath
+      ) {
         return false;
       }
       if (targetKind === "tileset") {
@@ -9584,6 +9690,7 @@ function inspectTilesetUsage(
   bindings: readonly TilesetBinding[],
   tilesetAssetId: string,
   mapPath: string,
+  localId?: number,
 ): TilesetUsageInspection {
   const result: TilesetUsageInspection = {
     scannedCellCount: 0,
@@ -9629,14 +9736,21 @@ function inspectTilesetUsage(
     if (
       tile === null ||
       tile.tileset.kind !== "external" ||
-      tile.tileset.assetId !== tilesetAssetId
+      tile.tileset.assetId !== tilesetAssetId ||
+      (localId !== undefined &&
+        tile.localId !== localId)
     ) {
       return;
     }
     throw new TiledMcpError(
       "TILESET_IN_USE",
-      `Tileset ${tilesetAssetId} is still referenced by a ${reference.kind === "cell" ? "tile cell" : "tile object"}. Clear or replace every matching reference before removing the binding.`,
+      localId === undefined
+        ? `Tileset ${tilesetAssetId} is still referenced by a ${reference.kind === "cell" ? "tile cell" : "tile object"}. Clear or replace every matching reference before removing the binding.`
+        : `Tile ${localId} of tileset ${tilesetAssetId} is still referenced by a ${reference.kind === "cell" ? "tile cell" : "tile object"}. Clear or replace every matching reference before removing the entry.`,
       {
+        ...(localId === undefined
+          ? {}
+          : { localId }),
         path: mapPath,
         tilesetAssetId,
         tilesetPath: targetBinding.path,

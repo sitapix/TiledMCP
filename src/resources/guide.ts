@@ -451,10 +451,16 @@ follows a rename automatically.
 
 \`tiled_update_tile\` is the dedicated preview tool for per-tile metadata in
 one currently referenced external TSJ, atlas or image-collection. A
-collection update can only target existing sparse tile entries (their
-per-tile image members are never touched, and creating or removing
-collection tiles stays fail-closed), and animation frames must reference
-existing sparse ids. It is the first tileset write
+collection metadata update can only target existing sparse tile entries
+(their per-tile image members are never touched), and animation frames must
+reference existing sparse ids. Collections additionally accept structural
+updates, each exclusive to its change set: \`createCollectionTile\` adds a
+new entry at an unused \`tileId\` from a project image (the planner reads
+and verifies the image, pins its actual pixel size, and grows \`tilecount\`
+and the maximum tile size), while \`removeCollectionTile\` (destructive)
+deletes an entry only when the current map holds no reference to it, no
+other project asset references the tileset, and at least one entry
+remains. It is the first tileset write
 surface: address the tileset with \`mapPath\` plus the opaque
 \`tilesetAssetId\`, and pin both \`expectedMapRevision\` and
 \`expectedTilesetRevision\`. The returned change set's \`expectedRevision\` is

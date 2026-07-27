@@ -469,7 +469,7 @@ describe("updateTile", () => {
       { tileId: 0, patch: { className: "X" } },
     ]);
     const tampered = structuredClone(plan);
-    tampered.updates[0]!.patch.className = "Evil";
+    tampered.updates[0]!.patch!.className = "Evil";
     await expect(
       harness.service.applyTilesetEdit(tampered),
     ).rejects.toMatchObject({
