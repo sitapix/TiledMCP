@@ -235,11 +235,16 @@ For an existing map:
    before treating a class as complete.
 2. Call \`tiled_get_tileset\` with that \`mapPath\` and the selected
    \`tilesetAssetId\` when class names, animation summaries, collision counts,
-   or Wang-set overviews matter. Its tile metadata page is sparse and ordered
-   by local ID. Tile classes use the current Tiled \`tiles[].type\` field, with
-   \`class\` accepted only as a Tiled 1.9 compatibility fallback. This response
-   identifies the selected source revision; keep the complete
-   \`dependencyRevisions\` from the map summary for later edits.
+   or Wang terrain semantics matter. Its tile metadata page is sparse and
+   ordered by local ID. Tile classes use the current Tiled \`tiles[].type\`
+   field, with \`class\` accepted only as a Tiled 1.9 compatibility fallback.
+   Each atlas Wang set expands its full color list (1-based indexes,
+   probability, image tile, properties) plus a bounded \`wangtiles\` sample
+   whose eight \`wangId\` slots run clockwise from the top edge, alternating
+   edges and corners; a slot value of 0 means unset, and any other value is
+   the 1-based color index. Pre-1.5 \`edgecolors\`/\`cornercolors\` Wang sets
+   fail closed. This response identifies the selected source revision; keep
+   the complete \`dependencyRevisions\` from the map summary for later edits.
 3. Call \`tiled_find_tiles\` with that \`mapPath\`, the selected
    \`tilesetAssetId\`, and an exact class or explicitly serialized property
    \`query\` to get bounded \`TileRef\` results. Matching is case-sensitive.

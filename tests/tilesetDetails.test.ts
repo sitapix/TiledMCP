@@ -636,3 +636,290 @@ describe("tileset detail safety limits", () => {
     expect(() => assertTilesetDetailResultSize(result)).not.toThrow();
   });
 });
+
+describe("wang set semantic expansion", () => {
+  it("projects colors, wang tiles, and properties in full", () => {
+    const document = baseTileset();
+    document.wangsets = [
+      {
+        name: "Terrain",
+        type: "corner",
+        class: "Rules",
+        tile: 3,
+        colors: [
+          {
+            name: "Grass",
+            color: "#00ff00",
+            probability: 1.5,
+            tile: 2,
+            class: "Meadow",
+            properties: [
+              {
+                name: "friction",
+                type: "float",
+                value: 0.5,
+              },
+            ],
+          },
+          {
+            name: "Sand",
+            color: "#ffee88",
+            probability: 1,
+            tile: -1,
+          },
+        ],
+        wangtiles: [
+          {
+            tileid: 0,
+            wangid: [0, 1, 0, 2, 0, 1, 0, 2],
+          },
+          {
+            tileid: 3,
+            wangid: [0, 2, 0, 2, 0, 2, 0, 2],
+          },
+        ],
+        properties: [
+          { name: "priority", type: "int", value: 7 },
+        ],
+      },
+    ];
+
+    expect(summarize(document)).toMatchObject({
+      projection: {
+        wangSets:
+          "expanded-colors-and-sampled-wang-tiles",
+      },
+      wangSets: {
+        order: "source",
+        total: 1,
+        returned: 1,
+        truncated: false,
+        items: [
+          {
+            sourceIndex: 0,
+            name: "Terrain",
+            type: "corner",
+            className: "Rules",
+            imageTileId: 3,
+            colorCount: 2,
+            colors: [
+              {
+                index: 1,
+                name: "Grass",
+                color: "#00ff00",
+                probability: 1.5,
+                imageTileId: 2,
+                className: "Meadow",
+                properties: [
+                  {
+                    name: "friction",
+                    type: "float",
+                    value: 0.5,
+                  },
+                ],
+                propertyCount: 1,
+              },
+              {
+                index: 2,
+                name: "Sand",
+                color: "#ffee88",
+                probability: 1,
+                imageTileId: -1,
+                properties: [],
+                propertyCount: 0,
+              },
+            ],
+            wangTileCount: 2,
+            wangTiles: {
+              order: "source",
+              wangIdOrder: "clockwise-from-top",
+              total: 2,
+              returned: 2,
+              truncated: false,
+              items: [
+                {
+                  tileId: 0,
+                  wangId: [0, 1, 0, 2, 0, 1, 0, 2],
+                },
+                {
+                  tileId: 3,
+                  wangId: [0, 2, 0, 2, 0, 2, 0, 2],
+                },
+              ],
+            },
+            properties: [
+              { name: "priority", type: "int", value: 7 },
+            ],
+            propertyCount: 1,
+          },
+        ],
+      },
+      truncated: false,
+    });
+  });
+
+  it("samples an oversized wangtile list and reports the truncation", () => {
+    const document = baseTileset();
+    document.tilecount = 128;
+    document.columns = 16;
+    document.imagewidth = 256;
+    document.imageheight = 128;
+    document.wangsets = [
+      {
+        name: "Big",
+        type: "mixed",
+        colors: [wangColor()],
+        wangtiles: Array.from(
+          { length: 65 },
+          (_, tileId) => ({
+            tileid: tileId,
+            wangid: [0, 1, 0, 1, 0, 1, 0, 1],
+          }),
+        ),
+      },
+    ];
+
+    const result = summarizeTilesetDocument({
+      document,
+      path: TILESET_PATH,
+      imagePath: IMAGE_PATH,
+      name: "Terrain",
+      nameTruncated: false,
+      tileCount: 128,
+      startTileId: 0,
+      limit: 64,
+    });
+    expect(result).toMatchObject({
+      wangSets: {
+        items: [
+          {
+            wangTileCount: 65,
+            wangTiles: {
+              total: 65,
+              returned: 64,
+              truncated: true,
+            },
+          },
+        ],
+      },
+      truncated: true,
+    });
+  });
+
+  it("fails closed on legacy, malformed, and out-of-range wang data", () => {
+    const legacy = baseTileset();
+    legacy.wangsets = [
+      { name: "Old", type: "corner", cornercolors: [] },
+    ];
+    expect(() => summarize(legacy)).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FORMAT",
+      }),
+    );
+
+    const badLength = baseTileset();
+    badLength.wangsets = [
+      {
+        name: "W",
+        type: "mixed",
+        colors: [wangColor()],
+        wangtiles: [{ tileid: 0, wangid: [1, 0, 1] }],
+      },
+    ];
+    expect(() => summarize(badLength)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+
+    const unknownColor = baseTileset();
+    unknownColor.wangsets = [
+      {
+        name: "W",
+        type: "mixed",
+        colors: [wangColor()],
+        wangtiles: [
+          {
+            tileid: 0,
+            wangid: [0, 2, 0, 0, 0, 0, 0, 0],
+          },
+        ],
+      },
+    ];
+    expect(() => summarize(unknownColor)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+
+    const duplicateTile = baseTileset();
+    duplicateTile.wangsets = [
+      {
+        name: "W",
+        type: "mixed",
+        colors: [wangColor()],
+        wangtiles: [
+          {
+            tileid: 1,
+            wangid: [0, 1, 0, 0, 0, 0, 0, 0],
+          },
+          {
+            tileid: 1,
+            wangid: [0, 0, 0, 1, 0, 0, 0, 0],
+          },
+        ],
+      },
+    ];
+    expect(() => summarize(duplicateTile)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+
+    const outOfRange = baseTileset();
+    outOfRange.wangsets = [
+      {
+        name: "W",
+        type: "mixed",
+        colors: [wangColor()],
+        wangtiles: [
+          {
+            tileid: 4,
+            wangid: [0, 1, 0, 0, 0, 0, 0, 0],
+          },
+        ],
+      },
+    ];
+    expect(() => summarize(outOfRange)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+
+    const tooManyColors = baseTileset();
+    tooManyColors.wangsets = [
+      {
+        name: "W",
+        type: "mixed",
+        colors: Array.from({ length: 255 }, () =>
+          wangColor(),
+        ),
+        wangtiles: [],
+      },
+    ];
+    expect(() => summarize(tooManyColors)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_DOCUMENT",
+      }),
+    );
+  });
+});
+
+function wangColor(): JsonObject {
+  return {
+    name: "A",
+    color: "#ff0000",
+    probability: 1,
+    tile: -1,
+  };
+}

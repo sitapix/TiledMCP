@@ -16,7 +16,10 @@ import {
 import {
   MAX_TILESET_ANIMATION_FRAME_SAMPLE,
   MAX_TILESET_METADATA_LIMIT,
+  MAX_TILESET_WANG_COLORS_PER_SET,
   MAX_TILESET_WANG_SET_SUMMARIES,
+  MAX_TILESET_WANG_TILE_SAMPLE,
+  WANG_ID_INDEX_COUNT,
 } from "../maps/tilesetDetails.js";
 import {
   assetIdOutputSchema,
@@ -268,6 +271,45 @@ const tilesetMetadataItemOutputSchema = z
   })
   .strict();
 
+const wangColorOutputSchema = z
+  .object({
+    index: positiveIntegerOutputSchema.max(
+      MAX_TILESET_WANG_COLORS_PER_SET,
+    ),
+    name: z.string(),
+    nameTruncated: z.literal(true).optional(),
+    color: z.string(),
+    colorTruncated: z.literal(true).optional(),
+    className: z.string().optional(),
+    classNameTruncated: z
+      .literal(true)
+      .optional(),
+    probability: z.number(),
+    imageTileId: integerOutputSchema,
+    properties: z.array(
+      projectedPropertyOutputSchema,
+    ),
+    propertyCount:
+      nonnegativeIntegerOutputSchema,
+    propertiesTruncated: z
+      .literal(true)
+      .optional(),
+  })
+  .strict();
+
+const wangTileOutputSchema = z
+  .object({
+    tileId: nonnegativeIntegerOutputSchema,
+    wangId: z
+      .array(
+        nonnegativeIntegerOutputSchema.max(
+          MAX_TILESET_WANG_COLORS_PER_SET,
+        ),
+      )
+      .length(WANG_ID_INDEX_COUNT),
+  })
+  .strict();
+
 const wangSetSummaryOutputSchema = z
   .object({
     sourceIndex: nonnegativeIntegerOutputSchema,
@@ -278,11 +320,36 @@ const wangSetSummaryOutputSchema = z
     classNameTruncated: z
       .literal(true)
       .optional(),
+    imageTileId: integerOutputSchema,
     colorCount: nonnegativeIntegerOutputSchema,
+    colors: z
+      .array(wangColorOutputSchema)
+      .max(MAX_TILESET_WANG_COLORS_PER_SET),
     wangTileCount:
       nonnegativeIntegerOutputSchema,
+    wangTiles: z
+      .object({
+        order: z.literal("source"),
+        wangIdOrder: z.literal(
+          "clockwise-from-top",
+        ),
+        total: nonnegativeIntegerOutputSchema,
+        returned:
+          nonnegativeIntegerOutputSchema,
+        truncated: z.boolean(),
+        items: z
+          .array(wangTileOutputSchema)
+          .max(MAX_TILESET_WANG_TILE_SAMPLE),
+      })
+      .strict(),
+    properties: z.array(
+      projectedPropertyOutputSchema,
+    ),
     propertyCount:
       nonnegativeIntegerOutputSchema,
+    propertiesTruncated: z
+      .literal(true)
+      .optional(),
   })
   .strict();
 
@@ -425,7 +492,7 @@ const atlasTilesetDetailSuccessOutputSchema = z
     ...tilesetDetailEnvelopeShape,
     projection:
       tilesetDetailProjectionOutputSchema(
-        "overview-only",
+        "expanded-colors-and-sampled-wang-tiles",
         "declared-metadata-only",
       ),
     tileset: z

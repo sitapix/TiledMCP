@@ -25,6 +25,13 @@ export const MAX_TILESET_COLLISION_OBJECTS = 100_000;
 export const MAX_TILESET_PROPERTY_ENTRIES = 100_000;
 export const MAX_TILESET_WANG_SETS = 10_000;
 export const MAX_TILESET_WANG_SET_SUMMARIES = 32;
+/** Tiled's WangId::MAX_COLOR_COUNT: 8-bit slots minus the unset value. */
+export const MAX_TILESET_WANG_COLORS_PER_SET = 254;
+export const MAX_TILESET_WANG_COLORS = 100_000;
+export const MAX_TILESET_WANG_TILES = 100_000;
+export const MAX_TILESET_WANG_TILE_SAMPLE = 64;
+/** WangId::NumIndexes: clockwise from the top edge, alternating corners. */
+export const WANG_ID_INDEX_COUNT = 8;
 export const MAX_TILESET_DETAIL_DISPLAY_CODE_POINTS = 128;
 export const MAX_TILESET_DETAIL_RESULT_BYTES = 256 * 1024;
 
@@ -86,6 +93,8 @@ interface TilesetScanBudget {
   animationFrames: number;
   collisionObjects: number;
   propertyEntries: number;
+  wangColors: number;
+  wangTiles: number;
 }
 
 export interface TilesetTileClass {
@@ -416,6 +425,8 @@ export function summarizeTilesetDocument(
     animationFrames: 0,
     collisionObjects: 0,
     propertyEntries: properties.length,
+    wangColors: 0,
+    wangTiles: 0,
   };
   assertBudget(
     budget.propertyEntries,
@@ -490,6 +501,7 @@ export function summarizeTilesetDocument(
       expectObject(value, `${path}.wangsets[${index}]`),
       index,
       path,
+      tileCount,
       budget,
     ),
   );
@@ -516,6 +528,10 @@ export function summarizeTilesetDocument(
   const frameSamplesTruncated = selectedTiles.some(
     ({ animation }) => animation?.framesTruncated === true,
   );
+  const wangTileSamplesTruncated = returnedWangSets.some(
+    (summary) =>
+      (summary.wangTiles as { truncated: boolean }).truncated,
+  );
   const tileMetadataTruncated =
     hasEarlier || hasMore || selectedTiles.length !== tileSummaries.length;
 
@@ -536,7 +552,7 @@ export function summarizeTilesetDocument(
         "bounded-shape-geometry-with-omission-markers",
       wangSets:
         collection === undefined
-          ? "overview-only"
+          ? "expanded-colors-and-sampled-wang-tiles"
           : "fail-closed",
       sourceImage:
         collection === undefined
@@ -619,7 +635,10 @@ export function summarizeTilesetDocument(
       items: returnedWangSets,
     },
     truncated:
-      tileMetadataTruncated || wangSetsTruncated || frameSamplesTruncated,
+      tileMetadataTruncated ||
+      wangSetsTruncated ||
+      frameSamplesTruncated ||
+      wangTileSamplesTruncated,
   };
 }
 
@@ -1184,9 +1203,20 @@ function summarizeWangSet(
   wangSet: JsonObject,
   index: number,
   path: string,
+  tileCount: number,
   budget: TilesetScanBudget,
 ): Record<string, unknown> {
   const context = `${path}.wangsets[${index}]`;
+  if (
+    wangSet.edgecolors !== undefined ||
+    wangSet.cornercolors !== undefined
+  ) {
+    throw new TiledMcpError(
+      "UNSUPPORTED_FORMAT",
+      `${context} uses pre-1.5 edgecolors/cornercolors; their color remapping semantics are not supported.`,
+      { path, wangSetIndex: index },
+    );
+  }
   const name = boundedRequiredString(wangSet.name, `${context}.name`);
   const type = expectString(wangSet.type, `${context}.type`);
   if (!["corner", "edge", "mixed"].includes(type)) {
@@ -1196,10 +1226,102 @@ function summarizeWangSet(
       { path, type },
     );
   }
-  const colors = optionalArray(wangSet.colors, `${context}.colors`);
-  const wangTiles = optionalArray(
+  const imageTileId =
+    wangSet.tile === undefined
+      ? 0
+      : expectInteger(wangSet.tile, `${context}.tile`);
+  const colorValues = optionalArray(wangSet.colors, `${context}.colors`);
+  if (colorValues.length > MAX_TILESET_WANG_COLORS_PER_SET) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context}.colors exceeds the ${MAX_TILESET_WANG_COLORS_PER_SET} colors Tiled supports per Wang set.`,
+      {
+        path,
+        actual: colorValues.length,
+        limit: MAX_TILESET_WANG_COLORS_PER_SET,
+      },
+    );
+  }
+  budget.wangColors += colorValues.length;
+  assertBudget(
+    budget.wangColors,
+    MAX_TILESET_WANG_COLORS,
+    "Wang color",
+    path,
+  );
+  const colors = colorValues.map((value, colorIndex) =>
+    summarizeWangColor(
+      expectObject(value, `${context}.colors[${colorIndex}]`),
+      colorIndex,
+      context,
+      path,
+      budget,
+    ),
+  );
+  const wangTileValues = optionalArray(
     wangSet.wangtiles,
     `${context}.wangtiles`,
+  );
+  budget.wangTiles += wangTileValues.length;
+  assertBudget(
+    budget.wangTiles,
+    MAX_TILESET_WANG_TILES,
+    "Wang tile",
+    path,
+  );
+  const seenWangTileIds = new Set<number>();
+  const wangTiles = wangTileValues.map((value, wangTileIndex) => {
+    const wangTileContext = `${context}.wangtiles[${wangTileIndex}]`;
+    const wangTile = expectObject(value, wangTileContext);
+    const tileId = nonNegativeInteger(
+      wangTile.tileid,
+      `${wangTileContext}.tileid`,
+    );
+    if (tileId >= tileCount) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${wangTileContext}.tileid is outside the tileset local ID range.`,
+        { path, tileId, tileCount },
+      );
+    }
+    if (seenWangTileIds.has(tileId)) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context} assigns multiple Wang IDs to tile ${tileId}.`,
+        { path, tileId },
+      );
+    }
+    seenWangTileIds.add(tileId);
+    const wangIdValues = expectArray(
+      wangTile.wangid,
+      `${wangTileContext}.wangid`,
+    );
+    if (wangIdValues.length !== WANG_ID_INDEX_COUNT) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${wangTileContext}.wangid must list exactly ${WANG_ID_INDEX_COUNT} color indexes.`,
+        { path, actual: wangIdValues.length },
+      );
+    }
+    const wangId = wangIdValues.map((entry, slot) => {
+      const color = nonNegativeInteger(
+        entry,
+        `${wangTileContext}.wangid[${slot}]`,
+      );
+      if (color > colorValues.length) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${wangTileContext}.wangid[${slot}] references color ${color}; the set defines ${colorValues.length}.`,
+          { path, color, colorCount: colorValues.length },
+        );
+      }
+      return color;
+    });
+    return { tileId, wangId };
+  });
+  const returnedWangTiles = wangTiles.slice(
+    0,
+    MAX_TILESET_WANG_TILE_SAMPLE,
   );
   const properties = optionalArray(
     wangSet.properties,
@@ -1211,6 +1333,11 @@ function summarizeWangSet(
     MAX_TILESET_PROPERTY_ENTRIES,
     "property entries",
     path,
+  );
+  const projectedProperties = projectScalarProperties(
+    wangSet,
+    `${context}.properties`,
+    { path, wangSetIndex: index },
   );
   const className =
     wangSet.class === undefined
@@ -1229,9 +1356,94 @@ function summarizeWangSet(
             ? { classNameTruncated: true }
             : {}),
         }),
+    imageTileId,
     colorCount: colors.length,
+    colors,
     wangTileCount: wangTiles.length,
-    propertyCount: properties.length,
+    wangTiles: {
+      order: "source",
+      wangIdOrder: "clockwise-from-top",
+      total: wangTiles.length,
+      returned: returnedWangTiles.length,
+      truncated: returnedWangTiles.length < wangTiles.length,
+      items: returnedWangTiles,
+    },
+    properties: projectedProperties.entries,
+    propertyCount: projectedProperties.total,
+    ...(projectedProperties.truncated
+      ? { propertiesTruncated: true as const }
+      : {}),
+  };
+}
+
+function summarizeWangColor(
+  wangColor: JsonObject,
+  colorIndex: number,
+  wangSetContext: string,
+  path: string,
+  budget: TilesetScanBudget,
+): Record<string, unknown> {
+  const context = `${wangSetContext}.colors[${colorIndex}]`;
+  const name =
+    wangColor.name === undefined
+      ? { value: "", truncated: false }
+      : boundedRequiredString(wangColor.name, `${context}.name`);
+  const color =
+    wangColor.color === undefined
+      ? { value: "", truncated: false }
+      : boundedRequiredString(wangColor.color, `${context}.color`);
+  const probability =
+    wangColor.probability === undefined
+      ? 0
+      : finiteNumber(
+          wangColor.probability,
+          `${context}.probability`,
+        );
+  const imageTileId =
+    wangColor.tile === undefined
+      ? 0
+      : expectInteger(wangColor.tile, `${context}.tile`);
+  const className =
+    wangColor.class === undefined
+      ? undefined
+      : boundedRequiredString(wangColor.class, `${context}.class`);
+  const properties = optionalArray(
+    wangColor.properties,
+    `${context}.properties`,
+  );
+  budget.propertyEntries += properties.length;
+  assertBudget(
+    budget.propertyEntries,
+    MAX_TILESET_PROPERTY_ENTRIES,
+    "property entries",
+    path,
+  );
+  const projectedProperties = projectScalarProperties(
+    wangColor,
+    `${context}.properties`,
+    { path, wangColorIndex: colorIndex + 1 },
+  );
+  return {
+    index: colorIndex + 1,
+    name: name.value,
+    ...(name.truncated ? { nameTruncated: true } : {}),
+    color: color.value,
+    ...(color.truncated ? { colorTruncated: true } : {}),
+    ...(className === undefined
+      ? {}
+      : {
+          className: className.value,
+          ...(className.truncated
+            ? { classNameTruncated: true }
+            : {}),
+        }),
+    probability,
+    imageTileId,
+    properties: projectedProperties.entries,
+    propertyCount: projectedProperties.total,
+    ...(projectedProperties.truncated
+      ? { propertiesTruncated: true as const }
+      : {}),
   };
 }
 
@@ -1398,6 +1610,19 @@ function nonNegativeInteger(
     );
   }
   return integer;
+}
+
+function finiteNumber(
+  value: JsonValue,
+  context: string,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context} must be a finite number.`,
+    );
+  }
+  return value;
 }
 
 function finiteNonNegativeNumber(

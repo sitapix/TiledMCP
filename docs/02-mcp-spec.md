@@ -1356,7 +1356,7 @@ operation 实际出现的 text-specific 字段分别计算，不因后序覆盖�
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞计数、Wang-set 概览，以及 per-tile 标量自定义属性值（与 `tiled_get_object` 同一投影：标量逐字、class/enum/list/object 与超长条目 `valueOmitted` 标记、每 tile ≤128 条；tileset 级与 wang-set 属性仍只给数量）与碰撞形状几何有界投影（六类基础形状精确坐标；gid/template 对象与 >256 点路径以 `geometryOmitted`/`pointsOmitted` 标记，每 tile ≤128 条）；不把 `tiles.length` 冒充 `tilecount`，不读取完整 wang assignments；整页受 256 KiB 结果预算约束，超限要求降低分页 | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
+| `tiled_get_tileset` | **已实现有界基础版。** 以 map + opaque asset id 验证当前引用，返回 atlas 声明、按 local ID 分页的稀疏 tile class（Tiled 1.12 使用 `tiles[].type`）、动画采样、碰撞计数、Wang set 语义展开，以及 per-tile 标量自定义属性值（与 `tiled_get_object` 同一投影：标量逐字、class/enum/list/object 与超长条目 `valueOmitted` 标记、每 tile ≤128 条；tileset 级属性仍只给数量）与碰撞形状几何有界投影（六类基础形状精确坐标；gid/template 对象与 >256 点路径以 `geometryOmitted`/`pointsOmitted` 标记，每 tile ≤128 条）。atlas Wang set 展开语义（对照 Tiled 1.12.2 `wangset.h`/`varianttomapconverter.cpp`）：颜色表全量投影（1-based `index` 即 wangid 引用值，name/color/probability/image tile/properties；缺省按官方 JSON 读取器回落——name/color 空串、probability/tile 0；单 set 上限 254 色 = `WangId::MAX_COLOR_COUNT`），`wangtiles` 每 set 最多采样 64 条并披露 `total`/`truncated`，`wangId` 恒为 8 槽数组、自上边缘顺时针、边角交替（Top→TopRight→Right→BottomRight→Bottom→BottomLeft→Left→TopLeft），0 表示未设色；非 8 槽、越界颜色引用（官方加载即报错）、重复/越界 tileid、pre-1.5 `edgecolors`/`cornercolors` 均 fail closed；不把 `tiles.length` 冒充 `tilecount`；整页受 256 KiB 结果预算约束，超限要求降低分页 | `mapPath`, `tilesetAssetId`, `startTileId?`, `limit?` |
 | `tiled_create_tileset` | **已实现（preview→apply）。** 从项目内图集图片规划一个新 external `.tsj`：按 Tiled 1.12.2 网格公式算 columns/rows/tilecount，返回 `tilesetCreate` change set；`expectedRevision` 是**批准内容本身的 SHA-256**（无既有文件），apply 走 no-replace 创建、`beforeRevision:null`。direct 创建特例条款保持仅 `tiled_create_map` | `tilesetPath`, `imagePath`, `tileWidth`, `tileHeight`, `margin?`, `spacing?`, `name?`, `className?` |
 | `tiled_add_tileset_to_map` | **已实现/本轮契约。** 只预览把一个外部 tileset 挂到地图的单操作 change set；自动分配 `firstgid`，完全不写盘（asset identity contract v2：读/预览路径无锁且零副作用）。可选 `createChangeSetId` 用 pending `tiled_create_tileset` 计划的 prospective 内容顶替尚不存在的 TSJ，挂载 pin 其 prospective revision，可与 create 组成同事务原子提交 | `mapPath`, `tilesetPath`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTilesetRevision?`, `createChangeSetId?` |
 | `tiled_remove_tileset_from_map` | 候选独立入口；当前等价能力已通过 `tiled_preview_edits` 的第 14 种、必须独占 change set 的 `removeTilesetFromMap` operation 实现，仅移除全图零引用的 external atlas binding | `mapPath`, `tilesetAssetId` |
@@ -1536,7 +1536,7 @@ TSJ 变化会分别返回 revision conflict。服务端会先比较同一 raw-by
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_get_wangsets` | 列出 tileset 内的 wang set（类型、颜色、已分配 tile 数） | `tilesetPath` |
+| `tiled_get_wangsets` | **读取已并入 `tiled_get_tileset`**（atlas Wang set 完整颜色表 + 有界 wangtile 采样，见 §3.7）；不再作为独立工具规划 | `tilesetPath` |
 | `tiled_create_wangset` | 创建 wang set 与 wang color | `tilesetPath`, `name`, `type`(corner/edge/mixed), `colors: [{name, color, probability?}]` |
 | `tiled_assign_wangtiles` | 批量给 tile 分配 wangid（8 元素数组，顺时针 top 起） | `tilesetPath`, `wangsetName`, `assignments: [{tileId, wangId}]` |
 | `tiled_paint_terrain` | **地形笔刷**：优先通过 one-shot Tiled adapter 调用官方 `TileLayer.wangEdit()` 完成匹配和邻格修补；可选自研后端用于无 Tiled 或固定 seed 场景，二者必须在结果中标明 backend | `mapPath`, `layerId`, `wangset`, `color`, `region\|path`, `seed?`, `backend?` |

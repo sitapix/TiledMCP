@@ -159,6 +159,13 @@ mutation 所需的完整依赖 revision 必须另从 map summary/region 获取�
 `name` 必须是字符串；名称、class 名和 Wang 名等显示值按 Unicode code point 有界截断。
 已知 rendering 字段使用封闭枚举验证，包括 `objectalignment`、`tilerendersize`、
 `fillmode` 和 `grid.orientation`，未知字符串不能冒充已理解的 Tiled rendering 语义。
+atlas Wang set 按 Tiled 1.12.2 `WangId` 编码语义展开：颜色表全量投影（1-based
+index 即 wangid 引用值；单 set 上限 254 色 = `WangId::MAX_COLOR_COUNT`，缺省字段
+按官方 JSON 读取器的 QVariant 回落补全），wangtile 分配以每 set 最多 64 条采样
+披露并标记截断；`wangId` 恒为 8 槽、自上边缘顺时针（边角交替），0 为未设色。
+官方加载器会报错拒绝的形态（非 8 槽 wangid、颜色引用越界）与我们额外收紧的
+形态（重复/越界 tileid、pre-1.5 `edgecolors`/`cornercolors` 颜色重映射）均
+fail closed；collection tileset 上的 Wang set 维持既有整体 fail closed。
 
 tile semantic search 使用 `mapPath + tilesetAssetId` 绑定当前 map 引用，只扫描 TSJ 中
 显式存在的稀疏 `tiles[]`。class 解析与详情共用 `type` 优先、`class` 兼容回退规则；

@@ -161,6 +161,11 @@ import {
   MAX_TILESET_PROPERTY_ENTRIES,
   MAX_TILESET_WANG_SETS,
   MAX_TILESET_WANG_SET_SUMMARIES,
+  MAX_TILESET_WANG_COLORS,
+  MAX_TILESET_WANG_COLORS_PER_SET,
+  MAX_TILESET_WANG_TILES,
+  MAX_TILESET_WANG_TILE_SAMPLE,
+  WANG_ID_INDEX_COUNT,
 } from "./maps/tilesetDetails.js";
 import {
   DEFAULT_TILE_FIND_LIMIT,
@@ -2895,6 +2900,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           maxTilesetWangSets: MAX_TILESET_WANG_SETS,
           maxTilesetWangSetSummaries:
             MAX_TILESET_WANG_SET_SUMMARIES,
+          maxTilesetWangColorsPerSet:
+            MAX_TILESET_WANG_COLORS_PER_SET,
+          maxTilesetWangColors:
+            MAX_TILESET_WANG_COLORS,
+          maxTilesetWangTiles:
+            MAX_TILESET_WANG_TILES,
+          maxTilesetWangTileSample:
+            MAX_TILESET_WANG_TILE_SAMPLE,
+          wangIdIndexCount: WANG_ID_INDEX_COUNT,
           maxTilesetDetailDisplayCodePoints:
             MAX_TILESET_DETAIL_DISPLAY_CODE_POINTS,
           maxTilesetDetailResultBytes:
@@ -3415,7 +3429,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
+        "Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

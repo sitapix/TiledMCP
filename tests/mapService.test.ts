@@ -876,7 +876,8 @@ describe("MapService", () => {
           "typed-values-with-raw-nested-class-list-and-oversized-omission-markers",
         collision:
           "bounded-shape-geometry-with-omission-markers",
-        wangSets: "overview-only",
+        wangSets:
+          "expanded-colors-and-sampled-wang-tiles",
         sourceImage: "declared-metadata-only",
       },
       map: {
@@ -950,8 +951,49 @@ describe("MapService", () => {
             name: "Ground",
             type: "mixed",
             className: "TerrainRules",
+            imageTileId: 0,
             colorCount: 2,
+            colors: [
+              {
+                index: 1,
+                name: "Grass",
+                color: "",
+                probability: 0,
+                imageTileId: 0,
+                properties: [],
+                propertyCount: 0,
+              },
+              {
+                index: 2,
+                name: "Dirt",
+                color: "",
+                probability: 0,
+                imageTileId: 0,
+                properties: [],
+                propertyCount: 0,
+              },
+            ],
             wangTileCount: 1,
+            wangTiles: {
+              order: "source",
+              wangIdOrder: "clockwise-from-top",
+              total: 1,
+              returned: 1,
+              truncated: false,
+              items: [
+                {
+                  tileId: 1,
+                  wangId: [1, 0, 2, 0, 1, 0, 2, 0],
+                },
+              ],
+            },
+            properties: [
+              {
+                name: "weight",
+                type: "float",
+                value: 0,
+              },
+            ],
             propertyCount: 1,
           },
         ],

@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:00b793cbd41f4812f39445a7918096f3788b29fb051952c3ae765fa012300c61",
+    "revision": "sha256:fce2d159ae92cb510e3a4c6b2b7e90b8464b23f60f7ca9128124575a1eb3de76",
     "serverVersion": "0.0.1",
-    "size": 83342
+    "size": 83727
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 83342,
+  "size": 83727,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 83342 UTF-8 bytes, revision `sha256:00b793cbd41f4812f39445a7918096f3788b29fb051952c3ae765fa012300c61`.
+Content contract: `text`, 83727 UTF-8 bytes, revision `sha256:fce2d159ae92cb510e3a4c6b2b7e90b8464b23f60f7ca9128124575a1eb3de76`.
 
 Resource templates: none.
 
@@ -10679,12 +10679,28 @@ Output schema:
                   "const": 4,
                   "type": "number"
                 },
+                "maxTilesetWangColors": {
+                  "const": 100000,
+                  "type": "number"
+                },
+                "maxTilesetWangColorsPerSet": {
+                  "const": 254,
+                  "type": "number"
+                },
                 "maxTilesetWangSetSummaries": {
                   "const": 32,
                   "type": "number"
                 },
                 "maxTilesetWangSets": {
                   "const": 10000,
+                  "type": "number"
+                },
+                "maxTilesetWangTileSample": {
+                  "const": 64,
+                  "type": "number"
+                },
+                "maxTilesetWangTiles": {
+                  "const": 100000,
                   "type": "number"
                 },
                 "maxUsageDistinctTiles": {
@@ -10713,6 +10729,10 @@ Output schema:
                 },
                 "maxUsageUnusedLocalIdSample": {
                   "const": 16,
+                  "type": "number"
+                },
+                "wangIdIndexCount": {
+                  "const": 8,
                   "type": "number"
                 }
               },
@@ -10775,6 +10795,11 @@ Output schema:
                 "maxTilesetPropertyEntries",
                 "maxTilesetWangSets",
                 "maxTilesetWangSetSummaries",
+                "maxTilesetWangColorsPerSet",
+                "maxTilesetWangColors",
+                "maxTilesetWangTiles",
+                "maxTilesetWangTileSample",
+                "wangIdIndexCount",
                 "maxTilesetDetailDisplayCodePoints",
                 "maxTilesetDetailResultBytes",
                 "maxTileFindLimit",
@@ -17379,7 +17404,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and Wang-set overviews. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.
+Returns a bounded semantic summary of one external TSJ referenced by a map, including sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets and per-tile sub-rectangles fail closed.
 
 Annotations:
 
@@ -17596,7 +17621,7 @@ Output schema:
                       "type": "string"
                     },
                     "wangSets": {
-                      "const": "overview-only",
+                      "const": "expanded-colors-and-sampled-wang-tiles",
                       "type": "string"
                     }
                   },
@@ -18508,10 +18533,351 @@ Output schema:
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "colors": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "color": {
+                                  "type": "string"
+                                },
+                                "colorTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "imageTileId": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": -9007199254740991,
+                                  "type": "integer"
+                                },
+                                "index": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 254,
+                                  "type": "integer"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "nameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "probability": {
+                                  "type": "number"
+                                },
+                                "properties": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "enum": [
+                                              "string",
+                                              "int",
+                                              "float",
+                                              "bool",
+                                              "color",
+                                              "file",
+                                              "object"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "value"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "enum": [
+                                              "class",
+                                              "list"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "$ref": "#/definitions/__schema0"
+                                          },
+                                          "valueSemantics": {
+                                            "enum": [
+                                              "raw-untyped-members",
+                                              "typed-elements"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "value",
+                                          "valueSemantics"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "const": "oversized-value",
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "valueBytes": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueCodePoints": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueOmitted": {
+                                            "const": true,
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "valueOmitted",
+                                          "reason"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "type": "array"
+                                },
+                                "propertiesTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "index",
+                                "name",
+                                "color",
+                                "probability",
+                                "imageTileId",
+                                "properties",
+                                "propertyCount"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 254,
+                            "type": "array"
+                          },
+                          "imageTileId": {
+                            "maximum": 9007199254740991,
+                            "minimum": -9007199254740991,
+                            "type": "integer"
+                          },
                           "name": {
                             "type": "string"
                           },
                           "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "properties": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "string",
+                                        "int",
+                                        "float",
+                                        "bool",
+                                        "color",
+                                        "file",
+                                        "object"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "class",
+                                        "list"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "$ref": "#/definitions/__schema0"
+                                    },
+                                    "valueSemantics": {
+                                      "enum": [
+                                        "raw-untyped-members",
+                                        "typed-elements"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value",
+                                    "valueSemantics"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "const": "oversized-value",
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "valueBytes": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "valueCodePoints": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "valueOmitted": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "valueOmitted",
+                                    "reason"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "type": "array"
+                          },
+                          "propertiesTruncated": {
                             "const": true,
                             "type": "boolean"
                           },
@@ -18537,14 +18903,82 @@ Output schema:
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "wangTiles": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "items": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "tileId": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "wangId": {
+                                      "items": {
+                                        "maximum": 254,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "maxItems": 8,
+                                      "minItems": 8,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "tileId",
+                                    "wangId"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 64,
+                                "type": "array"
+                              },
+                              "order": {
+                                "const": "source",
+                                "type": "string"
+                              },
+                              "returned": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "total": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "truncated": {
+                                "type": "boolean"
+                              },
+                              "wangIdOrder": {
+                                "const": "clockwise-from-top",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "order",
+                              "wangIdOrder",
+                              "total",
+                              "returned",
+                              "truncated",
+                              "items"
+                            ],
+                            "type": "object"
                           }
                         },
                         "required": [
                           "sourceIndex",
                           "name",
                           "type",
+                          "imageTileId",
                           "colorCount",
+                          "colors",
                           "wangTileCount",
+                          "wangTiles",
+                          "properties",
                           "propertyCount"
                         ],
                         "type": "object"
@@ -19578,10 +20012,351 @@ Output schema:
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "colors": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "className": {
+                                  "type": "string"
+                                },
+                                "classNameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "color": {
+                                  "type": "string"
+                                },
+                                "colorTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "imageTileId": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": -9007199254740991,
+                                  "type": "integer"
+                                },
+                                "index": {
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 254,
+                                  "type": "integer"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "nameTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "probability": {
+                                  "type": "number"
+                                },
+                                "properties": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "enum": [
+                                              "string",
+                                              "int",
+                                              "float",
+                                              "bool",
+                                              "color",
+                                              "file",
+                                              "object"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "anyOf": [
+                                              {
+                                                "maxLength": 4096,
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "boolean"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "value"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "enum": [
+                                              "class",
+                                              "list"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value": {
+                                            "$ref": "#/definitions/__schema0"
+                                          },
+                                          "valueSemantics": {
+                                            "enum": [
+                                              "raw-untyped-members",
+                                              "typed-elements"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "value",
+                                          "valueSemantics"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "name": {
+                                            "maxLength": 512,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "propertytype": {
+                                            "maxLength": 1024,
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "const": "oversized-value",
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "valueBytes": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueCodePoints": {
+                                            "maximum": 9007199254740991,
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          "valueOmitted": {
+                                            "const": true,
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "type",
+                                          "valueOmitted",
+                                          "reason"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "type": "array"
+                                },
+                                "propertiesTruncated": {
+                                  "const": true,
+                                  "type": "boolean"
+                                },
+                                "propertyCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "index",
+                                "name",
+                                "color",
+                                "probability",
+                                "imageTileId",
+                                "properties",
+                                "propertyCount"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 254,
+                            "type": "array"
+                          },
+                          "imageTileId": {
+                            "maximum": 9007199254740991,
+                            "minimum": -9007199254740991,
+                            "type": "integer"
+                          },
                           "name": {
                             "type": "string"
                           },
                           "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "properties": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "string",
+                                        "int",
+                                        "float",
+                                        "bool",
+                                        "color",
+                                        "file",
+                                        "object"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "class",
+                                        "list"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "$ref": "#/definitions/__schema0"
+                                    },
+                                    "valueSemantics": {
+                                      "enum": [
+                                        "raw-untyped-members",
+                                        "typed-elements"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "value",
+                                    "valueSemantics"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "propertytype": {
+                                      "maxLength": 1024,
+                                      "type": "string"
+                                    },
+                                    "reason": {
+                                      "const": "oversized-value",
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "valueBytes": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "valueCodePoints": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "valueOmitted": {
+                                      "const": true,
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "type",
+                                    "valueOmitted",
+                                    "reason"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "type": "array"
+                          },
+                          "propertiesTruncated": {
                             "const": true,
                             "type": "boolean"
                           },
@@ -19607,14 +20382,82 @@ Output schema:
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "wangTiles": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "items": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "tileId": {
+                                      "maximum": 9007199254740991,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "wangId": {
+                                      "items": {
+                                        "maximum": 254,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "maxItems": 8,
+                                      "minItems": 8,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "tileId",
+                                    "wangId"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 64,
+                                "type": "array"
+                              },
+                              "order": {
+                                "const": "source",
+                                "type": "string"
+                              },
+                              "returned": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "total": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "truncated": {
+                                "type": "boolean"
+                              },
+                              "wangIdOrder": {
+                                "const": "clockwise-from-top",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "order",
+                              "wangIdOrder",
+                              "total",
+                              "returned",
+                              "truncated",
+                              "items"
+                            ],
+                            "type": "object"
                           }
                         },
                         "required": [
                           "sourceIndex",
                           "name",
                           "type",
+                          "imageTileId",
                           "colorCount",
+                          "colors",
                           "wangTileCount",
+                          "wangTiles",
+                          "properties",
                           "propertyCount"
                         ],
                         "type": "object"
