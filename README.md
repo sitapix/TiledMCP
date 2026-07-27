@@ -79,12 +79,15 @@
   envelope、最大 1024-byte 的 compact one-line JSON text summary 与四项 tool
   annotations。
 
-内嵌（inline）tileset 获得**只读语义核心**：map summary 单独列出内嵌 atlas 条目
-（`tilesets[]` index + GID 范围），region 读取对其返回只读
+内嵌（inline）tileset 获得**只读语义核心与 tile layer 渲染**：map summary 单独
+列出内嵌 atlas 条目（`tilesets[]` index + GID 范围），region 读取对其返回只读
 `{kind:"embedded", sourceIndex}` tile 引用，`tiled_get_tileset` 以
 `embeddedIndex` 寻址返回与外部 atlas 相同的有界详情投影（内容由 map revision
-本身 pin，无独立 assetId/revision）；内嵌 image-collection、pre-1.5 `terrains`
-字段 fail closed，一切编辑/渲染/检索路径对内嵌条目继续明确拒绝，不会静默降级。
+本身 pin，无独立 assetId/revision），`tiled_render_preview` 绘制内嵌 atlas 的
+tile layer（图片相对 map 文件解析，source 条目以 `{embedded:{sourceIndex}}`
+标识并由 map revision pin）；内嵌 image-collection、pre-1.5 `terrains` 字段与
+引用内嵌 tileset 的 tile object 渲染 fail closed，一切编辑/检索路径对内嵌条目
+继续明确拒绝，不会静默降级。
 tile object（`gid` 引用对象）获得**创建与语义编辑**支持：`createObject` 的
 `shape:"tile"` 草稿以 TileRef（external binding + local id + 翻转位）经与 tile
 layer cell 完全一致的 `cellToGid` 编码写入 `gid`，`width`/`height` 必须显式给出

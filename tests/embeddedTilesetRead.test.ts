@@ -7,6 +7,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -295,6 +296,35 @@ describe("embedded tileset reading", () => {
     });
   });
 
+  it("renders embedded atlas tiles in the native preview", async () => {
+    const harness = await createHarness(roots, {
+      realImages: true,
+    });
+    const rendered =
+      await harness.service.renderPreview({
+        mapPath: MAP_PATH,
+        region: { x: 0, y: 0, width: 2, height: 2 },
+      });
+    expect(rendered.png.length).toBeGreaterThan(0);
+    expect(rendered.result).toMatchObject({
+      mimeType: "image/png",
+      sources: expect.arrayContaining([
+        expect.objectContaining({
+          embedded: { sourceIndex: 1 },
+          tileset: expect.objectContaining({
+            path: MAP_PATH,
+          }),
+          image: expect.objectContaining({
+            path: "tiles/inline.png",
+          }),
+        }),
+      ]),
+    });
+    const sources = rendered.result
+      .sources as Array<Record<string, unknown>>;
+    expect(sources).toHaveLength(2);
+  });
+
   it("fails closed on embedded collections, legacy terrains, and GID overlaps", async () => {
     const collection = await createHarness(roots, {
       embeddedOverride: {
@@ -389,6 +419,7 @@ async function createHarness(
   options: {
     includeEmbedded?: boolean;
     embeddedOverride?: JsonObject;
+    realImages?: boolean;
   } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(
@@ -457,13 +488,34 @@ async function createHarness(
       version: "1.10",
     }),
   );
+  const imageBytes = async (): Promise<Buffer> =>
+    options.realImages === true
+      ? sharp({
+          create: {
+            width: 32,
+            height: 32,
+            channels: 4,
+            background: {
+              r: 30,
+              g: 120,
+              b: 60,
+              alpha: 1,
+            },
+          },
+        })
+          .png()
+          .toBuffer()
+      : Buffer.from(
+          "placeholder image bytes",
+          "utf8",
+        );
   await writeFile(
     join(root, "tiles/terrain.png"),
-    Buffer.from("placeholder image bytes", "utf8"),
+    await imageBytes(),
   );
   await writeFile(
     join(root, "tiles/inline.png"),
-    Buffer.from("placeholder image bytes", "utf8"),
+    await imageBytes(),
   );
 
   const resolver =

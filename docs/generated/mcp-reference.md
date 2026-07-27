@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c",
+    "revision": "sha256:b37ba4d7ffc2f49765bc2c34288e94da4396b7f7275e40439be9d40ed7ef3a4e",
     "serverVersion": "0.0.1",
-    "size": 87002
+    "size": 87200
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 87002,
+  "size": 87200,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 87002 UTF-8 bytes, revision `sha256:bd83070ec6237fd86eff165fa1d1eefa5b1a55889a5c219a16ab8ba0a80cf04c`.
+Content contract: `text`, 87200 UTF-8 bytes, revision `sha256:b37ba4d7ffc2f49765bc2c34288e94da4396b7f7275e40439be9d40ed7ef3a4e`.
 
 Resource templates: none.
 
@@ -9610,13 +9610,21 @@ Output schema:
                     {
                       "const": "tiled_get_tileset",
                       "type": "string"
+                    },
+                    {
+                      "const": "tiled_render_preview",
+                      "type": "string"
                     }
                   ],
                   "type": "array"
                 },
                 "renderable": {
-                  "const": false,
-                  "type": "boolean"
+                  "const": "tile-layers-only-map-relative-image",
+                  "type": "string"
+                },
+                "tileObjects": {
+                  "const": "fail-closed",
+                  "type": "string"
                 }
               },
               "required": [
@@ -9627,7 +9635,8 @@ Output schema:
                 "legacyTerrains",
                 "pin",
                 "editable",
-                "renderable"
+                "renderable",
+                "tileObjects"
               ],
               "type": "object"
             },
@@ -37721,7 +37730,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
+Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
 
 Annotations:
 
@@ -38839,86 +38848,182 @@ Output schema:
             },
             "sources": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "assetId": {
-                    "pattern": "^asset_[0-9a-f]{24}$",
-                    "type": "string"
-                  },
-                  "image": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "format": {
-                        "enum": [
-                          "jpeg",
-                          "png",
-                          "svg",
-                          "webp"
-                        ],
+                      "assetId": {
+                        "pattern": "^asset_[0-9a-f]{24}$",
                         "type": "string"
                       },
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "pixelSize": {
+                      "image": {
                         "additionalProperties": false,
                         "properties": {
-                          "height": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
+                          "format": {
+                            "enum": [
+                              "jpeg",
+                              "png",
+                              "svg",
+                              "webp"
+                            ],
+                            "type": "string"
                           },
-                          "width": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "pixelSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision",
+                          "format",
+                          "pixelSize"
+                        ],
+                        "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "assetId",
+                      "tileset",
+                      "image"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "embedded": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "sourceIndex": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
                           }
                         },
                         "required": [
-                          "width",
-                          "height"
+                          "sourceIndex"
                         ],
                         "type": "object"
                       },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision",
-                      "format",
-                      "pixelSize"
-                    ],
-                    "type": "object"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
+                      "image": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "format": {
+                            "enum": [
+                              "jpeg",
+                              "png",
+                              "svg",
+                              "webp"
+                            ],
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "pixelSize": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "height": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "width": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision",
+                          "format",
+                          "pixelSize"
+                        ],
+                        "type": "object"
                       },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
                       }
                     },
                     "required": [
-                      "path",
-                      "revision"
+                      "embedded",
+                      "tileset",
+                      "image"
                     ],
                     "type": "object"
                   }
-                },
-                "required": [
-                  "assetId",
-                  "tileset",
-                  "image"
-                ],
-                "type": "object"
+                ]
               },
               "maxItems": 64,
               "type": "array"

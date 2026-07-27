@@ -240,7 +240,10 @@ For an existing map:
    one selector): the summary lists embedded atlas entries separately, the
    region tool returns read-only \`{kind:"embedded", sourceIndex}\` tile
    references for them, their content is pinned by the map revision itself,
-   and every edit or render path keeps them fail closed. Its tile metadata
+   and \`tiled_render_preview\` draws embedded atlas tile layers (the image
+   resolves relative to the map file; the source entry carries
+   \`{embedded: {sourceIndex}}\`). Every edit path and tile objects backed
+   by embedded tilesets keep failing closed. Its tile metadata
    page is sparse and ordered by local ID. Tile classes use the current Tiled \`tiles[].type\`
    field, with \`class\` accepted only as a Tiled 1.9 compatibility fallback.
    Each atlas Wang set expands its full color list (1-based indexes,

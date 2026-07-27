@@ -1305,13 +1305,28 @@ export const tileRenderToolOutputSchema =
     ]),
   );
 
-const nativePreviewSourceOutputSchema = z
-  .object({
-    assetId: assetIdOutputSchema,
-    tileset: mapSnapshotOutputSchema,
-    image: renderedImageSourceOutputSchema,
-  })
-  .strict();
+const nativePreviewSourceOutputSchema = z.union([
+  z
+    .object({
+      assetId: assetIdOutputSchema,
+      tileset: mapSnapshotOutputSchema,
+      image: renderedImageSourceOutputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      embedded: z
+        .object({
+          sourceIndex:
+            nonnegativeIntegerOutputSchema,
+        })
+        .strict(),
+      /** The map itself: embedded content is pinned by the map revision. */
+      tileset: mapSnapshotOutputSchema,
+      image: renderedImageSourceOutputSchema,
+    })
+    .strict(),
+]);
 
 const integerPointOutputSchema = z
   .object({

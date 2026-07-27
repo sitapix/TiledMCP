@@ -2314,6 +2314,7 @@ export class MapService {
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
       allowCollectionTilesets: true,
+      allowEmbeddedTilesets: true,
     });
     const map = context.loaded.document;
     const tileWidth = expectInteger(
@@ -2329,17 +2330,29 @@ export class MapService {
       context.loaded.path,
       context.width,
       context.height,
-      context.bindings.map((binding) => ({
-        assetId: binding.assetId,
-        firstGid: binding.firstGid,
-        // Collection ranges span the sparse id space; missing ids fail
-        // closed when the used tiles are collected.
-        tileCount:
-          binding.collection === true
-            ? binding.gidSpan
-            : binding.tileCount,
-        name: binding.name,
-      })),
+      [
+        ...context.bindings.map((binding) => ({
+          assetId: binding.assetId,
+          firstGid: binding.firstGid,
+          // Collection ranges span the sparse id space; missing ids fail
+          // closed when the used tiles are collected.
+          tileCount:
+            binding.collection === true
+              ? binding.gidSpan
+              : binding.tileCount,
+          name: binding.name,
+        })),
+        // Embedded entries join the GID space under a synthetic source
+        // label; real asset IDs always use the asset_<hex> shape.
+        ...context.embeddedBindings.map(
+          (embedded) => ({
+            assetId: `embedded:${embedded.sourceIndex}`,
+            firstGid: embedded.firstGid,
+            tileCount: embedded.tileCount,
+            name: embedded.name,
+          }),
+        ),
+      ],
       {
         ...(input.region === undefined ? {} : { region: input.region }),
         ...(input.layerIds === undefined ? {} : { layerIds: input.layerIds }),
@@ -2349,6 +2362,7 @@ export class MapService {
       scene,
       context.bindings,
       context.loaded.path,
+      context.embeddedBindings,
     );
     prepareNativePreviewHighlightOverlay(
       input.overlays?.highlights,
@@ -2378,6 +2392,77 @@ export class MapService {
     let aggregateImageBytes = 0;
     let aggregateDecodedPixels = 0;
     for (const assetId of scene.usedAssetIds) {
+      if (assetId.startsWith("embedded:")) {
+        const sourceIndex = Number.parseInt(
+          assetId.slice("embedded:".length),
+          10,
+        );
+        const embedded =
+          context.embeddedBindings.find(
+            (candidate) =>
+              candidate.sourceIndex ===
+              sourceIndex,
+          );
+        if (embedded === undefined) {
+          throw new TiledMcpError(
+            "INTERNAL_ERROR",
+            `Preview source ${assetId} disappeared from the map context.`,
+            { assetId },
+          );
+        }
+        const entryPath = `${context.loaded.path}.tilesets[${embedded.sourceIndex}]`;
+        const loaded =
+          await this.loadPreviewAtlasSource(
+            {
+              document: embedded.document,
+              errorPath: entryPath,
+              assetLabel: assetId,
+              imageBasePath: context.loaded.path,
+            },
+            tileWidth,
+            tileHeight,
+            MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES -
+              aggregateImageBytes,
+            MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS -
+              aggregateDecodedPixels,
+          );
+        aggregateImageBytes +=
+          loaded.image.bytes.byteLength;
+        aggregateDecodedPixels +=
+          loaded.geometry.imageWidth *
+          loaded.geometry.imageHeight;
+        atlases.push({
+          assetId,
+          firstGid: embedded.firstGid,
+          tileCount: embedded.tileCount,
+          rgba: loaded.decoded.rgba,
+          format: loaded.decoded.format,
+          geometry: loaded.geometry,
+          ...(loaded.transparentColor ===
+          undefined
+            ? {}
+            : {
+                transparentColor:
+                  loaded.transparentColor,
+              }),
+        });
+        sources.push({
+          embedded: {
+            sourceIndex: embedded.sourceIndex,
+          },
+          tileset: {
+            path: context.loaded.path,
+            revision: context.loaded.revision,
+          },
+          image: {
+            path: loaded.image.path,
+            revision: loaded.image.revision,
+            format: loaded.decoded.format,
+            pixelSize: loaded.decoded.pixelSize,
+          },
+        });
+        continue;
+      }
       const binding = context.bindings.find(
         (candidate) => candidate.assetId === assetId,
       );
@@ -2723,6 +2808,7 @@ export class MapService {
     scene: PreviewScene,
     bindings: readonly TilesetBinding[],
     mapPath: string,
+    embeddedBindings: readonly EmbeddedTilesetBinding[] = [],
   ): Promise<void> {
     const frames = new Map<
       string,
@@ -2761,6 +2847,27 @@ export class MapService {
                 candidate.gidSpan,
         );
         if (binding === undefined) {
+          const embedded = embeddedBindings.find(
+            (candidate) =>
+              decoded.baseGid >=
+                candidate.firstGid &&
+              decoded.baseGid <
+                candidate.firstGid +
+                  candidate.gidSpan,
+          );
+          if (embedded !== undefined) {
+            throw new TiledMcpError(
+              "UNSUPPORTED_TILESET",
+              `Object ${object.id} references embedded tileset tilesets[${embedded.sourceIndex}]; tile objects backed by embedded tilesets are not renderable yet.`,
+              {
+                path: mapPath,
+                layerId: layer.id,
+                objectId: object.id,
+                embeddedSourceIndex:
+                  embedded.sourceIndex,
+              },
+            );
+          }
           throw new TiledMcpError(
             "GID_OUT_OF_RANGE",
             `Object ${object.id} GID ${decoded.baseGid} is outside every tileset range.`,
@@ -6640,17 +6747,6 @@ export class MapService {
     remainingImageBytes: number,
     remainingDecodedPixels: number,
   ) {
-    if (remainingImageBytes <= 0 || remainingDecodedPixels <= 0) {
-      throw new TiledMcpError(
-        "RESULT_LIMIT_EXCEEDED",
-        "The native preview has exhausted its aggregate atlas resource budget.",
-        {
-          assetId: binding.assetId,
-          remainingImageBytes: Math.max(0, remainingImageBytes),
-          remainingDecodedPixels: Math.max(0, remainingDecodedPixels),
-        },
-      );
-    }
     const tileset = await this.store.read(binding.path);
     if (tileset.revision !== binding.revision) {
       throw new TiledMcpError(
@@ -6663,22 +6759,64 @@ export class MapService {
         },
       );
     }
-    const document = tileset.document;
+    return this.loadPreviewAtlasSource(
+      {
+        document: tileset.document,
+        errorPath: binding.path,
+        assetLabel: binding.assetId,
+        imageBasePath: binding.path,
+      },
+      mapTileWidth,
+      mapTileHeight,
+      remainingImageBytes,
+      remainingDecodedPixels,
+    );
+  }
+
+  /**
+   * Shared atlas-source loader for the native preview: external TSJ
+   * documents resolve their image relative to the tileset file, while
+   * embedded map tilesets resolve theirs relative to the map file.
+   */
+  private async loadPreviewAtlasSource(
+    source: {
+      document: JsonObject;
+      errorPath: string;
+      assetLabel: string;
+      imageBasePath: string;
+    },
+    mapTileWidth: number,
+    mapTileHeight: number,
+    remainingImageBytes: number,
+    remainingDecodedPixels: number,
+  ) {
+    if (remainingImageBytes <= 0 || remainingDecodedPixels <= 0) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        "The native preview has exhausted its aggregate atlas resource budget.",
+        {
+          assetId: source.assetLabel,
+          remainingImageBytes: Math.max(0, remainingImageBytes),
+          remainingDecodedPixels: Math.max(0, remainingDecodedPixels),
+        },
+      );
+    }
+    const document = source.document;
     if (typeof document.image !== "string") {
       throw new TiledMcpError(
         "UNSUPPORTED_TILESET",
         "Native preview v1 requires a root atlas image.",
-        { path: binding.path, assetId: binding.assetId },
+        { path: source.errorPath, assetId: source.assetLabel },
       );
     }
 
     const tileWidth = expectInteger(
       document.tilewidth,
-      `${binding.path}.tilewidth`,
+      `${source.errorPath}.tilewidth`,
     );
     const tileHeight = expectInteger(
       document.tileheight,
-      `${binding.path}.tileheight`,
+      `${source.errorPath}.tileheight`,
     );
     if (tileWidth !== mapTileWidth || tileHeight !== mapTileHeight) {
       throw new TiledMcpError(
@@ -6686,8 +6824,8 @@ export class MapService {
         "Native preview v1 requires every atlas tile size to match the map grid size.",
         {
           feature: "tileset-tile-size",
-          assetId: binding.assetId,
-          path: binding.path,
+          assetId: source.assetLabel,
+          path: source.errorPath,
           mapTileSize: { width: mapTileWidth, height: mapTileHeight },
           tilesetTileSize: { width: tileWidth, height: tileHeight },
         },
@@ -6699,8 +6837,8 @@ export class MapService {
         "tileset-tile-render-size",
         "Native preview v1 supports only tileset tilerendersize \"tile\".",
         {
-          assetId: binding.assetId,
-          path: binding.path,
+          assetId: source.assetLabel,
+          path: source.errorPath,
           tileRenderSize,
         },
       );
@@ -6711,8 +6849,8 @@ export class MapService {
         "tileset-fill-mode",
         "Native preview v1 supports only tileset fillmode \"stretch\".",
         {
-          assetId: binding.assetId,
-          path: binding.path,
+          assetId: source.assetLabel,
+          path: source.errorPath,
           fillMode,
         },
       );
@@ -6720,23 +6858,23 @@ export class MapService {
     if (document.tileoffset !== undefined) {
       const tileOffset = expectObject(
         document.tileoffset,
-        `${binding.path}.tileoffset`,
+        `${source.errorPath}.tileoffset`,
       );
       const offsetX = expectInteger(
         tileOffset.x ?? 0,
-        `${binding.path}.tileoffset.x`,
+        `${source.errorPath}.tileoffset.x`,
       );
       const offsetY = expectInteger(
         tileOffset.y ?? 0,
-        `${binding.path}.tileoffset.y`,
+        `${source.errorPath}.tileoffset.y`,
       );
       if (offsetX !== 0 || offsetY !== 0) {
         throw unsupportedRenderFeature(
           "tileset-tile-offset",
           "Native preview v1 does not support a non-zero tileset tileoffset.",
           {
-            assetId: binding.assetId,
-            path: binding.path,
+            assetId: source.assetLabel,
+            path: source.errorPath,
             tileOffset: { x: offsetX, y: offsetY },
           },
         );
@@ -6745,17 +6883,17 @@ export class MapService {
     if (document.tiles !== undefined) {
       const tileEntries = expectArray(
         document.tiles,
-        `${binding.path}.tiles`,
+        `${source.errorPath}.tiles`,
       );
       for (const [index, value] of tileEntries.entries()) {
-        const tile = expectObject(value, `${binding.path}.tiles[${index}]`);
+        const tile = expectObject(value, `${source.errorPath}.tiles[${index}]`);
         if (tile.image !== undefined) {
           throw new TiledMcpError(
             "UNSUPPORTED_TILESET",
             "Native preview v1 does not support hybrid or image-collection tilesets.",
             {
-              assetId: binding.assetId,
-              path: binding.path,
+              assetId: source.assetLabel,
+              path: source.errorPath,
               tileIndex: index,
             },
           );
@@ -6772,8 +6910,8 @@ export class MapService {
             "tile-image-subrect",
             "Native preview v1 does not support per-tile image subrect overrides.",
             {
-              assetId: binding.assetId,
-              path: binding.path,
+              assetId: source.assetLabel,
+              path: source.errorPath,
               tileIndex: index,
             },
           );
@@ -6785,36 +6923,36 @@ export class MapService {
     }
 
     const imagePath = await this.resolver.resolveReference(
-      binding.path,
+      source.imageBasePath,
       document.image,
     );
     const geometry: AtlasGeometry = {
       imagePath,
       imageWidth: expectInteger(
         document.imagewidth,
-        `${binding.path}.imagewidth`,
+        `${source.errorPath}.imagewidth`,
       ),
       imageHeight: expectInteger(
         document.imageheight,
-        `${binding.path}.imageheight`,
+        `${source.errorPath}.imageheight`,
       ),
       tileWidth,
       tileHeight,
       tileCount: expectInteger(
         document.tilecount,
-        `${binding.path}.tilecount`,
+        `${source.errorPath}.tilecount`,
       ),
       columns: expectInteger(
         document.columns,
-        `${binding.path}.columns`,
+        `${source.errorPath}.columns`,
       ),
       margin: expectInteger(
         document.margin ?? 0,
-        `${binding.path}.margin`,
+        `${source.errorPath}.margin`,
       ),
       spacing: expectInteger(
         document.spacing ?? 0,
-        `${binding.path}.spacing`,
+        `${source.errorPath}.spacing`,
       ),
     };
     validateAtlasGeometry(geometry);
@@ -6827,8 +6965,8 @@ export class MapService {
         "RESULT_LIMIT_EXCEEDED",
         `Preview atlases exceed the ${MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS} decoded-pixel aggregate limit.`,
         {
-          assetId: binding.assetId,
-          path: binding.path,
+          assetId: source.assetLabel,
+          path: source.errorPath,
           nextImagePixels: decodedPixels,
           remainingPixels: Math.max(0, remainingDecodedPixels),
           limit: MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
@@ -6863,7 +7001,7 @@ export class MapService {
         : parseTransparentColor(
             expectString(
               document.transparentcolor,
-              `${binding.path}.transparentcolor`,
+              `${source.errorPath}.transparentcolor`,
             ),
           );
     return {

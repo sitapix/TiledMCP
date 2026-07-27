@@ -2664,6 +2664,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "tiled_get_map_summary",
             "tiled_get_region",
             "tiled_get_tileset",
+            "tiled_render_preview",
           ],
           detailLocator:
             "map-path-plus-embedded-index",
@@ -2672,7 +2673,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           legacyTerrains: "fail-closed",
           pin: "map-revision-only",
           editable: false,
-          renderable: false,
+          renderable:
+            "tile-layers-only-map-relative-image",
+          tileObjects: "fail-closed",
         },
         tilesetSheetCapabilities: {
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
@@ -3841,7 +3844,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external atlas tile layers, fixed-style absolute tile-rectangle highlights, and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.",
+        "Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
