@@ -580,6 +580,16 @@
         "ignoreVisibility": false
       },
       "purpose": "\u4ec5\u5728\u63a2\u6d4b\u5e76\u6ce8\u518c TmxRasterizer \u540e\u751f\u6210\u53ef\u9009\u7684\u9ad8\u4fdd\u771f\u6574\u56fe PNG\u3002"
+    },
+    {
+      "name": "tiled_preview_export",
+      "profile": "with-tmxrasterizer",
+      "purpose": "Convert a project map to TMX through Tiled's own CLI exporter and stage the approved bytes as a new-file change set.",
+      "arguments": {
+        "sourcePath": "maps/example.tmj",
+        "targetPath": "exports/example.tmx",
+        "expectedSourceRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
     }
   ]
 }

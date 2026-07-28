@@ -472,6 +472,20 @@ commits only the tileset file; maps are never touched, but pending map change
 sets pinned to the old tileset revision will conflict afterwards and must be
 re-previewed.
 
+## Export through Tiled's own CLI
+
+When the local Tiled CLI is available, the optional
+\`tiled_preview_export\` runs Tiled's own \`--export-map\` /
+\`--export-tileset\` conversion from one project \`.tmj\`/\`.tsj\` source
+into a server-owned staging file — the CLI never touches the project
+directly. The format must appear in the probed export-format whitelist
+(pass it explicitly or let the target extension imply it), the target
+must be a new project file (exports never overwrite), and the source is
+revision-pinned. The returned \`fileExport\` change set's
+\`expectedRevision\` is the SHA-256 of the approved output bytes; apply
+re-runs the export under the same source pin and fails closed unless the
+bytes match exactly, then commits via no-replace creation.
+
 ## Edit Wang terrain sets
 
 \`tiled_update_wangsets\` previews sequential Wang edits on one currently

@@ -439,6 +439,26 @@ export class DocumentStore {
     document: JsonObject,
     label = "create document",
   ): Promise<CommitResult> {
+    return this.createBytes(
+      projectPath,
+      serializeJsonDocument(document),
+      label,
+    );
+  }
+
+  /**
+   * No-replace creation of arbitrary file content (e.g. Tiled CLI export
+   * products that are not JSON documents). Shares the exact checkpoint,
+   * lock, and atomic-replace discipline of document creation.
+   */
+  async createBytes(
+    projectPath: string,
+    rawContent: string | Buffer,
+    label = "create file",
+  ): Promise<CommitResult> {
+    const content = Buffer.isBuffer(rawContent)
+      ? rawContent
+      : Buffer.from(rawContent, "utf8");
     const normalized = this.resolver.normalize(projectPath);
     return this.mutex.runExclusive(normalized, () =>
       withProjectFileLock(this.resolver, normalized, async () => {
@@ -456,7 +476,6 @@ export class DocumentStore {
           }
         }
 
-        const content = serializeJsonDocument(document);
         this.assertSize(content, normalized);
         const afterRevision = revisionOf(content);
         const checkpoint = await this.checkpoints.prepare(

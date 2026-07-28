@@ -1959,7 +1959,7 @@ per-tile image 与 image-layer 引用按规范化项目路径统一去重，最�
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_convert` | 通过 one-shot Tiled adapter（`tiled --evaluate`/CLI）转换 TMX↔TMJ、TSX↔TSJ；独立 TMX writer 延后 | `sourcePath`, `targetPath` |
-| `tiled_export` | 使用 Tiled CLI 导出运行时报告的 `--export-formats`；不硬编码引擎格式。数据/引擎格式走 `--export-map`，PNG 地图渲染单独走 `tmxrasterizer` | `sourcePath`, `targetPath`, `format?` |
+| `tiled_export` | **已实现为可选工具 `tiled_preview_export`（preview→apply）**：格式白名单来自运行时探测的 `--export-formats`（显式给出或由目标扩展名推导），不硬编码引擎格式；CLI 只写服务端 staging 绝不直接触碰项目，源文件 revision pin，目标必须是新文件（绝不覆盖），plan 的 `expectedRevision` 即批准输出 bytes 的 SHA-256，apply 在同一 source pin 下重放导出、逐字节比对（漂移即 fail closed）后经 no-replace 创建提交；PNG 地图渲染单独走 `tmxrasterizer`（`tiled_render_map`） | `sourcePath`, `targetPath`, `format?`, `expectedSourceRevision?` |
 | `tiled_rasterize` | 使用 `tmxrasterizer` 把地图渲染为 PNG，与 `tiled_export` 分开声明和标注 | `sourcePath`, `targetPath`, `options?` |
 | `tiled_run_automapping` | 通过 one-shot `tiled --evaluate` 调用官方 `TileMap.autoMap()`，不要求常驻 GUI 或 xvfb | `mapPath`, `rulesPath` |
 | `tiled_list_world_maps` | **已实现。** 只读列出 JSON world 的显式地图成员：世界坐标、声明尺寸（非正即 null，由地图决定）、逐成员存在性与 revision pin、world 自定义属性；pattern 成员只计数（`patternsUnexpanded`），绝不做文件系统匹配 | `worldPath` |

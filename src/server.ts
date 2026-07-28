@@ -201,6 +201,7 @@ import {
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
+  fileExportPreviewToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -1624,6 +1625,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
 export const TILED_MCP_OPTIONAL_TOOL_NAMES =
   Object.freeze([
     "tiled_render_map",
+    "tiled_preview_export",
   ] as const);
 const capabilityIssueOutputSchema = z
   .object({
@@ -1709,6 +1711,18 @@ function immutableCliCapabilitiesSnapshot(
 const registeredToolNamesOutputSchema = z.union([
   exactJsonValueOutputSchema(
     [...TILED_MCP_CORE_TOOL_NAMES] as unknown as JsonValue,
+  ),
+  exactJsonValueOutputSchema(
+    [
+      ...TILED_MCP_CORE_TOOL_NAMES,
+      "tiled_render_map",
+    ] as unknown as JsonValue,
+  ),
+  exactJsonValueOutputSchema(
+    [
+      ...TILED_MCP_CORE_TOOL_NAMES,
+      "tiled_preview_export",
+    ] as unknown as JsonValue,
   ),
   exactJsonValueOutputSchema(
     [
@@ -1830,7 +1844,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const advertisedToolNames = [
     ...TILED_MCP_CORE_TOOL_NAMES,
     ...(cliCapabilities.rasterizer.available
-      ? TILED_MCP_OPTIONAL_TOOL_NAMES
+      ? (["tiled_render_map"] as const)
+      : []),
+    ...(cliCapabilities.tiled.available
+      ? (["tiled_preview_export"] as const)
       : []),
   ];
   const capabilitiesResult = {
@@ -4921,9 +4938,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                     ? maps.applyWangsetEdit(
                                         plan,
                                       )
-                                    : maps.applyEdits(
-                                        plan,
-                                      ),
+                                    : plan.kind ===
+                                        "fileExport"
+                                      ? maps.applyExportFile(
+                                          plan,
+                                          (options) =>
+                                            cli.exportAsset(
+                                              options,
+                                            ),
+                                        )
+                                      : maps.applyEdits(
+                                          plan,
+                                        ),
         ),
       ),
   );
@@ -5032,6 +5058,65 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           } catch (error) {
             return toolError(error);
           }
+        }),
+    );
+  }
+
+  if (cliCapabilities.tiled.available) {
+    register(
+      server,
+      registeredTools,
+      "tiled_preview_export",
+      {
+        title: "Preview a Tiled CLI export",
+        description:
+          "Runs the local Tiled CLI's own --export-map/--export-tileset conversion from one project .tmj/.tsj source into a server-owned staging file and returns an expiring fileExport change set carrying the approved output's content hash. The format comes from the probed export-format whitelist (explicit or via the target extension); the target must be a new project file (exports never overwrite), the source is revision-pinned, and apply re-runs the export and fails closed unless the output bytes exactly match the approved hash.",
+        inputSchema: z
+          .object({
+            sourcePath: projectPathSchema,
+            targetPath: projectPathSchema,
+            format: z
+              .string()
+              .regex(/^[a-z0-9]{1,16}$/u)
+              .optional(),
+            expectedSourceRevision:
+              revisionSchema.optional(),
+          })
+          .strict(),
+        outputSchema:
+          fileExportPreviewToolOutputSchema,
+        annotations: PREVIEW_ONLY,
+      },
+      async ({
+        sourcePath,
+        targetPath,
+        format,
+        expectedSourceRevision,
+      }) =>
+        executeTool(async () => {
+          const plan = await maps.planExportFile(
+            {
+              sourcePath,
+              targetPath,
+              ...(format === undefined
+                ? {}
+                : { format }),
+              ...(expectedSourceRevision ===
+              undefined
+                ? {}
+                : { expectedSourceRevision }),
+            },
+            (options) =>
+              cli.exportAsset(options),
+            {
+              map: cliCapabilities.tiled
+                .mapExportFormats,
+              tileset:
+                cliCapabilities.tiled
+                  .tilesetExportFormats,
+            },
+          );
+          return changeSets.put(plan);
         }),
     );
   }

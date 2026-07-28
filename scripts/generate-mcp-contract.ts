@@ -343,21 +343,29 @@ async function collectProfile(
 }
 
 function fixedCapabilities(
-  rasterizerAvailable: boolean,
+  optionalToolsAvailable: boolean,
 ): TiledCliCapabilities {
   return {
     tiled: {
       executable: "contract-tiled",
-      available: true,
-      version: "1.12.2",
-      mapExportFormats: ["json", "tmx"],
-      tilesetExportFormats: ["json", "tsx"],
+      available: optionalToolsAvailable,
+      version: optionalToolsAvailable
+        ? "1.12.2"
+        : null,
+      mapExportFormats: optionalToolsAvailable
+        ? ["json", "tmx"]
+        : [],
+      tilesetExportFormats: optionalToolsAvailable
+        ? ["json", "tsx"]
+        : [],
       issues: [],
     },
     rasterizer: {
       executable: "contract-tmxrasterizer",
-      available: rasterizerAvailable,
-      version: rasterizerAvailable ? "1.0" : null,
+      available: optionalToolsAvailable,
+      version: optionalToolsAvailable
+        ? "1.0"
+        : null,
       issues: [],
     },
   };

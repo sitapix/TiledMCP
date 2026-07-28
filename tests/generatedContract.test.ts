@@ -223,14 +223,17 @@ describe("generated MCP contract", () => {
     );
 
     expect(coreTools).toHaveLength(32);
-    expect(fullTools).toHaveLength(33);
+    expect(fullTools).toHaveLength(34);
     expect(new Set(coreTools).size).toBe(32);
-    expect(new Set(fullTools).size).toBe(33);
+    expect(new Set(fullTools).size).toBe(34);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
       ),
-    ).toEqual(["tiled_render_map"]);
+    ).toEqual([
+      "tiled_render_map",
+      "tiled_preview_export",
+    ]);
     expect(
       coreTools.filter(
         (name) => !new Set(fullTools).has(name),
@@ -248,8 +251,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(33);
-    expect(new Set(toolNames).size).toBe(33);
+    expect(toolDefinitions).toHaveLength(34);
+    expect(new Set(toolNames).size).toBe(34);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );

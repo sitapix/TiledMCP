@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { stat } from "node:fs/promises";
-import { posix } from "node:path";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
 
 import { TiledMcpError, asTiledMcpError } from "../errors.js";
 import {
@@ -150,6 +151,13 @@ import {
   type WangEditOperation,
   type WangEditPlan,
 } from "./wangEdits.js";
+import {
+  assertFileExportPlan,
+  EXPORT_FORMAT_PATTERN,
+  fileExportPlanId,
+  MAX_EXPORT_OUTPUT_BYTES,
+  type FileExportPlan,
+} from "./fileExport.js";
 import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
@@ -625,6 +633,14 @@ export interface GetTilesetInput {
   startTileId?: number;
   limit?: number;
 }
+
+export type TiledExportRunner = (options: {
+  kind: "map" | "tileset";
+  format: string;
+  sourcePath: string;
+  outputPath: string;
+  maxOutputBytes: number;
+}) => Promise<Buffer>;
 
 export interface UpdateWangsetsInput {
   mapPath: string;
@@ -4298,6 +4314,255 @@ export class MapService {
       [],
       [],
     );
+  }
+
+  /**
+   * Plans one bounded `tiled --export-map/--export-tileset` conversion.
+   * The CLI runs against a server-owned staging file (it never touches the
+   * project directly); the approved output bytes' hash becomes the plan's
+   * baseRevision, and apply re-runs the export under the pinned source
+   * revision and fails closed on any byte drift.
+   */
+  async planExportFile(
+    input: {
+      sourcePath: string;
+      targetPath: string;
+      format?: string;
+      expectedSourceRevision?: string;
+    },
+    runner: TiledExportRunner,
+    allowedFormats: {
+      map: readonly string[];
+      tileset: readonly string[];
+    },
+  ): Promise<FileExportPlan> {
+    const sourcePath = this.resolver.normalize(
+      input.sourcePath,
+    );
+    const targetPath = this.resolver.normalize(
+      input.targetPath,
+    );
+    const sourceExtension = posix
+      .extname(sourcePath)
+      .toLowerCase();
+    const exportKind =
+      sourceExtension === ".tmj"
+        ? ("map" as const)
+        : sourceExtension === ".tsj"
+          ? ("tileset" as const)
+          : undefined;
+    if (exportKind === undefined) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Export sources must be project .tmj maps or .tsj tilesets.",
+        { path: sourcePath },
+      );
+    }
+    if (targetPath === sourcePath) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The export target must differ from its source.",
+        { path: sourcePath },
+      );
+    }
+    const format =
+      input.format ??
+      posix
+        .extname(targetPath)
+        .toLowerCase()
+        .slice(1);
+    if (!EXPORT_FORMAT_PATTERN.test(format)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The export format must be a short lowercase alphanumeric identifier (explicit or via the target extension).",
+        { format },
+      );
+    }
+    const whitelist =
+      exportKind === "map"
+        ? allowedFormats.map
+        : allowedFormats.tileset;
+    if (!whitelist.includes(format)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `The installed Tiled CLI does not advertise ${exportKind} export format ${JSON.stringify(format)}.`,
+        { format, allowed: [...whitelist] },
+      );
+    }
+    const snapshot =
+      await this.store.readSnapshot(sourcePath);
+    if (
+      input.expectedSourceRevision !== undefined &&
+      snapshot.revision !==
+        input.expectedSourceRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${sourcePath} does not match the expected source revision.`,
+        {
+          path: sourcePath,
+          expectedRevision:
+            input.expectedSourceRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    await this.assertExportTargetAbsent(
+      targetPath,
+    );
+    const content = await this.runExport(
+      runner,
+      exportKind,
+      format,
+      sourcePath,
+      snapshot.revision,
+    );
+    const unsignedPlan: Omit<
+      FileExportPlan,
+      "id"
+    > = {
+      kind: "fileExport",
+      version: 1,
+      sourcePath,
+      sourceRevision: snapshot.revision,
+      targetPath,
+      exportKind,
+      format,
+      baseRevision: revisionOf(content),
+      summary: {
+        sourcePath,
+        targetPath,
+        exportKind,
+        format,
+        contentBytes: content.byteLength,
+        wouldChange: true,
+      },
+    };
+    return {
+      ...unsignedPlan,
+      id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  async applyExportFile(
+    plan: FileExportPlan,
+    runner: TiledExportRunner,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    assertFileExportPlan(plan);
+    const currentSource =
+      await this.store.readRevision(
+        plan.sourcePath,
+      );
+    if (currentSource !== plan.sourceRevision) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${plan.sourcePath} changed since the export was previewed.`,
+        {
+          path: plan.sourcePath,
+          expectedRevision: plan.sourceRevision,
+          actualRevision: currentSource,
+        },
+      );
+    }
+    const content = await this.runExport(
+      runner,
+      plan.exportKind,
+      plan.format,
+      plan.sourcePath,
+      plan.sourceRevision,
+    );
+    if (revisionOf(content) !== plan.baseRevision) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "Re-running the Tiled export produced different bytes than the approved plan; preview the export again.",
+        {
+          path: plan.targetPath,
+          expectedRevision: plan.baseRevision,
+          actualRevision: revisionOf(content),
+        },
+      );
+    }
+    const result = await this.store.createBytes(
+      plan.targetPath,
+      content,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private async assertExportTargetAbsent(
+    targetPath: string,
+  ): Promise<void> {
+    try {
+      await this.resolver.resolveExisting(
+        targetPath,
+      );
+    } catch (error) {
+      if (
+        error instanceof TiledMcpError &&
+        error.code === "FILE_NOT_FOUND"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    throw new TiledMcpError(
+      "FILE_ALREADY_EXISTS",
+      `Refusing to overwrite existing file ${targetPath}; exports only create new files.`,
+      { path: targetPath },
+    );
+  }
+
+  private async runExport(
+    runner: TiledExportRunner,
+    kind: "map" | "tileset",
+    format: string,
+    sourcePath: string,
+    expectedSourceRevision: string,
+  ): Promise<Buffer> {
+    const absoluteSource =
+      await this.resolver.resolveExisting(
+        sourcePath,
+      );
+    const stagingDir = await mkdtemp(
+      join(tmpdir(), "tiledmcp-export-"),
+    );
+    try {
+      const content = await runner({
+        kind,
+        format,
+        sourcePath: absoluteSource,
+        outputPath: join(
+          stagingDir,
+          `out.${format}`,
+        ),
+        maxOutputBytes: MAX_EXPORT_OUTPUT_BYTES,
+      });
+      const currentRevision =
+        await this.store.readRevision(sourcePath);
+      if (
+        currentRevision !== expectedSourceRevision
+      ) {
+        throw new TiledMcpError(
+          "REVISION_CONFLICT",
+          `${sourcePath} changed while it was being exported.`,
+          {
+            path: sourcePath,
+            expectedRevision:
+              expectedSourceRevision,
+            actualRevision: currentRevision,
+          },
+        );
+      }
+      return content;
+    } finally {
+      await rm(stagingDir, {
+        recursive: true,
+        force: true,
+      });
+    }
   }
 
   async planCreateTileset(

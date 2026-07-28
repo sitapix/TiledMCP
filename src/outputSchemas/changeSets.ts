@@ -3554,6 +3554,62 @@ const wangEditPreviewOutputSchema = z
 export const wangEditPreviewToolOutputSchema =
   toolOutputSchema(wangEditPreviewOutputSchema);
 
+const fileExportSummaryOutputSchema = z
+  .object({
+    sourcePath: projectPathOutputSchema,
+    targetPath: projectPathOutputSchema,
+    exportKind: z.enum(["map", "tileset"]),
+    format: z
+      .string()
+      .regex(/^[a-z0-9]{1,16}$/u),
+    contentBytes: positiveIntegerOutputSchema,
+    wouldChange: z.literal(true),
+  })
+  .strict();
+
+const fileExportPreviewOutputSchema = z
+  .object({
+    kind: z.literal("fileExport"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    sourcePath: projectPathOutputSchema,
+    sourceRevision: revisionOutputSchema,
+    targetPath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        z
+          .object({
+            type: z.literal("exportFile"),
+            destructive: z.literal(false),
+            warning: z.string(),
+            sourcePath: projectPathOutputSchema,
+            targetPath: projectPathOutputSchema,
+            exportKind: z.enum([
+              "map",
+              "tileset",
+            ]),
+            format: z
+              .string()
+              .regex(/^[a-z0-9]{1,16}$/u),
+            contentBytes:
+              positiveIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .length(1),
+    summary: fileExportSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const fileExportPreviewToolOutputSchema =
+  toolOutputSchema(fileExportPreviewOutputSchema);
+
 export const previewTransactionToolOutputSchema =
   toolOutputSchema(
     transactionPreviewOutputSchema,

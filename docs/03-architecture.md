@@ -331,7 +331,7 @@ resolve paths
 | Adapter | 探测方式 | 用途 | 写入规则 |
 |---|---|---|---|
 | Direct JSON | 内建，始终可用 | 无损读取、M1 范围内的编辑与校验 | 走本项目事务层 |
-| Tiled one-shot evaluate | `tiled --version`，再运行受控探针脚本 | 格式转换、官方 AutoMapping、`TileMap.autoMap()`、官方 Wang 后端 `TileLayer.wangEdit()`、兼容性验证 | 仅允许静态内置脚本写 sibling staging 文件，再由事务层提升为正式文件 |
+| Tiled one-shot evaluate | `tiled --version`，再运行受控探针脚本 | 格式转换（**已实现**：`tiled_preview_export` 经 `--export-map`/`--export-tileset`——CLI 只写服务端 staging、格式白名单来自探测、plan pin 批准输出 bytes 的 SHA-256、apply 重放导出逐字节比对后 no-replace 创建）、官方 AutoMapping、`TileMap.autoMap()`、官方 Wang 后端 `TileLayer.wangEdit()`、兼容性验证 | 仅允许静态内置脚本写 sibling staging 文件，再由事务/change-set 层提升为正式文件 |
 | Tiled export | `tiled --export-formats` | 导出运行时实际支持的非 PNG 格式 | 格式列表不硬编码；目标先写 staging |
 | `tmxrasterizer` | 可执行文件探测和版本/帮助探针 | TMX/TMJ → PNG | 只读源文件，输出受尺寸和字节预算约束 |
 | Native preview | 内建 Sharp allowlist codec | tileset sheet、稀疏 tile 选集、正交地图调试叠加、Tiled 不可用时的有限预览 | 不修改资产 |

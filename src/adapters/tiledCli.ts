@@ -292,6 +292,50 @@ export class TiledCliAdapter {
     );
   }
 
+  /**
+   * Runs one bounded `tiled --export-map/--export-tileset` conversion into
+   * a server-owned staging file and returns its bytes. The format string
+   * must come from the probed export-format whitelist; both paths are
+   * server-constructed absolutes, and the output is read back through the
+   * same no-symlink, size-capped discipline as rasterizer output.
+   */
+  async exportAsset(options: {
+    kind: "map" | "tileset";
+    format: string;
+    sourcePath: string;
+    outputPath: string;
+    maxOutputBytes: number;
+    timeoutMs?: number;
+  }): Promise<Buffer> {
+    requirePath(options.sourcePath, "sourcePath");
+    requirePath(options.outputPath, "outputPath");
+    await this.run(
+      "tiled",
+      this.tiledCliPath,
+      [
+        options.kind === "map"
+          ? "--export-map"
+          : "--export-tileset",
+        options.format,
+        options.sourcePath,
+        options.outputPath,
+      ],
+      {
+        timeoutMs:
+          options.timeoutMs === undefined
+            ? this.renderTimeoutMs
+            : requirePositiveInteger(
+                options.timeoutMs,
+                "timeoutMs",
+              ),
+      },
+    );
+    return readExportOutput(
+      options.outputPath,
+      options.maxOutputBytes,
+    );
+  }
+
   private run(
     tool: ToolKind,
     executable: string,
@@ -528,6 +572,72 @@ function commandError(
     `${displayName} exited unsuccessfully.`,
     details,
   );
+}
+
+async function readExportOutput(
+  outputPath: string,
+  maxOutputBytes: number,
+): Promise<Buffer> {
+  const pathStat = await lstat(outputPath);
+  if (!pathStat.isFile()) {
+    throw new TiledMcpError(
+      "TILED_CLI_UNEXPECTED_OUTPUT",
+      "Tiled export output path is not a regular non-symlink file.",
+      { reason: "not-regular-file" },
+    );
+  }
+  const handle = await open(
+    outputPath,
+    SAFE_RASTER_OUTPUT_OPEN_FLAGS,
+  );
+  try {
+    const fileStat = await handle.stat({
+      bigint: true,
+    });
+    if (!fileStat.isFile()) {
+      throw new TiledMcpError(
+        "TILED_CLI_UNEXPECTED_OUTPUT",
+        "Tiled export output is not a regular file.",
+        { reason: "opened-file-not-regular" },
+      );
+    }
+    if (fileStat.size > BigInt(maxOutputBytes)) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Tiled export output is ${fileStat.size.toString()} bytes; the limit is ${maxOutputBytes}.`,
+        {
+          bytes: fileStat.size.toString(),
+          limit: maxOutputBytes,
+        },
+      );
+    }
+    const bytes = Buffer.alloc(
+      Number(fileStat.size),
+    );
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const readResult = await handle.read(
+        bytes,
+        offset,
+        bytes.byteLength - offset,
+        offset,
+      );
+      if (readResult.bytesRead === 0) {
+        break;
+      }
+      offset += readResult.bytesRead;
+    }
+    if (offset !== bytes.byteLength) {
+      throw new TiledMcpError(
+        "TILED_CLI_UNEXPECTED_OUTPUT",
+        "Tiled export output changed while it was being read.",
+        { reason: "short-read" },
+      );
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
 }
 
 async function inspectPng(

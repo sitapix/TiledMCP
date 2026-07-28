@@ -57,6 +57,11 @@ import {
   type WangEditPlan,
 } from "./maps/wangEdits.js";
 import {
+  assertFileExportPlan,
+  FILE_EXPORT_WARNING,
+  type FileExportPlan,
+} from "./maps/fileExport.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -140,6 +145,7 @@ export type ChangeSetPlan =
   | FileDeletePlan
   | WorldEditPlan
   | WangEditPlan
+  | FileExportPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -264,6 +270,15 @@ export interface WangEditChangeSetPreview
   assetId: string;
   mapRevision: string;
   summary: WangEditPlan["summary"];
+}
+
+export interface FileExportChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "fileExport";
+  sourcePath: string;
+  sourceRevision: string;
+  targetPath: string;
+  summary: FileExportPlan["summary"];
 }
 
 export const MIN_TRANSACTION_MEMBERS = 2;
@@ -714,6 +729,7 @@ export type ChangeSetPreview =
   | FileDeleteChangeSetPreview
   | WorldEditChangeSetPreview
   | WangEditChangeSetPreview
+  | FileExportChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -1157,6 +1173,16 @@ type OperationPreview =
       upserts: number;
       removals: number;
       noOps: number;
+    }
+  | {
+      type: "exportFile";
+      destructive: false;
+      warning: string;
+      sourcePath: string;
+      targetPath: string;
+      exportKind: "map" | "tileset";
+      format: string;
+      contentBytes: number;
     }
   | {
       type: "transactionMember";
@@ -2356,6 +2382,38 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       expectedRevision: plan.baseRevision,
       mapRevision: plan.mapRevision,
       operations,
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+  if (entry.plan.kind === "fileExport") {
+    const plan = entry.plan;
+    assertFileExportPlan(plan);
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      sourcePath: plan.sourcePath,
+      sourceRevision: plan.sourceRevision,
+      targetPath: plan.targetPath,
+      expectedRevision: plan.baseRevision,
+      operations: [
+        {
+          type: "exportFile",
+          destructive: false,
+          warning: FILE_EXPORT_WARNING,
+          sourcePath: plan.sourcePath,
+          targetPath: plan.targetPath,
+          exportKind: plan.exportKind,
+          format: plan.format,
+          contentBytes:
+            plan.summary.contentBytes,
+        },
+      ],
       summary: structuredClone(plan.summary),
       snapshotConsistency: "non-atomic-read-set",
       createdAt: entry.createdAt,

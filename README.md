@@ -283,6 +283,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_transaction` | 把 2..16 个已批准、目标路径两两不同的文档提交类 change set 组合成一个原子事务 change set，并锁定成员禁止单独 apply |
 | `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、跨文件事务、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回带 map/TSJ/output/renderer 可追溯元数据的 PNG |
+| `tiled_preview_export` | 可选；本机有 Tiled CLI 时经官方 `--export-map`/`--export-tileset` 在服务端 staging 转换项目 `.tmj`/`.tsj`，返回携带输出内容 hash 的 `fileExport` change set，apply 重放导出并逐字节验证后以 no-replace 创建落盘 |
 
 `tiled_render_map` 的成功结果使用 pre-Frozen clean break，不再返回 `mapPath`、`bytes`、
 `width` 或 `height` aliases。必填字段是 `mimeType`、`pixelSize`、`byteLength`、
