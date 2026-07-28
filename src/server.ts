@@ -1631,6 +1631,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_edits",
     "tiled_preview_shape",
     "tiled_preview_generate",
+    "tiled_preview_template",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
@@ -5247,6 +5248,66 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           expectedMapRevision,
           expectedDependencyRevisions,
         });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_template",
+    {
+      title:
+        "Preview placing a template instance",
+      description:
+        "Places one JSON object template instance in Tiled's minimal serialized form — {id, template, x, y}, with every other member inherited from the template at load time. The template is read and validated through the same fail-closed profile as template expansion (tile and nested templates reject), its revision is pinned into the plan, and apply re-verifies both the pin and that the map-relative reference still resolves to the pinned path. Returns an ordinary mapEdit change set.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          templatePath: projectPathSchema,
+          x: z
+            .number()
+            .finite()
+            .min(-1_000_000_000)
+            .max(1_000_000_000),
+          y: z
+            .number()
+            .finite()
+            .min(-1_000_000_000)
+            .max(1_000_000_000),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+          expectedTemplateRevision:
+            revisionSchema.optional(),
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      templatePath,
+      x,
+      y,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+      expectedTemplateRevision,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planInstantiateTemplate({
+            mapPath,
+            layerId,
+            templatePath,
+            x,
+            y,
+            expectedMapRevision,
+            expectedDependencyRevisions,
+            expectedTemplateRevision,
+          });
         return changeSets.put(plan);
       }),
   );

@@ -506,7 +506,7 @@ describe("native preview object debug server contract", () => {
     expect(registeredTools).toEqual([
       ...TILED_MCP_CORE_TOOL_NAMES,
     ]);
-    expect(registeredTools).toHaveLength(39);
+    expect(registeredTools).toHaveLength(40);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

@@ -178,9 +178,9 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_render_tiles",
     );
-    expect(tools.tools.length === 39 ||
-        tools.tools.length === 40 ||
-        tools.tools.length === 42).toBe(
+    expect(tools.tools.length === 40 ||
+        tools.tools.length === 41 ||
+        tools.tools.length === 43).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -1897,6 +1897,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:39|40|41|42) tools\)/u,
+    /ready for .+ \((?:40|41|42|43) tools\)/u,
   );
 });

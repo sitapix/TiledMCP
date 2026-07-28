@@ -5476,6 +5476,97 @@ export class MapService {
   }
 
   /**
+   * Places one JSON object template instance in Tiled's minimal
+   * serialized form ({id, template, x, y}). The template is read and
+   * validated through the same fail-closed profile as template
+   * expansion (tile and nested templates reject), its revision is
+   * pinned into the plan, and replay re-verifies both the pin and that
+   * the map-relative reference still resolves to the pinned path.
+   */
+  async planInstantiateTemplate(input: {
+    mapPath: string;
+    layerId: number;
+    templatePath: string;
+    x: number;
+    y: number;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+    expectedTemplateRevision?:
+      | string
+      | undefined;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const templatePath = this.resolver.normalize(
+      input.templatePath,
+    );
+    if (
+      posix
+        .extname(templatePath)
+        .toLowerCase() !== ".tj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Template instantiation requires a JSON .tj template.",
+        { path: templatePath },
+      );
+    }
+    const template = await this.store.read(
+      templatePath,
+    );
+    readObjectTemplate(
+      template.document,
+      templatePath,
+    );
+    if (
+      input.expectedTemplateRevision !==
+        undefined &&
+      template.revision !==
+        input.expectedTemplateRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${templatePath} does not match the expected template revision.`,
+        {
+          path: templatePath,
+          expectedRevision:
+            input.expectedTemplateRevision,
+          actualRevision: template.revision,
+        },
+      );
+    }
+    const mapPath = this.resolver.normalize(
+      input.mapPath,
+    );
+    const source = posix.relative(
+      posix.dirname(mapPath),
+      templatePath,
+    );
+    return this.planEdits(
+      mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "instantiateTemplate",
+          layerId: input.layerId,
+          templatePath,
+          source,
+          x: input.x,
+          y: input.y,
+          expectedTemplateRevision:
+            template.revision,
+        },
+      ],
+    );
+  }
+
+  /**
    * Deterministic geometry painting: rasterizes one line, rectangle, or
    * ellipse into exact cells and returns an ordinary setTiles map-edit
    * change set. Pure computation — no randomness, no clipping; a shape
@@ -7159,6 +7250,51 @@ export class MapService {
       persistIdentity: true,
     });
     assertDependencyRevisions(plan.dependencyRevisions, context.dependencyRevisions);
+
+    for (const operation of plan.operations) {
+      if (
+        operation.type !== "instantiateTemplate"
+      ) {
+        continue;
+      }
+      // The pinned template must be unchanged and the serialized
+      // relative reference must still resolve to the pinned path.
+      const currentRevision =
+        await this.store.readRevision(
+          operation.templatePath,
+        );
+      if (
+        currentRevision !==
+        operation.expectedTemplateRevision
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          `${operation.templatePath} changed since the template instance was planned.`,
+          {
+            path: operation.templatePath,
+            expectedRevision:
+              operation.expectedTemplateRevision,
+            actualRevision: currentRevision,
+          },
+        );
+      }
+      const resolved =
+        await this.resolver.resolveReference(
+          plan.mapPath,
+          operation.source,
+        );
+      if (resolved !== operation.templatePath) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "The template instance's relative reference no longer resolves to its pinned template path.",
+          {
+            source: operation.source,
+            resolved,
+            templatePath: operation.templatePath,
+          },
+        );
+      }
+    }
 
     const addTilesetOperations = plan.operations.filter(
       (
@@ -10905,6 +11041,88 @@ function validateAndSummarizeOperations(
       affectedLayerIds.add(created.layer.id);
       affectedObjectLayerIds.add(created.layer.id);
       createdObjectIds.add(expectInteger(created.object.id, "created object id"));
+      objectMutations += 1;
+    } else if (
+      operation.type === "instantiateTemplate"
+    ) {
+      assertExactObjectKeys(
+        operation as unknown as Record<
+          string,
+          unknown
+        >,
+        new Set([
+          "expectedTemplateRevision",
+          "layerId",
+          "source",
+          "templatePath",
+          "type",
+          "x",
+          "y",
+        ]),
+        `operations[${operationIndex}]`,
+      );
+      assertPositiveInteger(
+        operation.layerId,
+        `operations[${operationIndex}].layerId`,
+      );
+      const instanceLayer = findObjectLayer(
+        map,
+        operation.layerId,
+        mapPath,
+      );
+      const nextObjectId = expectInteger(
+        map.nextobjectid,
+        `${mapPath}.nextobjectid`,
+      );
+      if (
+        nextObjectId <= 0 ||
+        nextObjectId >=
+          Number.MAX_SAFE_INTEGER ||
+        nextObjectId <=
+          getObjectIndex().maximumId
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${mapPath}.nextobjectid must be a positive integer greater than every existing object id.`,
+          { path: mapPath, nextObjectId },
+        );
+      }
+      if (
+        typeof operation.x !== "number" ||
+        !Number.isFinite(operation.x) ||
+        typeof operation.y !== "number" ||
+        !Number.isFinite(operation.y)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `operations[${operationIndex}] x and y must be finite numbers.`,
+        );
+      }
+      // Tiled's minimal template instance: everything else is inherited
+      // from the template at load time.
+      const instance: JsonObject = {
+        id: nextObjectId,
+        template: operation.source,
+        x: operation.x,
+        y: operation.y,
+      };
+      instanceLayer.objects.push(instance);
+      instanceLayer.object.objects =
+        instanceLayer.objects;
+      map.nextobjectid = nextObjectId + 1;
+      getObjectIndex().byId.set(nextObjectId, {
+        object: instance,
+        objectIndex:
+          instanceLayer.objects.length - 1,
+        layer: instanceLayer,
+        ancestors: instanceLayer.ancestors,
+      });
+      getObjectIndex().maximumId = nextObjectId;
+      affectedLayerIds.add(instanceLayer.id);
+      affectedObjectLayerIds.add(
+        instanceLayer.id,
+      );
+      createdObjectIds.add(nextObjectId);
       objectMutations += 1;
     } else if (operation.type === "updateObject") {
       assertExactObjectKeys(

@@ -883,6 +883,22 @@ const createObjectOperationPreviewOutputSchema =
       .strict(),
   ]);
 
+const instantiateTemplateOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("instantiateTemplate"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      layerId: positiveIdOutputSchema,
+      templatePath: projectPathOutputSchema,
+      source: z.string().min(1).max(4_096),
+      x: objectCoordinateOutputSchema,
+      y: objectCoordinateOutputSchema,
+      expectedTemplateRevision:
+        revisionOutputSchema,
+    })
+    .strict();
+
 const updateObjectOperationPreviewOutputSchema = z
   .object({
     type: z.literal("updateObject"),
@@ -1385,6 +1401,7 @@ const genericOperationPreviewOutputSchema =
     replaceTilesOperationPreviewOutputSchema,
     createObjectOperationPreviewOutputSchema,
     updateObjectOperationPreviewOutputSchema,
+    instantiateTemplateOperationPreviewOutputSchema,
     updateLayerOperationPreviewOutputSchema,
     deleteLayerOperationPreviewOutputSchema,
     moveLayerOperationPreviewOutputSchema,

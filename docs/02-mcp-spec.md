@@ -1170,7 +1170,7 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 | `tiled_create_object` | 候选独立入口；当前等价能力通过 `tiled_preview_edits` 的 `createObject` operation 提供，支持 rectangle/point/ellipse/capsule/polygon/polyline/text/tile（tile 草稿以 TileRef 经 `cellToGid` 编码写 `gid`、翻转位与 tile layer cell 完全一致，`width`/`height` 必须显式；`updateObject` 可整体替换既有 tile object 的 `tile` 引用，shape 对象绝不变身；锚点对照 `MapObject::alignment` unspecified→正交 bottom-left） | `mapPath`, `layerId`, `shape`, `x`, `y`, `width?\|height?\|points?\|text?\|tile?`, `name?`, `class?`, `rotation?` |
 | `tiled_update_object` | 候选独立入口；当前通过 `updateObject` operation 修改基础对象字段 | `mapPath`, `objectId`, `patch` |
 | `tiled_delete_object` | 候选独立入口；当前通过带醒目 destructive 摘要的 `deleteObjects` operation 提供；拒绝留下 object/list 引用，class 属性存在时 fail closed | `mapPath`, `objectIds` |
-| `tiled_instantiate_template` | 从 `.tx`/`.tj` 模板实例化对象（后续候选） | `mapPath`, `layerId`, `templatePath`, `x`, `y`, `overrides?` |
+| `tiled_instantiate_template` | **已实现为 `tiled_preview_template`**：以 Tiled 最小序列化实例形态 `{id, template, x, y}`（对照 writer 的 isTemplateBase/notTemplateInstance 成员逻辑）在 object 层放置一个 JSON `.tj` 模板实例，产出普通 `mapEdit` change set；模板经与模板读取完全相同的 fail-closed profile 校验（tile 模板、嵌套模板、非 `.tj` 拒绝），planning 时 pin 模板 revision（可选 `expectedTemplateRevision` 先行断言），apply 复核 pin 与 map 相对引用解析双不变量；`overrides` 不支持——放置后经 `tiled_preview_edits` 的 `updateObject` 覆写 | `mapPath`, `layerId`, `templatePath`, `x`, `y`, `expectedMapRevision`, `expectedDependencyRevisions`, `expectedTemplateRevision?` |
 
 当前 `createObject.object` 是以 `shape` 判别的 exact-key strict union。rectangle 延续
 可选 `width` / `height`，point 禁止尺寸；ellipse 与 Tiled 1.12 capsule 的

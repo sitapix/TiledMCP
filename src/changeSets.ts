@@ -1213,6 +1213,17 @@ type OperationPreview =
       noOps: number;
     }
   | {
+      type: "instantiateTemplate";
+      destructive: false;
+      warning: string;
+      layerId: number;
+      templatePath: string;
+      source: string;
+      x: number;
+      y: number;
+      expectedTemplateRevision: string;
+    }
+  | {
       type: "upsertPropertyType";
       destructive: false;
       warning: string;
@@ -4086,6 +4097,24 @@ function summarizeOperation(
       },
       cellCount: transcode.cellCount,
       wouldChange: transcode.wouldChange,
+    };
+  }
+
+  if (
+    operation.type === "instantiateTemplate"
+  ) {
+    return {
+      type: operation.type,
+      destructive: false,
+      warning:
+        "This places one minimal template instance ({id, template, x, y}); every other member is inherited from the pinned template at load time, and the template file itself is never modified.",
+      layerId: operation.layerId,
+      templatePath: operation.templatePath,
+      source: operation.source,
+      x: operation.x,
+      y: operation.y,
+      expectedTemplateRevision:
+        operation.expectedTemplateRevision,
     };
   }
 

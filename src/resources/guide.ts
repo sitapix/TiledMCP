@@ -488,6 +488,18 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Place template instances
+
+\`tiled_preview_template\` places one JSON object template instance in
+Tiled's minimal serialized form — \`{id, template, x, y}\`, with every
+other member inherited from the template at load time. The template is
+read and validated through the same fail-closed profile as template
+expansion (tile and nested templates reject), its revision is pinned
+into the plan, and apply re-verifies both the pin and that the
+map-relative reference still resolves to the pinned path. The result is
+an ordinary \`mapEdit\` change set; read the placed instance back
+expanded with \`tiled_get_object\`.
+
 ## Take explicit save points
 
 \`tiled_create_checkpoint\` creates committed recovery checkpoints of

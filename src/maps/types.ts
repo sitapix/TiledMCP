@@ -295,6 +295,28 @@ export interface DeleteObjectsOperation {
   objectIds: number[];
 }
 
+/**
+ * Places one template instance in its Tiled minimal serialized form:
+ * `{id, template, x, y}`, every other member inherited from the
+ * template at load time. The planner resolves and pins the template
+ * (its content is validated through the read-side template profile, so
+ * tile and nested templates fail closed) and precomputes the
+ * map-relative `source` reference; replay re-verifies both the pinned
+ * revision and that `source` still resolves to `templatePath`.
+ */
+export interface InstantiateTemplateOperation {
+  type: "instantiateTemplate";
+  layerId: number;
+  /** Canonical project path of the .tj template (pin verification). */
+  templatePath: string;
+  /** Map-relative reference serialized into the object. */
+  source: string;
+  x: number;
+  y: number;
+  /** Raw SHA-256 of the template file at planning time. */
+  expectedTemplateRevision: string;
+}
+
 export type LayerBlendMode =
   | "normal"
   | "add"
@@ -398,6 +420,7 @@ export type MapEditOperation =
   | CreateObjectOperation
   | UpdateObjectOperation
   | DeleteObjectsOperation
+  | InstantiateTemplateOperation
   | UpdateLayerOperation
   | DeleteLayerOperation
   | MoveLayerOperation

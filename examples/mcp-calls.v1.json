@@ -689,6 +689,20 @@
       }
     },
     {
+      "name": "tiled_preview_template",
+      "profile": "core",
+      "purpose": "Place one minimal template instance ({id, template, x, y}) with the template revision pinned.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 2,
+        "templatePath": "templates/enemy.tj",
+        "x": 48,
+        "y": 32,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {}
+      }
+    },
+    {
       "name": "tiled_preview_property_types",
       "profile": "core",
       "purpose": "Define one class with two members and one string enum in the project file as a previewed change set.",
