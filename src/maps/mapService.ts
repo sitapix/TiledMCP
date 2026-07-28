@@ -150,6 +150,7 @@ import {
   tilesetEditPlanId,
   type TileMetadataUpdate,
   type TilesetEditPlan,
+  type TilesetEditSummary,
 } from "./tilesetEdits.js";
 import {
   applyWangEditOperations,
@@ -171,6 +172,11 @@ import {
   validateTerrainCorners,
   type TerrainCornerInput,
 } from "./terrainPaint.js";
+import {
+  assertEmbeddedTilesetEditPlan,
+  embeddedTilesetEditPlanId,
+  type EmbeddedTilesetEditPlan,
+} from "./embeddedTilesetEdit.js";
 import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
@@ -4454,6 +4460,194 @@ export class MapService {
     return {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Per-tile metadata edits for an embedded (inline) map tileset. Reuses
+   * the exact tileset-edit validation and application logic against the
+   * inline document, then rebases every source patch under the map's
+   * `tilesets[embeddedIndex]` entry — the map revision is the only CAS.
+   */
+  async planEmbeddedTileUpdate(input: {
+    mapPath: string;
+    embeddedIndex: number;
+    expectedMapRevision: string;
+    updates: TileMetadataUpdate[];
+  }): Promise<EmbeddedTilesetEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const prepared =
+      await this.prepareEmbeddedTilesetEdit(
+        input.mapPath,
+        input.expectedMapRevision,
+        input.embeddedIndex,
+        input.updates,
+      );
+    const unsignedPlan: Omit<
+      EmbeddedTilesetEditPlan,
+      "id"
+    > = {
+      kind: "embeddedTilesetEdit",
+      version: 1,
+      mapPath: prepared.mapPath,
+      baseRevision: prepared.mapRevision,
+      embeddedIndex: input.embeddedIndex,
+      updates: structuredClone(
+        input.updates,
+      ) as TileMetadataUpdate[],
+      summary: prepared.summary,
+    };
+    await assertRevisionUnchanged(
+      this.store,
+      prepared.mapPath,
+      prepared.mapRevision,
+      "REVISION_CONFLICT",
+    );
+    return {
+      ...unsignedPlan,
+      id: embeddedTilesetEditPlanId(unsignedPlan),
+    };
+  }
+
+  async applyEmbeddedTilesetEdit(
+    plan: EmbeddedTilesetEditPlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    assertEmbeddedTilesetEditPlan(plan);
+    const prepared =
+      await this.prepareEmbeddedTilesetEdit(
+        plan.mapPath,
+        plan.baseRevision,
+        plan.embeddedIndex,
+        structuredClone(
+          plan.updates,
+        ) as TileMetadataUpdate[],
+      );
+    if (
+      stableJson(
+        prepared.summary as unknown as JsonValue,
+      ) !==
+      stableJson(plan.summary as unknown as JsonValue)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The embedded tileset edit summary does not match its updates.",
+      );
+    }
+    const result = await this.store.commitBytes(
+      plan.mapPath,
+      plan.baseRevision,
+      prepared.patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private async prepareEmbeddedTilesetEdit(
+    mapPath: string,
+    expectedMapRevision: string,
+    embeddedIndex: number,
+    updates: TileMetadataUpdate[],
+  ): Promise<{
+    mapPath: string;
+    mapRevision: string;
+    summary: TilesetEditSummary;
+    patchedSource: Buffer;
+  }> {
+    if (
+      !Number.isSafeInteger(embeddedIndex) ||
+      embeddedIndex < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "embeddedIndex must be a nonnegative integer.",
+      );
+    }
+    const context = await this.loadEditableContext(
+      mapPath,
+      {
+        expectedMapRevision,
+        allowCollectionTilesets: true,
+        allowEmbeddedTilesets: true,
+        persistIdentity: true,
+      },
+    );
+    const embedded =
+      context.embeddedBindings.find(
+        (candidate) =>
+          candidate.sourceIndex === embeddedIndex,
+      );
+    if (embedded === undefined) {
+      throw new TiledMcpError(
+        "TILESET_NOT_IN_MAP",
+        `${context.loaded.path} has no embedded tileset at tilesets[${embeddedIndex}].`,
+        {
+          path: context.loaded.path,
+          embeddedIndex,
+          embeddedIndexes:
+            context.embeddedBindings.map(
+              (candidate) =>
+                candidate.sourceIndex,
+            ),
+        },
+      );
+    }
+    const editedMap = cloneJson(
+      context.loaded.document,
+    );
+    const editedEntry = expectObject(
+      expectArray(
+        editedMap.tilesets,
+        `${context.loaded.path}.tilesets`,
+      )[embeddedIndex] as JsonValue,
+      `${context.loaded.path}.tilesets[${embeddedIndex}]`,
+    );
+    const applied = applyTileMetadataUpdates(
+      editedEntry,
+      embedded.tileCount,
+      structuredClone(
+        updates,
+      ) as TileMetadataUpdate[],
+      `${context.loaded.path}.tilesets[${embeddedIndex}]`,
+    );
+    const prefix = [
+      "tilesets",
+      embeddedIndex,
+    ] as const;
+    const patchedSource = patchJsonDocumentSource(
+      context.loaded.source,
+      editedMap,
+      [],
+      context.loaded.path,
+      applied.patches.insertions.map(
+        (insertion) => ({
+          ...insertion,
+          path: [...prefix, ...insertion.path],
+        }),
+      ),
+      applied.patches.memberPatches.map(
+        (memberPatch) => ({
+          ...memberPatch,
+          path: [...prefix, ...memberPatch.path],
+        }),
+      ),
+      applied.patches.deletions.map(
+        (deletion) => ({
+          ...deletion,
+          path: [...prefix, ...deletion.path],
+        }),
+      ),
+      [],
+    );
+    return {
+      mapPath: context.loaded.path,
+      mapRevision: context.loaded.revision,
+      summary: applied.summary,
+      patchedSource,
     };
   }
 

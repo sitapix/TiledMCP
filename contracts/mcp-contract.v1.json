@@ -9321,9 +9321,18 @@
                         "const": "map-path-plus-embedded-index",
                         "type": "string"
                       },
+                      "editTools": {
+                        "items": [
+                          {
+                            "const": "tiled_update_tile",
+                            "type": "string"
+                          }
+                        ],
+                        "type": "array"
+                      },
                       "editable": {
-                        "const": false,
-                        "type": "boolean"
+                        "const": "per-tile-metadata-via-map-patch-structural-fail-closed",
+                        "type": "string"
                       },
                       "imageCollections": {
                         "const": "fail-closed",
@@ -9379,6 +9388,7 @@
                       "legacyTerrains",
                       "pin",
                       "editable",
+                      "editTools",
                       "renderable",
                       "tileObjects"
                     ],
@@ -46414,7 +46424,7 @@
         "readOnlyHint": true,
         "title": "Preview a local Tiled map change"
       },
-      "description": "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed.",
+      "description": "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.",
       "execution": {
         "taskSupport": "forbidden"
       },
@@ -46422,6 +46432,11 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,
         "properties": {
+          "embeddedIndex": {
+            "maximum": 4095,
+            "minimum": 0,
+            "type": "integer"
+          },
           "expectedMapRevision": {
             "description": "SHA-256 revision returned by a read or preview",
             "pattern": "^sha256:[0-9a-f]{64}$",
@@ -47052,9 +47067,7 @@
         },
         "required": [
           "mapPath",
-          "tilesetAssetId",
           "expectedMapRevision",
-          "expectedTilesetRevision",
           "updates"
         ],
         "type": "object"
@@ -47100,241 +47113,45 @@
           "result": {
             "anyOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "assetId": {
-                    "pattern": "^asset_[0-9a-f]{24}$",
-                    "type": "string"
-                  },
-                  "changeSetId": {
-                    "pattern": "^changeset:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "createdAt": {
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-                    "type": "string"
-                  },
-                  "expectedRevision": {
-                    "pattern": "^sha256:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "expiresAt": {
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-                    "type": "string"
-                  },
-                  "kind": {
-                    "const": "tilesetEdit",
-                    "type": "string"
-                  },
-                  "mapPath": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "mapRevision": {
-                    "pattern": "^sha256:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "operations": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "changedFields": {
-                          "items": {
-                            "enum": [
-                              "probability",
-                              "className",
-                              "animation",
-                              "collision",
-                              "properties",
-                              "createCollectionTile",
-                              "removeCollectionTile"
-                            ],
-                            "type": "string"
-                          },
-                          "maxItems": 5,
-                          "type": "array"
-                        },
-                        "collisionShapeCount": {
-                          "maximum": 128,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "destructive": {
-                          "type": "boolean"
-                        },
-                        "entryAction": {
-                          "enum": [
-                            "insert",
-                            "update",
-                            "remove",
-                            "none"
-                          ],
-                          "type": "string"
-                        },
-                        "newAnimationFrameCount": {
-                          "maximum": 256,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "previousAnimationFrameCount": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "previousCollisionShapeCount": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "propertiesRemoved": {
-                          "maximum": 32,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "propertiesSet": {
-                          "maximum": 32,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "requestedFields": {
-                          "items": {
-                            "enum": [
-                              "probability",
-                              "className",
-                              "animation",
-                              "collision",
-                              "properties",
-                              "createCollectionTile",
-                              "removeCollectionTile"
-                            ],
-                            "type": "string"
-                          },
-                          "maxItems": 5,
-                          "minItems": 1,
-                          "type": "array"
-                        },
-                        "tileId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "type": {
-                          "const": "updateTile",
-                          "type": "string"
-                        },
-                        "warning": {
-                          "type": "string"
-                        },
-                        "wouldChange": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "destructive",
-                        "warning",
-                        "tileId",
-                        "entryAction",
-                        "requestedFields",
-                        "changedFields",
-                        "wouldChange"
-                      ],
-                      "type": "object"
-                    },
-                    "maxItems": 64,
-                    "minItems": 1,
-                    "type": "array"
-                  },
-                  "planDigest": {
-                    "pattern": "^changeset:[0-9a-f]{64}$",
-                    "type": "string"
-                  },
-                  "snapshotConsistency": {
-                    "const": "non-atomic-read-set",
-                    "type": "string"
-                  },
-                  "summary": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "collectionStructure": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "action": {
-                            "enum": [
-                              "create",
-                              "remove"
-                            ],
-                            "type": "string"
-                          },
-                          "tileCountAfter": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "tileCountBefore": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "tileId": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileSizeAfter": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "height": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "width": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          },
-                          "tileSizeBefore": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "height": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "width": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "action",
-                          "tileId",
-                          "tileCountBefore",
-                          "tileCountAfter",
-                          "tileSizeBefore",
-                          "tileSizeAfter"
-                        ],
-                        "type": "object"
+                      "assetId": {
+                        "pattern": "^asset_[0-9a-f]{24}$",
+                        "type": "string"
                       },
-                      "tileUpdates": {
+                      "changeSetId": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                        "type": "string"
+                      },
+                      "expectedRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "tilesetEdit",
+                        "type": "string"
+                      },
+                      "mapPath": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "mapRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "operations": {
                         "items": {
                           "additionalProperties": false,
                           "properties": {
@@ -47358,6 +47175,9 @@
                               "maximum": 128,
                               "minimum": 0,
                               "type": "integer"
+                            },
+                            "destructive": {
+                              "type": "boolean"
                             },
                             "entryAction": {
                               "enum": [
@@ -47415,17 +47235,21 @@
                               "minimum": 0,
                               "type": "integer"
                             },
-                            "updateIndex": {
-                              "maximum": 63,
-                              "minimum": 0,
-                              "type": "integer"
+                            "type": {
+                              "const": "updateTile",
+                              "type": "string"
+                            },
+                            "warning": {
+                              "type": "string"
                             },
                             "wouldChange": {
                               "type": "boolean"
                             }
                           },
                           "required": [
-                            "updateIndex",
+                            "type",
+                            "destructive",
+                            "warning",
                             "tileId",
                             "entryAction",
                             "requestedFields",
@@ -47438,53 +47262,624 @@
                         "minItems": 1,
                         "type": "array"
                       },
-                      "tilesMemberAction": {
-                        "enum": [
-                          "insert",
-                          "keep",
-                          "remove",
-                          "none"
-                        ],
+                      "planDigest": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
                         "type": "string"
                       },
-                      "updateCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 64,
-                        "type": "integer"
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
                       },
-                      "wouldChange": {
-                        "type": "boolean"
+                      "summary": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "collectionStructure": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "create",
+                                  "remove"
+                                ],
+                                "type": "string"
+                              },
+                              "tileCountAfter": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "tileCountBefore": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "tileId": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "tileSizeAfter": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "tileSizeBefore": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "tileId",
+                              "tileCountBefore",
+                              "tileCountAfter",
+                              "tileSizeBefore",
+                              "tileSizeAfter"
+                            ],
+                            "type": "object"
+                          },
+                          "tileUpdates": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "changedFields": {
+                                  "items": {
+                                    "enum": [
+                                      "probability",
+                                      "className",
+                                      "animation",
+                                      "collision",
+                                      "properties",
+                                      "createCollectionTile",
+                                      "removeCollectionTile"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "maxItems": 5,
+                                  "type": "array"
+                                },
+                                "collisionShapeCount": {
+                                  "maximum": 128,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "entryAction": {
+                                  "enum": [
+                                    "insert",
+                                    "update",
+                                    "remove",
+                                    "none"
+                                  ],
+                                  "type": "string"
+                                },
+                                "newAnimationFrameCount": {
+                                  "maximum": 256,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "previousAnimationFrameCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "previousCollisionShapeCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "propertiesRemoved": {
+                                  "maximum": 32,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "propertiesSet": {
+                                  "maximum": 32,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requestedFields": {
+                                  "items": {
+                                    "enum": [
+                                      "probability",
+                                      "className",
+                                      "animation",
+                                      "collision",
+                                      "properties",
+                                      "createCollectionTile",
+                                      "removeCollectionTile"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "maxItems": 5,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "tileId": {
+                                  "maximum": 268435455,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "updateIndex": {
+                                  "maximum": 63,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "wouldChange": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "updateIndex",
+                                "tileId",
+                                "entryAction",
+                                "requestedFields",
+                                "changedFields",
+                                "wouldChange"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 64,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "tilesMemberAction": {
+                            "enum": [
+                              "insert",
+                              "keep",
+                              "remove",
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          "updateCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 64,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "updateCount",
+                          "tileUpdates",
+                          "tilesMemberAction",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "tilesetPath": {
+                        "minLength": 1,
+                        "type": "string"
                       }
                     },
                     "required": [
-                      "updateCount",
-                      "tileUpdates",
-                      "tilesMemberAction",
-                      "wouldChange"
+                      "kind",
+                      "changeSetId",
+                      "planDigest",
+                      "mapPath",
+                      "tilesetPath",
+                      "assetId",
+                      "expectedRevision",
+                      "mapRevision",
+                      "operations",
+                      "summary",
+                      "snapshotConsistency",
+                      "createdAt",
+                      "expiresAt"
                     ],
                     "type": "object"
                   },
-                  "tilesetPath": {
-                    "minLength": 1,
-                    "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changeSetId": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                        "type": "string"
+                      },
+                      "embeddedIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "expectedRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "embeddedTilesetEdit",
+                        "type": "string"
+                      },
+                      "mapPath": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "operations": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "changedFields": {
+                              "items": {
+                                "enum": [
+                                  "probability",
+                                  "className",
+                                  "animation",
+                                  "collision",
+                                  "properties",
+                                  "createCollectionTile",
+                                  "removeCollectionTile"
+                                ],
+                                "type": "string"
+                              },
+                              "maxItems": 5,
+                              "type": "array"
+                            },
+                            "collisionShapeCount": {
+                              "maximum": 128,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "destructive": {
+                              "type": "boolean"
+                            },
+                            "entryAction": {
+                              "enum": [
+                                "insert",
+                                "update",
+                                "remove",
+                                "none"
+                              ],
+                              "type": "string"
+                            },
+                            "newAnimationFrameCount": {
+                              "maximum": 256,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "previousAnimationFrameCount": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "previousCollisionShapeCount": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "propertiesRemoved": {
+                              "maximum": 32,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "propertiesSet": {
+                              "maximum": 32,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "requestedFields": {
+                              "items": {
+                                "enum": [
+                                  "probability",
+                                  "className",
+                                  "animation",
+                                  "collision",
+                                  "properties",
+                                  "createCollectionTile",
+                                  "removeCollectionTile"
+                                ],
+                                "type": "string"
+                              },
+                              "maxItems": 5,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "tileId": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "type": {
+                              "const": "updateTile",
+                              "type": "string"
+                            },
+                            "warning": {
+                              "type": "string"
+                            },
+                            "wouldChange": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "destructive",
+                            "warning",
+                            "tileId",
+                            "entryAction",
+                            "requestedFields",
+                            "changedFields",
+                            "wouldChange"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 64,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "planDigest": {
+                        "pattern": "^changeset:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "snapshotConsistency": {
+                        "const": "non-atomic-read-set",
+                        "type": "string"
+                      },
+                      "summary": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "collectionStructure": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "create",
+                                  "remove"
+                                ],
+                                "type": "string"
+                              },
+                              "tileCountAfter": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "tileCountBefore": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "tileId": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "tileSizeAfter": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "tileSizeBefore": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "tileId",
+                              "tileCountBefore",
+                              "tileCountAfter",
+                              "tileSizeBefore",
+                              "tileSizeAfter"
+                            ],
+                            "type": "object"
+                          },
+                          "tileUpdates": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "changedFields": {
+                                  "items": {
+                                    "enum": [
+                                      "probability",
+                                      "className",
+                                      "animation",
+                                      "collision",
+                                      "properties",
+                                      "createCollectionTile",
+                                      "removeCollectionTile"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "maxItems": 5,
+                                  "type": "array"
+                                },
+                                "collisionShapeCount": {
+                                  "maximum": 128,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "entryAction": {
+                                  "enum": [
+                                    "insert",
+                                    "update",
+                                    "remove",
+                                    "none"
+                                  ],
+                                  "type": "string"
+                                },
+                                "newAnimationFrameCount": {
+                                  "maximum": 256,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "previousAnimationFrameCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "previousCollisionShapeCount": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "propertiesRemoved": {
+                                  "maximum": 32,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "propertiesSet": {
+                                  "maximum": 32,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requestedFields": {
+                                  "items": {
+                                    "enum": [
+                                      "probability",
+                                      "className",
+                                      "animation",
+                                      "collision",
+                                      "properties",
+                                      "createCollectionTile",
+                                      "removeCollectionTile"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "maxItems": 5,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "tileId": {
+                                  "maximum": 268435455,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "updateIndex": {
+                                  "maximum": 63,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "wouldChange": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "updateIndex",
+                                "tileId",
+                                "entryAction",
+                                "requestedFields",
+                                "changedFields",
+                                "wouldChange"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 64,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "tilesMemberAction": {
+                            "enum": [
+                              "insert",
+                              "keep",
+                              "remove",
+                              "none"
+                            ],
+                            "type": "string"
+                          },
+                          "updateCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 64,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "updateCount",
+                          "tileUpdates",
+                          "tilesMemberAction",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "changeSetId",
+                      "planDigest",
+                      "mapPath",
+                      "embeddedIndex",
+                      "expectedRevision",
+                      "operations",
+                      "summary",
+                      "snapshotConsistency",
+                      "createdAt",
+                      "expiresAt"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "kind",
-                  "changeSetId",
-                  "planDigest",
-                  "mapPath",
-                  "tilesetPath",
-                  "assetId",
-                  "expectedRevision",
-                  "mapRevision",
-                  "operations",
-                  "summary",
-                  "snapshotConsistency",
-                  "createdAt",
-                  "expiresAt"
-                ],
-                "type": "object"
+                ]
               },
               {
                 "additionalProperties": false,

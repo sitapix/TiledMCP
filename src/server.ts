@@ -2694,7 +2694,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           imageCollections: "fail-closed",
           legacyTerrains: "fail-closed",
           pin: "map-revision-only",
-          editable: false,
+          editable:
+            "per-tile-metadata-via-map-patch-structural-fail-closed",
+          editTools: ["tiled_update_tile"],
           renderable:
             "tile-layers-only-map-relative-image",
           tileObjects: "fail-closed",
@@ -4313,15 +4315,23 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview per-tile metadata updates",
       description:
-        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed.",
+        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
           tilesetAssetId: z
             .string()
-            .regex(/^asset_[0-9a-f]{24}$/u),
+            .regex(/^asset_[0-9a-f]{24}$/u)
+            .optional(),
+          embeddedIndex: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_TILESET_COUNT - 1)
+            .optional(),
           expectedMapRevision: revisionSchema,
-          expectedTilesetRevision: revisionSchema,
+          expectedTilesetRevision:
+            revisionSchema.optional(),
           updates: z
             .array(tileMetadataUpdateSchema)
             .min(1)
@@ -4351,14 +4361,48 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({
       mapPath,
       tilesetAssetId,
+      embeddedIndex,
       expectedMapRevision,
       expectedTilesetRevision,
       updates,
     }) =>
       executeTool(async () => {
+        if (
+          (tilesetAssetId === undefined) ===
+          (embeddedIndex === undefined)
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            "Provide exactly one of tilesetAssetId or embeddedIndex.",
+          );
+        }
+        if (embeddedIndex !== undefined) {
+          if (
+            expectedTilesetRevision !== undefined
+          ) {
+            throw new TiledMcpError(
+              "INVALID_ARGUMENT",
+              "Embedded tilesets have no independent revision; omit expectedTilesetRevision and pin expectedMapRevision only.",
+            );
+          }
+          const plan =
+            await maps.planEmbeddedTileUpdate({
+              mapPath,
+              embeddedIndex,
+              expectedMapRevision,
+              updates,
+            });
+          return changeSets.put(plan);
+        }
+        if (expectedTilesetRevision === undefined) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            "expectedTilesetRevision is required when addressing an external tileset.",
+          );
+        }
         const plan = await maps.planUpdateTile({
           mapPath,
-          tilesetAssetId,
+          tilesetAssetId: tilesetAssetId as string,
           expectedMapRevision,
           expectedTilesetRevision,
           updates,
@@ -4952,9 +4996,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                               options,
                                             ),
                                         )
-                                      : maps.applyEdits(
-                                          plan,
-                                        ),
+                                      : plan.kind ===
+                                          "embeddedTilesetEdit"
+                                        ? maps.applyEmbeddedTilesetEdit(
+                                            plan,
+                                          )
+                                        : maps.applyEdits(
+                                            plan,
+                                          ),
         ),
       ),
   );

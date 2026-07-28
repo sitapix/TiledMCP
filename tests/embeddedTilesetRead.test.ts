@@ -325,6 +325,103 @@ describe("embedded tileset reading", () => {
     expect(sources).toHaveLength(2);
   });
 
+  it("edits embedded tile metadata through a map-targeted change set", async () => {
+    const harness = await createHarness(roots);
+    const summary = await harness.service.getSummary(
+      MAP_PATH,
+    );
+    const plan =
+      await harness.service.planEmbeddedTileUpdate({
+        mapPath: MAP_PATH,
+        embeddedIndex: 1,
+        expectedMapRevision:
+          summary.revision as string,
+        updates: [
+          {
+            tileId: 0,
+            patch: { className: "Crate" },
+          },
+        ],
+      });
+    expect(plan).toMatchObject({
+      kind: "embeddedTilesetEdit",
+      mapPath: MAP_PATH,
+      baseRevision: summary.revision,
+      embeddedIndex: 1,
+      summary: {
+        updateCount: 1,
+        wouldChange: true,
+      },
+    });
+
+    await harness.service.applyEmbeddedTilesetEdit(
+      plan,
+    );
+    const details = await harness.service.getTileset({
+      mapPath: MAP_PATH,
+      embeddedIndex: 1,
+    });
+    expect(details.tileMetadata).toMatchObject({
+      total: 2,
+      items: [
+        expect.objectContaining({
+          localId: 0,
+          className: "Crate",
+        }),
+        expect.objectContaining({
+          localId: 2,
+          className: "Rock",
+        }),
+      ],
+    });
+    // Stale replay fails closed after the map commit.
+    await expect(
+      harness.service.applyEmbeddedTilesetEdit(
+        plan,
+      ),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+    });
+    // Structural collection updates are impossible on embedded tilesets.
+    const fresh = await harness.service.getSummary(
+      MAP_PATH,
+    );
+    await expect(
+      harness.service.planEmbeddedTileUpdate({
+        mapPath: MAP_PATH,
+        embeddedIndex: 1,
+        expectedMapRevision:
+          fresh.revision as string,
+        updates: [
+          {
+            tileId: 3,
+            createCollectionTile: {
+              image: "x.png",
+            },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "UNSUPPORTED_TILESET",
+    });
+    await expect(
+      harness.service.planEmbeddedTileUpdate({
+        mapPath: MAP_PATH,
+        embeddedIndex: 0,
+        expectedMapRevision:
+          fresh.revision as string,
+        updates: [
+          {
+            tileId: 0,
+            patch: { className: "X" },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "TILESET_NOT_IN_MAP",
+    });
+  });
+
   it("fails closed on embedded collections, legacy terrains, and GID overlaps", async () => {
     const collection = await createHarness(roots, {
       embeddedOverride: {

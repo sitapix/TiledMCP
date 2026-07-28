@@ -62,6 +62,10 @@ import {
   type FileExportPlan,
 } from "./maps/fileExport.js";
 import {
+  assertEmbeddedTilesetEditPlan,
+  type EmbeddedTilesetEditPlan,
+} from "./maps/embeddedTilesetEdit.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -146,6 +150,7 @@ export type ChangeSetPlan =
   | WorldEditPlan
   | WangEditPlan
   | FileExportPlan
+  | EmbeddedTilesetEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -281,6 +286,14 @@ export interface FileExportChangeSetPreview
   summary: FileExportPlan["summary"];
 }
 
+export interface EmbeddedTilesetEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "embeddedTilesetEdit";
+  mapPath: string;
+  embeddedIndex: number;
+  summary: EmbeddedTilesetEditPlan["summary"];
+}
+
 export const MIN_TRANSACTION_MEMBERS = 2;
 export const MAX_TRANSACTION_MEMBERS = 16;
 export const MAX_PENDING_TRANSACTIONS = 4;
@@ -293,6 +306,7 @@ export type TransactionMemberPlanKind =
   | "mapEdit"
   | "tilesetEdit"
   | "wangEdit"
+  | "embeddedTilesetEdit"
   | "tilesetCreate"
   | "fileDelete";
 
@@ -388,6 +402,16 @@ function transactionTargetForPlan(
       planKind: "wangEdit",
       targetKind: "replace",
       path: plan.tilesetPath,
+      expectedRevision: plan.baseRevision,
+    };
+  }
+  if (plan.kind === "embeddedTilesetEdit") {
+    return {
+      memberChangeSetId,
+      memberPlanDigest: plan.id,
+      planKind: "embeddedTilesetEdit",
+      targetKind: "replace",
+      path: plan.mapPath,
       expectedRevision: plan.baseRevision,
     };
   }
@@ -730,6 +754,7 @@ export type ChangeSetPreview =
   | WorldEditChangeSetPreview
   | WangEditChangeSetPreview
   | FileExportChangeSetPreview
+  | EmbeddedTilesetEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -2390,6 +2415,45 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "embeddedTilesetEdit") {
+    const plan = entry.plan;
+    assertEmbeddedTilesetEditPlan(plan);
+    if (
+      plan.summary.updateCount !==
+        plan.updates.length ||
+      plan.summary.tileUpdates.length !==
+        plan.updates.length ||
+      plan.summary.tileUpdates.some(
+        (tileUpdate, index) =>
+          tileUpdate.updateIndex !== index ||
+          tileUpdate.tileId !==
+            plan.updates[index]?.tileId,
+      )
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The embedded tileset edit summary does not match its updates.",
+      );
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      mapPath: plan.mapPath,
+      embeddedIndex: plan.embeddedIndex,
+      expectedRevision: plan.baseRevision,
+      operations: plan.summary.tileUpdates.map(
+        (tileUpdate) =>
+          updateTileOperationPreview(tileUpdate),
+      ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "fileExport") {
     const plan = entry.plan;
     assertFileExportPlan(plan);
@@ -2862,6 +2926,9 @@ function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
   }
   if (plan.kind === "wangEdit") {
     return { ...plan, operations: [] };
+  }
+  if (plan.kind === "embeddedTilesetEdit") {
+    return { ...plan, updates: [] };
   }
   return plan;
 }

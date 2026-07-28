@@ -2997,8 +2997,35 @@ const tilesetEditPreviewOutputSchema = z
   })
   .strict();
 
+const embeddedTilesetEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("embeddedTilesetEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    mapPath: projectPathOutputSchema,
+    embeddedIndex:
+      nonnegativeIntegerOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(updateTileOperationPreviewOutputSchema)
+      .min(1)
+      .max(MAX_TILE_UPDATES_PER_CHANGE_SET),
+    summary: tilesetEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
 export const updateTilePreviewToolOutputSchema =
-  toolOutputSchema(tilesetEditPreviewOutputSchema);
+  toolOutputSchema(
+    z.union([
+      tilesetEditPreviewOutputSchema,
+      embeddedTilesetEditPreviewOutputSchema,
+    ]),
+  );
 
 const tilesetCreateNameOutputSchema = z
   .string()

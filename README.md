@@ -85,9 +85,14 @@
 `embeddedIndex` 寻址返回与外部 atlas 相同的有界详情投影（内容由 map revision
 本身 pin，无独立 assetId/revision），`tiled_render_preview` 绘制内嵌 atlas 的
 tile layer（图片相对 map 文件解析，source 条目以 `{embedded:{sourceIndex}}`
-标识并由 map revision pin）；内嵌 image-collection、pre-1.5 `terrains` 字段与
-引用内嵌 tileset 的 tile object 渲染 fail closed，一切编辑/检索路径对内嵌条目
-继续明确拒绝，不会静默降级。
+标识并由 map revision pin）。内嵌条目的 **per-tile metadata 编辑**同样可用：
+`tiled_update_tile` 以 `embeddedIndex` 寻址（与 `tilesetAssetId` 互斥、省略
+`expectedTilesetRevision`——map revision 是唯一 pin），复用外部 tileset 的全部
+校验与应用逻辑后把 source patch 重定位到 `tilesets[i]` 之下，产出以 map 为目标
+的 `embeddedTilesetEdit` change set（可入事务）；collection 结构编辑对内嵌天然
+不可达（内嵌仅 atlas）。内嵌 image-collection、pre-1.5 `terrains` 字段与引用内
+嵌 tileset 的 tile object 渲染 fail closed，检索等其余路径对内嵌条目继续明确拒
+绝，不会静默降级。
 tile object（`gid` 引用对象）获得**创建与语义编辑**支持：`createObject` 的
 `shape:"tile"` 草稿以 TileRef（external binding + local id + 翻转位）经与 tile
 layer cell 完全一致的 `cellToGid` 编码写入 `gid`，`width`/`height` 必须显式给出
