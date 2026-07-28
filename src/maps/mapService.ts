@@ -238,6 +238,9 @@ import {
 } from "./objectTemplates.js";
 import {
   applyWorldEditOperations,
+  expandWorldPatterns,
+  MAX_WORLD_MAP_MEMBERS,
+  projectWorldPatterns,
   assertWorldPath,
   projectWorldDocument,
   worldEditPlanId,
@@ -3483,6 +3486,7 @@ export class MapService {
 
   async listWorldMaps(input: {
     worldPath: string;
+    expandPatterns?: boolean | undefined;
   }): Promise<Record<string, unknown>> {
     const worldPath = this.resolver.normalize(
       input.worldPath,
@@ -3534,6 +3538,73 @@ export class MapService {
         declaredSize: member.declaredSize,
       });
     }
+    let patternsExpanded = false;
+    if (
+      input.expandPatterns === true &&
+      projection.patternCount > 0
+    ) {
+      const patterns = projectWorldPatterns(
+        parsed.document,
+        worldPath,
+      );
+      const worldDirectory =
+        posix.dirname(worldPath);
+      const assets =
+        await this.resolver.listAssets(10_000);
+      // World::allMaps scans exactly the world's own directory.
+      const siblingNames = assets
+        .filter(
+          (asset) =>
+            posix.dirname(asset.path) ===
+            worldDirectory,
+        )
+        .map((asset) =>
+          posix.basename(asset.path),
+        )
+        .sort();
+      const expanded = expandWorldPatterns(
+        patterns,
+        siblingNames,
+      );
+      if (
+        members.length + expanded.length >
+        MAX_WORLD_MAP_MEMBERS
+      ) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `${worldPath} expands to more than ${MAX_WORLD_MAP_MEMBERS} members.`,
+          {
+            path: worldPath,
+            limit: MAX_WORLD_MAP_MEMBERS,
+          },
+        );
+      }
+      for (const entry of expanded) {
+        const resolvedPath =
+          await this.resolver.resolveReference(
+            worldPath,
+            entry.fileName,
+          );
+        members.push({
+          source: entry.fileName,
+          exists: true,
+          path: resolvedPath,
+          revision:
+            await this.store.readRevision(
+              resolvedPath,
+            ),
+          x: entry.x,
+          y: entry.y,
+          declaredSize: {
+            width: entry.width,
+            height: entry.height,
+          },
+          fromPattern: true,
+          patternIndex: entry.patternIndex,
+        });
+      }
+      patternsExpanded = true;
+    }
     const currentRevision =
       await this.store.readRevision(worldPath);
     if (currentRevision !== snapshot.revision) {
@@ -3556,7 +3627,8 @@ export class MapService {
       memberCount: members.length,
       patternCount: projection.patternCount,
       patternsUnexpanded:
-        projection.patternCount > 0,
+        projection.patternCount > 0 &&
+        !patternsExpanded,
       properties: projection.properties.entries,
       propertyCount:
         projection.properties.total,

@@ -3308,19 +3308,25 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "List JSON world map members",
       description:
-        "Reads one project-local JSON .world file and returns its explicit map members with world coordinates, declared sizes, per-member existence and pinned revisions, plus world custom properties. Pattern-based members are counted but never matched against the filesystem.",
+        "Reads one project-local JSON .world file and returns its explicit map members with world coordinates, declared sizes, per-member existence and pinned revisions, plus world custom properties. Pattern-based members are counted only by default; pass expandPatterns to match them with World::allMaps semantics — every pattern partially matches project-asset file names in exactly the world's own directory, two capture groups become x/y through the multipliers and offsets, sizes default to the absolute multipliers, and expanded members append after explicit ones without deduplication, marked fromPattern with their patternIndex.",
       inputSchema: z
         .object({
           worldPath: projectPathSchema,
+          expandPatterns: z
+            .boolean()
+            .optional(),
         })
         .strict(),
       outputSchema:
         worldListToolOutputSchema,
       annotations: READ_ONLY,
     },
-    async ({ worldPath }) =>
+    async ({ worldPath, expandPatterns }) =>
       executeTool(() =>
-        maps.listWorldMaps({ worldPath }),
+        maps.listWorldMaps({
+          worldPath,
+          expandPatterns,
+        }),
       ),
   );
 

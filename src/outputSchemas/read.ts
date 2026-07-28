@@ -264,6 +264,9 @@ const worldMapMemberOutputSchema = z
       })
       .strict()
       .nullable(),
+    fromPattern: z.literal(true).optional(),
+    patternIndex:
+      nonnegativeIntegerOutputSchema.optional(),
   })
   .strict()
   .superRefine((member, context) => {

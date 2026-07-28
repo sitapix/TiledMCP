@@ -1528,8 +1528,14 @@ directory, missing coordinates read as 0, and a non-positive declared
 size reports \`declaredSize: null\` (the map file decides). Each member
 carries \`exists\` plus a pinned \`revision\` when the file is present;
 the member read set is not an atomic snapshot. Pattern-based members are
-counted and flagged \`patternsUnexpanded\`, never matched against the
-filesystem, and world custom properties use the shared property
+counted and flagged \`patternsUnexpanded\` by default; pass
+\`expandPatterns\` to match them with World::allMaps semantics — every
+pattern partially matches project-asset file names in exactly the
+world's own directory, two capture groups become x/y through the
+multipliers and offsets, sizes default to the absolute multipliers, and
+expanded members append after explicit ones without deduplication,
+marked \`fromPattern\` with their \`patternIndex\`. World custom
+properties use the shared property
 projection. \`tiled_preview_world_edits\` edits the membership through
 the standard preview-approve-apply flow: bounded \`addMap\` (requiring
 an existing project-local .tmj), \`moveMap\`, and \`removeMap\`

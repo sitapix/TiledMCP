@@ -133,6 +133,70 @@ describe("world member reading", () => {
     });
   });
 
+  it("expands patterns with World::allMaps semantics on request", async () => {
+    const service = await createService(roots, {
+      maps: [
+        {
+          fileName: "maps/a.tmj",
+          x: 0,
+          y: 0,
+          width: 32,
+          height: 32,
+        },
+      ],
+      patterns: [
+        {
+          regexp: "a-(\\d+)-(\\d+)\\.tmj",
+          multiplierX: 32,
+          multiplierY: 32,
+          offsetX: 100,
+        },
+      ],
+      type: "world",
+    });
+    // Sibling files matching the pattern (and one that does not).
+    const root = [...roots][roots.size - 0 - 1]!;
+    await writeFile(
+      join(root, "a-2-3.tmj"),
+      await readFileText(root, "maps/a.tmj"),
+    );
+    await writeFile(
+      join(root, "unrelated.tmj"),
+      await readFileText(root, "maps/a.tmj"),
+    );
+
+    const unexpanded = await service.listWorldMaps(
+      { worldPath: WORLD_PATH },
+    );
+    expect(unexpanded).toMatchObject({
+      memberCount: 1,
+      patternCount: 1,
+      patternsUnexpanded: true,
+    });
+
+    const expanded = await service.listWorldMaps({
+      worldPath: WORLD_PATH,
+      expandPatterns: true,
+    });
+    expect(expanded).toMatchObject({
+      memberCount: 2,
+      patternsUnexpanded: false,
+    });
+    expect(
+      (expanded.members as Array<
+        Record<string, unknown>
+      >)[1],
+    ).toMatchObject({
+      source: "a-2-3.tmj",
+      fromPattern: true,
+      patternIndex: 0,
+      x: 2 * 32 + 100,
+      y: 3 * 32,
+      declaredSize: { width: 32, height: 32 },
+      exists: true,
+    });
+  });
+
   it("adds, moves, and removes members through preview and apply", async () => {
     const service = await createService(roots, {
       maps: [
@@ -240,6 +304,18 @@ describe("world member reading", () => {
     });
   });
 });
+
+async function readFileText(
+  root: string,
+  relative: string,
+): Promise<string> {
+  const { readFile } = await import(
+    "node:fs/promises"
+  );
+  return (
+    await readFile(join(root, relative))
+  ).toString("utf8");
+}
 
 async function createService(
   roots: Set<string>,

@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:e707ee9f1f7c7a04aeb5d7099aed6e5dd759b2c555e1c3802594bb109aee7494",
+    "revision": "sha256:b831df8e2ad48f2009edb32c0869434efc95b0d49d7e6d04d15f2f09a5c3233f",
     "serverVersion": "0.0.1",
-    "size": 91844
+    "size": 92207
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 91844,
+  "size": 92207,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 91844 UTF-8 bytes, revision `sha256:e707ee9f1f7c7a04aeb5d7099aed6e5dd759b2c555e1c3802594bb109aee7494`.
+Content contract: `text`, 92207 UTF-8 bytes, revision `sha256:b831df8e2ad48f2009edb32c0869434efc95b0d49d7e6d04d15f2f09a5c3233f`.
 
 Resource templates: none.
 
@@ -25438,7 +25438,7 @@ Output schema:
 
 Availability: `core`
 
-Reads one project-local JSON .world file and returns its explicit map members with world coordinates, declared sizes, per-member existence and pinned revisions, plus world custom properties. Pattern-based members are counted but never matched against the filesystem.
+Reads one project-local JSON .world file and returns its explicit map members with world coordinates, declared sizes, per-member existence and pinned revisions, plus world custom properties. Pattern-based members are counted only by default; pass expandPatterns to match them with World::allMaps semantics — every pattern partially matches project-asset file names in exactly the world's own directory, two capture groups become x/y through the multipliers and offsets, sizes default to the absolute multipliers, and expanded members append after explicit ones without deduplication, marked fromPattern with their patternIndex.
 
 Annotations:
 
@@ -25470,6 +25470,9 @@ Input schema:
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
+    "expandPatterns": {
+      "type": "boolean"
+    },
     "worldPath": {
       "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
       "maxLength": 4096,
@@ -25599,9 +25602,18 @@ Output schema:
                   "exists": {
                     "type": "boolean"
                   },
+                  "fromPattern": {
+                    "const": true,
+                    "type": "boolean"
+                  },
                   "path": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "patternIndex": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "revision": {
                     "pattern": "^sha256:[0-9a-f]{64}$",
