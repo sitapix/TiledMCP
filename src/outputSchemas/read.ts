@@ -449,7 +449,7 @@ const mapSummaryResultOutputSchema = z
     editableProfile: z.enum([
       "finite-orthogonal-tmj-external-atlas-tsj",
       "infinite-orthogonal-tmj-read-only-chunked",
-      "isometric-tmj-read-only",
+      "isometric-tmj-editable-core",
     ]),
   })
   .strict();

@@ -513,6 +513,14 @@ anti-diagonal flips, and image or group layers fail closed, and object
 layers are skipped with their ids disclosed. Orthogonal maps belong to
 \`tiled_render_preview\`.
 
+Isometric maps are also editable through the standard map-edit path:
+cell storage and object pixel coordinates are orientation-independent,
+so \`tiled_preview_edits\` plans and applies against isometric maps
+exactly like orthogonal ones (the summary's \`editableProfile\`
+reports \`isometric-tmj-editable-core\`). The dedicated procedural
+planners (shape, generate, scatter, prefab, terrain) remain
+orthogonal-only for now.
+
 ## Write TMX natively
 
 \`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`

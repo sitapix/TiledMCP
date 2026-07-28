@@ -964,7 +964,7 @@ export class MapService {
       dependencyRevisions: context.dependencyRevisions,
       editableProfile:
         context.orientation === "isometric"
-          ? "isometric-tmj-read-only"
+          ? "isometric-tmj-editable-core"
           : context.infinite
             ? "infinite-orthogonal-tmj-read-only-chunked"
             : "finite-orthogonal-tmj-external-atlas-tsj",
@@ -8091,6 +8091,10 @@ export class MapService {
   ): Promise<MapEditPlan> {
     const context = await this.loadEditableContext(mapPath, {
       allowInfinite: true,
+      // Cell storage and object pixel coordinates are
+      // orientation-independent, so isometric maps take the same edit
+      // path as orthogonal ones.
+      allowIsometric: true,
       expectedMapRevision: expectedRevision,
       expectedDependencyRevisions,
     });
@@ -8167,6 +8171,7 @@ export class MapService {
 
     const context = await this.loadEditableContext(plan.mapPath, {
       allowInfinite: true,
+      allowIsometric: true,
       expectedMapRevision: plan.baseRevision,
       expectedDependencyRevisions: plan.dependencyRevisions,
       persistIdentity: true,
@@ -8752,7 +8757,7 @@ export class MapService {
       throw new TiledMcpError(
         "UNSUPPORTED_MAP_PROFILE",
         orientation === "isometric"
-          ? "This tool supports only orthogonal maps; isometric maps are readable through the summary, region, and usage tools."
+          ? "This tool supports only orthogonal maps; isometric maps are readable everywhere and editable through the standard map-edit path."
           : "MVP semantic tools support only orthogonal maps.",
         { path: loaded.path, orientation },
       );

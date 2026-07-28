@@ -43,7 +43,7 @@ describe("isometric map read-only access", () => {
     );
     expect(summary).toMatchObject({
       orientation: "isometric",
-      editableProfile: "isometric-tmj-read-only",
+      editableProfile: "isometric-tmj-editable-core",
       width: 2,
       height: 2,
     });
@@ -72,24 +72,67 @@ describe("isometric map read-only access", () => {
     });
 
     // Every edit path keeps the fail-closed gate.
-    await expect(
-      harness.service.planEdits(
-        MAP_PATH,
-        summary.revision as string,
-        summary.dependencyRevisions as Record<
-          string,
-          string
-        >,
-        [
-          {
-            type: "updateMap",
-            patch: { renderOrder: "left-up" },
-          },
-        ],
-      ),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_MAP_PROFILE",
+    // Cell storage and object pixel coordinates are
+    // orientation-independent, so the ordinary map-edit path now
+    // covers isometric maps end to end.
+    const plan = await harness.service.planEdits(
+      MAP_PATH,
+      summary.revision as string,
+      summary.dependencyRevisions as Record<
+        string,
+        string
+      >,
+      [
+        {
+          type: "updateMap",
+          patch: { renderOrder: "left-up" },
+        },
+        {
+          type: "setTiles",
+          layerId: 1,
+          cells: [
+            {
+              x: 1,
+              y: 1,
+              tile: {
+                tileset: {
+                  kind: "external",
+                  assetId: (
+                    summary.tilesets as Array<{
+                      assetId: string;
+                    }>
+                  )[0]!.assetId,
+                },
+                localId: 0,
+              },
+            },
+          ],
+        },
+      ],
+    );
+    await harness.service.applyEdits(plan);
+    const edited =
+      await harness.service.getSummary(MAP_PATH);
+    expect(edited).toMatchObject({
+      orientation: "isometric",
+      renderOrder: "left-up",
     });
+    const editedRegion =
+      (await harness.service.getRegion({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        x: 1,
+        y: 1,
+        width: 1,
+        height: 1,
+      })) as {
+        rows: Array<
+          Array<{ localId: number } | null>
+        >;
+      };
+    expect(editedRegion.rows[0]![0]).toMatchObject(
+      { localId: 0 },
+    );
   });
 
   it("keeps staggered and hexagonal maps rejected everywhere", async () => {
