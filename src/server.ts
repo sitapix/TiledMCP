@@ -1634,6 +1634,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_scatter",
     "tiled_preview_prefab",
     "tiled_preview_template",
+    "tiled_preview_write_tmx",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
@@ -5520,6 +5521,40 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             expectedDependencyRevisions,
             expectedTemplateRevision,
           });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_write_tmx",
+    {
+      title: "Preview a native TMX write",
+      description:
+        "Serializes one restricted-profile project .tmj map to TMX bytes matching Tiled 1.12.2's own writer byte for byte — finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands; embedded tilesets, image and group layers, custom properties, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. Tileset references and GIDs carry verbatim, so the .tmx target must live in the source map's directory and must be a new file. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          targetPath: projectPathSchema,
+          expectedMapRevision: revisionSchema,
+        })
+        .strict(),
+      outputSchema:
+        fileExportPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      targetPath,
+      expectedMapRevision,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planWriteTmx({
+          mapPath,
+          targetPath,
+          expectedMapRevision,
+        });
         return changeSets.put(plan);
       }),
   );

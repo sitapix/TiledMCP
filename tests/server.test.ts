@@ -196,6 +196,7 @@ const CORE_TOOLS = [
   "tiled_preview_scatter",
   "tiled_preview_prefab",
   "tiled_preview_template",
+  "tiled_preview_write_tmx",
   "tiled_preview_property_types",
   "tiled_preview_world_edits",
   "tiled_preview_transaction",
@@ -297,7 +298,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the forty-two core tools with safety annotations", async () => {
+  it("advertises exactly the forty-three core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 

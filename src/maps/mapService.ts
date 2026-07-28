@@ -167,6 +167,7 @@ import {
   MAX_EXPORT_OUTPUT_BYTES,
   type FileExportPlan,
 } from "./fileExport.js";
+import { serializeTmxMap } from "./tmxWrite.js";
 import {
   assertTerrainScriptSucceeded,
   buildTerrainPaintScript,
@@ -4812,6 +4813,7 @@ export class MapService {
     > = {
       kind: "fileExport",
       version: 1,
+      producer: "tiled-cli",
       sourcePath,
       sourceRevision: snapshot.revision,
       targetPath,
@@ -4823,6 +4825,116 @@ export class MapService {
         targetPath,
         exportKind,
         format,
+        contentBytes: content.byteLength,
+        wouldChange: true,
+      },
+    };
+    return {
+      ...unsignedPlan,
+      id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Native TMX write: serializes one restricted-profile .tmj map to
+   * TMX bytes matching Tiled 1.12.2's own writer byte for byte and
+   * returns a fileExport change set whose producer is the native
+   * serializer, so apply re-serializes and hash-verifies without any
+   * CLI. Tileset references and GIDs carry verbatim, which is why the
+   * target must live in the source map's directory; anything the
+   * serializer does not fully understand fails closed.
+   */
+  async planWriteTmx(input: {
+    mapPath: string;
+    targetPath: string;
+    expectedMapRevision: string;
+  }): Promise<FileExportPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const sourcePath = this.resolver.normalize(
+      input.mapPath,
+    );
+    const targetPath = this.resolver.normalize(
+      input.targetPath,
+    );
+    if (
+      posix.extname(sourcePath).toLowerCase() !==
+      ".tmj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Native TMX writing reads project .tmj maps.",
+        { path: sourcePath },
+      );
+    }
+    if (
+      posix.extname(targetPath).toLowerCase() !==
+      ".tmx"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "The native TMX write target must use the .tmx extension.",
+        { path: targetPath },
+      );
+    }
+    if (
+      posix.dirname(targetPath) !==
+      posix.dirname(sourcePath)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The TMX target must live in the source map's directory so relative tileset references keep resolving.",
+        { sourcePath, targetPath },
+      );
+    }
+    const snapshot = await this.store.read(
+      sourcePath,
+    );
+    if (
+      snapshot.revision !==
+      input.expectedMapRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${sourcePath} does not match the expected map revision.`,
+        {
+          path: sourcePath,
+          expectedRevision:
+            input.expectedMapRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    await this.assertExportTargetAbsent(
+      targetPath,
+    );
+    const content = Buffer.from(
+      serializeTmxMap(
+        snapshot.document,
+        sourcePath,
+      ),
+      "utf8",
+    );
+    const unsignedPlan: Omit<
+      FileExportPlan,
+      "id"
+    > = {
+      kind: "fileExport",
+      version: 1,
+      producer: "native",
+      sourcePath,
+      sourceRevision: snapshot.revision,
+      targetPath,
+      exportKind: "map",
+      format: "tmx",
+      baseRevision: revisionOf(content),
+      summary: {
+        sourcePath,
+        targetPath,
+        exportKind: "map",
+        format: "tmx",
         contentBytes: content.byteLength,
         wouldChange: true,
       },
@@ -6495,17 +6607,30 @@ export class MapService {
         },
       );
     }
-    const content = await this.runExport(
-      runner,
-      plan.exportKind,
-      plan.format,
-      plan.sourcePath,
-      plan.sourceRevision,
-    );
+    const content =
+      plan.producer === "native"
+        ? Buffer.from(
+            serializeTmxMap(
+              (
+                await this.store.read(
+                  plan.sourcePath,
+                )
+              ).document,
+              plan.sourcePath,
+            ),
+            "utf8",
+          )
+        : await this.runExport(
+            runner,
+            plan.exportKind,
+            plan.format,
+            plan.sourcePath,
+            plan.sourceRevision,
+          );
     if (revisionOf(content) !== plan.baseRevision) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
-        "Re-running the Tiled export produced different bytes than the approved plan; preview the export again.",
+        "Re-running the export produced different bytes than the approved plan; preview the export again.",
         {
           path: plan.targetPath,
           expectedRevision: plan.baseRevision,

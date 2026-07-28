@@ -12,6 +12,8 @@ export const EXPORT_FORMAT_PATTERN =
   /^[a-z0-9]{1,16}$/u;
 export const FILE_EXPORT_WARNING =
   "This runs Tiled's own command-line exporter and creates one new project file from its output. The source file is never modified; apply re-runs the export and fails closed unless the output bytes exactly match the approved content hash.";
+export const NATIVE_TMX_WARNING =
+  "This serializes the source map to TMX natively and creates one new project file. The source file is never modified; apply re-serializes and fails closed unless the output bytes exactly match the approved content hash.";
 
 const FILE_EXPORT_PLAN_HASH_DOMAIN =
   "tiledmcp/file-export-plan/v1\0";
@@ -29,6 +31,11 @@ export interface FileExportPlan {
   kind: "fileExport";
   version: 1;
   id: string;
+  /**
+   * Which engine reproduces the bytes at apply: the official Tiled CLI
+   * exporter, or the native restricted-profile TMX serializer.
+   */
+  producer: "tiled-cli" | "native";
   sourcePath: string;
   /**
    * Raw SHA-256 revision of the source at preview time. Apply re-reads
@@ -66,6 +73,8 @@ export function assertFileExportPlan(
     plan.kind !== "fileExport" ||
     plan.version !== 1 ||
     typeof plan.id !== "string" ||
+    (plan.producer !== "tiled-cli" &&
+      plan.producer !== "native") ||
     typeof plan.sourcePath !== "string" ||
     typeof plan.sourceRevision !== "string" ||
     typeof plan.targetPath !== "string" ||

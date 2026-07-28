@@ -59,6 +59,7 @@ import {
 import {
   assertFileExportPlan,
   FILE_EXPORT_WARNING,
+  NATIVE_TMX_WARNING,
   type FileExportPlan,
 } from "./maps/fileExport.js";
 import {
@@ -1243,6 +1244,7 @@ type OperationPreview =
       type: "exportFile";
       destructive: false;
       warning: string;
+      producer: "tiled-cli" | "native";
       sourcePath: string;
       targetPath: string;
       exportKind: "map" | "tileset";
@@ -2550,7 +2552,11 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         {
           type: "exportFile",
           destructive: false,
-          warning: FILE_EXPORT_WARNING,
+          warning:
+            plan.producer === "native"
+              ? NATIVE_TMX_WARNING
+              : FILE_EXPORT_WARNING,
+          producer: plan.producer,
           sourcePath: plan.sourcePath,
           targetPath: plan.targetPath,
           exportKind: plan.exportKind,

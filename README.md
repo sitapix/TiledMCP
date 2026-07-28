@@ -307,6 +307,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_template` | 以 Tiled 最小序列化形态（`{id, template, x, y}`）放置一个 JSON `.tj` 模板实例；模板经与读取相同的 fail-closed profile 校验并 pin revision，apply 复核 pin 与相对引用解析 |
 | `tiled_list_property_types` | 读取 `.tiled-project` 的 class/enum 定义——复杂属性类型注解的权威来源 |
 | `tiled_preview_property_types` | 预览项目 class/enum 定义的 upsert/delete（id 分配对照官方 `++mNextId`；被定义间引用的类型删除 fail closed） |
+| `tiled_preview_write_tmx` | 原生受限 TMX 写出：把 `.tmj` 序列化为与 Tiled 1.12.2 官方 writer 字节级一致的 `.tmx` 新文件（同目录、no-replace、无需 CLI）；profile 之外的结构与丢精度浮点 fail closed |
 | `tiled_preview_transaction` | 把 2..16 个已批准、目标路径两两不同的文档提交类 change set 组合成一个原子事务 change set，并锁定成员禁止单独 apply |
 | `tiled_apply_change_set` | 以对应 revision guard 提交已批准的 map edit、跨文件事务、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune |
 | `tiled_render_map` | 可选；本机有 `tmxrasterizer` 时返回带 map/TSJ/output/renderer 可追溯元数据的 PNG |

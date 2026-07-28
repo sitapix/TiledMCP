@@ -3627,6 +3627,10 @@ const fileExportPreviewOutputSchema = z
             type: z.literal("exportFile"),
             destructive: z.literal(false),
             warning: z.string(),
+            producer: z.enum([
+              "tiled-cli",
+              "native",
+            ]),
             sourcePath: projectPathOutputSchema,
             targetPath: projectPathOutputSchema,
             exportKind: z.enum([

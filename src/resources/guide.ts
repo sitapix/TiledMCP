@@ -500,6 +500,22 @@ map-relative reference still resolves to the pinned path. The result is
 an ordinary \`mapEdit\` change set; read the placed instance back
 expanded with \`tiled_get_object\`.
 
+## Write TMX natively
+
+\`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`
+map to TMX bytes that match Tiled 1.12.2's own writer byte for byte —
+no CLI involved. The profile covers finite orthogonal maps, external
+tileset references, CSV tile layers, and top-level tile/object layers
+the serializer fully understands; embedded tilesets, image and group
+layers, custom properties, template instances, unknown members, and
+floats whose six-significant-digit rendering would lose precision all
+fail closed instead of drifting. Tileset references and GIDs carry
+verbatim, so the \`.tmx\` target must be a new file in the source
+map's directory. The result is a \`fileExport\` change set whose
+producer is the native serializer; apply re-serializes under the
+pinned source revision and fails closed unless the bytes exactly match
+the approved content hash.
+
 ## Take explicit save points
 
 \`tiled_create_checkpoint\` creates committed recovery checkpoints of
