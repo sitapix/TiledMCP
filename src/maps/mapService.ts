@@ -5569,6 +5569,89 @@ export class MapService {
   }
 
   /**
+   * Resolves semantic tile names against the registry and the map's
+   * tileset bindings: a {name} reference becomes an ordinary external
+   * TileRef whose tileset must already be bound to the map (pointing
+   * callers at tiled_add_tileset_to_map otherwise) and whose localId
+   * must fall inside the atlas. Plain TileRefs and nulls pass through
+   * untouched, and the registry is only read when a name appears.
+   */
+  async resolveNamedTiles<
+    T extends TileRef | { name: string } | null,
+  >(
+    mapPath: string,
+    values: readonly T[],
+  ): Promise<Array<TileRef | null>> {
+    const hasName = values.some(
+      (value) =>
+        value !== null &&
+        typeof (value as { name?: unknown })
+          .name === "string",
+    );
+    if (!hasName) {
+      return [...values] as Array<
+        TileRef | null
+      >;
+    }
+    const registry =
+      await this.readTileNameRegistry();
+    const context =
+      await this.loadEditableContext(mapPath, {
+        allowIsometric: true,
+        allowStaggeredHexagonal: true,
+      });
+    return values.map((value) => {
+      if (
+        value === null ||
+        typeof (value as { name?: unknown })
+          .name !== "string"
+      ) {
+        return value as TileRef | null;
+      }
+      const name = (value as { name: string })
+        .name;
+      const entry = registry.names.get(name);
+      if (entry === undefined) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `Tile name ${JSON.stringify(name)} is not registered; see tiled_list_tile_names.`,
+          { name },
+        );
+      }
+      const tilesetPath =
+        this.resolver.normalize(entry.tileset);
+      const binding = context.bindings.find(
+        (candidate) =>
+          candidate.path === tilesetPath,
+      );
+      if (binding === undefined) {
+        throw new TiledMcpError(
+          "TILESET_NOT_FOUND",
+          `Tile name ${JSON.stringify(name)} resolves to ${tilesetPath}, which is not bound to ${mapPath}; attach it with tiled_add_tileset_to_map first.`,
+          { name, tilesetPath },
+        );
+      }
+      if (
+        binding.collection !== true &&
+        entry.localId >= binding.tileCount
+      ) {
+        throw new TiledMcpError(
+          "TILE_ID_OUT_OF_RANGE",
+          `Tile name ${JSON.stringify(name)} points at local id ${entry.localId}, outside ${tilesetPath} (${binding.tileCount} tiles).`,
+          { name, localId: entry.localId },
+        );
+      }
+      return {
+        tileset: {
+          kind: "external" as const,
+          assetId: binding.assetId,
+        },
+        localId: entry.localId,
+      };
+    });
+  }
+
+  /**
    * Stateless selection: evaluates one predicate — a tile set matched
    * by tileset+localId (flip bits ignored), empty cells, or non-empty
    * cells — over one bounded tile-layer region and returns the

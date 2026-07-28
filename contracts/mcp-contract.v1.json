@@ -153,14 +153,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:27ab1355d71c95440fbd7502a347d579d6486bf8b26e864302a42aa98bb70bcf",
+        "revision": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
         "serverVersion": "0.0.1",
-        "size": 99978
+        "size": 100368
       },
-      "byteLength": 99978,
+      "byteLength": 100368,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:27ab1355d71c95440fbd7502a347d579d6486bf8b26e864302a42aa98bb70bcf",
+      "sha256": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
       "uri": "tiled://guide"
     }
   ],
@@ -188,9 +188,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:27ab1355d71c95440fbd7502a347d579d6486bf8b26e864302a42aa98bb70bcf",
+        "revision": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
         "serverVersion": "0.0.1",
-        "size": 99978
+        "size": 100368
       },
       "annotations": {
         "audience": [
@@ -202,7 +202,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 99978,
+      "size": 100368,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -36515,62 +36515,79 @@
                 "tile": {
                   "anyOf": [
                     {
-                      "additionalProperties": false,
-                      "properties": {
-                        "localId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "tileset": {
+                      "anyOf": [
+                        {
                           "additionalProperties": false,
                           "properties": {
-                            "assetId": {
-                              "maxLength": 128,
-                              "minLength": 1,
-                              "type": "string"
+                            "localId": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
                             },
-                            "kind": {
-                              "const": "external",
+                            "tileset": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assetId": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "external",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "assetId"
+                              ],
+                              "type": "object"
+                            },
+                            "transform": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "flipD": {
+                                  "type": "boolean"
+                                },
+                                "flipH": {
+                                  "type": "boolean"
+                                },
+                                "flipV": {
+                                  "type": "boolean"
+                                },
+                                "kind": {
+                                  "const": "orthogonal",
+                                  "type": "string"
+                                },
+                                "rawFlags": {
+                                  "maximum": 4294967295,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "tileset",
+                            "localId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
                               "type": "string"
                             }
                           },
                           "required": [
-                            "kind",
-                            "assetId"
+                            "name"
                           ],
                           "type": "object"
-                        },
-                        "transform": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "flipD": {
-                              "type": "boolean"
-                            },
-                            "flipH": {
-                              "type": "boolean"
-                            },
-                            "flipV": {
-                              "type": "boolean"
-                            },
-                            "kind": {
-                              "const": "orthogonal",
-                              "type": "string"
-                            },
-                            "rawFlags": {
-                              "maximum": 4294967295,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "tileset",
-                        "localId"
-                      ],
-                      "type": "object"
+                      ]
                     },
                     {
                       "type": "null"
@@ -50529,62 +50546,79 @@
                 "tile": {
                   "anyOf": [
                     {
-                      "additionalProperties": false,
-                      "properties": {
-                        "localId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "tileset": {
+                      "anyOf": [
+                        {
                           "additionalProperties": false,
                           "properties": {
-                            "assetId": {
-                              "maxLength": 128,
-                              "minLength": 1,
-                              "type": "string"
+                            "localId": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
                             },
-                            "kind": {
-                              "const": "external",
+                            "tileset": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assetId": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "external",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "assetId"
+                              ],
+                              "type": "object"
+                            },
+                            "transform": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "flipD": {
+                                  "type": "boolean"
+                                },
+                                "flipH": {
+                                  "type": "boolean"
+                                },
+                                "flipV": {
+                                  "type": "boolean"
+                                },
+                                "kind": {
+                                  "const": "orthogonal",
+                                  "type": "string"
+                                },
+                                "rawFlags": {
+                                  "maximum": 4294967295,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "tileset",
+                            "localId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
                               "type": "string"
                             }
                           },
                           "required": [
-                            "kind",
-                            "assetId"
+                            "name"
                           ],
                           "type": "object"
-                        },
-                        "transform": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "flipD": {
-                              "type": "boolean"
-                            },
-                            "flipH": {
-                              "type": "boolean"
-                            },
-                            "flipV": {
-                              "type": "boolean"
-                            },
-                            "kind": {
-                              "const": "orthogonal",
-                              "type": "string"
-                            },
-                            "rawFlags": {
-                              "maximum": 4294967295,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "tileset",
-                        "localId"
-                      ],
-                      "type": "object"
+                      ]
                     },
                     {
                       "type": "null"
@@ -56443,62 +56477,79 @@
           "tile": {
             "anyOf": [
               {
-                "additionalProperties": false,
-                "properties": {
-                  "localId": {
-                    "maximum": 268435455,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "tileset": {
+                "anyOf": [
+                  {
                     "additionalProperties": false,
                     "properties": {
-                      "assetId": {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "type": "string"
+                      "localId": {
+                        "maximum": 268435455,
+                        "minimum": 0,
+                        "type": "integer"
                       },
-                      "kind": {
-                        "const": "external",
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "external",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "assetId"
+                        ],
+                        "type": "object"
+                      },
+                      "transform": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "flipD": {
+                            "type": "boolean"
+                          },
+                          "flipH": {
+                            "type": "boolean"
+                          },
+                          "flipV": {
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "const": "orthogonal",
+                            "type": "string"
+                          },
+                          "rawFlags": {
+                            "maximum": 4294967295,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "tileset",
+                      "localId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
                         "type": "string"
                       }
                     },
                     "required": [
-                      "kind",
-                      "assetId"
+                      "name"
                     ],
                     "type": "object"
-                  },
-                  "transform": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "flipD": {
-                        "type": "boolean"
-                      },
-                      "flipH": {
-                        "type": "boolean"
-                      },
-                      "flipV": {
-                        "type": "boolean"
-                      },
-                      "kind": {
-                        "const": "orthogonal",
-                        "type": "string"
-                      },
-                      "rawFlags": {
-                        "maximum": 4294967295,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "type": "object"
                   }
-                },
-                "required": [
-                  "tileset",
-                  "localId"
-                ],
-                "type": "object"
+                ]
               },
               {
                 "type": "null"
@@ -86397,62 +86448,79 @@
                   },
                   "tiles": {
                     "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "localId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "tileset": {
+                      "anyOf": [
+                        {
                           "additionalProperties": false,
                           "properties": {
-                            "assetId": {
-                              "maxLength": 128,
-                              "minLength": 1,
-                              "type": "string"
+                            "localId": {
+                              "maximum": 268435455,
+                              "minimum": 0,
+                              "type": "integer"
                             },
-                            "kind": {
-                              "const": "external",
+                            "tileset": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assetId": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "external",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "assetId"
+                              ],
+                              "type": "object"
+                            },
+                            "transform": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "flipD": {
+                                  "type": "boolean"
+                                },
+                                "flipH": {
+                                  "type": "boolean"
+                                },
+                                "flipV": {
+                                  "type": "boolean"
+                                },
+                                "kind": {
+                                  "const": "orthogonal",
+                                  "type": "string"
+                                },
+                                "rawFlags": {
+                                  "maximum": 4294967295,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "tileset",
+                            "localId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
                               "type": "string"
                             }
                           },
                           "required": [
-                            "kind",
-                            "assetId"
+                            "name"
                           ],
                           "type": "object"
-                        },
-                        "transform": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "flipD": {
-                              "type": "boolean"
-                            },
-                            "flipH": {
-                              "type": "boolean"
-                            },
-                            "flipV": {
-                              "type": "boolean"
-                            },
-                            "kind": {
-                              "const": "orthogonal",
-                              "type": "string"
-                            },
-                            "rawFlags": {
-                              "maximum": 4294967295,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "tileset",
-                        "localId"
-                      ],
-                      "type": "object"
+                      ]
                     },
                     "maxItems": 16,
                     "minItems": 1,

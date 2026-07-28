@@ -762,6 +762,17 @@ const tileRefSchema = z
   })
   .strict();
 
+const namedTileRefSchema = z.union([
+  tileRefSchema,
+  z
+    .object({
+      name: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
+    })
+    .strict(),
+]);
+
 const setTilesSchema = z
   .object({
     type: z.literal("setTiles"),
@@ -5189,7 +5200,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               })
               .strict(),
           ]),
-          tile: tileRefSchema.nullable(),
+          tile: namedTileRefSchema.nullable(),
           expectedMapRevision: revisionSchema,
           expectedDependencyRevisions:
             dependencyRevisionsSchema,
@@ -5207,11 +5218,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       expectedDependencyRevisions,
     }) =>
       executeTool(async () => {
+        const [resolvedTile] =
+          await maps.resolveNamedTiles(mapPath, [
+            tile as
+              | TileRef
+              | { name: string }
+              | null,
+          ]);
         const plan = await maps.planDrawShape({
           mapPath,
           layerId,
           draw,
-          tile: tile as TileRef | null,
+          tile: resolvedTile ?? null,
           expectedMapRevision,
           expectedDependencyRevisions,
         });
@@ -5326,7 +5344,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 .object({
                   min: z.number().min(0).max(1),
                   max: z.number().min(0).max(1),
-                  tile: tileRefSchema.nullable(),
+                  tile: namedTileRefSchema.nullable(),
                 })
                 .strict(),
             )
@@ -5351,17 +5369,30 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       expectedDependencyRevisions,
     }) =>
       executeTool(async () => {
+        const mappingTiles =
+          await maps.resolveNamedTiles(
+            mapPath,
+            mapping.map(
+              (entry) =>
+                entry.tile as
+                  | TileRef
+                  | { name: string }
+                  | null,
+            ),
+          );
         const plan = await maps.planGenerate({
           mapPath,
           layerId,
           region,
           seed,
           generator,
-          mapping: mapping as Array<{
-            min: number;
-            max: number;
-            tile: TileRef | null;
-          }>,
+          mapping: mapping.map(
+            (entry, index) => ({
+              min: entry.min,
+              max: entry.max,
+              tile: mappingTiles[index] ?? null,
+            }),
+          ),
           expectedMapRevision,
           expectedDependencyRevisions,
         });
@@ -5409,7 +5440,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .array(
               z
                 .object({
-                  tile: tileRefSchema.nullable(),
+                  tile: namedTileRefSchema.nullable(),
                   weight: z
                     .number()
                     .positive()
@@ -5440,16 +5471,29 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       expectedDependencyRevisions,
     }) =>
       executeTool(async () => {
+        const choiceTiles =
+          await maps.resolveNamedTiles(
+            mapPath,
+            choices.map(
+              (choice) =>
+                choice.tile as
+                  | TileRef
+                  | { name: string }
+                  | null,
+            ),
+          );
         const plan = await maps.planScatter({
           mapPath,
           layerId,
           region,
           seed,
           density,
-          choices: choices as Array<{
-            tile: TileRef | null;
-            weight: number;
-          }>,
+          choices: choices.map(
+            (choice, index) => ({
+              tile: choiceTiles[index] ?? null,
+              weight: choice.weight,
+            }),
+          ),
           skipOccupied,
           expectedMapRevision,
           expectedDependencyRevisions,
@@ -5745,7 +5789,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               .object({
                 kind: z.literal("tiles"),
                 tiles: z
-                  .array(tileRefSchema)
+                  .array(namedTileRefSchema)
                   .min(1)
                   .max(16),
               })
@@ -5767,17 +5811,34 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       annotations: READ_ONLY,
     },
     async ({ mapPath, layerId, region, match }) =>
-      executeTool(() =>
-        maps.selectCells({
+      executeTool(async () => {
+        const resolvedMatch =
+          match.kind === "tiles"
+            ? {
+                kind: "tiles" as const,
+                tiles: (
+                  await maps.resolveNamedTiles(
+                    mapPath,
+                    match.tiles as Array<
+                      | TileRef
+                      | { name: string }
+                    >,
+                  )
+                ).filter(
+                  (tile): tile is TileRef =>
+                    tile !== null,
+                ),
+              }
+            : (match as
+                | { kind: "empty" }
+                | { kind: "nonEmpty" });
+        return maps.selectCells({
           mapPath,
           layerId,
           region,
-          match: match as
-            | { kind: "tiles"; tiles: TileRef[] }
-            | { kind: "empty" }
-            | { kind: "nonEmpty" },
-        }),
-      ),
+          match: resolvedMatch,
+        });
+      }),
   );
 
   register(

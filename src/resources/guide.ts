@@ -595,6 +595,13 @@ expiring \`tileNameEdit\` change set: upserts pin tileset existence,
 deleting an unregistered name fails closed, the file's revision (or
 its absence) is pinned against concurrent writes, and apply replays
 against the approved content hash. No Tiled asset is ever touched.
+Registered names are directly usable wherever those tools take a
+tile: \`tiled_preview_shape\`, \`tiled_preview_generate\`,
+\`tiled_preview_scatter\`, and \`tiled_select\` accept
+\`{"name": "grass"}\` in place of a TileRef — the server resolves it
+through the registry and the map's tileset bindings, failing closed
+when the tileset is not bound to the map or the local id falls
+outside the atlas.
 
 ## Take explicit save points
 

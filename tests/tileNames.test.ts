@@ -230,6 +230,109 @@ describe("tile-name registry edits", () => {
   });
 });
 
+describe("named tile resolution", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("resolves names through map bindings and fails closed otherwise", async () => {
+    const harness = await createHarness(roots);
+    await mkdir(join(harness.root, "maps"));
+    await writeFile(
+      join(harness.root, "maps/level.tmj"),
+      serializeJsonDocument({
+        compressionlevel: -1,
+        height: 1,
+        infinite: false,
+        layers: [
+          {
+            data: [0],
+            height: 1,
+            id: 1,
+            name: "ground",
+            opacity: 1,
+            type: "tilelayer",
+            visible: true,
+            width: 1,
+            x: 0,
+            y: 0,
+          },
+        ],
+        nextlayerid: 2,
+        nextobjectid: 1,
+        orientation: "orthogonal",
+        renderorder: "right-down",
+        tiledversion: "1.12.2",
+        tileheight: 16,
+        tilesets: [
+          {
+            firstgid: 1,
+            source: "../tiles/decor.tsj",
+          },
+        ],
+        tilewidth: 16,
+        type: "map",
+        width: 1,
+      }),
+    );
+    const plan =
+      await harness.service.planTileNameEdits({
+        operations: [
+          {
+            type: "upsertName",
+            name: "grass",
+            tileset: "tiles/decor.tsj",
+            localId: 1,
+          },
+          {
+            type: "upsertName",
+            name: "broken",
+            tileset: "tiles/decor.tsj",
+            localId: 99,
+          },
+        ],
+      });
+    await harness.service.applyTileNameEdit(
+      plan,
+    );
+
+    const resolved =
+      await harness.service.resolveNamedTiles(
+        "maps/level.tmj",
+        [{ name: "grass" }, null],
+      );
+    expect(resolved[1]).toBeNull();
+    expect(resolved[0]).toMatchObject({
+      localId: 1,
+      tileset: { kind: "external" },
+    });
+
+    await expect(
+      harness.service.resolveNamedTiles(
+        "maps/level.tmj",
+        [{ name: "unregistered" }],
+      ),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    await expect(
+      harness.service.resolveNamedTiles(
+        "maps/level.tmj",
+        [{ name: "broken" }],
+      ),
+    ).rejects.toMatchObject({
+      code: "TILE_ID_OUT_OF_RANGE",
+    });
+  });
+});
+
 async function createHarness(
   roots: Set<string>,
 ): Promise<{
