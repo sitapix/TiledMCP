@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
+    "revision": "sha256:6862b2b8ef86e0af416cdc51e0af9e0bbb23ddc498708e8310f5ee6b88081c35",
     "serverVersion": "0.0.1",
-    "size": 100368
+    "size": 100436
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 100368,
+  "size": 100436,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 100368 UTF-8 bytes, revision `sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4`.
+Content contract: `text`, 100436 UTF-8 bytes, revision `sha256:6862b2b8ef86e0af416cdc51e0af9e0bbb23ddc498708e8310f5ee6b88081c35`.
 
 Resource templates: none.
 
@@ -88170,6 +88170,40 @@ Input schema:
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "magicWand",
+              "type": "string"
+            },
+            "seed": {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "y": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "seed"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -88351,7 +88385,8 @@ Output schema:
               "enum": [
                 "tiles",
                 "empty",
-                "nonEmpty"
+                "nonEmpty",
+                "magicWand"
               ],
               "type": "string"
             },
@@ -88386,6 +88421,31 @@ Output schema:
                 "height"
               ],
               "type": "object"
+            },
+            "seed": {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "y": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            },
+            "seedBaseGid": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
             },
             "snapshotConsistency": {
               "const": "non-atomic-read-set",

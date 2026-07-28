@@ -100,6 +100,78 @@ describe("stateless cell selection", () => {
   });
 });
 
+describe("magic wand selection", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("floods the seed's connected same-value area, flip bits ignored", async () => {
+    // gid 1 region: (0,0), (1,0)-flipped, (1,1); (2,y) is gid 2 wall,
+    // so the second gid-1 island beyond it stays unselected.
+    const harness = await createHarness(roots, [
+      1, 0x80000001, 2,
+      0, 1, 2,
+    ]);
+    const result = await harness.service.selectCells(
+      {
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "magicWand",
+          seed: { x: 0, y: 0 },
+        },
+      },
+    );
+    expect(result).toMatchObject({
+      match: "magicWand",
+      seedBaseGid: 1,
+      cellCount: 3,
+      bounds: { x: 0, y: 0, width: 2, height: 2 },
+      cells: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+      ],
+    });
+
+    // An empty seed floods the empty area.
+    const empty =
+      await harness.service.selectCells({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "magicWand",
+          seed: { x: 0, y: 1 },
+        },
+      });
+    expect(empty).toMatchObject({
+      seedBaseGid: 0,
+      cellCount: 1,
+    });
+
+    await expect(
+      harness.service.selectCells({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        region: { x: 0, y: 0, width: 2, height: 2 },
+        match: {
+          kind: "magicWand",
+          seed: { x: 2, y: 0 },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+});
+
 async function createHarness(
   roots: Set<string>,
   data: number[],

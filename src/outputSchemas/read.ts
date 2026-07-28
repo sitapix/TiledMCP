@@ -880,7 +880,17 @@ const selectCellsResultOutputSchema = z
       "tiles",
       "empty",
       "nonEmpty",
+      "magicWand",
     ]),
+    seed: z
+      .object({
+        x: nonnegativeIntegerOutputSchema,
+        y: nonnegativeIntegerOutputSchema,
+      })
+      .strict()
+      .optional(),
+    seedBaseGid:
+      nonnegativeIntegerOutputSchema.optional(),
     cellCount: nonnegativeIntegerOutputSchema,
     bounds: z
       .object({

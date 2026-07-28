@@ -153,14 +153,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
+        "revision": "sha256:6862b2b8ef86e0af416cdc51e0af9e0bbb23ddc498708e8310f5ee6b88081c35",
         "serverVersion": "0.0.1",
-        "size": 100368
+        "size": 100436
       },
-      "byteLength": 100368,
+      "byteLength": 100436,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
+      "sha256": "sha256:6862b2b8ef86e0af416cdc51e0af9e0bbb23ddc498708e8310f5ee6b88081c35",
       "uri": "tiled://guide"
     }
   ],
@@ -188,9 +188,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d713dd6fed386639da4fe794aea54908675a1dcc46875ee0ad837750a9b336d4",
+        "revision": "sha256:6862b2b8ef86e0af416cdc51e0af9e0bbb23ddc498708e8310f5ee6b88081c35",
         "serverVersion": "0.0.1",
-        "size": 100368
+        "size": 100436
       },
       "annotations": {
         "audience": [
@@ -202,7 +202,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 100368,
+      "size": 100436,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -86558,6 +86558,40 @@
                   "kind"
                 ],
                 "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "magicWand",
+                    "type": "string"
+                  },
+                  "seed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "seed"
+                ],
+                "type": "object"
               }
             ]
           },
@@ -86735,7 +86769,8 @@
                     "enum": [
                       "tiles",
                       "empty",
-                      "nonEmpty"
+                      "nonEmpty",
+                      "magicWand"
                     ],
                     "type": "string"
                   },
@@ -86770,6 +86805,31 @@
                       "height"
                     ],
                     "type": "object"
+                  },
+                  "seed": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "seedBaseGid": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "snapshotConsistency": {
                     "const": "non-atomic-read-set",

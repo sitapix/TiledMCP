@@ -5804,6 +5804,17 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 kind: z.literal("nonEmpty"),
               })
               .strict(),
+            z
+              .object({
+                kind: z.literal("magicWand"),
+                seed: z
+                  .object({
+                    x: z.number().int().min(0),
+                    y: z.number().int().min(0),
+                  })
+                  .strict(),
+              })
+              .strict(),
           ]),
         })
         .strict(),
@@ -5831,7 +5842,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               }
             : (match as
                 | { kind: "empty" }
-                | { kind: "nonEmpty" });
+                | { kind: "nonEmpty" }
+                | {
+                    kind: "magicWand";
+                    seed: {
+                      x: number;
+                      y: number;
+                    };
+                  });
         return maps.selectCells({
           mapPath,
           layerId,

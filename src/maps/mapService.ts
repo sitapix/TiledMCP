@@ -5569,6 +5569,123 @@ export class MapService {
   }
 
   /**
+   * Magic-wand selection: four-way flood from the seed cell across
+   * cells sharing its base GID (flip bits ignored; an empty seed
+   * floods the empty area), bounded by the requested region. The
+   * result carries the seed's base GID so callers know what value the
+   * wand grabbed.
+   */
+  private selectMagicWand(
+    context: EditableContext,
+    view: TileLayerView,
+    region: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    },
+    seed: { x: number; y: number },
+  ): Record<string, unknown> {
+    if (
+      !Number.isSafeInteger(seed.x) ||
+      !Number.isSafeInteger(seed.y) ||
+      seed.x < region.x ||
+      seed.y < region.y ||
+      seed.x >= region.x + region.width ||
+      seed.y >= region.y + region.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The magic-wand seed must lie inside the selection region.",
+        { seed },
+      );
+    }
+    const baseOf = (
+      x: number,
+      y: number,
+    ): number =>
+      decodeGid(
+        readLayerGid(view, x, y),
+        context.orientation,
+      ).baseGid;
+    const target = baseOf(seed.x, seed.y);
+    const visited = new Set<number>();
+    const key = (x: number, y: number): number =>
+      (y - region.y) * region.width +
+      (x - region.x);
+    const queue: Array<[number, number]> = [
+      [seed.x, seed.y],
+    ];
+    visited.add(key(seed.x, seed.y));
+    let count = 0;
+    let minX = seed.x;
+    let minY = seed.y;
+    let maxX = seed.x;
+    let maxY = seed.y;
+    const sample: Array<{
+      x: number;
+      y: number;
+    }> = [];
+    while (queue.length > 0) {
+      const [x, y] = queue.pop()!;
+      count += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (sample.length < 2_048) {
+        sample.push({ x, y });
+      }
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (
+          nx < region.x ||
+          ny < region.y ||
+          nx >= region.x + region.width ||
+          ny >= region.y + region.height ||
+          visited.has(key(nx, ny)) ||
+          baseOf(nx, ny) !== target
+        ) {
+          continue;
+        }
+        visited.add(key(nx, ny));
+        queue.push([nx, ny]);
+      }
+    }
+    sample.sort(
+      (a, b) => a.y - b.y || a.x - b.x,
+    );
+    return {
+      map: {
+        path: context.loaded.path,
+        revision: context.loaded.revision,
+      },
+      layerId: view.id,
+      region,
+      match: "magicWand",
+      seed,
+      seedBaseGid: target,
+      cellCount: count,
+      bounds: {
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+      },
+      cells: sample,
+      cellsTruncated: count > sample.length,
+      snapshotConsistency:
+        "non-atomic-read-set",
+    };
+  }
+
+  /**
    * Resolves semantic tile names against the registry and the map's
    * tileset bindings: a {name} reference becomes an ordinary external
    * TileRef whose tileset must already be bound to the map (pointing
@@ -5673,7 +5790,11 @@ export class MapService {
     match:
       | { kind: "tiles"; tiles: TileRef[] }
       | { kind: "empty" }
-      | { kind: "nonEmpty" };
+      | { kind: "nonEmpty" }
+      | {
+          kind: "magicWand";
+          seed: { x: number; y: number };
+        };
   }): Promise<Record<string, unknown>> {
     const context =
       await this.loadEditableContext(
@@ -5748,6 +5869,14 @@ export class MapService {
       region.height,
     );
     const matchKind = input.match.kind;
+    if (input.match.kind === "magicWand") {
+      return this.selectMagicWand(
+        context,
+        view,
+        region,
+        input.match.seed,
+      );
+    }
     let count = 0;
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
