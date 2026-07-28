@@ -822,6 +822,27 @@
       }
     },
     {
+      "name": "tiled_select",
+      "profile": "core",
+      "purpose": "Count and bound every cell holding the given tiles, as stateless selection data for later edits.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "match": {
+          "kind": "tiles",
+          "tiles": [
+            {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 0
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "tiled_list_tile_names",
       "profile": "core",
       "purpose": "Read the semantic tile-name registry with each tileset revision pinned.",

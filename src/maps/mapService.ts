@@ -5569,6 +5569,177 @@ export class MapService {
   }
 
   /**
+   * Stateless selection: evaluates one predicate — a tile set matched
+   * by tileset+localId (flip bits ignored), empty cells, or non-empty
+   * cells — over one bounded tile-layer region and returns the
+   * selection as data: exact count, tight bounding box, and a bounded
+   * cell sample. No selection id or server state exists; callers feed
+   * the result into region- or cell-based tools explicitly.
+   */
+  async selectCells(input: {
+    mapPath: string;
+    layerId: number;
+    region?:
+      | {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }
+      | undefined;
+    match:
+      | { kind: "tiles"; tiles: TileRef[] }
+      | { kind: "empty" }
+      | { kind: "nonEmpty" };
+  }): Promise<Record<string, unknown>> {
+    const context =
+      await this.loadEditableContext(
+        input.mapPath,
+        {
+          allowIsometric: true,
+          allowStaggeredHexagonal: true,
+        },
+      );
+    const mapPath = context.loaded.path;
+    const region = input.region ?? {
+      x: 0,
+      y: 0,
+      width: context.width,
+      height: context.height,
+    };
+    if (
+      !Number.isSafeInteger(region.x) ||
+      !Number.isSafeInteger(region.y) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.x + region.width >
+        context.width ||
+      region.y + region.height >
+        context.height ||
+      region.width * region.height >
+        MAX_REGION_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must lie inside the ${context.width}x${context.height} map and contain at most ${MAX_REGION_CELLS} cells.`,
+        { limit: MAX_REGION_CELLS },
+      );
+    }
+    const matchGids = new Set<number>();
+    if (input.match.kind === "tiles") {
+      if (
+        input.match.tiles.length < 1 ||
+        input.match.tiles.length > 16
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "match.tiles must contain between 1 and 16 tiles.",
+        );
+      }
+      for (const tile of input.match.tiles) {
+        matchGids.add(
+          decodeGid(
+            tileRefToGid(
+              tile,
+              context.orientation,
+              context.bindings,
+            ),
+            context.orientation,
+          ).baseGid,
+        );
+      }
+    }
+    const view = findTileLayer(
+      context.loaded.document,
+      input.layerId,
+      mapPath,
+      "read",
+    );
+    assertRegionInsideLayer(
+      view,
+      region.x,
+      region.y,
+      region.width,
+      region.height,
+    );
+    const matchKind = input.match.kind;
+    let count = 0;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    const sample: Array<{
+      x: number;
+      y: number;
+    }> = [];
+    for (
+      let y = region.y;
+      y < region.y + region.height;
+      y += 1
+    ) {
+      for (
+        let x = region.x;
+        x < region.x + region.width;
+        x += 1
+      ) {
+        const gid = readLayerGid(view, x, y);
+        let matched: boolean;
+        if (matchKind === "empty") {
+          matched = gid === 0;
+        } else if (matchKind === "nonEmpty") {
+          matched = gid !== 0;
+        } else {
+          matched =
+            gid !== 0 &&
+            matchGids.has(
+              decodeGid(
+                gid,
+                context.orientation,
+              ).baseGid,
+            );
+        }
+        if (!matched) {
+          continue;
+        }
+        count += 1;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        if (sample.length < 2_048) {
+          sample.push({ x, y });
+        }
+      }
+    }
+    return {
+      map: {
+        path: mapPath,
+        revision: context.loaded.revision,
+      },
+      layerId: view.id,
+      region,
+      match: matchKind,
+      cellCount: count,
+      ...(count > 0
+        ? {
+            bounds: {
+              x: minX,
+              y: minY,
+              width: maxX - minX + 1,
+              height: maxY - minY + 1,
+            },
+          }
+        : {}),
+      cells: sample,
+      cellsTruncated: count > sample.length,
+      snapshotConsistency:
+        "non-atomic-read-set",
+    };
+  }
+
+  /**
    * Dedicated isometric tile-layer renderer using the exact Tiled
    * 1.12.2 IsometricRenderer placement math. The profile is strict:
    * finite isometric TMJ maps, external atlas tilesets whose tile size

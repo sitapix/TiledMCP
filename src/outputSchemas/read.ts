@@ -864,6 +864,55 @@ const listTileNamesResultOutputSchema = z
   })
   .strict();
 
+const selectCellsResultOutputSchema = z
+  .object({
+    map: mapSnapshotOutputSchema,
+    layerId: positiveIntegerOutputSchema,
+    region: z
+      .object({
+        x: nonnegativeIntegerOutputSchema,
+        y: nonnegativeIntegerOutputSchema,
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    match: z.enum([
+      "tiles",
+      "empty",
+      "nonEmpty",
+    ]),
+    cellCount: nonnegativeIntegerOutputSchema,
+    bounds: z
+      .object({
+        x: nonnegativeIntegerOutputSchema,
+        y: nonnegativeIntegerOutputSchema,
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict()
+      .optional(),
+    cells: z
+      .array(
+        z
+          .object({
+            x: nonnegativeIntegerOutputSchema,
+            y: nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(2_048),
+    cellsTruncated: z.boolean(),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const selectCellsToolOutputSchema =
+  toolOutputSchema(
+    selectCellsResultOutputSchema,
+  );
+
 export const listTileNamesToolOutputSchema =
   toolOutputSchema(
     listTileNamesResultOutputSchema,

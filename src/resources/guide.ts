@@ -571,6 +571,15 @@ through the same object writer verified byte-exactly against official
 TMX exports. Tile and nested templates fail closed; apply re-serializes
 under the pinned revision and hash-verifies.
 
+## Select cells by predicate
+
+\`tiled_select\` evaluates one stateless predicate — a tile set
+matched by tileset+localId (flip bits ignored), empty cells, or
+non-empty cells — over a bounded tile-layer region and returns the
+selection as plain data: exact count, tight bounding box, and a
+bounded coordinate sample. No selection id or server state exists;
+feed the result into region- or cell-based tools explicitly.
+
 ## Name tiles semantically
 
 \`tiled_list_tile_names\` reads the server-owned

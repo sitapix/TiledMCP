@@ -266,6 +266,7 @@ import {
   renderDiffToolOutputSchema,
   renderIsometricToolOutputSchema,
   listTileNamesToolOutputSchema,
+  selectCellsToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
@@ -1641,6 +1642,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_write_tmx",
     "tiled_preview_write_tsx",
     "tiled_preview_write_tx",
+    "tiled_select",
     "tiled_list_tile_names",
     "tiled_preview_tile_names",
     "tiled_preview_validation_fixes",
@@ -5709,6 +5711,73 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         });
         return changeSets.put(plan);
       }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_select",
+    {
+      title: "Select cells by predicate",
+      description:
+        "Evaluates one stateless selection predicate over a bounded tile-layer region — a tile set matched by tileset+localId (flip bits ignored), empty cells, or non-empty cells — and returns the selection as plain data: exact cell count, tight bounding box, and a bounded coordinate sample (at most 2,048 cells, with truncation disclosed). No selection id or server-side selection state exists; feed the result into region- or cell-based tools explicitly. Works on orthogonal, isometric, staggered, and hexagonal maps. Read-only.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict()
+            .optional(),
+          match: z.discriminatedUnion("kind", [
+            z
+              .object({
+                kind: z.literal("tiles"),
+                tiles: z
+                  .array(tileRefSchema)
+                  .min(1)
+                  .max(16),
+              })
+              .strict(),
+            z
+              .object({
+                kind: z.literal("empty"),
+              })
+              .strict(),
+            z
+              .object({
+                kind: z.literal("nonEmpty"),
+              })
+              .strict(),
+          ]),
+        })
+        .strict(),
+      outputSchema: selectCellsToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ mapPath, layerId, region, match }) =>
+      executeTool(() =>
+        maps.selectCells({
+          mapPath,
+          layerId,
+          region,
+          match: match as
+            | { kind: "tiles"; tiles: TileRef[] }
+            | { kind: "empty" }
+            | { kind: "nonEmpty" },
+        }),
+      ),
   );
 
   register(
