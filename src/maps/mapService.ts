@@ -173,6 +173,11 @@ import {
   serializeTxTemplate,
 } from "./tmxWrite.js";
 import {
+  MAX_TILE_NAMES_BYTES,
+  readTileNamesDocument,
+  TILE_NAMES_FILE,
+} from "./tileNames.js";
+import {
   MAX_ISOMETRIC_REGION_CELLS,
   MAX_ISOMETRIC_RENDER_SCALE,
   renderIsometricTiles,
@@ -5210,6 +5215,115 @@ export class MapService {
     return {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Reads the server-owned .tiledmcp/tile-names.json registry: a
+   * validated name -> {tileset, localId} map letting later requests
+   * reference tiles by semantic name. Every referenced tileset must
+   * exist and gets its revision pinned into the result; the registry
+   * is weak metadata, so localId is disclosed verbatim without
+   * re-checking tileset contents. A missing registry file reads as
+   * empty rather than failing.
+   */
+  async listTileNames(): Promise<
+    Record<string, unknown>
+  > {
+    const directory =
+      await this.resolver.ensureInternalDirectory(
+        ".tiledmcp",
+      );
+    const filePath = join(
+      directory,
+      TILE_NAMES_FILE,
+    );
+    let raw: Buffer;
+    try {
+      raw = await readFile(filePath);
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code ===
+        "ENOENT"
+      ) {
+        return {
+          registryPresent: false,
+          names: [],
+          count: 0,
+          snapshotConsistency:
+            "non-atomic-read-set",
+        };
+      }
+      throw error;
+    }
+    if (raw.byteLength > MAX_TILE_NAMES_BYTES) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `The tile-name registry may be at most ${MAX_TILE_NAMES_BYTES} bytes.`,
+        { limit: MAX_TILE_NAMES_BYTES },
+      );
+    }
+    let document: JsonObject;
+    try {
+      document = JSON.parse(
+        raw.toString("utf8"),
+      ) as JsonObject;
+    } catch {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        ".tiledmcp/tile-names.json is not valid JSON.",
+      );
+    }
+    if (
+      typeof document !== "object" ||
+      document === null ||
+      Array.isArray(document)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        ".tiledmcp/tile-names.json must hold a JSON object.",
+      );
+    }
+    const entries = readTileNamesDocument(
+      document,
+      ".tiledmcp/tile-names.json",
+    );
+    const names: Array<
+      Record<string, unknown>
+    > = [];
+    for (const entry of entries) {
+      const tilesetPath =
+        this.resolver.normalize(entry.tileset);
+      if (
+        posix
+          .extname(tilesetPath)
+          .toLowerCase() !== ".tsj"
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_FORMAT",
+          `Tile name ${JSON.stringify(entry.name)} references ${tilesetPath}; the registry covers project .tsj tilesets.`,
+        );
+      }
+      const revision =
+        await this.store.readRevision(
+          tilesetPath,
+        );
+      names.push({
+        name: entry.name,
+        tileset: {
+          path: tilesetPath,
+          revision,
+        },
+        localId: entry.localId,
+      });
+    }
+    return {
+      registryPresent: true,
+      revision: revisionOf(raw),
+      names,
+      count: names.length,
+      snapshotConsistency:
+        "non-atomic-read-set",
     };
   }
 

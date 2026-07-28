@@ -314,6 +314,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_render_isometric` | 等距地图原生渲染：按官方 IsometricRenderer 坐标变换把区域画成菱形 PNG（对角线扫描序、tile 底左锚定）；collection/透明色/反对角翻转/image/group 层 fail closed，object 层跳过并披露 |
 | `tiled_preview_write_tmx` | 原生受限 TMX 写出：把 `.tmj` 序列化为与 Tiled 1.12.2 官方 writer 字节级一致的 `.tmx` 新文件（同目录、no-replace、无需 CLI）；profile 之外的结构与丢精度浮点 fail closed |
 | `tiled_preview_write_tsx` | 原生受限 TSX 写出：把 `.tsj` atlas 序列化为与官方 writer 字节级一致的 `.tsx` 新文件；声明网格必须与图片尺寸自洽（官方会重算），per-tile 元数据/wang/属性 fail closed |
+| `tiled_list_tile_names` | 读服务端自有 `.tiledmcp/tile-names.json` 语义命名注册表：name → {tileset, localId}，逐 tileset pin revision，缺文件读作空 |
 | `tiled_preview_validation_fixes` | 机械校验修复：把所有悬空 gid cell 汇成可审批的 `setTiles` 擦除 change set；零问题或 >10,000 cell fail closed，悬空 tile object 只报告不代删 |
 | `tiled_preview_write_tx` | 原生受限 TX 写出：把 `.tj` 模板序列化为对照 writeObjectTemplate 的 `.tx` 新文件（基对象不写 id/x/y）；tile/嵌套模板 fail closed |
 | `tiled_preview_transaction` | 把 2..16 个已批准、目标路径两两不同的文档提交类 change set 组合成一个原子事务 change set，并锁定成员禁止单独 apply |

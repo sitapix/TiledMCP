@@ -571,6 +571,18 @@ through the same object writer verified byte-exactly against official
 TMX exports. Tile and nested templates fail closed; apply re-serializes
 under the pinned revision and hash-verifies.
 
+## Name tiles semantically
+
+\`tiled_list_tile_names\` reads the server-owned
+\`.tiledmcp/tile-names.json\` registry: a validated
+name-to-\`{tileset, localId}\` map letting later requests reference
+tiles by semantic name instead of bare ids. Names are restricted
+lowercase identifiers (at most 4,096 entries), every referenced
+tileset must exist and gets its revision pinned into the result, and a
+missing registry reads as empty. The registry is weak metadata —
+\`localId\` is disclosed verbatim without re-checking tileset
+contents.
+
 ## Take explicit save points
 
 \`tiled_create_checkpoint\` creates committed recovery checkpoints of

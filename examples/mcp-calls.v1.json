@@ -822,6 +822,12 @@
       }
     },
     {
+      "name": "tiled_list_tile_names",
+      "profile": "core",
+      "purpose": "Read the semantic tile-name registry with each tileset revision pinned.",
+      "arguments": {}
+    },
+    {
       "name": "tiled_preview_validation_fixes",
       "profile": "core",
       "purpose": "Erase every tile cell whose GID resolves to no bound tileset, as an approvable setTiles change set.",

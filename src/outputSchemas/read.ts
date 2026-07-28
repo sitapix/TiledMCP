@@ -832,6 +832,43 @@ const renderIsometricResultOutputSchema = z
   })
   .strict();
 
+const listTileNamesResultOutputSchema = z
+  .object({
+    registryPresent: z.boolean(),
+    revision: revisionOutputSchema.optional(),
+    names: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .regex(
+                /^[a-z0-9][a-z0-9_-]{0,63}$/u,
+              ),
+            tileset: z
+              .object({
+                path: projectPathOutputSchema,
+                revision: revisionOutputSchema,
+              })
+              .strict(),
+            localId:
+              nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(4096),
+    count: nonnegativeIntegerOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const listTileNamesToolOutputSchema =
+  toolOutputSchema(
+    listTileNamesResultOutputSchema,
+  );
+
 export const renderIsometricToolOutputSchema =
   toolOutputSchema(
     renderIsometricResultOutputSchema,

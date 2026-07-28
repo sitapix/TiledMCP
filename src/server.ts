@@ -264,6 +264,7 @@ import {
   listPropertyTypesToolOutputSchema,
   renderDiffToolOutputSchema,
   renderIsometricToolOutputSchema,
+  listTileNamesToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
@@ -1639,6 +1640,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_write_tmx",
     "tiled_preview_write_tsx",
     "tiled_preview_write_tx",
+    "tiled_list_tile_names",
     "tiled_preview_validation_fixes",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
@@ -5705,6 +5707,23 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         });
         return changeSets.put(plan);
       }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_list_tile_names",
+    {
+      title: "List registered tile names",
+      description:
+        "Reads the server-owned .tiledmcp/tile-names.json registry — a validated name-to-{tileset, localId} map that lets later requests reference tiles by semantic name instead of bare ids. Names are restricted lowercase identifiers (at most 4,096 entries); every referenced tileset must exist and gets its revision pinned into the result. The registry is weak metadata: localId is disclosed verbatim without re-checking tileset contents, and a missing registry file reads as empty rather than failing. Read-only.",
+      inputSchema: z.object({}).strict(),
+      outputSchema:
+        listTileNamesToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async () =>
+      executeTool(() => maps.listTileNames()),
   );
 
   register(
