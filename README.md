@@ -149,6 +149,14 @@ preview-edit 路径对无限地图继续 fail closed。
 native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试，或再以 opt-in 方式叠加
 该 tile 的碰撞形状轮廓（均不渲染 tile 图像）。
 
+TMX/XML 获得**只读核心第一步**：`tiled_get_map_summary` 接受 `.tmx` 地图，经
+自研有界 fail closed XML 子集解析器（拒绝 DOCTYPE/实体/PI/CDATA——零 XXE 面、
+零新依赖）返回只读摘要（图层树含 data 编码、外部 tileset 引用逐个解析并 pin
+revision、`editable:false` 标记），TMX 绝不进入任何编辑 planner；
+`tiled_delete_file` 的引用扫描同时解除 XML 阻断——TMX 地图与 XML 模板的
+tileset 引用经同一解析器纳入有界扫描（可证明其干净才放行删除），损坏 XML
+fail closed，pattern world 维持拒绝。
+
 tool text content 已收敛为 `tiled-mcp-summary` v1：单行 compact JSON，UTF-8 最多
 1024 bytes，不复制完整成功结果或应用错误 `details`；完整机器结果以
 `structuredContent.result` 为准。可选 `tiled_render_map` 也已改用可追溯、精确封闭的

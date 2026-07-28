@@ -447,8 +447,116 @@ const mapSummaryResultOutputSchema = z
   })
   .strict();
 
+interface TmxLayerSummaryShape {
+  id: number;
+  name: string;
+  type:
+    | "tilelayer"
+    | "objectgroup"
+    | "imagelayer"
+    | "group";
+  visible: boolean;
+  opacity: number;
+  width?: number | undefined;
+  height?: number | undefined;
+  encoding?: string | undefined;
+  compression?: string | undefined;
+  chunked?: boolean | undefined;
+  objectCount?: number | undefined;
+  layers?: TmxLayerSummaryShape[] | undefined;
+}
+
+const tmxLayerSummaryOutputSchema: z.ZodType<TmxLayerSummaryShape> =
+  z.lazy(() =>
+    z
+      .object({
+        id: nonnegativeIntegerOutputSchema,
+        name: z.string(),
+        type: z.enum([
+          "tilelayer",
+          "objectgroup",
+          "imagelayer",
+          "group",
+        ]),
+        visible: z.boolean(),
+        opacity: z.number(),
+        width:
+          nonnegativeIntegerOutputSchema.optional(),
+        height:
+          nonnegativeIntegerOutputSchema.optional(),
+        encoding: z.string().optional(),
+        compression: z.string().optional(),
+        chunked: z.boolean().optional(),
+        objectCount:
+          nonnegativeIntegerOutputSchema.optional(),
+        layers: z
+          .array(tmxLayerSummaryOutputSchema)
+          .optional(),
+      })
+      .strict(),
+  );
+
+const tmxSummaryResultOutputSchema = z
+  .object({
+    path: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    format: z.literal("tmx"),
+    profile: z.literal(
+      "tmx-read-only-summary-v1",
+    ),
+    orientation: z.string().min(1),
+    infinite: z.boolean(),
+    renderOrder: z.string().min(1),
+    backgroundColor: z.string().optional(),
+    className: z.string().optional(),
+    width: integerOutputSchema,
+    height: integerOutputSchema,
+    tileWidth: integerOutputSchema,
+    tileHeight: integerOutputSchema,
+    layers: z
+      .array(tmxLayerSummaryOutputSchema)
+      .max(10_000),
+    tilesets: z
+      .array(
+        z.union([
+          z
+            .object({
+              firstGid:
+                positiveIntegerOutputSchema,
+              source: z.string().min(1),
+              path: projectPathOutputSchema.optional(),
+              revision:
+                revisionOutputSchema.optional(),
+              exists: z.boolean(),
+            })
+            .strict(),
+          z
+            .object({
+              firstGid:
+                positiveIntegerOutputSchema,
+              embedded: z.literal(true),
+              name: z.string().optional(),
+              tileCount:
+                nonnegativeIntegerOutputSchema.optional(),
+            })
+            .strict(),
+        ]),
+      )
+      .max(4_096),
+    editable: z.literal(false),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
 export const mapSummaryToolOutputSchema =
-  toolOutputSchema(mapSummaryResultOutputSchema);
+  toolOutputSchema(
+    z.union([
+      mapSummaryResultOutputSchema,
+      tmxSummaryResultOutputSchema,
+    ]),
+  );
 
 const regionLayerOutputSchema = z
   .object({

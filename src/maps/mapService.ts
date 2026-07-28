@@ -177,6 +177,11 @@ import {
   embeddedTilesetEditPlanId,
   type EmbeddedTilesetEditPlan,
 } from "./embeddedTilesetEdit.js";
+import { parseXmlDocument } from "../formats/xml.js";
+import {
+  collectXmlTilesetReferences,
+  projectTmxMapSummary,
+} from "./xmlRead.js";
 import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
@@ -838,6 +843,13 @@ export class MapService {
   }
 
   async getSummary(mapPath: string): Promise<Record<string, unknown>> {
+    if (
+      posix
+        .extname(this.resolver.normalize(mapPath))
+        .toLowerCase() === ".tmx"
+    ) {
+      return this.getTmxSummary(mapPath);
+    }
     const context = await this.loadEditableContext(mapPath, {
       allowInfinite: true,
       allowCollectionTilesets: true,
@@ -898,6 +910,66 @@ export class MapService {
       editableProfile: context.infinite
         ? "infinite-orthogonal-tmj-read-only-chunked"
         : "finite-orthogonal-tmj-external-atlas-tsj",
+    };
+  }
+
+  /**
+   * Bounded read-only TMX summary. XML maps never reach the editable
+   * context: the raw bytes parse through the fail-closed XML subset
+   * reader, external tileset references resolve with per-file existence
+   * and revision pins (the world-member pattern), and nothing here feeds
+   * any edit planner.
+   */
+  private async getTmxSummary(
+    mapPath: string,
+  ): Promise<Record<string, unknown>> {
+    const normalized =
+      this.resolver.normalize(mapPath);
+    const snapshot =
+      await this.store.readSnapshot(normalized);
+    const root = parseXmlDocument(
+      snapshot.source.toString("utf8"),
+      normalized,
+    );
+    const projection = projectTmxMapSummary(
+      root,
+      normalized,
+    );
+    const tilesets = projection.tilesets as Array<
+      Record<string, unknown>
+    >;
+    for (const entry of tilesets) {
+      if (typeof entry.source !== "string") {
+        continue;
+      }
+      try {
+        const tilesetPath =
+          await this.resolver.resolveReference(
+            normalized,
+            entry.source,
+          );
+        entry.path = tilesetPath;
+        entry.revision =
+          await this.store.readRevision(
+            tilesetPath,
+          );
+        entry.exists = true;
+      } catch (error) {
+        if (
+          error instanceof TiledMcpError &&
+          error.code === "FILE_NOT_FOUND"
+        ) {
+          entry.exists = false;
+          continue;
+        }
+        throw error;
+      }
+    }
+    return {
+      ...projection,
+      revision: snapshot.revision,
+      snapshotConsistency:
+        "non-atomic-read-set",
     };
   }
 
@@ -5566,23 +5638,6 @@ export class MapService {
   ): Promise<FileDeleteScanSummary> {
     const assets =
       await this.resolver.listAssets(10_000);
-    const xmlAssets = assets.filter((asset) =>
-      /\.(?:tmx|tsx|tx)$/iu.test(asset.path),
-    );
-    if (xmlAssets.length > 0) {
-      throw new TiledMcpError(
-        "UNSUPPORTED_REFERENCE_SCAN",
-        "The project contains XML Tiled assets that may reference the target but cannot be scanned in the JSON-only profile.",
-        {
-          path: targetPath,
-          reason: "xml-assets-present",
-          xmlAssetCount: xmlAssets.length,
-          xmlAssetSample: xmlAssets
-            .slice(0, MAX_DELETE_REFERRER_SAMPLE)
-            .map((asset) => asset.path),
-        },
-      );
-    }
     const referrers = assets.filter((asset) => {
       if (
         asset.path === targetPath ||
@@ -5590,15 +5645,18 @@ export class MapService {
       ) {
         return false;
       }
+      const lower = asset.path.toLowerCase();
       if (targetKind === "tileset") {
+        // XML maps and templates reference tilesets too; the bounded
+        // fail-closed XML reader lets the scan prove them clean.
         return (
-          asset.path.toLowerCase().endsWith(".tmj") ||
-          asset.path.toLowerCase().endsWith(".tj")
+          lower.endsWith(".tmj") ||
+          lower.endsWith(".tj") ||
+          lower.endsWith(".tmx") ||
+          lower.endsWith(".tx")
         );
       }
-      return asset.path
-        .toLowerCase()
-        .endsWith(".world");
+      return lower.endsWith(".world");
     });
     if (
       referrers.length >
@@ -5642,6 +5700,58 @@ export class MapService {
           },
         );
       }
+      const lower = referrer.path.toLowerCase();
+      let references = false;
+      if (
+        lower.endsWith(".tmx") ||
+        lower.endsWith(".tx")
+      ) {
+        if (lower.endsWith(".tmx")) {
+          scan.scannedMaps += 1;
+        } else {
+          scan.scannedTemplates += 1;
+        }
+        let sources: string[];
+        try {
+          sources = collectXmlTilesetReferences(
+            parseXmlDocument(
+              snapshot.source.toString("utf8"),
+              referrer.path,
+            ),
+          );
+        } catch {
+          throw new TiledMcpError(
+            "INVALID_DOCUMENT",
+            `${referrer.path} could not be parsed, so references to ${targetPath} cannot be ruled out.`,
+            {
+              path: referrer.path,
+              target: targetPath,
+            },
+          );
+        }
+        for (const source of sources) {
+          if (
+            await this.referenceResolvesTo(
+              referrer.path,
+              source,
+              targetPath,
+            )
+          ) {
+            references = true;
+            break;
+          }
+        }
+        if (references) {
+          referencingCount += 1;
+          if (
+            referencing.length <
+            MAX_DELETE_REFERRER_SAMPLE
+          ) {
+            referencing.push(referrer.path);
+          }
+        }
+        continue;
+      }
       let document: JsonObject;
       try {
         document =
@@ -5658,8 +5768,6 @@ export class MapService {
           },
         );
       }
-      const lower = referrer.path.toLowerCase();
-      let references = false;
       if (lower.endsWith(".tmj")) {
         scan.scannedMaps += 1;
         references =

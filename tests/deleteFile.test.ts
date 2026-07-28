@@ -231,11 +231,25 @@ describe("tiled_delete_file planning, apply, and restore", () => {
     });
   });
 
-  it("fails closed when XML assets could hide references", async () => {
+  it("scans XML assets for references and fails closed only when they cannot be parsed", async () => {
     const harness = await createHarness(roots);
+    // A reference-free TMX map no longer blocks the scan wholesale.
     await writeFile(
       join(harness.root, "maps", "legacy.tmx"),
       "<map/>",
+      "utf8",
+    );
+    const plan =
+      await harness.service.planDeleteFile({
+        path: LONER_TILESET_PATH,
+      });
+    expect(plan.scan.scannedMaps).toBeGreaterThan(
+      0,
+    );
+    // A malformed XML referrer cannot prove the target unreferenced.
+    await writeFile(
+      join(harness.root, "maps", "broken.tmx"),
+      "<map><layer></map>",
       "utf8",
     );
     await expect(
@@ -243,11 +257,7 @@ describe("tiled_delete_file planning, apply, and restore", () => {
         path: LONER_TILESET_PATH,
       }),
     ).rejects.toMatchObject({
-      code: "UNSUPPORTED_REFERENCE_SCAN",
-      details: expect.objectContaining({
-        reason: "xml-assets-present",
-        xmlAssetSample: ["maps/legacy.tmx"],
-      }),
+      code: "INVALID_DOCUMENT",
     });
   });
 

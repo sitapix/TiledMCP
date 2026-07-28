@@ -2524,8 +2524,11 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               "tmj-map-tileset-sources",
               "json-world-map-members",
               "json-template-tileset-sources",
+              "tmx-map-tileset-sources",
+              "xml-template-tileset-sources",
             ],
-            xmlAssets: "fail-closed",
+            xmlAssets:
+              "scanned-via-bounded-fail-closed-xml-reader",
             patternWorlds: "fail-closed",
             malformedReferrers: "fail-closed",
             reruns: "preview-and-apply",
@@ -3546,7 +3549,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a Tiled map summary",
       description:
-        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Embedded (inline) atlas tilesets are listed separately with their tilesets[] index and GID range; they are pinned by the map revision and stay read-only. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker.",
+        "Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Embedded (inline) atlas tilesets are listed separately with their tilesets[] index and GID range; they are pinned by the map revision and stay read-only. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker. XML maps (.tmx) return a bounded read-only summary through a fail-closed XML subset reader — layer tree with data encodings, external tileset references resolved with per-file existence and revision pins, and an editable:false marker; TMX never reaches any edit planner.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema: mapSummaryToolOutputSchema,
       annotations: READ_ONLY,
@@ -4234,7 +4237,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview deleting a project document",
       description:
-        "Plans the permanent deletion of one project-local TMJ map or TSJ tileset. The bounded fail-closed reference scan (TMJ maps, JSON worlds, JSON templates; XML assets or pattern-based worlds reject the scan) must prove the target unreferenced, and it re-runs on apply. Apply commits a checkpoint of the exact current bytes before unlinking, so restoring that checkpoint recreates the file; the tool itself modifies nothing.",
+        "Plans the permanent deletion of one project-local TMJ map or TSJ tileset. The bounded fail-closed reference scan (TMJ maps, JSON worlds, JSON templates, plus TMX maps and XML templates through the bounded fail-closed XML reader; pattern-based worlds still reject the scan) must prove the target unreferenced, and it re-runs on apply. Apply commits a checkpoint of the exact current bytes before unlinking, so restoring that checkpoint recreates the file; the tool itself modifies nothing.",
       inputSchema: z
         .object({
           path: projectPathSchema,
