@@ -882,6 +882,7 @@ const selectCellsResultOutputSchema = z
       "nonEmpty",
       "magicWand",
       "polygon",
+      "compose",
     ]),
     seed: z
       .object({
@@ -911,7 +912,7 @@ const selectCellsResultOutputSchema = z
           })
           .strict(),
       )
-      .max(2_048),
+      .max(10_000),
     cellsTruncated: z.boolean(),
     snapshotConsistency: z.literal(
       "non-atomic-read-set",

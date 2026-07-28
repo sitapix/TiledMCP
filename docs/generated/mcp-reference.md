@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:b30745690bc0645bc8aaf96c64935830e6d9be36550cc9745659d33d3754eeee",
+    "revision": "sha256:0cf1d9a2e5f2f74e71e09b5780c6cd2feb3b7b360a8eb840476508b4c328b969",
     "serverVersion": "0.0.1",
-    "size": 102129
+    "size": 102334
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 102129,
+  "size": 102334,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 102129 UTF-8 bytes, revision `sha256:b30745690bc0645bc8aaf96c64935830e6d9be36550cc9745659d33d3754eeee`.
+Content contract: `text`, 102334 UTF-8 bytes, revision `sha256:0cf1d9a2e5f2f74e71e09b5780c6cd2feb3b7b360a8eb840476508b4c328b969`.
 
 Resource templates: none.
 
@@ -94713,6 +94713,240 @@ Input schema:
             "points"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "compose",
+              "type": "string"
+            },
+            "steps": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "match": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "tiles",
+                            "type": "string"
+                          },
+                          "tiles": {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "localId": {
+                                      "maximum": 268435455,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "tileset": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "assetId": {
+                                          "maxLength": 128,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "external",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "assetId"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "transform": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "flipD": {
+                                          "type": "boolean"
+                                        },
+                                        "flipH": {
+                                          "type": "boolean"
+                                        },
+                                        "flipV": {
+                                          "type": "boolean"
+                                        },
+                                        "kind": {
+                                          "const": "orthogonal",
+                                          "type": "string"
+                                        },
+                                        "rawFlags": {
+                                          "maximum": 4294967295,
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "type": "object"
+                                    }
+                                  },
+                                  "required": [
+                                    "tileset",
+                                    "localId"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "name": {
+                                      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "maxItems": 16,
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "tiles"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "empty",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "nonEmpty",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "magicWand",
+                            "type": "string"
+                          },
+                          "seed": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "y": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "seed"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "polygon",
+                            "type": "string"
+                          },
+                          "points": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "x": {
+                                  "maximum": 1000000000,
+                                  "minimum": -1000000000,
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "maximum": 1000000000,
+                                  "minimum": -1000000000,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 64,
+                            "minItems": 3,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "points"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "op": {
+                    "enum": [
+                      "union",
+                      "intersect",
+                      "subtract"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "match"
+                ],
+                "type": "object"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "steps"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -94747,6 +94981,11 @@ Input schema:
         "height"
       ],
       "type": "object"
+    },
+    "sampleLimit": {
+      "maximum": 10000,
+      "minimum": 1,
+      "type": "integer"
     }
   },
   "required": [
@@ -94861,7 +95100,7 @@ Output schema:
                 ],
                 "type": "object"
               },
-              "maxItems": 2048,
+              "maxItems": 10000,
               "type": "array"
             },
             "cellsTruncated": {
@@ -94896,7 +95135,8 @@ Output schema:
                 "empty",
                 "nonEmpty",
                 "magicWand",
-                "polygon"
+                "polygon",
+                "compose"
               ],
               "type": "string"
             },

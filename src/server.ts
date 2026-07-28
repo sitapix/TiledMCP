@@ -5948,6 +5948,61 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  const selectBaseMatchSchemas = [
+    z
+      .object({
+        kind: z.literal("tiles"),
+        tiles: z
+          .array(namedTileRefSchema)
+          .min(1)
+          .max(16),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("empty"),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("nonEmpty"),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("magicWand"),
+        seed: z
+          .object({
+            x: z.number().int().min(0),
+            y: z.number().int().min(0),
+          })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("polygon"),
+        points: z
+          .array(
+            z
+              .object({
+                x: z
+                  .number()
+                  .min(-1e9)
+                  .max(1e9),
+                y: z
+                  .number()
+                  .min(-1e9)
+                  .max(1e9),
+              })
+              .strict(),
+          )
+          .min(3)
+          .max(64),
+      })
+      .strict(),
+  ] as const;
+
   register(
     server,
     registeredTools,
@@ -5976,105 +6031,110 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .strict()
             .optional(),
           match: z.discriminatedUnion("kind", [
+            ...selectBaseMatchSchemas,
             z
               .object({
-                kind: z.literal("tiles"),
-                tiles: z
-                  .array(namedTileRefSchema)
-                  .min(1)
-                  .max(16),
-              })
-              .strict(),
-            z
-              .object({
-                kind: z.literal("empty"),
-              })
-              .strict(),
-            z
-              .object({
-                kind: z.literal("nonEmpty"),
-              })
-              .strict(),
-            z
-              .object({
-                kind: z.literal("magicWand"),
-                seed: z
-                  .object({
-                    x: z.number().int().min(0),
-                    y: z.number().int().min(0),
-                  })
-                  .strict(),
-              })
-              .strict(),
-            z
-              .object({
-                kind: z.literal("polygon"),
-                points: z
+                kind: z.literal("compose"),
+                steps: z
                   .array(
                     z
                       .object({
-                        x: z
-                          .number()
-                          .min(-1e9)
-                          .max(1e9),
-                        y: z
-                          .number()
-                          .min(-1e9)
-                          .max(1e9),
+                        op: z.enum([
+                          "union",
+                          "intersect",
+                          "subtract",
+                        ]),
+                        match:
+                          z.discriminatedUnion(
+                            "kind",
+                            selectBaseMatchSchemas,
+                          ),
                       })
                       .strict(),
                   )
-                  .min(3)
-                  .max(64),
+                  .min(1)
+                  .max(8),
               })
               .strict(),
           ]),
+          sampleLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(10_000)
+            .optional(),
         })
         .strict(),
       outputSchema: selectCellsToolOutputSchema,
       annotations: READ_ONLY,
     },
-    async ({ mapPath, layerId, region, match }) =>
+    async ({
+      mapPath,
+      layerId,
+      region,
+      match,
+      sampleLimit,
+    }) =>
       executeTool(async () => {
+        type BaseMatch =
+          | { kind: "tiles"; tiles: TileRef[] }
+          | { kind: "empty" }
+          | { kind: "nonEmpty" }
+          | {
+              kind: "magicWand";
+              seed: { x: number; y: number };
+            }
+          | {
+              kind: "polygon";
+              points: Array<{
+                x: number;
+                y: number;
+              }>;
+            };
+        const resolveBase = async (
+          base: unknown,
+        ): Promise<BaseMatch> => {
+          const candidate = base as BaseMatch;
+          if (candidate.kind !== "tiles") {
+            return candidate;
+          }
+          return {
+            kind: "tiles",
+            tiles: (
+              await maps.resolveNamedTiles(
+                mapPath,
+                candidate.tiles as Array<
+                  TileRef | { name: string }
+                >,
+              )
+            ).filter(
+              (tile): tile is TileRef =>
+                tile !== null,
+            ),
+          };
+        };
         const resolvedMatch =
-          match.kind === "tiles"
+          match.kind === "compose"
             ? {
-                kind: "tiles" as const,
-                tiles: (
-                  await maps.resolveNamedTiles(
-                    mapPath,
-                    match.tiles as Array<
-                      | TileRef
-                      | { name: string }
-                    >,
-                  )
-                ).filter(
-                  (tile): tile is TileRef =>
-                    tile !== null,
+                kind: "compose" as const,
+                steps: await Promise.all(
+                  match.steps.map(
+                    async (step) => ({
+                      op: step.op,
+                      match: await resolveBase(
+                        step.match,
+                      ),
+                    }),
+                  ),
                 ),
               }
-            : (match as
-                | { kind: "empty" }
-                | { kind: "nonEmpty" }
-                | {
-                    kind: "magicWand";
-                    seed: {
-                      x: number;
-                      y: number;
-                    };
-                  }
-                | {
-                    kind: "polygon";
-                    points: Array<{
-                      x: number;
-                      y: number;
-                    }>;
-                  });
+            : await resolveBase(match);
         return maps.selectCells({
           mapPath,
           layerId,
           region,
           match: resolvedMatch,
+          sampleLimit,
         });
       }),
   );

@@ -596,8 +596,11 @@ same-value area, or a pixel-coordinate polygon selecting every cell
 whose centre falls inside (even-odd rule) — over a bounded tile-layer
 region and returns the
 selection as plain data: exact count, tight bounding box, and a
-bounded coordinate sample. No selection id or server state exists;
-feed the result into region- or cell-based tools explicitly.
+bounded coordinate sample (\`sampleLimit\` raises it to 10,000 —
+the setTiles cell budget — so a full selection feeds edits directly).
+The \`compose\` predicate folds up to 8 union/intersect/subtract
+steps over the base predicates. No selection id or server state
+exists; feed the result into region- or cell-based tools explicitly.
 
 ## Name tiles semantically
 

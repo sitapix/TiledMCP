@@ -445,6 +445,19 @@ interface RenderImageBudget {
   expectedRevisions?: Readonly<Record<string, string>>;
 }
 
+type SelectBaseMatch =
+  | { kind: "tiles"; tiles: TileRef[] }
+  | { kind: "empty" }
+  | { kind: "nonEmpty" }
+  | {
+      kind: "magicWand";
+      seed: { x: number; y: number };
+    }
+  | {
+      kind: "polygon";
+      points: Array<{ x: number; y: number }>;
+    };
+
 interface EditableContext {
   loaded: LoadedDocument;
   width: number;
@@ -5588,6 +5601,7 @@ export class MapService {
       height: number;
     },
     seed: { x: number; y: number },
+    sampleLimit: number,
   ): Record<string, unknown> {
     if (
       !Number.isSafeInteger(seed.x) ||
@@ -5636,7 +5650,7 @@ export class MapService {
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x);
       maxY = Math.max(maxY, y);
-      if (sample.length < 2_048) {
+      if (sample.length < sampleLimit) {
         sample.push({ x, y });
       }
       for (const [dx, dy] of [
@@ -6004,6 +6018,324 @@ export class MapService {
    * cell sample. No selection id or server state exists; callers feed
    * the result into region- or cell-based tools explicitly.
    */
+  /**
+   * Composed selection: starts from the empty set and folds up to 8
+   * union/intersect/subtract steps, each evaluating one base predicate
+   * to a region mask. Deterministic by construction — the same steps
+   * always produce the same mask.
+   */
+  private selectComposed(
+    context: EditableContext,
+    layerId: number,
+    region: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    },
+    steps: Array<{
+      op: "union" | "intersect" | "subtract";
+      match: SelectBaseMatch;
+    }>,
+    sampleLimit: number,
+  ): Record<string, unknown> {
+    if (steps.length < 1 || steps.length > 8) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "compose.steps must contain 1 to 8 steps.",
+      );
+    }
+    const view = findTileLayer(
+      context.loaded.document,
+      layerId,
+      context.loaded.path,
+      "read",
+    );
+    assertRegionInsideLayer(
+      view,
+      region.x,
+      region.y,
+      region.width,
+      region.height,
+    );
+    const size = region.width * region.height;
+    let mask = new Uint8Array(size);
+    for (const step of steps) {
+      const stepMask = this.buildSelectionMask(
+        context,
+        view,
+        region,
+        step.match,
+      );
+      const next = new Uint8Array(size);
+      for (let index = 0; index < size; index += 1) {
+        const a = mask[index] === 1;
+        const b = stepMask[index] === 1;
+        next[index] =
+          step.op === "union"
+            ? a || b
+              ? 1
+              : 0
+            : step.op === "intersect"
+              ? a && b
+                ? 1
+                : 0
+              : a && !b
+                ? 1
+                : 0;
+      }
+      mask = next;
+    }
+    let count = 0;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    const sample: Array<{
+      x: number;
+      y: number;
+    }> = [];
+    for (let index = 0; index < size; index += 1) {
+      if (mask[index] !== 1) {
+        continue;
+      }
+      const x =
+        region.x + (index % region.width);
+      const y =
+        region.y +
+        Math.floor(index / region.width);
+      count += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (sample.length < sampleLimit) {
+        sample.push({ x, y });
+      }
+    }
+    return {
+      map: {
+        path: context.loaded.path,
+        revision: context.loaded.revision,
+      },
+      layerId: view.id,
+      region,
+      match: "compose",
+      cellCount: count,
+      ...(count > 0
+        ? {
+            bounds: {
+              x: minX,
+              y: minY,
+              width: maxX - minX + 1,
+              height: maxY - minY + 1,
+            },
+          }
+        : {}),
+      cells: sample,
+      cellsTruncated: count > sample.length,
+      snapshotConsistency:
+        "non-atomic-read-set",
+    };
+  }
+
+  /** Evaluates one base predicate to a region-local mask. */
+  private buildSelectionMask(
+    context: EditableContext,
+    view: TileLayerView,
+    region: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    },
+    match: SelectBaseMatch,
+  ): Uint8Array {
+    const size = region.width * region.height;
+    const mask = new Uint8Array(size);
+    if (match.kind === "magicWand") {
+      const seed = match.seed;
+      if (
+        !Number.isSafeInteger(seed.x) ||
+        !Number.isSafeInteger(seed.y) ||
+        seed.x < region.x ||
+        seed.y < region.y ||
+        seed.x >= region.x + region.width ||
+        seed.y >= region.y + region.height
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "The magic-wand seed must lie inside the selection region.",
+          { seed },
+        );
+      }
+      const baseOf = (
+        x: number,
+        y: number,
+      ): number =>
+        decodeGid(
+          readLayerGid(view, x, y),
+          context.orientation,
+        ).baseGid;
+      const target = baseOf(seed.x, seed.y);
+      const key = (
+        x: number,
+        y: number,
+      ): number =>
+        (y - region.y) * region.width +
+        (x - region.x);
+      const queue: Array<[number, number]> = [
+        [seed.x, seed.y],
+      ];
+      mask[key(seed.x, seed.y)] = 1;
+      while (queue.length > 0) {
+        const [x, y] = queue.pop()!;
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (
+            nx < region.x ||
+            ny < region.y ||
+            nx >= region.x + region.width ||
+            ny >= region.y + region.height ||
+            mask[key(nx, ny)] === 1 ||
+            baseOf(nx, ny) !== target
+          ) {
+            continue;
+          }
+          mask[key(nx, ny)] = 1;
+          queue.push([nx, ny]);
+        }
+      }
+      return mask;
+    }
+    let matchGids: Set<number> | undefined;
+    if (match.kind === "tiles") {
+      if (
+        match.tiles.length < 1 ||
+        match.tiles.length > 16
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "match.tiles must contain between 1 and 16 tiles.",
+        );
+      }
+      matchGids = new Set(
+        match.tiles.map(
+          (tile) =>
+            decodeGid(
+              tileRefToGid(
+                tile,
+                context.orientation,
+                context.bindings,
+              ),
+              context.orientation,
+            ).baseGid,
+        ),
+      );
+    }
+    let insidePolygon:
+      | ((x: number, y: number) => boolean)
+      | undefined;
+    if (match.kind === "polygon") {
+      const points = match.points;
+      if (
+        points.length < 3 ||
+        points.length > 64 ||
+        points.some(
+          (point) =>
+            !Number.isFinite(point.x) ||
+            !Number.isFinite(point.y),
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "match.points must contain 3 to 64 finite pixel-coordinate points.",
+        );
+      }
+      const tilePixelWidth = expectInteger(
+        context.loaded.document.tilewidth,
+        `${context.loaded.path}.tilewidth`,
+      );
+      const tilePixelHeight = expectInteger(
+        context.loaded.document.tileheight,
+        `${context.loaded.path}.tileheight`,
+      );
+      insidePolygon = (
+        cellX: number,
+        cellY: number,
+      ): boolean => {
+        const px =
+          (cellX + 0.5) * tilePixelWidth;
+        const py =
+          (cellY + 0.5) * tilePixelHeight;
+        let inside = false;
+        for (
+          let i = 0, j = points.length - 1;
+          i < points.length;
+          j = i, i += 1
+        ) {
+          const a = points[i]!;
+          const b = points[j]!;
+          if (
+            a.y > py !== b.y > py &&
+            px <
+              ((b.x - a.x) * (py - a.y)) /
+                (b.y - a.y) +
+                a.x
+          ) {
+            inside = !inside;
+          }
+        }
+        return inside;
+      };
+    }
+    for (
+      let y = region.y;
+      y < region.y + region.height;
+      y += 1
+    ) {
+      for (
+        let x = region.x;
+        x < region.x + region.width;
+        x += 1
+      ) {
+        let matched: boolean;
+        if (match.kind === "empty") {
+          matched =
+            readLayerGid(view, x, y) === 0;
+        } else if (match.kind === "nonEmpty") {
+          matched =
+            readLayerGid(view, x, y) !== 0;
+        } else if (match.kind === "polygon") {
+          matched = insidePolygon!(x, y);
+        } else {
+          const gid = readLayerGid(view, x, y);
+          matched =
+            gid !== 0 &&
+            matchGids!.has(
+              decodeGid(
+                gid,
+                context.orientation,
+              ).baseGid,
+            );
+        }
+        if (matched) {
+          mask[
+            (y - region.y) * region.width +
+              (x - region.x)
+          ] = 1;
+        }
+      }
+    }
+    return mask;
+  }
+
   async selectCells(input: {
     mapPath: string;
     layerId: number;
@@ -6029,8 +6361,31 @@ export class MapService {
             x: number;
             y: number;
           }>;
+        }
+      | {
+          kind: "compose";
+          steps: Array<{
+            op:
+              | "union"
+              | "intersect"
+              | "subtract";
+            match: SelectBaseMatch;
+          }>;
         };
+    sampleLimit?: number | undefined;
   }): Promise<Record<string, unknown>> {
+    const sampleLimit =
+      input.sampleLimit ?? 2_048;
+    if (
+      !Number.isSafeInteger(sampleLimit) ||
+      sampleLimit < 1 ||
+      sampleLimit > 10_000
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "sampleLimit must be an integer between 1 and 10,000.",
+      );
+    }
     const context =
       await this.loadEditableContext(
         input.mapPath,
@@ -6064,6 +6419,15 @@ export class MapService {
         "INVALID_ARGUMENT",
         `region must lie inside the ${context.width}x${context.height} map and contain at most ${MAX_REGION_CELLS} cells.`,
         { limit: MAX_REGION_CELLS },
+      );
+    }
+    if (input.match.kind === "compose") {
+      return this.selectComposed(
+        context,
+        input.layerId,
+        region,
+        input.match.steps,
+        sampleLimit,
       );
     }
     const matchGids = new Set<number>();
@@ -6168,6 +6532,7 @@ export class MapService {
         view,
         region,
         input.match.seed,
+        sampleLimit,
       );
     }
     let count = 0;
@@ -6217,7 +6582,7 @@ export class MapService {
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
-        if (sample.length < 2_048) {
+        if (sample.length < sampleLimit) {
           sample.push({ x, y });
         }
       }

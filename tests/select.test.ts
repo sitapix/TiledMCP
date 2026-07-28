@@ -234,6 +234,101 @@ describe("polygon selection", () => {
   });
 });
 
+describe("composed selection", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("folds union, intersect, and subtract deterministically", async () => {
+    const harness = await createHarness(roots, [
+      1, 2, 0,
+      0, 1, 1,
+    ]);
+    const tile = (localId: number) => ({
+      tileset: {
+        kind: "external" as const,
+        assetId: harness.assetId,
+      },
+      localId,
+    });
+    // nonEmpty ∪ ∅, then subtract tile 1 (gid 2): {(0,0),(1,1),(2,1)}.
+    const result = await harness.service.selectCells(
+      {
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "compose",
+          steps: [
+            { op: "union", match: { kind: "nonEmpty" } },
+            {
+              op: "subtract",
+              match: {
+                kind: "tiles",
+                tiles: [tile(1)],
+              },
+            },
+          ],
+        },
+        sampleLimit: 2,
+      },
+    );
+    expect(result).toMatchObject({
+      match: "compose",
+      cellCount: 3,
+      cellsTruncated: true,
+      cells: [
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      bounds: { x: 0, y: 0, width: 3, height: 2 },
+    });
+
+    // intersect narrows: nonEmpty ∩ magicWand from (1,1).
+    const intersected =
+      await harness.service.selectCells({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "compose",
+          steps: [
+            { op: "union", match: { kind: "nonEmpty" } },
+            {
+              op: "intersect",
+              match: {
+                kind: "magicWand",
+                seed: { x: 1, y: 1 },
+              },
+            },
+          ],
+        },
+      });
+    expect(intersected).toMatchObject({
+      cellCount: 2,
+      cells: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+      ],
+    });
+
+    await expect(
+      harness.service.selectCells({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: { kind: "compose", steps: [] },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+});
+
 async function createHarness(
   roots: Set<string>,
   data: number[],
