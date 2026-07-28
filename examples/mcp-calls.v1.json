@@ -266,6 +266,21 @@
       }
     },
     {
+      "name": "tiled_render_isometric",
+      "profile": "core",
+      "purpose": "Render a bounded isometric map region as a PNG diamond using the official IsometricRenderer placement math.",
+      "arguments": {
+        "mapPath": "maps/iso.tmj",
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "scale": 2
+      }
+    },
+    {
       "name": "tiled_list_objects",
       "profile": "core",
       "arguments": {

@@ -263,6 +263,7 @@ import {
   mapSummaryToolOutputSchema,
   listPropertyTypesToolOutputSchema,
   renderDiffToolOutputSchema,
+  renderIsometricToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
@@ -1616,6 +1617,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_render_tiles",
     "tiled_render_preview",
     "tiled_render_diff",
+    "tiled_render_isometric",
     "tiled_list_objects",
     "tiled_get_object",
     "tiled_validate",
@@ -4206,6 +4208,79 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           rendered.png,
         );
       }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_render_isometric",
+    {
+      title:
+        "Render an isometric tile-layer preview",
+      description:
+        "Renders a bounded region of one finite isometric TMJ map using the exact Tiled 1.12.2 IsometricRenderer placement math — the region paints as its own diamond, cells composite in the editor's diagonal scanline order, and tile images anchor bottom-left like the official CellRenderer. The strict profile covers external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, anti-diagonal flips, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Orthogonal maps belong to tiled_render_preview. Read-only.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          layerIds: z
+            .array(
+              z.number().int().positive(),
+            )
+            .min(1)
+            .max(128)
+            .optional(),
+          scale: z
+            .number()
+            .int()
+            .min(1)
+            .max(4)
+            .optional(),
+        })
+        .strict(),
+      outputSchema:
+        renderIsometricToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({
+      mapPath,
+      region,
+      layerIds,
+      scale,
+    }) =>
+      renderMutex.runExclusive(
+        "sharp-render",
+        async () => {
+          try {
+            const rendered =
+              await maps.renderIsometric({
+                mapPath,
+                region,
+                layerIds,
+                scale,
+              });
+            return imageToolResult(
+              rendered.result,
+              rendered.png,
+            );
+          } catch (error) {
+            return toolError(error);
+          }
+        },
+      ),
   );
 
   register(

@@ -500,6 +500,19 @@ map-relative reference still resolves to the pinned path. The result is
 an ordinary \`mapEdit\` change set; read the placed instance back
 expanded with \`tiled_get_object\`.
 
+## Render isometric maps
+
+\`tiled_render_isometric\` renders a bounded region of one finite
+isometric TMJ map as a PNG using the exact Tiled 1.12.2
+IsometricRenderer placement math: the region paints as its own
+diamond, cells composite in the editor's diagonal scanline order, and
+tile images anchor bottom-left like the official CellRenderer. The
+strict profile covers external atlas tilesets whose tile size matches
+the grid; image-collection tilesets, transparent-color keying,
+anti-diagonal flips, and image or group layers fail closed, and object
+layers are skipped with their ids disclosed. Orthogonal maps belong to
+\`tiled_render_preview\`.
+
 ## Write TMX natively
 
 \`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`

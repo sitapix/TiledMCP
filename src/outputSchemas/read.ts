@@ -738,6 +738,93 @@ const renderDiffResultOutputSchema = z
 export const renderDiffToolOutputSchema =
   toolOutputSchema(renderDiffResultOutputSchema);
 
+const renderIsometricResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    byteLength: positiveIntegerOutputSchema,
+    sha256: revisionOutputSchema,
+    map: mapSnapshotOutputSchema,
+    dependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    region: z
+      .object({
+        x: nonnegativeIntegerOutputSchema,
+        y: nonnegativeIntegerOutputSchema,
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    scale: positiveIntegerOutputSchema,
+    projection: z
+      .object({
+        orientation: z.literal("isometric"),
+        tileWidth: positiveIntegerOutputSchema,
+        tileHeight: positiveIntegerOutputSchema,
+        originPixel: z
+          .object({
+            x: nonnegativeIntegerOutputSchema,
+            y: nonnegativeIntegerOutputSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    layers: z
+      .array(
+        z
+          .object({
+            id: positiveIntegerOutputSchema,
+            name: z.string().max(128),
+            nameTruncated:
+              truncatedMarkerOutputSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(128),
+    omittedObjectLayerIds: z
+      .array(positiveIntegerOutputSchema)
+      .max(128),
+    sources: z
+      .array(
+        z
+          .object({
+            tileset: z
+              .object({
+                assetId: assetIdOutputSchema,
+                path: projectPathOutputSchema,
+                revision: revisionOutputSchema,
+              })
+              .strict(),
+            image: z
+              .object({
+                path: projectPathOutputSchema,
+                revision: revisionOutputSchema,
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .max(64),
+    renderProfile: z.literal(
+      "isometric-tile-layers-v1",
+    ),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const renderIsometricToolOutputSchema =
+  toolOutputSchema(
+    renderIsometricResultOutputSchema,
+  );
+
 export const listPropertyTypesToolOutputSchema =
   toolOutputSchema(
     listPropertyTypesResultOutputSchema,
