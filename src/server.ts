@@ -3726,7 +3726,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read a tile region",
       description:
-        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Cells referencing an embedded (inline) tileset return a read-only {kind:\"embedded\", sourceIndex} reference instead of an asset ID. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty.",
+        "Returns a bounded rectangular tile region using tileset asset IDs and local tile IDs. Cells referencing an embedded (inline) tileset return a read-only {kind:\"embedded\", sourceIndex} reference instead of an asset ID. On infinite maps the rectangle uses absolute tile coordinates (negatives allowed) and cells outside every chunk are empty. XML maps (.tmx) return raw encoded GIDs (flip bits included) plus the map's tileset ranges so callers attribute cells by firstgid themselves; finite csv and base64 layers only — plain tile elements and chunks fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

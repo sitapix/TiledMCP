@@ -33,7 +33,7 @@ const TMX_SOURCE = `<?xml version="1.0" encoding="UTF-8"?>
    <object id="1" name="spawn" x="8" y="8"/>
   </objectgroup>
   <layer id="4" name="deco" width="2" height="2" visible="0" opacity="0.5">
-   <data encoding="base64" compression="zlib">eJxjYGBgAAAABAAB</data>
+   <data encoding="base64" compression="zlib">eJxjYEAFAAAQAAE=</data>
   </layer>
  </group>
 </map>
@@ -156,6 +156,60 @@ describe("TMX read-only core", () => {
       ),
     ).rejects.toMatchObject({
       name: "TiledMcpError",
+    });
+  });
+
+  it("reads raw-gid regions from csv and base64 TMX layers", async () => {
+    const harness = await createHarness(roots);
+    const csvRegion = await harness.service.getRegion({
+      mapPath: TMX_PATH,
+      layerId: 1,
+      x: 0,
+      y: 0,
+      width: 2,
+      height: 2,
+    });
+    expect(csvRegion).toMatchObject({
+      format: "tmx",
+      profile: "tmx-read-only-region-v1",
+      cellSemantics: "raw-encoded-gids",
+      rows: [
+        [1, 0],
+        [0, 2],
+      ],
+      tilesets: [
+        {
+          firstGid: 1,
+          source: "../tiles/terrain.tsx",
+        },
+        { firstGid: 9, embedded: true },
+      ],
+    });
+    // The nested base64+zlib layer decodes through the shared decoder.
+    const encodedRegion =
+      await harness.service.getRegion({
+        mapPath: TMX_PATH,
+        layerId: 4,
+        x: 0,
+        y: 0,
+        width: 2,
+        height: 2,
+      });
+    expect(encodedRegion.rows).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
+    await expect(
+      harness.service.getRegion({
+        mapPath: TMX_PATH,
+        layerId: 9,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "LAYER_NOT_FOUND",
     });
   });
 

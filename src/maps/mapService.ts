@@ -206,6 +206,8 @@ import {
 import { parseXmlDocument } from "../formats/xml.js";
 import {
   collectXmlTilesetReferences,
+  findTmxTileLayer,
+  parseTmxCsvGids,
   projectTmxMapSummary,
 } from "./xmlRead.js";
 import {
@@ -951,6 +953,171 @@ export class MapService {
           : context.infinite
             ? "infinite-orthogonal-tmj-read-only-chunked"
             : "finite-orthogonal-tmj-external-atlas-tsj",
+    };
+  }
+
+  /**
+   * Bounded read-only TMX region: raw GIDs plus the map's tileset
+   * ranges, so callers attribute cells by firstgid themselves — TMX
+   * tilesets carry no asset IDs, and this projection stays faithful to
+   * the on-disk numbers (flip bits included). Only finite csv and
+   * base64 layer data decode; plain <tile> children and chunked
+   * infinite data fail closed.
+   */
+  private async getTmxRegion(
+    input: GetRegionInput,
+  ): Promise<Record<string, unknown>> {
+    const normalized = this.resolver.normalize(
+      input.mapPath,
+    );
+    const snapshot =
+      await this.store.readSnapshot(normalized);
+    const root = parseXmlDocument(
+      snapshot.source.toString("utf8"),
+      normalized,
+    );
+    const summary = projectTmxMapSummary(
+      root,
+      normalized,
+    );
+    if (summary.infinite === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_MAP_PROFILE",
+        "TMX region reads support only finite maps.",
+        { path: normalized },
+      );
+    }
+    const mapWidth = summary.width as number;
+    const mapHeight = summary.height as number;
+    if (
+      input.x < 0 ||
+      input.y < 0 ||
+      input.x + input.width > mapWidth ||
+      input.y + input.height > mapHeight
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `The region must lie inside the ${mapWidth}x${mapHeight} map.`,
+        { mapWidth, mapHeight },
+      );
+    }
+    const layer = findTmxTileLayer(
+      root,
+      input.layerId,
+      normalized,
+    );
+    const layerWidth = Number.parseInt(
+      layer.attributes.width ?? String(mapWidth),
+      10,
+    );
+    const layerHeight = Number.parseInt(
+      layer.attributes.height ??
+        String(mapHeight),
+      10,
+    );
+    if (
+      layerWidth !== mapWidth ||
+      layerHeight !== mapHeight
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_MAP_PROFILE",
+        "TMX region reads require map-aligned layer dimensions.",
+        { path: normalized },
+      );
+    }
+    const data = layer.children.find(
+      (child) => child.name === "data",
+    );
+    if (data === undefined) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${normalized} layer ${input.layerId} has no data element.`,
+        { path: normalized },
+      );
+    }
+    if (
+      data.children.some(
+        (child) =>
+          child.name === "chunk" ||
+          child.name === "tile",
+      )
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "TMX region reads support csv and base64 data only; plain tile elements and chunks fail closed.",
+        { path: normalized },
+      );
+    }
+    const encoding = data.attributes.encoding;
+    const cellCount = mapWidth * mapHeight;
+    let gids: number[];
+    if (encoding === "csv") {
+      gids = parseTmxCsvGids(
+        data.text,
+        cellCount,
+        normalized,
+        input.layerId,
+      );
+    } else if (encoding === "base64") {
+      gids = decodeEncodedTileLayerData(
+        {
+          data: data.text.trim(),
+          encoding: "base64",
+          ...(data.attributes.compression ===
+          undefined
+            ? {}
+            : {
+                compression:
+                  data.attributes.compression,
+              }),
+        },
+        input.layerId,
+        normalized,
+        cellCount,
+      );
+    } else {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "TMX region reads support csv and base64 data only.",
+        {
+          path: normalized,
+          encoding: encoding ?? "xml",
+        },
+      );
+    }
+    const rows: number[][] = [];
+    for (let y = 0; y < input.height; y += 1) {
+      const row: number[] = [];
+      for (let x = 0; x < input.width; x += 1) {
+        row.push(
+          gids[
+            (input.y + y) * mapWidth +
+              (input.x + x)
+          ]!,
+        );
+      }
+      rows.push(row);
+    }
+    return {
+      mapPath: normalized,
+      revision: snapshot.revision,
+      format: "tmx",
+      profile: "tmx-read-only-region-v1",
+      layer: {
+        id: input.layerId,
+        name: layer.attributes.name ?? "",
+      },
+      region: {
+        x: input.x,
+        y: input.y,
+        width: input.width,
+        height: input.height,
+      },
+      cellSemantics: "raw-encoded-gids",
+      rows,
+      tilesets: summary.tilesets,
+      snapshotConsistency:
+        "non-atomic-read-set",
     };
   }
 
@@ -3342,6 +3509,15 @@ export class MapService {
       );
     }
 
+    if (
+      posix
+        .extname(
+          this.resolver.normalize(input.mapPath),
+        )
+        .toLowerCase() === ".tmx"
+    ) {
+      return this.getTmxRegion(input);
+    }
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
       allowCollectionTilesets: true,

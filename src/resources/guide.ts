@@ -244,7 +244,9 @@ For an existing map:
    resolves relative to the map file; the source entry carries
    \`{embedded: {sourceIndex}}\`). Every edit path and tile objects backed
    by embedded tilesets keep failing closed. Its tile metadata
-   page is sparse and ordered by local ID. Tile classes use the current Tiled \`tiles[].type\`
+   page is sparse and ordered by local ID. TMX maps answer region reads
+   with raw encoded GIDs plus the map's tileset ranges (finite csv and
+   base64 layers only). Tile classes use the current Tiled \`tiles[].type\`
    field, with \`class\` accepted only as a Tiled 1.9 compatibility fallback.
    Each atlas Wang set expands its full color list (1-based indexes,
    probability, image tile, properties) plus a bounded \`wangtiles\` sample

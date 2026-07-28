@@ -360,3 +360,87 @@ function parsedInt(
   }
   return parsed;
 }
+
+/**
+ * Locates one tile layer by id anywhere in the layer tree, mirroring
+ * the id-based addressing used for TMJ maps.
+ */
+export function findTmxTileLayer(
+  root: XmlElement,
+  layerId: number,
+  path: string,
+): XmlElement {
+  const visit = (
+    container: XmlElement,
+  ): XmlElement | undefined => {
+    for (const child of container.children) {
+      if (
+        child.name === "layer" &&
+        Number.parseInt(
+          child.attributes.id ?? "0",
+          10,
+        ) === layerId
+      ) {
+        return child;
+      }
+      if (child.name === "group") {
+        const found = visit(child);
+        if (found !== undefined) {
+          return found;
+        }
+      }
+    }
+    return undefined;
+  };
+  const layer = visit(root);
+  if (layer === undefined) {
+    throw new TiledMcpError(
+      "LAYER_NOT_FOUND",
+      `${path} has no tile layer with id ${layerId}.`,
+      { path, layerId },
+    );
+  }
+  return layer;
+}
+
+/**
+ * Parses one TMX csv data payload into exactly cellCount GIDs. Tiled
+ * writes plain comma-separated unsigned integers with arbitrary
+ * whitespace; anything else fails closed. Plain <tile> child elements
+ * (no encoding) and chunked infinite data are not supported here.
+ */
+export function parseTmxCsvGids(
+  text: string,
+  cellCount: number,
+  path: string,
+  layerId: number,
+): number[] {
+  const tokens = text
+    .split(",")
+    .map((token) => token.trim());
+  if (tokens.length !== cellCount) {
+    throw new TiledMcpError(
+      "INVALID_TILE_DATA",
+      `${path} layer ${layerId} csv data lists ${tokens.length} cells; expected ${cellCount}.`,
+      { path, layerId, cellCount },
+    );
+  }
+  return tokens.map((token, index) => {
+    if (!/^[0-9]{1,10}$/u.test(token)) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `${path} layer ${layerId} csv cell ${index} is not an unsigned integer.`,
+        { path, layerId, index },
+      );
+    }
+    const gid = Number.parseInt(token, 10);
+    if (gid > 0xffffffff) {
+      throw new TiledMcpError(
+        "INVALID_TILE_DATA",
+        `${path} layer ${layerId} csv cell ${index} exceeds 32 bits.`,
+        { path, layerId, index },
+      );
+    }
+    return gid;
+  });
+}

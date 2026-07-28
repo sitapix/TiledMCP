@@ -597,8 +597,71 @@ const regionResultOutputSchema = z
   })
   .strict();
 
+const tmxRegionResultOutputSchema = z
+  .object({
+    mapPath: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    format: z.literal("tmx"),
+    profile: z.literal(
+      "tmx-read-only-region-v1",
+    ),
+    layer: z
+      .object({
+        id: positiveIntegerOutputSchema,
+        name: z.string(),
+      })
+      .strict(),
+    region: regionRectOutputSchema,
+    cellSemantics: z.literal(
+      "raw-encoded-gids",
+    ),
+    rows: z
+      .array(
+        z
+          .array(
+            nonnegativeIntegerOutputSchema.max(
+              0xffffffff,
+            ),
+          )
+          .max(MAX_PREVIEW_REGION_CELLS),
+      )
+      .max(MAX_PREVIEW_REGION_CELLS),
+    tilesets: z
+      .array(
+        z.union([
+          z
+            .object({
+              firstGid:
+                positiveIntegerOutputSchema,
+              source: z.string().min(1),
+            })
+            .strict(),
+          z
+            .object({
+              firstGid:
+                positiveIntegerOutputSchema,
+              embedded: z.literal(true),
+              name: z.string().optional(),
+              tileCount:
+                nonnegativeIntegerOutputSchema.optional(),
+            })
+            .strict(),
+        ]),
+      )
+      .max(4_096),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
 export const regionToolOutputSchema =
-  toolOutputSchema(regionResultOutputSchema);
+  toolOutputSchema(
+    z.union([
+      regionResultOutputSchema,
+      tmxRegionResultOutputSchema,
+    ]),
+  );
 
 const listPropertyTypesResultOutputSchema = z
   .object({
