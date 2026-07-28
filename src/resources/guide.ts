@@ -519,7 +519,9 @@ so \`tiled_preview_edits\` plans and applies against isometric maps
 exactly like orthogonal ones (the summary's \`editableProfile\`
 reports \`isometric-tmj-editable-core\`). The dedicated procedural
 planners (shape, generate, scatter, prefab, terrain) remain
-orthogonal-only for now.
+orthogonal-only for now. Staggered and hexagonal maps are
+summary/region/usage read-only (stagger members disclosed, hex flip
+bits decoded as rotate60/rotate120); edits and renders fail closed.
 
 ## Write TMX natively
 
@@ -545,21 +547,19 @@ writer, as a new sibling \`.tsx\` file. The declared grid must be
 derivable from the declared image size, margin, and spacing — the
 official exporter recomputes it, so a disagreeing declaration fails
 closed rather than drifting — and per-tile metadata, wang sets,
-custom properties, and unknown members also fail closed. Apply
-re-serializes under the pinned source revision and hash-verifies,
-exactly like \`tiled_preview_write_tmx\`.
+properties, and unknown members fail closed. Apply re-serializes
+under the pinned revision and hash-verifies, like
+\`tiled_preview_write_tmx\`.
 
 ## Fix validation issues mechanically
 
 \`tiled_preview_validation_fixes\` scans every tile layer for cells
 whose base GID falls outside all bound tileset ranges and returns an
 ordinary \`mapEdit\` change set erasing exactly those dangling cells.
-Erasing is destructive in spirit, so the plan goes through the usual
-preview and approval; a map with nothing mechanically fixable fails
-closed, as does one with more than 10,000 dangling cells — that scale
-points at a broken tileset reference, not at data worth erasing.
-Dangling tile-object GIDs are reported by \`tiled_validate\` but
-never auto-fixed.
+Nothing fixable fails closed, as do more than 10,000 dangling cells —
+that scale points at a broken tileset reference, not at data worth
+erasing. Dangling tile-object GIDs are reported by \`tiled_validate\`
+but never auto-fixed.
 
 ## Take explicit save points
 

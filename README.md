@@ -155,7 +155,7 @@ native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试，或再以
 的专用入口产物）同样放行 isometric（summary 的 editableProfile 报
 `isometric-tmj-editable-core`），渲染走 `tiled_render_isometric`；
 shape/generate/scatter/prefab/terrain 等自带 context 加载的程序化 planner
-本刀仍维持 orthogonal-only；staggered/hexagonal/oblique 全面继续拒绝。
+本刀仍维持 orthogonal-only；staggered/hexagonal 降级为 **summary/region/usage 只读**（summary 披露 `staggeraxis`/`staggerindex`/`hexsidelength`，profile 报 `staggered-hexagonal-tmj-read-only`，一切编辑与渲染维持 fail closed）；oblique 全面继续拒绝。
 TMX/XML 获得**只读核心第一步**：`tiled_get_map_summary` 接受 `.tmx` 地图，经
 自研有界 fail closed XML 子集解析器（拒绝 DOCTYPE/实体/PI/CDATA——零 XXE 面、
 零新依赖）返回只读摘要（图层树含 data 编码、外部 tileset 引用逐个解析并 pin

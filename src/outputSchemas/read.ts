@@ -398,7 +398,18 @@ const mapSummaryResultOutputSchema = z
     orientation: z.enum([
       "orthogonal",
       "isometric",
+      "staggered",
+      "hexagonal",
     ]),
+    staggerAxis: z.enum(["x", "y"]).optional(),
+    staggerIndex: z
+      .enum(["odd", "even"])
+      .optional(),
+    hexSideLength: z
+      .number()
+      .int()
+      .min(0)
+      .optional(),
     infinite: z.boolean(),
     renderOrder: z.enum([
       "right-down",
@@ -450,6 +461,7 @@ const mapSummaryResultOutputSchema = z
       "finite-orthogonal-tmj-external-atlas-tsj",
       "infinite-orthogonal-tmj-read-only-chunked",
       "isometric-tmj-editable-core",
+      "staggered-hexagonal-tmj-read-only",
     ]),
   })
   .strict();

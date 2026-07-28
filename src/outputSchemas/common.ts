@@ -165,10 +165,14 @@ export const mapSnapshotOutputSchema = z
 
 export const tileTransformOutputSchema = z
   .object({
-    kind: z.literal("orthogonal").optional(),
+    kind: z
+      .enum(["orthogonal", "hexagonal"])
+      .optional(),
     flipH: z.boolean().optional(),
     flipV: z.boolean().optional(),
     flipD: z.boolean().optional(),
+    rotate60: z.boolean().optional(),
+    rotate120: z.boolean().optional(),
     rawFlags: z
       .number()
       .int()

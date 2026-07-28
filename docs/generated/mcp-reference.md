@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:082735e1d584bce00eddbb36029069f837f3a4b896e2c33bcb6a07bfc698fa18",
+    "revision": "sha256:d3fd3c889461023d65e5932d91bdeaddc1be45e46e566ed2c6bddc32ef6b9fad",
     "serverVersion": "0.0.1",
-    "size": 98202
+    "size": 98218
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 98202,
+  "size": 98218,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 98202 UTF-8 bytes, revision `sha256:082735e1d584bce00eddbb36029069f837f3a4b896e2c33bcb6a07bfc698fa18`.
+Content contract: `text`, 98218 UTF-8 bytes, revision `sha256:d3fd3c889461023d65e5932d91bdeaddc1be45e46e566ed2c6bddc32ef6b9fad`.
 
 Resource templates: none.
 
@@ -1062,7 +1062,8 @@ Output schema:
             "profile": {
               "enum": [
                 "finite-orthogonal-tmj-external-atlas-tsj",
-                "isometric-tmj-read-only"
+                "isometric-tmj-read-only",
+                "staggered-hexagonal-tmj-read-only"
               ],
               "type": "string"
             },
@@ -16140,7 +16141,8 @@ Output schema:
                   "enum": [
                     "finite-orthogonal-tmj-external-atlas-tsj",
                     "infinite-orthogonal-tmj-read-only-chunked",
-                    "isometric-tmj-editable-core"
+                    "isometric-tmj-editable-core",
+                    "staggered-hexagonal-tmj-read-only"
                   ],
                   "type": "string"
                 },
@@ -16208,6 +16210,11 @@ Output schema:
                   "maximum": 9007199254740991,
                   "type": "integer"
                 },
+                "hexSideLength": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "infinite": {
                   "type": "boolean"
                 },
@@ -16221,7 +16228,9 @@ Output schema:
                 "orientation": {
                   "enum": [
                     "orthogonal",
-                    "isometric"
+                    "isometric",
+                    "staggered",
+                    "hexagonal"
                   ],
                   "type": "string"
                 },
@@ -16240,6 +16249,20 @@ Output schema:
                 },
                 "revision": {
                   "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "staggerAxis": {
+                  "enum": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "string"
+                },
+                "staggerIndex": {
+                  "enum": [
+                    "odd",
+                    "even"
+                  ],
                   "type": "string"
                 },
                 "tileHeight": {

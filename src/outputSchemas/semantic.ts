@@ -928,6 +928,7 @@ const usageAnalysisSuccessOutputSchema = z
     profile: z.enum([
       "finite-orthogonal-tmj-external-atlas-tsj",
       "isometric-tmj-read-only",
+      "staggered-hexagonal-tmj-read-only",
     ]),
     scope: z
       .object({

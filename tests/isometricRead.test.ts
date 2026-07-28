@@ -135,16 +135,64 @@ describe("isometric map read-only access", () => {
     );
   });
 
-  it("keeps staggered and hexagonal maps rejected everywhere", async () => {
-    const harness = await createHarness(
-      roots,
+  it("reads staggered and hexagonal maps but keeps edits rejected", async () => {
+    for (const orientation of [
       "staggered",
-    );
-    await expect(
-      harness.service.getSummary(MAP_PATH),
-    ).rejects.toMatchObject({
-      code: "UNSUPPORTED_MAP_PROFILE",
-    });
+      "hexagonal",
+    ] as const) {
+      const harness = await createHarness(
+        roots,
+        orientation,
+      );
+      const summary =
+        (await harness.service.getSummary(
+          MAP_PATH,
+        )) as Record<string, unknown>;
+      expect(summary).toMatchObject({
+        orientation,
+        staggerAxis: "y",
+        staggerIndex: "odd",
+        editableProfile:
+          "staggered-hexagonal-tmj-read-only",
+      });
+      if (orientation === "hexagonal") {
+        expect(summary.hexSideLength).toBe(8);
+      }
+      const region =
+        (await harness.service.getRegion({
+          mapPath: MAP_PATH,
+          layerId: 1,
+          x: 0,
+          y: 0,
+          width: 2,
+          height: 1,
+        })) as {
+          rows: Array<
+            Array<{ localId: number } | null>
+          >;
+        };
+      expect(region.rows[0]![0]).toMatchObject({
+        localId: 0,
+      });
+      await expect(
+        harness.service.planEdits(
+          MAP_PATH,
+          summary.revision as string,
+          summary.dependencyRevisions as Record<
+            string,
+            string
+          >,
+          [
+            {
+              type: "updateMap",
+              patch: { renderOrder: "left-up" },
+            },
+          ],
+        ),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_MAP_PROFILE",
+      });
+    }
   });
 });
 
@@ -203,6 +251,16 @@ async function createHarness(
       nextlayerid: 2,
       nextobjectid: 1,
       orientation,
+      ...(orientation === "staggered" ||
+      orientation === "hexagonal"
+        ? {
+            staggeraxis: "y",
+            staggerindex: "odd",
+          }
+        : {}),
+      ...(orientation === "hexagonal"
+        ? { hexsidelength: 8 }
+        : {}),
       renderorder: "right-down",
       tiledversion: "1.12.2",
       tileheight: 8,

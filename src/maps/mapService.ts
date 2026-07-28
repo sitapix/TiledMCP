@@ -432,7 +432,11 @@ interface EditableContext {
   loaded: LoadedDocument;
   width: number;
   height: number;
-  orientation: "orthogonal" | "isometric";
+  orientation:
+    | "orthogonal"
+    | "isometric"
+    | "staggered"
+    | "hexagonal";
   infinite: boolean;
   bindings: TilesetBinding[];
   /** Non-empty only when the caller opted in via allowEmbeddedTilesets. */
@@ -479,6 +483,12 @@ interface EditableContextRevisionGuards {
    * stay rejected everywhere.
    */
   allowIsometric?: boolean;
+  /**
+   * Read-only tools that understand staggered and hexagonal storage
+   * opt in explicitly; every edit and render path keeps the default
+   * fail-closed gate.
+   */
+  allowStaggeredHexagonal?: boolean;
 }
 
 interface TilesetBinding {
@@ -911,6 +921,7 @@ export class MapService {
       allowInfinite: true,
       allowCollectionTilesets: true,
       allowEmbeddedTilesets: true,
+      allowStaggeredHexagonal: true,
       allowIsometric: true,
     });
     const rootProperties = summarizeMapRootProperties(
@@ -927,6 +938,32 @@ export class MapService {
       revision: context.loaded.revision,
       format: "tmj",
       orientation: context.orientation,
+      // Tiled always serializes the stagger members for these
+      // projections; missing ones fail closed above via the reader.
+      ...(context.orientation === "staggered" ||
+      context.orientation === "hexagonal"
+        ? {
+            staggerAxis: expectString(
+              context.loaded.document
+                .staggeraxis,
+              `${context.loaded.path}.staggeraxis`,
+            ),
+            staggerIndex: expectString(
+              context.loaded.document
+                .staggerindex,
+              `${context.loaded.path}.staggerindex`,
+            ),
+          }
+        : {}),
+      ...(context.orientation === "hexagonal"
+        ? {
+            hexSideLength: expectInteger(
+              context.loaded.document
+                .hexsidelength,
+              `${context.loaded.path}.hexsidelength`,
+            ),
+          }
+        : {}),
       infinite: context.infinite,
       ...rootProperties,
       width: context.width,
@@ -966,9 +1003,12 @@ export class MapService {
       ),
       dependencyRevisions: context.dependencyRevisions,
       editableProfile:
-        context.orientation === "isometric"
-          ? "isometric-tmj-editable-core"
-          : context.infinite
+        context.orientation === "staggered" ||
+        context.orientation === "hexagonal"
+          ? "staggered-hexagonal-tmj-read-only"
+          : context.orientation === "isometric"
+            ? "isometric-tmj-editable-core"
+            : context.infinite
             ? "infinite-orthogonal-tmj-read-only-chunked"
             : "finite-orthogonal-tmj-external-atlas-tsj",
     };
@@ -1229,6 +1269,7 @@ export class MapService {
     );
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
+      allowStaggeredHexagonal: true,
       allowIsometric: true,
       ...(input.expectedMapRevision === undefined
         ? {}
@@ -1270,9 +1311,12 @@ export class MapService {
       },
       dependencyRevisions: context.dependencyRevisions,
       profile:
-        context.orientation === "isometric"
-          ? "isometric-tmj-read-only"
-          : "finite-orthogonal-tmj-external-atlas-tsj",
+        context.orientation === "staggered" ||
+        context.orientation === "hexagonal"
+          ? "staggered-hexagonal-tmj-read-only"
+          : context.orientation === "isometric"
+            ? "isometric-tmj-read-only"
+            : "finite-orthogonal-tmj-external-atlas-tsj",
       ...projection,
       snapshotConsistency: "non-atomic-read-set",
     };
@@ -3540,6 +3584,7 @@ export class MapService {
       allowInfinite: true,
       allowCollectionTilesets: true,
       allowEmbeddedTilesets: true,
+      allowStaggeredHexagonal: true,
       allowIsometric: true,
     });
     const rows: Array<Array<TileRef | null>> = [];
@@ -9017,13 +9062,22 @@ export class MapService {
       !(
         orientation === "isometric" &&
         revisionGuards.allowIsometric === true
+      ) &&
+      !(
+        (orientation === "staggered" ||
+          orientation === "hexagonal") &&
+        revisionGuards
+          .allowStaggeredHexagonal === true
       )
     ) {
       throw new TiledMcpError(
         "UNSUPPORTED_MAP_PROFILE",
         orientation === "isometric"
           ? "This tool supports only orthogonal maps; isometric maps are readable everywhere and editable through the standard map-edit path."
-          : "MVP semantic tools support only orthogonal maps.",
+          : orientation === "staggered" ||
+              orientation === "hexagonal"
+            ? "This tool supports only orthogonal maps; staggered and hexagonal maps are readable through the summary, region, and usage tools."
+            : "MVP semantic tools support only orthogonal maps.",
         { path: loaded.path, orientation },
       );
     }
@@ -10456,9 +10510,13 @@ export class MapService {
 
 function validateAndSummarizeOperations(
   map: JsonObject,
-  // Edit planners only ever receive orthogonal contexts (the isometric
+  // Edit planners never receive staggered/hexagonal contexts (that
   // gate is read-only opt-in), but the context type carries the union.
-  orientation: "orthogonal" | "isometric",
+  orientation:
+    | "orthogonal"
+    | "isometric"
+    | "staggered"
+    | "hexagonal",
   bindings: readonly TilesetBinding[],
   operations: readonly PlannedMapEditOperation[],
   mapPath: string,
@@ -12757,7 +12815,11 @@ function collectResizeLayerViews(
 
 function performMapResize(
   map: JsonObject,
-  orientation: "orthogonal" | "isometric",
+  orientation:
+    | "orthogonal"
+    | "isometric"
+    | "staggered"
+    | "hexagonal",
   bindings: readonly TilesetBinding[],
   views: ResizeLayerViews,
   input: {
