@@ -179,7 +179,10 @@ import {
   MAX_TILE_FIND_VALUE_CODE_POINTS,
   TILE_FIND_PROPERTY_EQUALS_TYPES,
 } from "./maps/tileSearch.js";
-import type { MapEditOperation } from "./maps/types.js";
+import type {
+  MapEditOperation,
+  TileRef,
+} from "./maps/types.js";
 import {
   applyResultOutputSchema,
   commitResultOutputSchema,
@@ -1618,6 +1621,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_update_wangsets",
     "tiled_create_layer",
     "tiled_preview_edits",
+    "tiled_preview_shape",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
     "tiled_apply_change_set",
@@ -4748,6 +4752,99 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           expectedDependencyRevisions,
           operations as MapEditOperation[],
         );
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_shape",
+    {
+      title: "Preview drawing a tile shape",
+      description:
+        "Rasterizes one deterministic geometric shape — a Bresenham line, a rectangle outline or fill, or a midpoint ellipse inscribed in its bounding rectangle — into exact tile cells and returns an ordinary mapEdit change set carrying the setTiles writes. Pure bounded computation: no randomness, no clipping (a shape that leaves the map fails closed), at most 10,000 cells, and a null tile erases along the shape. Every preview, revision-pin, and transaction rule applies unchanged.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          draw: z.discriminatedUnion("shape", [
+            z
+              .object({
+                shape: z.literal("line"),
+                from: z
+                  .object({
+                    x: z.number().int(),
+                    y: z.number().int(),
+                  })
+                  .strict(),
+                to: z
+                  .object({
+                    x: z.number().int(),
+                    y: z.number().int(),
+                  })
+                  .strict(),
+              })
+              .strict(),
+            z
+              .object({
+                shape: z.literal("rectangle"),
+                x: z.number().int(),
+                y: z.number().int(),
+                width: z
+                  .number()
+                  .int()
+                  .positive(),
+                height: z
+                  .number()
+                  .int()
+                  .positive(),
+                fill: z.boolean(),
+              })
+              .strict(),
+            z
+              .object({
+                shape: z.literal("ellipse"),
+                x: z.number().int(),
+                y: z.number().int(),
+                width: z
+                  .number()
+                  .int()
+                  .positive(),
+                height: z
+                  .number()
+                  .int()
+                  .positive(),
+                fill: z.boolean(),
+              })
+              .strict(),
+          ]),
+          tile: tileRefSchema.nullable(),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      draw,
+      tile,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planDrawShape({
+          mapPath,
+          layerId,
+          draw,
+          tile: tile as TileRef | null,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+        });
         return changeSets.put(plan);
       }),
   );

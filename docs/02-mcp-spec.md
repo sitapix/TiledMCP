@@ -1157,7 +1157,7 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 |---|---|---|
 | `tiled_generate` | 程序化填充：`noise`、`cellular`、`dungeon`；`mapping` 定义数值区间→tile/wang 颜色，seed 保证可复现 | `mapPath`, `layerId`, `algorithm`, `region: Region`, `mapping`, `seed`, `options?` |
 | `tiled_scatter` | 在显式 Region 内按密度撒装饰 tile 或模板对象，带避让、最小间距和边缘留白规则 | `mapPath`, `layerId`, `items`, `density`, `region: Region`, `seed`, `minSpacing?`, `avoid?` |
-| `tiled_draw_shape` | 画几何形状：线段/折线路径（可指定宽度——道路、河流）、矩形描边或填充、圆/椭圆。`tile` 处可给 wang 颜色，让路径自动用地形过渡 tile 收边 | `mapPath`, `layerId`, `shape`, `points`, `tile\|wangColor`, `width?` |
+| `tiled_draw_shape` | **已实现为 `tiled_preview_shape`**：确定性几何画笔（Bresenham 线段、矩形描边/填充、外接矩形内切中点椭圆），纯有界计算产出普通 `mapEdit` change set（精确 `setTiles`）；无随机、无裁剪（出界 fail closed）、≤10,000 cell、`null` tile 沿形状清除；wang 颜色收边走 `tiled_preview_terrain` | `mapPath`, `layerId`, `draw`, `tile`, `expectedMapRevision`, `expectedDependencyRevisions` |
 | `tiled_save_prefab` | 从地图截取一个区域的**多图层结构**（tile + 对象，按图层名组织）存为预制件（`.tiledmcp/prefabs/*.json`）。工作流：模型先精雕一间房 → 存 prefab →"这种房子来五间" | `mapPath`, `region`, `layerIds?`, `name` |
 | `tiled_place_prefab` | 放置预制件：多图层内容对齐落到目标地图（图层按名匹配，缺失可自动创建），对象 id 重新分配，支持翻转 | `mapPath`, `prefabName`, `x`, `y`, `flipH?` |
 

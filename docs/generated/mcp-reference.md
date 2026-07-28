@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 32 tools
-- `with-tmxrasterizer`: 35 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 33 tools
+- `with-tmxrasterizer`: 36 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:7a94551255a864dd3a2fa8a41d47b7ac7fad6e62b672836cce83e88319626f02",
+    "revision": "sha256:d644607b371ef47aa6959c08f0067c635d5b7563fd07f1a5e9545772e2385010",
     "serverVersion": "0.0.1",
-    "size": 88783
+    "size": 89337
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 88783,
+  "size": 89337,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 88783 UTF-8 bytes, revision `sha256:7a94551255a864dd3a2fa8a41d47b7ac7fad6e62b672836cce83e88319626f02`.
+Content contract: `text`, 89337 UTF-8 bytes, revision `sha256:d644607b371ef47aa6959c08f0067c635d5b7563fd07f1a5e9545772e2385010`.
 
 Resource templates: none.
 
@@ -12587,6 +12587,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_shape",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_preview_world_edits",
                       "type": "string"
                     },
@@ -12717,6 +12721,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_edits",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_shape",
                       "type": "string"
                     },
                     {
@@ -12854,6 +12862,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_edits",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_shape",
                       "type": "string"
                     },
                     {
@@ -12995,6 +13007,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_edits",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_shape",
                       "type": "string"
                     },
                     {
@@ -36975,6 +36991,5822 @@ Output schema:
             "snapshotConsistency",
             "createdAt",
             "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_preview_shape`
+
+Availability: `core`
+
+Rasterizes one deterministic geometric shape — a Bresenham line, a rectangle outline or fill, or a midpoint ellipse inscribed in its bounding rectangle — into exact tile cells and returns an ordinary mapEdit change set carrying the setTiles writes. Pure bounded computation: no randomness, no clipping (a shape that leaves the map fails closed), at most 10,000 cells, and a null tile erases along the shape. Every preview, revision-pin, and transaction rule applies unchanged.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: Draw a filled 3x2 rectangle of one tile as an ordinary setTiles change set.
+
+```json
+{
+  "arguments": {
+    "draw": {
+      "fill": true,
+      "height": 2,
+      "shape": "rectangle",
+      "width": 3,
+      "x": 1,
+      "y": 1
+    },
+    "expectedDependencyRevisions": {
+      "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "layerId": 1,
+    "mapPath": "maps/example.tmj",
+    "tile": {
+      "localId": 2,
+      "tileset": {
+        "assetId": "asset_0123456789abcdef01234567",
+        "kind": "external"
+      }
+    }
+  },
+  "name": "tiled_preview_shape"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "draw": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "y": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            },
+            "shape": {
+              "const": "line",
+              "type": "string"
+            },
+            "to": {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "y": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "shape",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fill": {
+              "type": "boolean"
+            },
+            "height": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "shape": {
+              "const": "rectangle",
+              "type": "string"
+            },
+            "width": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "x": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "shape",
+            "x",
+            "y",
+            "width",
+            "height",
+            "fill"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fill": {
+              "type": "boolean"
+            },
+            "height": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "shape": {
+              "const": "ellipse",
+              "type": "string"
+            },
+            "width": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "x": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "shape",
+            "x",
+            "y",
+            "width",
+            "height",
+            "fill"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "expectedDependencyRevisions": {
+      "additionalProperties": {
+        "description": "SHA-256 revision returned by a read or preview",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "layerId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "tile": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "localId": {
+              "maximum": 268435455,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tileset": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "kind": {
+                  "const": "external",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "assetId"
+              ],
+              "type": "object"
+            },
+            "transform": {
+              "additionalProperties": false,
+              "properties": {
+                "flipD": {
+                  "type": "boolean"
+                },
+                "flipH": {
+                  "type": "boolean"
+                },
+                "flipV": {
+                  "type": "boolean"
+                },
+                "kind": {
+                  "const": "orthogonal",
+                  "type": "string"
+                },
+                "rawFlags": {
+                  "maximum": 4294967295,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "tileset",
+            "localId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "mapPath",
+    "layerId",
+    "draw",
+    "tile",
+    "expectedMapRevision",
+    "expectedDependencyRevisions"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "ChangeSetCopyEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "layerId": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "x": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        },
+        "y": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        }
+      },
+      "required": [
+        "layerId",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetIdMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "to": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "ChangeSetLayerDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nameTruncated": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/definitions/ChangeSetLayerType"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "name",
+        "nameTruncated"
+      ],
+      "type": "object"
+    },
+    "ChangeSetLayerType": {
+      "enum": [
+        "tilelayer",
+        "objectgroup",
+        "imagelayer",
+        "group"
+      ],
+      "type": "string"
+    },
+    "ChangeSetObjectCoordinate": {
+      "maximum": 1000000000,
+      "minimum": -1000000000,
+      "type": "number"
+    },
+    "ChangeSetObjectExtent": {
+      "maximum": 1000000000,
+      "minimum": 0,
+      "type": "number"
+    },
+    "ChangeSetPositiveId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "ChangeSetPositiveRect": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "x": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        },
+        "y": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetResizeBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetResizeCroppedCell": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "layerId": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "x": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "layerId",
+        "x",
+        "y",
+        "gid"
+      ],
+      "type": "object"
+    },
+    "ChangeSetSafeInteger": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "ChangeSetTileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "pattern": "^asset_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "additionalProperties": false,
+          "properties": {
+            "flipD": {
+              "type": "boolean"
+            },
+            "flipH": {
+              "type": "boolean"
+            },
+            "flipV": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "orthogonal",
+              "type": "string"
+            },
+            "rawFlags": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "dependencyRevisions": {
+              "additionalProperties": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "propertyNames": {
+                "pattern": "^asset_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "mapEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "renderOrder",
+                            "backgroundColor",
+                            "className"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "backgroundColor": {
+                            "anyOf": [
+                              {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "className": {
+                            "type": "string"
+                          },
+                          "renderOrder": {
+                            "enum": [
+                              "right-down",
+                              "right-up",
+                              "left-down",
+                              "left-up"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "renderingMayChange": {
+                        "type": "boolean"
+                      },
+                      "requestedFields": {
+                        "items": {
+                          "enum": [
+                            "renderOrder",
+                            "backgroundColor",
+                            "className"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "updateMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "patch",
+                      "requestedFields",
+                      "changedFields",
+                      "wouldChange",
+                      "renderingMayChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "croppedCellSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "croppedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "groupLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "imageLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "mapDimensionsChanged": {
+                        "type": "boolean"
+                      },
+                      "movedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "newBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "objectLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectsOutsideNewBounds": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "y": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "oldBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "omittedCroppedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "pixelOffset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "preservedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "resizedTileLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "rewrittenCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "shiftedImageLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "tileLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "resizeMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "oldBounds",
+                      "newBounds",
+                      "offset",
+                      "pixelOffset",
+                      "wouldChange",
+                      "mapDimensionsChanged",
+                      "tileLayerCount",
+                      "resizedTileLayerIds",
+                      "scannedCellCount",
+                      "rewrittenCellCount",
+                      "preservedNonEmptyCellCount",
+                      "croppedNonEmptyCellCount",
+                      "croppedCellSample",
+                      "omittedCroppedCellCount",
+                      "objectLayerCount",
+                      "movedObjectCount",
+                      "objectsOutsideNewBounds",
+                      "imageLayerCount",
+                      "shiftedImageLayerIds",
+                      "groupLayerCount",
+                      "lockedLayerCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "from": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "to": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "transcodeTileLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "layerId",
+                      "from",
+                      "to",
+                      "cellCount",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "bounds": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "omittedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "tile": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "x": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            },
+                            "y": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "tile"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "setTiles",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "cellCount",
+                      "bounds",
+                      "sample",
+                      "omittedCellCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "tile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "fillRegion",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "region",
+                      "tile"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "clearCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "nonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "sample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "tile": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "x": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            },
+                            "y": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "tile"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "transformedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "stampPattern",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "region",
+                      "cellCount",
+                      "nonEmptyCellCount",
+                      "clearCellCount",
+                      "transformedCellCount",
+                      "changedCellCount",
+                      "wouldChange",
+                      "sample",
+                      "omittedCellCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectedBounds": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "connectivity": {
+                        "const": "four-way",
+                        "type": "string"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "scannedCellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "seed": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "sourceTile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetTile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "floodFill",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "seed",
+                      "connectivity",
+                      "sourceTile",
+                      "targetTile",
+                      "scannedCellCount",
+                      "changedCellCount",
+                      "affectedBounds",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "clearedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destination": {
+                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "overlapsSource": {
+                        "type": "boolean"
+                      },
+                      "overwrittenNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "source": {
+                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                      },
+                      "sourceNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "copyRegion",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "source",
+                      "destination",
+                      "scannedCellCount",
+                      "cellCount",
+                      "sourceNonEmptyCellCount",
+                      "changedCellCount",
+                      "overwrittenNonEmptyCellCount",
+                      "clearedCellCount",
+                      "overlapsSource",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "mappingCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "mappingSample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "from": {
+                              "$ref": "#/definitions/ChangeSetTileRef"
+                            },
+                            "to": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "omittedMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "replacedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "replaceTiles",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "region",
+                      "scannedCellCount",
+                      "replacedCellCount",
+                      "mappingCount",
+                      "mappingSample",
+                      "omittedMappingCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "rectangle",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "rectangle",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "point",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "point",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "ellipse",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "ellipse",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "capsule",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "capsule",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 3,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polygon",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polygon",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 2,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polyline",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polyline",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "bold": {
+                                "type": "boolean"
+                              },
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "color": {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              "fontFamily": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "horizontalAlignment": {
+                                "enum": [
+                                  "left",
+                                  "center",
+                                  "right",
+                                  "justify"
+                                ],
+                                "type": "string"
+                              },
+                              "italic": {
+                                "type": "boolean"
+                              },
+                              "kerning": {
+                                "type": "boolean"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "pixelSize": {
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "strikeout": {
+                                "type": "boolean"
+                              },
+                              "text": {
+                                "maxLength": 8192,
+                                "type": "string"
+                              },
+                              "underline": {
+                                "type": "boolean"
+                              },
+                              "verticalAlignment": {
+                                "enum": [
+                                  "top",
+                                  "center",
+                                  "bottom"
+                                ],
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "wrap": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "text"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "tile",
+                                "type": "string"
+                              },
+                              "tile": {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "tile",
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "tile",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "x",
+                            "y",
+                            "width",
+                            "height",
+                            "points",
+                            "name",
+                            "className",
+                            "rotation",
+                            "visible",
+                            "opacity",
+                            "text",
+                            "fontFamily",
+                            "pixelSize",
+                            "wrap",
+                            "color",
+                            "bold",
+                            "italic",
+                            "underline",
+                            "strikeout",
+                            "kerning",
+                            "horizontalAlignment",
+                            "verticalAlignment",
+                            "properties",
+                            "tile"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "objectId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "className": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "color": {
+                            "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                            "type": "string"
+                          },
+                          "fontFamily": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "height": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              }
+                            ]
+                          },
+                          "horizontalAlignment": {
+                            "enum": [
+                              "left",
+                              "center",
+                              "right",
+                              "justify"
+                            ],
+                            "type": "string"
+                          },
+                          "italic": {
+                            "type": "boolean"
+                          },
+                          "kerning": {
+                            "type": "boolean"
+                          },
+                          "name": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "opacity": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "pixelSize": {
+                            "maximum": 999,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "points": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "x": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                },
+                                "y": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 256,
+                            "minItems": 2,
+                            "type": "array"
+                          },
+                          "properties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "remove": {
+                                "items": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "set": {
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "enum": [
+                                            "string",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 2048,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "int",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": -9007199254740991,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "float",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "bool",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "color",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setClassMembers": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "path": {
+                                      "items": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "maxItems": 8,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "path",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setListElements": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "index": {
+                                      "maximum": 100000,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "index",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
+                                "minItems": 1,
+                                "type": "array"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "rotation": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "strikeout": {
+                            "type": "boolean"
+                          },
+                          "text": {
+                            "maxLength": 8192,
+                            "type": "string"
+                          },
+                          "tile": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              }
+                            ]
+                          },
+                          "underline": {
+                            "type": "boolean"
+                          },
+                          "verticalAlignment": {
+                            "enum": [
+                              "top",
+                              "center",
+                              "bottom"
+                            ],
+                            "type": "string"
+                          },
+                          "visible": {
+                            "type": "boolean"
+                          },
+                          "width": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              }
+                            ]
+                          },
+                          "wrap": {
+                            "type": "boolean"
+                          },
+                          "x": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "y": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "updateObject",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "objectId",
+                      "changedFields",
+                      "patch"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "name",
+                            "className",
+                            "visible",
+                            "opacity",
+                            "offsetX",
+                            "offsetY",
+                            "parallaxX",
+                            "parallaxY",
+                            "tintColor",
+                            "locked",
+                            "blendMode"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerType": {
+                        "$ref": "#/definitions/ChangeSetLayerType"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blendMode": {
+                            "enum": [
+                              "normal",
+                              "add",
+                              "multiply",
+                              "screen",
+                              "overlay",
+                              "darken",
+                              "lighten",
+                              "color-dodge",
+                              "color-burn",
+                              "hard-light",
+                              "soft-light",
+                              "difference",
+                              "exclusion"
+                            ],
+                            "type": "string"
+                          },
+                          "className": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "locked": {
+                            "type": "boolean"
+                          },
+                          "name": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "offsetX": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "offsetY": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "opacity": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "parallaxX": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "parallaxY": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "tintColor": {
+                            "anyOf": [
+                              {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "visible": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "requestedFields": {
+                        "items": {
+                          "enum": [
+                            "name",
+                            "className",
+                            "visible",
+                            "opacity",
+                            "offsetX",
+                            "offsetY",
+                            "parallaxX",
+                            "parallaxY",
+                            "tintColor",
+                            "locked",
+                            "blendMode"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "updateLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "layerType",
+                      "destructive",
+                      "warning",
+                      "patch",
+                      "requestedFields",
+                      "changedFields",
+                      "wouldChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "deleteDescendants": {
+                        "type": "boolean"
+                      },
+                      "deletedLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layer": {
+                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "omittedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "parentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "deleteLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "deleteDescendants",
+                      "destructive",
+                      "warning",
+                      "layer",
+                      "parentGroupId",
+                      "index",
+                      "deletedLayerCount",
+                      "descendantLayerCount",
+                      "layerIdSample",
+                      "omittedLayerCount",
+                      "objectCount",
+                      "objectIdSample",
+                      "omittedObjectCount",
+                      "lockedLayerCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "effectivelyLockedLayerCountAfter": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "effectivelyLockedLayerCountBefore": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layer": {
+                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "renderContextMayChange": {
+                        "type": "boolean"
+                      },
+                      "renderOrderMayChange": {
+                        "type": "boolean"
+                      },
+                      "sourceIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sourceParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sourceParentLocked": {
+                        "type": "boolean"
+                      },
+                      "subtreeLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "targetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "targetParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetParentLocked": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "const": "moveLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "layer",
+                      "sourceParentGroupId",
+                      "sourceIndex",
+                      "targetParentGroupId",
+                      "targetIndex",
+                      "subtreeLayerCount",
+                      "descendantLayerCount",
+                      "layerIdSample",
+                      "omittedLayerCount",
+                      "objectCount",
+                      "lockedLayerCount",
+                      "sourceParentLocked",
+                      "targetParentLocked",
+                      "effectivelyLockedLayerCountBefore",
+                      "effectivelyLockedLayerCountAfter",
+                      "wouldChange",
+                      "renderOrderMayChange",
+                      "renderContextMayChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "allocatedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "copiedLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "copiedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "createdRootLayerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "effectivelyLockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "fileReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layerIdMappingSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetIdMapping"
+                        },
+                        "type": "array"
+                      },
+                      "layerType": {
+                        "$ref": "#/definitions/ChangeSetLayerType"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nameTruncated": {
+                        "type": "boolean"
+                      },
+                      "objectIdMappingSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetIdMapping"
+                        },
+                        "type": "array"
+                      },
+                      "omittedLayerMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedObjectMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "remappedInternalObjectReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "renderContextMayChange": {
+                        "type": "boolean"
+                      },
+                      "renderOrderMayChange": {
+                        "type": "boolean"
+                      },
+                      "retainedExternalObjectReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "serializedDuplicateBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "sourceIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sourceLayerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "sourceParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "targetParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "tileObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "duplicateLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "sourceLayerId",
+                      "createdRootLayerId",
+                      "layerType",
+                      "name",
+                      "nameTruncated",
+                      "sourceParentGroupId",
+                      "targetParentGroupId",
+                      "sourceIndex",
+                      "targetIndex",
+                      "copiedLayerCount",
+                      "descendantLayerCount",
+                      "copiedObjectCount",
+                      "allocatedCellCount",
+                      "serializedDuplicateBytes",
+                      "layerIdMappingSample",
+                      "omittedLayerMappingCount",
+                      "objectIdMappingSample",
+                      "omittedObjectMappingCount",
+                      "remappedInternalObjectReferenceCount",
+                      "retainedExternalObjectReferenceCount",
+                      "fileReferenceCount",
+                      "tileObjectCount",
+                      "lockedLayerCount",
+                      "effectivelyLockedLayerCount",
+                      "renderOrderMayChange",
+                      "renderContextMayChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "objectCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "objectIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "omittedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "deleteObjects",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "objectCount",
+                      "objectIdSample",
+                      "omittedObjectCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "gidRange": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "first": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "last": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "first",
+                          "last"
+                        ],
+                        "type": "object"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scanned": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objects": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "tileCells": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "tileCells",
+                          "objects"
+                        ],
+                        "type": "object"
+                      },
+                      "source": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "kind": {
+                            "const": "external",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "assetId",
+                          "path",
+                          "revision",
+                          "name",
+                          "tileCount",
+                          "gidSpan"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "removeTilesetFromMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "tileset",
+                      "source",
+                      "index",
+                      "gidRange",
+                      "scanned"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 128,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "affectedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedObjectLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "cellWrites": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "createdObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "deletedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "deletedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "parentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "parentGroupId",
+                          "index",
+                          "deletedLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "objectIdSample",
+                          "omittedObjectCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "deletedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "duplicatedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "allocatedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "copiedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "copiedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "createdRootLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "fileReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "remappedInternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "retainedExternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "serializedDuplicateBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tileObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "sourceLayerId",
+                          "createdRootLayerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "targetParentGroupId",
+                          "sourceIndex",
+                          "targetIndex",
+                          "copiedLayerCount",
+                          "descendantLayerCount",
+                          "copiedObjectCount",
+                          "allocatedCellCount",
+                          "serializedDuplicateBytes",
+                          "layerIdMappingSample",
+                          "omittedLayerMappingCount",
+                          "objectIdMappingSample",
+                          "omittedObjectMappingCount",
+                          "remappedInternalObjectReferenceCount",
+                          "retainedExternalObjectReferenceCount",
+                          "fileReferenceCount",
+                          "tileObjectCount",
+                          "lockedLayerCount",
+                          "effectivelyLockedLayerCount",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderingMayChange": {
+                            "type": "boolean"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "renderingMayChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "movedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountAfter": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountBefore": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceParentLocked": {
+                            "type": "boolean"
+                          },
+                          "subtreeLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetParentLocked": {
+                            "type": "boolean"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "sourceIndex",
+                          "targetParentGroupId",
+                          "targetIndex",
+                          "subtreeLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "lockedLayerCount",
+                          "sourceParentLocked",
+                          "targetParentLocked",
+                          "effectivelyLockedLayerCountBefore",
+                          "effectivelyLockedLayerCountAfter",
+                          "wouldChange",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "operationCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "removedTilesets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tilesetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tilesetRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "assetId",
+                          "tilesetPath",
+                          "source",
+                          "tilesetRevision",
+                          "name",
+                          "nameTruncated",
+                          "index",
+                          "tileCount",
+                          "gidSpan",
+                          "firstGid",
+                          "lastGid",
+                          "scannedCellCount",
+                          "scannedObjectCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileCopies": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "destination": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "overlapsSource": {
+                            "type": "boolean"
+                          },
+                          "overwrittenNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "sourceNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "source",
+                          "destination",
+                          "scannedCellCount",
+                          "cellCount",
+                          "sourceNonEmptyCellCount",
+                          "changedCellCount",
+                          "overwrittenNonEmptyCellCount",
+                          "clearedCellCount",
+                          "overlapsSource",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileFloodFills": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectedBounds": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveRect"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "connectivity": {
+                            "const": "four-way",
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "seed": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "seed",
+                          "connectivity",
+                          "sourceTile",
+                          "targetTile",
+                          "scannedCellCount",
+                          "changedCellCount",
+                          "affectedBounds",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileReplacements": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "mappingCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "replacedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "scannedCellCount",
+                          "replacedCellCount",
+                          "mappingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileStamps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "nonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "transformedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "cellCount",
+                          "nonEmptyCellCount",
+                          "clearCellCount",
+                          "transformedCellCount",
+                          "changedCellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "type": "array"
+                    },
+                    "updatedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "operationCount",
+                    "cellWrites",
+                    "affectedLayerIds",
+                    "affectedTileLayerIds",
+                    "affectedObjectLayerIds",
+                    "createdObjectIds",
+                    "updatedObjectIds",
+                    "deletedObjectIds"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "affectedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedObjectLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "cellWrites": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "createdObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "deletedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "deletedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "parentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "parentGroupId",
+                          "index",
+                          "deletedLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "objectIdSample",
+                          "omittedObjectCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "deletedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "duplicatedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "allocatedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "copiedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "copiedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "createdRootLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "fileReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "remappedInternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "retainedExternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "serializedDuplicateBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tileObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "sourceLayerId",
+                          "createdRootLayerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "targetParentGroupId",
+                          "sourceIndex",
+                          "targetIndex",
+                          "copiedLayerCount",
+                          "descendantLayerCount",
+                          "copiedObjectCount",
+                          "allocatedCellCount",
+                          "serializedDuplicateBytes",
+                          "layerIdMappingSample",
+                          "omittedLayerMappingCount",
+                          "objectIdMappingSample",
+                          "omittedObjectMappingCount",
+                          "remappedInternalObjectReferenceCount",
+                          "retainedExternalObjectReferenceCount",
+                          "fileReferenceCount",
+                          "tileObjectCount",
+                          "lockedLayerCount",
+                          "effectivelyLockedLayerCount",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "layerUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "name",
+                                "className",
+                                "visible",
+                                "opacity",
+                                "offsetX",
+                                "offsetY",
+                                "parallaxX",
+                                "parallaxY",
+                                "tintColor",
+                                "locked",
+                                "blendMode"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "name",
+                                "className",
+                                "visible",
+                                "opacity",
+                                "offsetX",
+                                "offsetY",
+                                "parallaxX",
+                                "parallaxY",
+                                "tintColor",
+                                "locked",
+                                "blendMode"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderingMayChange": {
+                            "type": "boolean"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "renderingMayChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "movedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountAfter": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountBefore": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceParentLocked": {
+                            "type": "boolean"
+                          },
+                          "subtreeLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetParentLocked": {
+                            "type": "boolean"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "sourceIndex",
+                          "targetParentGroupId",
+                          "targetIndex",
+                          "subtreeLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "lockedLayerCount",
+                          "sourceParentLocked",
+                          "targetParentLocked",
+                          "effectivelyLockedLayerCountBefore",
+                          "effectivelyLockedLayerCountAfter",
+                          "wouldChange",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "operationCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "removedTilesets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tilesetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tilesetRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "assetId",
+                          "tilesetPath",
+                          "source",
+                          "tilesetRevision",
+                          "name",
+                          "nameTruncated",
+                          "index",
+                          "tileCount",
+                          "gidSpan",
+                          "firstGid",
+                          "lastGid",
+                          "scannedCellCount",
+                          "scannedObjectCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileCopies": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "destination": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "overlapsSource": {
+                            "type": "boolean"
+                          },
+                          "overwrittenNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "sourceNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "source",
+                          "destination",
+                          "scannedCellCount",
+                          "cellCount",
+                          "sourceNonEmptyCellCount",
+                          "changedCellCount",
+                          "overwrittenNonEmptyCellCount",
+                          "clearedCellCount",
+                          "overlapsSource",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileFloodFills": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectedBounds": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveRect"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "connectivity": {
+                            "const": "four-way",
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "seed": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "seed",
+                          "connectivity",
+                          "sourceTile",
+                          "targetTile",
+                          "scannedCellCount",
+                          "changedCellCount",
+                          "affectedBounds",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileReplacements": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "mappingCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "replacedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "scannedCellCount",
+                          "replacedCellCount",
+                          "mappingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileStamps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "nonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "transformedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "cellCount",
+                          "nonEmptyCellCount",
+                          "clearCellCount",
+                          "transformedCellCount",
+                          "changedCellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "type": "array"
+                    },
+                    "updatedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "updatedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "operationCount",
+                    "cellWrites",
+                    "affectedLayerIds",
+                    "affectedTileLayerIds",
+                    "affectedObjectLayerIds",
+                    "createdObjectIds",
+                    "updatedObjectIds",
+                    "deletedObjectIds",
+                    "updatedLayerIds",
+                    "layerUpdates"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "expectedRevision",
+            "dependencyRevisions",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt",
+            "operations",
+            "summary"
           ],
           "type": "object"
         },

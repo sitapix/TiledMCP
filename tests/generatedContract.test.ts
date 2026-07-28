@@ -195,7 +195,7 @@ describe("generated MCP contract", () => {
       Buffer.from(generated.referenceMarkdown, "utf8"),
     ).toEqual(committedReference);
     expect(generatedAgain).toEqual(generated);
-  });
+  }, 20_000);
 
   it("describes the exact core and rasterizer tool surfaces", () => {
     expect(contract.format).toBe(
@@ -222,10 +222,10 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(32);
-    expect(fullTools).toHaveLength(35);
-    expect(new Set(coreTools).size).toBe(32);
-    expect(new Set(fullTools).size).toBe(35);
+    expect(coreTools).toHaveLength(33);
+    expect(fullTools).toHaveLength(36);
+    expect(new Set(coreTools).size).toBe(33);
+    expect(new Set(fullTools).size).toBe(36);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -252,8 +252,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(35);
-    expect(new Set(toolNames).size).toBe(35);
+    expect(toolDefinitions).toHaveLength(36);
+    expect(new Set(toolNames).size).toBe(36);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );

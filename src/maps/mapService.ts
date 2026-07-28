@@ -177,6 +177,10 @@ import {
   embeddedTilesetEditPlanId,
   type EmbeddedTilesetEditPlan,
 } from "./embeddedTilesetEdit.js";
+import {
+  computeShapeCells,
+  type ShapeDrawInput,
+} from "./shapeDraw.js";
 import { parseXmlDocument } from "../formats/xml.js";
 import {
   collectXmlTilesetReferences,
@@ -4549,6 +4553,58 @@ export class MapService {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
     };
+  }
+
+  /**
+   * Deterministic geometry painting: rasterizes one line, rectangle, or
+   * ellipse into exact cells and returns an ordinary setTiles map-edit
+   * change set. Pure computation — no randomness, no clipping; a shape
+   * that leaves the map fails closed.
+   */
+  async planDrawShape(input: {
+    mapPath: string;
+    layerId: number;
+    draw: ShapeDrawInput;
+    tile: TileRef | null;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      },
+    );
+    const cells = computeShapeCells(
+      input.draw,
+      context.width,
+      context.height,
+    ).map((cell) => ({
+      ...cell,
+      tile: input.tile,
+    }));
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: input.layerId,
+          cells,
+        },
+      ],
+    );
   }
 
   /**

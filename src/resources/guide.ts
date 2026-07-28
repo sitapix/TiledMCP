@@ -486,6 +486,17 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Draw geometric tile shapes
+
+\`tiled_preview_shape\` rasterizes one deterministic shape — a Bresenham
+line between two cells, a rectangle outline or fill, or a midpoint
+ellipse inscribed in its bounding rectangle — into exact cells and
+returns an ordinary \`mapEdit\` change set carrying the \`setTiles\`
+writes. Pure bounded computation: no randomness, no clipping (a shape
+that leaves the map fails closed), at most 10,000 cells per shape, and a
+\`null\` tile erases along the shape. Every preview, revision-pin, and
+transaction rule applies unchanged.
+
 ## Paint terrain with Tiled's own matcher
 
 When the local Tiled CLI is available, the optional

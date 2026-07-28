@@ -552,6 +552,34 @@
       "purpose": "\u5728\u540c\u4e00\u5f85\u6279\u51c6 change set \u4e2d\u9884\u89c8\u4e25\u683c map \u6839\u5c5e\u6027\u7f16\u8f91\u3001\u5df2\u6709 path \u7684\u5b8c\u6574 points \u66ff\u6362\uff0c\u4ee5\u53ca object-local polygon/polyline \u4e0e bounded flat-wire text \u521b\u5efa\u3002"
     },
     {
+      "name": "tiled_preview_shape",
+      "profile": "core",
+      "purpose": "Draw a filled 3x2 rectangle of one tile as an ordinary setTiles change set.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "draw": {
+          "shape": "rectangle",
+          "x": 1,
+          "y": 1,
+          "width": 3,
+          "height": 2,
+          "fill": true
+        },
+        "tile": {
+          "tileset": {
+            "kind": "external",
+            "assetId": "asset_0123456789abcdef01234567"
+          },
+          "localId": 2
+        },
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
       "name": "tiled_preview_transaction",
       "profile": "core",
       "arguments": {
