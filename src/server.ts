@@ -5675,7 +5675,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview stamping a prefab region",
       description:
-        "Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure. Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.",
+        "Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -5721,6 +5721,27 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             })
             .strict()
             .optional(),
+          extraTileLayers: z
+            .array(
+              z
+                .object({
+                  sourceLayerId: z
+                    .number()
+                    .int()
+                    .positive(),
+                  targetLayerId: z
+                    .number()
+                    .int()
+                    .positive(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(16)
+            .optional(),
+          flipHorizontal: z
+            .boolean()
+            .optional(),
           copyEmpty: z.boolean().optional(),
           expectedMapRevision: revisionSchema,
           expectedDependencyRevisions:
@@ -5738,6 +5759,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       source,
       target,
       objects,
+      extraTileLayers,
+      flipHorizontal,
       copyEmpty,
       expectedMapRevision,
       expectedDependencyRevisions,
@@ -5750,6 +5773,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           source,
           target,
           objects,
+          extraTileLayers,
+          flipHorizontal,
           copyEmpty,
           expectedMapRevision,
           expectedDependencyRevisions,

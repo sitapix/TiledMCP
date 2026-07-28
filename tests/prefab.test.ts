@@ -379,6 +379,111 @@ describe("prefab stamping via map edits", () => {
     );
   });
 
+  it("stamps flipped and multi-layer prefabs", async () => {
+    const harness = await createHarness(roots);
+    // Flip: source row 0 is [1, 2]; mirrored to [2^H, 1^H] at x 3..4.
+    const flipped =
+      await harness.service.planStampPrefab({
+        mapPath: MAP_PATH,
+        sourceMapPath: MAP_PATH,
+        source: {
+          layerId: 1,
+          x: 0,
+          y: 0,
+          width: 2,
+          height: 1,
+        },
+        target: { layerId: 1, x: 3, y: 3 },
+        flipHorizontal: true,
+        expectedMapRevision: harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      });
+    expect(flipped.operations[0]).toMatchObject({
+      type: "setTiles",
+      cells: [
+        {
+          x: 4,
+          y: 3,
+          tile: {
+            localId: 0,
+            transform: { flipH: true },
+          },
+        },
+        {
+          x: 3,
+          y: 3,
+          tile: {
+            localId: 1,
+            transform: { flipH: true },
+          },
+        },
+      ],
+    });
+    await harness.service.applyEdits(flipped);
+    const saved = JSON.parse(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
+      ),
+    ) as { layers: Array<{ data: number[] }> };
+    expect(saved.layers[0]!.data[3 * 6 + 3]).toBe(
+      0x80000002,
+    );
+    expect(saved.layers[0]!.data[3 * 6 + 4]).toBe(
+      0x80000001,
+    );
+
+    // flip + objects fails closed.
+    await expect(
+      harness.service.planStampPrefab({
+        mapPath: MAP_PATH,
+        sourceMapPath: MAP_PATH,
+        source: {
+          layerId: 1,
+          x: 0,
+          y: 0,
+          width: 2,
+          height: 1,
+        },
+        target: { layerId: 1, x: 3, y: 3 },
+        flipHorizontal: true,
+        objects: {
+          sourceLayerId: 2,
+          targetLayerId: 2,
+        },
+        expectedMapRevision: harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+
+    // extraTileLayers stamps a second pair in the same plan.
+    const fresh = await createHarness(roots);
+    const multi =
+      await fresh.service.planStampPrefab({
+        mapPath: MAP_PATH,
+        sourceMapPath: MAP_PATH,
+        source: {
+          layerId: 1,
+          x: 0,
+          y: 0,
+          width: 2,
+          height: 1,
+        },
+        target: { layerId: 1, x: 3, y: 3 },
+        extraTileLayers: [
+          { sourceLayerId: 1, targetLayerId: 1 },
+        ],
+        expectedMapRevision: fresh.mapRevision,
+        expectedDependencyRevisions:
+          fresh.dependencyRevisions,
+      });
+    expect(multi.operations).toHaveLength(2);
+  });
+
   it("fails closed on stale source pins and empty stamps", async () => {
     const harness = await createHarness(roots);
     await expect(

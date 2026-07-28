@@ -716,9 +716,13 @@ planning time into ordinary \`setTiles\` and \`createObject\`
 operations — the plan itself is the frozen prefab and nothing re-reads
 the source at apply; \`expectedSourceRevision\` asserts the source up
 front. Empty source cells are skipped unless \`copyEmpty\` stamps the
-rectangle verbatim as erasure, and objects outside the supported draft
-profile (custom properties, template instances, unknown members) fail
-closed rather than being silently dropped.
+rectangle verbatim as erasure; \`extraTileLayers\` stamps additional
+layer pairs over the same region in one plan, and \`flipHorizontal\`
+mirrors the tile stamp with official TileLayer::flip bit semantics
+(tile layers only — combining it with objects fails closed). Objects
+outside the supported draft profile (custom properties, template
+instances, unknown members) fail closed rather than being silently
+dropped.
 
 ## Draw geometric tile shapes
 

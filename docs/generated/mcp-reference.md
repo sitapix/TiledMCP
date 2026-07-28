@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:dc7b8d2215cd4a3f382e6614364684d8abc6174210d9f5f09e4d8895433a0ea4",
+    "revision": "sha256:1865a0a8fe56b14116561f95f9e8626c882b83c62ae11c155c33700f501bf701",
     "serverVersion": "0.0.1",
-    "size": 101616
+    "size": 101845
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 101616,
+  "size": 101845,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 101616 UTF-8 bytes, revision `sha256:dc7b8d2215cd4a3f382e6614364684d8abc6174210d9f5f09e4d8895433a0ea4`.
+Content contract: `text`, 101845 UTF-8 bytes, revision `sha256:1865a0a8fe56b14116561f95f9e8626c882b83c62ae11c155c33700f501bf701`.
 
 Resource templates: none.
 
@@ -48885,7 +48885,7 @@ Output schema:
 
 Availability: `core`
 
-Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure. Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.
+Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.
 
 Annotations:
 
@@ -48964,6 +48964,34 @@ Input schema:
       "description": "SHA-256 revision returned by a read or preview",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
+    },
+    "extraTileLayers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceLayerId": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "targetLayerId": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sourceLayerId",
+          "targetLayerId"
+        ],
+        "type": "object"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "type": "array"
+    },
+    "flipHorizontal": {
+      "type": "boolean"
     },
     "mapPath": {
       "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",

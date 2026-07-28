@@ -7888,6 +7888,13 @@ export class MapService {
           targetLayerId: number;
         }
       | undefined;
+    extraTileLayers?:
+      | Array<{
+          sourceLayerId: number;
+          targetLayerId: number;
+        }>
+      | undefined;
+    flipHorizontal?: boolean | undefined;
     copyEmpty?: boolean | undefined;
     expectedMapRevision: string;
     expectedDependencyRevisions: Record<
@@ -7896,6 +7903,24 @@ export class MapService {
     >;
     expectedSourceRevision?: string | undefined;
   }): Promise<MapEditPlan> {
+    if (
+      input.flipHorizontal === true &&
+      input.objects !== undefined
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "flipHorizontal covers tile layers only; stamp objects without flipping or flip without objects.",
+      );
+    }
+    if (
+      input.extraTileLayers !== undefined &&
+      input.extraTileLayers.length > 16
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "extraTileLayers may list at most 16 layer pairs.",
+      );
+    }
     assertRequiredRevision(
       input.expectedMapRevision,
       "expectedMapRevision",
@@ -7972,54 +7997,130 @@ export class MapService {
       );
     }
 
-    const sourceLayer = findTileLayer(
-      sourceContext.loaded.document,
-      source.layerId,
-      sourceMapPath,
-      "read",
-    );
-    assertRegionInsideLayer(
-      sourceLayer,
-      source.x,
-      source.y,
-      source.width,
-      source.height,
-    );
-    const cells: Array<{
+    // Official TileLayer::flip semantics: anti-diagonal cells toggle
+    // the vertical bit instead of the horizontal one.
+    const flipTile = (
+      tile: TileRef | null,
+    ): TileRef | null => {
+      if (tile === null) {
+        return null;
+      }
+      const current =
+        tile.transform !== undefined &&
+        (tile.transform.kind === undefined ||
+          tile.transform.kind === "orthogonal")
+          ? (tile.transform as Partial<OrthogonalTransform>)
+          : undefined;
+      const hadH = current?.flipH === true;
+      const hadV = current?.flipV === true;
+      const hadD = current?.flipD === true;
+      const flipH = hadD ? hadH : !hadH;
+      const flipV = hadD ? !hadV : hadV;
+      const rawFlags =
+        ((flipH ? 0x80000000 : 0) |
+          (flipV ? 0x40000000 : 0) |
+          (hadD ? 0x20000000 : 0)) >>>
+        0;
+      return {
+        ...tile,
+        transform: {
+          kind: "orthogonal",
+          flipH,
+          flipV,
+          flipD: hadD,
+          rawFlags,
+        },
+      };
+    };
+    const readStampCells = (
+      sourceLayerId: number,
+    ): Array<{
       x: number;
       y: number;
       tile: TileRef | null;
-    }> = [];
-    for (let y = 0; y < source.height; y += 1) {
-      for (let x = 0; x < source.width; x += 1) {
-        const gid = readLayerGid(
-          sourceLayer,
-          source.x + x,
-          source.y + y,
-        );
-        if (gid === 0 && input.copyEmpty !== true) {
-          continue;
-        }
-        cells.push({
-          x: input.target.x + x,
-          y: input.target.y + y,
-          tile: gidToTileRef(
+    }> => {
+      const sourceLayer = findTileLayer(
+        sourceContext.loaded.document,
+        sourceLayerId,
+        sourceMapPath,
+        "read",
+      );
+      assertRegionInsideLayer(
+        sourceLayer,
+        source.x,
+        source.y,
+        source.width,
+        source.height,
+      );
+      const cells: Array<{
+        x: number;
+        y: number;
+        tile: TileRef | null;
+      }> = [];
+      for (
+        let y = 0;
+        y < source.height;
+        y += 1
+      ) {
+        for (
+          let x = 0;
+          x < source.width;
+          x += 1
+        ) {
+          const gid = readLayerGid(
+            sourceLayer,
+            source.x + x,
+            source.y + y,
+          );
+          if (
+            gid === 0 &&
+            input.copyEmpty !== true
+          ) {
+            continue;
+          }
+          const destX =
+            input.flipHorizontal === true
+              ? input.target.x +
+                (source.width - 1 - x)
+              : input.target.x + x;
+          let tile = gidToTileRef(
             gid,
             sourceContext.orientation,
             sourceContext.bindings,
             sourceContext.embeddedBindings,
-          ),
-        });
+          );
+          if (input.flipHorizontal === true) {
+            tile = flipTile(tile);
+          }
+          cells.push({
+            x: destX,
+            y: input.target.y + y,
+            tile,
+          });
+        }
       }
-    }
+      return cells;
+    };
 
     const operations: MapEditOperation[] = [];
-    if (cells.length > 0) {
-      operations.push({
-        type: "setTiles",
-        layerId: input.target.layerId,
-        cells,
-      });
+    const layerPairs = [
+      {
+        sourceLayerId: source.layerId,
+        targetLayerId: input.target.layerId,
+      },
+      ...(input.extraTileLayers ?? []),
+    ];
+    for (const pair of layerPairs) {
+      const cells = readStampCells(
+        pair.sourceLayerId,
+      );
+      if (cells.length > 0) {
+        operations.push({
+          type: "setTiles",
+          layerId: pair.targetLayerId,
+          cells,
+        });
+      }
     }
     if (input.objects !== undefined) {
       const sourceDocument =
