@@ -262,19 +262,88 @@ describe("native TMX serialization", () => {
     );
   });
 
-  it("fails closed on structures outside the profile", () => {
-    const withProperties = goldenMap();
-    withProperties.properties = [
-      { name: "a", type: "int", value: 1 },
+  it("serializes custom properties with the official bytes", () => {
+    const map = goldenMap();
+    map.properties = [
+      { name: "title", type: "string", value: "Hello <W>" },
+      { name: "depth", type: "int", value: 7 },
+      { name: "rate", type: "float", value: 0.5 },
+      { name: "open", type: "bool", value: true },
+      { name: "multi", type: "string", value: "a\nb" },
+    ];
+    const rendered = serializeTmxMap(
+      map,
+      MAP_PATH,
+    );
+    // Sorted by name; string type implicit; newline strings become
+    // element text — exactly the official writeProperties bytes.
+    expect(rendered).toContain(
+      ` <properties>
+  <property name="depth" type="int" value="7"/>
+  <property name="multi">a
+b</property>
+  <property name="open" type="bool" value="true"/>
+  <property name="rate" type="float" value="0.5"/>
+  <property name="title" value="Hello &lt;W&gt;"/>
+ </properties>`,
+    );
+    const withObjectProperty = goldenMap();
+    (
+      (withObjectProperty.layers as JsonObject[])[1] as {
+        objects: JsonObject[];
+      }
+    ).objects = [
+      {
+        height: 8,
+        id: 1,
+        name: "P",
+        rotation: 0,
+        type: "",
+        visible: true,
+        width: 8,
+        x: 8,
+        y: 8,
+        properties: [
+          { name: "hp", type: "int", value: 3 },
+        ],
+      },
+    ];
+    withObjectProperty.nextobjectid = 2;
+    expect(
+      serializeTmxMap(
+        withObjectProperty,
+        MAP_PATH,
+      ),
+    ).toContain(
+      `  <object id="1" name="P" x="8" y="8" width="8" height="8">
+   <properties>
+    <property name="hp" type="int" value="3"/>
+   </properties>
+  </object>`,
+    );
+    // Object- and class-typed properties stay outside the profile.
+    const withClassProperty = goldenMap();
+    withClassProperty.properties = [
+      {
+        name: "x",
+        type: "class",
+        propertytype: "T",
+        value: {},
+      },
     ];
     expect(() =>
-      serializeTmxMap(withProperties, MAP_PATH),
+      serializeTmxMap(
+        withClassProperty,
+        MAP_PATH,
+      ),
     ).toThrow(
       expect.objectContaining({
         code: "UNSUPPORTED_FORMAT",
       }),
     );
+  });
 
+  it("fails closed on structures outside the profile", () => {
     const withImageLayer = goldenMap();
     (withImageLayer.layers as JsonObject[]).push({
       id: 3,

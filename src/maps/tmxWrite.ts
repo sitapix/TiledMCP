@@ -3,6 +3,7 @@ import {
   expectArray,
   expectObject,
   type JsonObject,
+  type JsonValue,
 } from "../formats/json.js";
 import {
   parseTiledTextObjectData,
@@ -44,6 +45,7 @@ const KNOWN_MAP_MEMBERS = new Set([
   "type",
   "version",
   "width",
+  "properties",
 ]);
 
 const KNOWN_LAYER_COMMON_MEMBERS = [
@@ -68,6 +70,7 @@ const KNOWN_TILE_LAYER_MEMBERS = new Set([
   "data",
   "height",
   "width",
+  "properties",
 ]);
 
 const KNOWN_OBJECT_LAYER_MEMBERS = new Set([
@@ -75,6 +78,7 @@ const KNOWN_OBJECT_LAYER_MEMBERS = new Set([
   "color",
   "draworder",
   "objects",
+  "properties",
 ]);
 
 const KNOWN_OBJECT_MEMBERS = new Set([
@@ -94,6 +98,7 @@ const KNOWN_OBJECT_MEMBERS = new Set([
   "width",
   "x",
   "y",
+  "properties",
 ]);
 
 const RENDER_ORDERS = new Set([
@@ -115,11 +120,6 @@ function assertKnownMembers(
   known: ReadonlySet<string>,
   context: string,
 ): void {
-  if (record.properties !== undefined) {
-    fail(
-      `${context} carries custom properties, which the TMX writer profile does not cover.`,
-    );
-  }
   const unknown = Object.keys(record).find(
     (member) => !known.has(member),
   );
@@ -278,6 +278,158 @@ class Attributes {
   toString(): string {
     return this.parts.join("");
   }
+}
+
+const PROPERTY_VALUE_TYPES = new Set([
+  "string",
+  "int",
+  "float",
+  "bool",
+  "color",
+  "file",
+]);
+
+/**
+ * Serializes one custom-properties array with the exact official
+ * writeProperties bytes: entries sort by name (QMap key order, i.e.
+ * UTF-16 code-unit order), the string type is implicit, single-line
+ * strings use the value attribute while strings containing newlines
+ * become element text, bools render true/false, and floats use
+ * QString::number %g. The object and class property types are outside
+ * the profile and fail closed.
+ */
+function serializeTmxProperties(
+  raw: JsonValue | undefined,
+  context: string,
+  lines: string[],
+  indent: string,
+): void {
+  if (raw === undefined) {
+    return;
+  }
+  const entries = expectArray(
+    raw,
+    `${context}.properties`,
+  );
+  if (entries.length === 0) {
+    return;
+  }
+  const rendered: Array<{
+    name: string;
+    line: string;
+  }> = [];
+  for (const [
+    index,
+    entry,
+  ] of entries.entries()) {
+    const record = expectObject(
+      entry,
+      `${context}.properties[${index}]`,
+    );
+    const entryContext = `${context}.properties[${index}]`;
+    const unknown = Object.keys(record).find(
+      (member) =>
+        member !== "name" &&
+        member !== "type" &&
+        member !== "value",
+    );
+    if (unknown !== undefined) {
+      fail(
+        `${entryContext}.${unknown} is outside the TMX property profile (object and class properties are not writable).`,
+      );
+    }
+    const name = requireString(
+      record.name,
+      `${entryContext}.name`,
+    );
+    const type =
+      record.type === undefined
+        ? "string"
+        : requireString(
+            record.type,
+            `${entryContext}.type`,
+          );
+    if (!PROPERTY_VALUE_TYPES.has(type)) {
+      fail(
+        `${entryContext}.type ${JSON.stringify(type)} is outside the TMX property profile.`,
+      );
+    }
+    const attributes = new Attributes();
+    attributes.add("name", name);
+    if (type !== "string") {
+      attributes.add("type", type);
+    }
+    let line: string;
+    if (type === "string") {
+      const value = requireString(
+        record.value,
+        `${entryContext}.value`,
+      );
+      if (/[\n\r]/u.test(value)) {
+        assertSerializableText(
+          value,
+          `${entryContext}.value`,
+        );
+        line = `${indent}<property${attributes.toString()}>${escapeText(value)}</property>`;
+      } else {
+        attributes.add("value", value);
+        line = `${indent}<property${attributes.toString()}/>`;
+      }
+    } else if (type === "bool") {
+      if (typeof record.value !== "boolean") {
+        fail(
+          `${entryContext}.value must be a boolean.`,
+        );
+      }
+      attributes.add(
+        "value",
+        record.value ? "true" : "false",
+      );
+      line = `${indent}<property${attributes.toString()}/>`;
+    } else if (
+      type === "int" ||
+      type === "float"
+    ) {
+      const value = requireDouble(
+        record.value,
+        `${entryContext}.value`,
+      );
+      attributes.add(
+        "value",
+        type === "int"
+          ? String(
+              requireInt(
+                value,
+                `${entryContext}.value`,
+              ),
+            )
+          : formatQtDouble(
+              value,
+              `${entryContext}.value`,
+            ),
+      );
+      line = `${indent}<property${attributes.toString()}/>`;
+    } else {
+      attributes.add(
+        "value",
+        requireString(
+          record.value,
+          `${entryContext}.value`,
+        ),
+      );
+      line = `${indent}<property${attributes.toString()}/>`;
+    }
+    rendered.push({ name, line });
+  }
+  rendered.sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
+  const outer = indent.slice(0, -1);
+  lines.push(`${outer}<properties>`);
+  for (const entry of rendered) {
+    lines.push(entry.line);
+  }
+  lines.push(`${outer}</properties>`);
 }
 
 function serializeLayerCommonAttributes(
@@ -476,6 +628,12 @@ function serializeTileLayer(
     { width, height },
   );
   lines.push(` <layer${attributes.toString()}>`);
+  serializeTmxProperties(
+    layer.properties,
+    context,
+    lines,
+    "   ",
+  );
   lines.push('  <data encoding="csv">');
   for (let y = 0; y < height; y += 1) {
     const cells: string[] = [];
@@ -653,13 +811,32 @@ function serializeObject(
     fail(`${context}.visible must be a boolean.`);
   }
 
+  const hasProperties =
+    raw.properties !== undefined;
+  if (
+    (marker === undefined ||
+      marker === "gid") &&
+    !hasProperties
+  ) {
+    lines.push(
+      `${indent}<object${attributes.toString()}/>`,
+    );
+    return;
+  }
   if (
     marker === undefined ||
     marker === "gid"
   ) {
     lines.push(
-      `${indent}<object${attributes.toString()}/>`,
+      `${indent}<object${attributes.toString()}>`,
     );
+    serializeTmxProperties(
+      raw.properties,
+      context,
+      lines,
+      `${childIndent} `,
+    );
+    lines.push(`${indent}</object>`);
     return;
   }
   if (marker === "text") {
@@ -742,6 +919,12 @@ function serializeObject(
     lines.push(
       `${indent}<object${attributes.toString()}>`,
     );
+    serializeTmxProperties(
+      raw.properties,
+      context,
+      lines,
+      `${childIndent} `,
+    );
     lines.push(
       `${childIndent}<text${textAttributes.toString()}>${escapeText(fields.text)}</text>`,
     );
@@ -786,6 +969,12 @@ function serializeObject(
     lines.push(
       `${indent}<object${attributes.toString()}>`,
     );
+    serializeTmxProperties(
+      raw.properties,
+      context,
+      lines,
+      `${childIndent} `,
+    );
     lines.push(
       `${childIndent}<${marker} points="${rendered}"/>`,
     );
@@ -794,6 +983,12 @@ function serializeObject(
   }
   lines.push(
     `${indent}<object${attributes.toString()}>`,
+  );
+  serializeTmxProperties(
+    raw.properties,
+    context,
+    lines,
+    `${childIndent} `,
   );
   lines.push(`${childIndent}<${marker}/>`);
   lines.push(`${indent}</object>`);
@@ -846,7 +1041,10 @@ function serializeObjectLayer(
     layer.objects ?? [],
     `${context}.objects`,
   );
-  if (objects.length === 0) {
+  if (
+    objects.length === 0 &&
+    layer.properties === undefined
+  ) {
     lines.push(
       ` <objectgroup${attributes.toString()}/>`,
     );
@@ -854,6 +1052,12 @@ function serializeObjectLayer(
   }
   lines.push(
     ` <objectgroup${attributes.toString()}>`,
+  );
+  serializeTmxProperties(
+    layer.properties,
+    context,
+    lines,
+    "   ",
   );
   for (const [index, entry] of objects.entries()) {
     serializeObject(
@@ -1270,6 +1474,12 @@ export function serializeTmxMap(
     '<?xml version="1.0" encoding="UTF-8"?>',
   );
   lines.push(`<map${attributes.toString()}>`);
+  serializeTmxProperties(
+    document.properties,
+    mapPath,
+    lines,
+    "  ",
+  );
 
   const tilesets = expectArray(
     document.tilesets,

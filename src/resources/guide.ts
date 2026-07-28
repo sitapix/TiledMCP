@@ -540,10 +540,13 @@ with disclosure.
 map to TMX bytes that match Tiled 1.12.2's own writer byte for byte —
 no CLI involved. The profile covers finite orthogonal maps, external
 tileset references, CSV tile layers, and top-level tile/object layers
-the serializer fully understands; embedded tilesets, image and group
-layers, custom properties, template instances, unknown members, and
-floats whose six-significant-digit rendering would lose precision all
-fail closed instead of drifting. Tileset references and GIDs carry
+the serializer fully understands, plus custom properties of the
+string/int/float/bool/color/file types (official writeProperties
+bytes: name-sorted, newline strings as element text); embedded
+tilesets, image and group layers, object- and class-typed properties,
+template instances, unknown members, and floats whose
+six-significant-digit rendering would lose precision all fail closed
+instead of drifting. Tileset references and GIDs carry
 verbatim, so the \`.tmx\` target must be a new file in the source
 map's directory. The result is a \`fileExport\` change set whose
 producer is the native serializer; apply re-serializes under the

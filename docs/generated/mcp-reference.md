@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:c7b014fd984ea13248f0cc5d429537196324037c52949d764b61680664366078",
+    "revision": "sha256:dc7b8d2215cd4a3f382e6614364684d8abc6174210d9f5f09e4d8895433a0ea4",
     "serverVersion": "0.0.1",
-    "size": 101450
+    "size": 101616
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 101450,
+  "size": 101616,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 101450 UTF-8 bytes, revision `sha256:c7b014fd984ea13248f0cc5d429537196324037c52949d764b61680664366078`.
+Content contract: `text`, 101616 UTF-8 bytes, revision `sha256:dc7b8d2215cd4a3f382e6614364684d8abc6174210d9f5f09e4d8895433a0ea4`.
 
 Resource templates: none.
 
