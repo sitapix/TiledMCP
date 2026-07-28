@@ -7,7 +7,7 @@
     "size": 3952
   },
   "examples": {
-    "count": 41,
+    "count": 42,
     "path": "examples/mcp-calls.v1.json"
   },
   "format": "tiled-mcp-discovery-contract",
@@ -25,6 +25,7 @@
         "tiled_list_world_maps",
         "tiled_list_property_types",
         "tiled_list_checkpoints",
+        "tiled_create_checkpoint",
         "tiled_preview_prepared_checkpoint_discard",
         "tiled_preview_prepared_checkpoint_commit",
         "tiled_preview_prepared_checkpoint_abandon",
@@ -72,6 +73,7 @@
         "tiled_list_world_maps",
         "tiled_list_property_types",
         "tiled_list_checkpoints",
+        "tiled_create_checkpoint",
         "tiled_preview_prepared_checkpoint_discard",
         "tiled_preview_prepared_checkpoint_commit",
         "tiled_preview_prepared_checkpoint_abandon",
@@ -129,14 +131,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:0f5be9e1be35ac5c977c8b5ea6f22e364cb03ff900c9b786dc71c438f83410c3",
+        "revision": "sha256:4b80d16b7fcb601588127b683bb9b1ee37126414924bbe93ebcc5efc12bd332d",
         "serverVersion": "0.0.1",
-        "size": 92331
+        "size": 92737
       },
-      "byteLength": 92331,
+      "byteLength": 92737,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:0f5be9e1be35ac5c977c8b5ea6f22e364cb03ff900c9b786dc71c438f83410c3",
+      "sha256": "sha256:4b80d16b7fcb601588127b683bb9b1ee37126414924bbe93ebcc5efc12bd332d",
       "uri": "tiled://guide"
     }
   ],
@@ -164,9 +166,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:0f5be9e1be35ac5c977c8b5ea6f22e364cb03ff900c9b786dc71c438f83410c3",
+        "revision": "sha256:4b80d16b7fcb601588127b683bb9b1ee37126414924bbe93ebcc5efc12bd332d",
         "serverVersion": "0.0.1",
-        "size": 92331
+        "size": 92737
       },
       "annotations": {
         "audience": [
@@ -178,7 +180,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 92331,
+      "size": 92737,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }
@@ -202,6 +204,7 @@
     "tiled_analyze_usage": "core",
     "tiled_apply_change_set": "core",
     "tiled_check_connectivity": "core",
+    "tiled_create_checkpoint": "core",
     "tiled_create_layer": "core",
     "tiled_create_map": "core",
     "tiled_create_tileset": "core",
@@ -5109,6 +5112,292 @@
         "type": "object"
       },
       "title": "Check tile layer connectivity"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+        "title": "Create explicit checkpoints"
+      },
+      "description": "Creates committed recovery checkpoints of the exact current bytes of 1 to 32 project files, without modifying any project asset — an explicit save point before risky work, on top of the automatic checkpoints every net-changing apply already takes. Restoring one of these checkpoints reproduces the snapshotted state byte for byte.",
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "type": "object"
+      },
+      "name": "tiled_create_checkpoint",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "definitions": {
+          "__schema0": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "items": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "$ref": "#/definitions/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "checkpointCount": {
+                    "maximum": 32,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "checkpoints": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "checkpointId": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "path": {
+                          "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+                          "maxLength": 4096,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "revision": {
+                          "description": "SHA-256 revision returned by a read or preview",
+                          "pattern": "^sha256:[0-9a-f]{64}$",
+                          "type": "string"
+                        },
+                        "size": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "checkpointId",
+                        "path",
+                        "revision",
+                        "size"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "checkpoints",
+                  "checkpointCount"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "ASSET_REGISTRY_CORRUPT",
+                          "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                          "CHANGE_SET_LIMIT_EXCEEDED",
+                          "CHANGE_SET_NOT_FOUND",
+                          "CHANGE_SET_OWNED",
+                          "CHECKPOINT_CHANGED",
+                          "CHECKPOINT_CORRUPT",
+                          "CHECKPOINT_NOT_COMMITTED",
+                          "CHECKPOINT_NOT_FOUND",
+                          "CHECKPOINT_QUOTA_EXCEEDED",
+                          "CHECKPOINT_STATE_CONFLICT",
+                          "DEPENDENCY_REVISION_CONFLICT",
+                          "DOCUMENT_CHANGED_DURING_READ",
+                          "DOCUMENT_TOO_LARGE",
+                          "DUPLICATE_JSON_KEY",
+                          "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                          "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                          "FILE_ALREADY_EXISTS",
+                          "FILE_IN_USE",
+                          "FILE_LOCKED",
+                          "FILE_LOCK_CORRUPT",
+                          "FILE_NOT_FOUND",
+                          "GID_OUT_OF_RANGE",
+                          "GID_RANGE_EXHAUSTED",
+                          "IMAGE_CHANGED_DURING_READ",
+                          "IMAGE_DIMENSIONS_EXCEEDED",
+                          "IMAGE_ENCODING_FAILED",
+                          "IMAGE_TOO_LARGE",
+                          "INTERNAL_ERROR",
+                          "INVALID_ARGUMENT",
+                          "INVALID_DOCUMENT",
+                          "INVALID_GID",
+                          "INVALID_JSON",
+                          "INVALID_PROJECT_PATH",
+                          "INVALID_TILESET_ATLAS",
+                          "INVALID_TILESET_IMAGE",
+                          "INVALID_TILE_DATA",
+                          "INVALID_TILE_TRANSFORM",
+                          "JSON_NESTING_LIMIT",
+                          "LAYER_DEPTH_EXCEEDED",
+                          "LAYER_HAS_DESCENDANTS",
+                          "LAYER_ID_EXHAUSTED",
+                          "LAYER_INDEX_OUT_OF_RANGE",
+                          "LAYER_LIMIT_EXCEEDED",
+                          "LAYER_MOVE_CYCLE",
+                          "LAYER_NOT_FOUND",
+                          "LAYER_TYPE_MISMATCH",
+                          "NEXT_LAYER_ID_INVALID",
+                          "NEXT_OBJECT_ID_INVALID",
+                          "OBJECT_ID_EXHAUSTED",
+                          "OBJECT_IN_USE",
+                          "OBJECT_LIMIT_EXCEEDED",
+                          "OBJECT_NOT_FOUND",
+                          "OBJECT_REFERENCE_NOT_FOUND",
+                          "OBJECT_SHAPE_MISMATCH",
+                          "OVERLAY_TOO_DENSE",
+                          "PAGE_OUT_OF_RANGE",
+                          "PARENT_DIRECTORY_NOT_FOUND",
+                          "PATH_OUTSIDE_ROOT",
+                          "PREVIEW_DIMENSIONS_EXCEEDED",
+                          "PREVIEW_REGION_REQUIRED",
+                          "RASTER_TEMP_CLEANUP_FAILED",
+                          "REGION_OUT_OF_BOUNDS",
+                          "RESERVED_PROJECT_PATH",
+                          "RESULT_LIMIT_EXCEEDED",
+                          "REVERT_WOULD_DELETE",
+                          "REVISION_CONFLICT",
+                          "STALE_FILE_LOCK",
+                          "SYMLINK_NOT_ALLOWED",
+                          "TILESET_ALREADY_REFERENCED",
+                          "TILESET_GID_RANGE_OVERLAP",
+                          "TILESET_IMAGE_DIMENSION_MISMATCH",
+                          "TILESET_IN_USE",
+                          "TILESET_NOT_FOUND",
+                          "TILESET_NOT_IN_MAP",
+                          "TILE_ID_OUT_OF_RANGE",
+                          "TMXRASTERIZER_FAILED",
+                          "TMXRASTERIZER_NOT_EXECUTABLE",
+                          "TMXRASTERIZER_NOT_FOUND",
+                          "TMXRASTERIZER_OUTPUT_INVALID",
+                          "TMXRASTERIZER_OUTPUT_LIMIT",
+                          "TMXRASTERIZER_OUTPUT_MISSING",
+                          "TMXRASTERIZER_TIMEOUT",
+                          "UNSAFE_JSON_NUMBER",
+                          "UNSAFE_RENDER_REFERENCE",
+                          "UNSAFE_SVG",
+                          "UNSORTED_TILESET_REFERENCES",
+                          "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                          "UNSUPPORTED_FORMAT",
+                          "UNSUPPORTED_IMAGE_FORMAT",
+                          "UNSUPPORTED_MAP_PROFILE",
+                          "UNSUPPORTED_OBJECT_PROFILE",
+                          "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                          "UNSUPPORTED_PROPERTY_QUERY",
+                          "UNSUPPORTED_PROPERTY_WRITE",
+                          "UNSUPPORTED_REFERENCE_SCAN",
+                          "UNSUPPORTED_RENDER_FEATURE",
+                          "UNSUPPORTED_RENDER_LAYER",
+                          "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                          "UNSUPPORTED_RESIZE_TEMPLATE",
+                          "UNSUPPORTED_TILESET",
+                          "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                          "UNSUPPORTED_TILE_ENCODING"
+                        ],
+                        "type": "string"
+                      },
+                      "details": {
+                        "additionalProperties": {
+                          "$ref": "#/definitions/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "message": {
+                        "maxLength": 4096,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "message",
+                      "details"
+                    ],
+                    "type": "object"
+                  },
+                  "ok": {
+                    "const": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "ok",
+                  "error"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
+      "title": "Create explicit checkpoints"
     },
     {
       "annotations": {
@@ -12736,6 +13025,10 @@
                             "type": "string"
                           },
                           {
+                            "const": "tiled_create_checkpoint",
+                            "type": "string"
+                          },
+                          {
                             "const": "tiled_preview_prepared_checkpoint_discard",
                             "type": "string"
                           },
@@ -12890,6 +13183,10 @@
                           },
                           {
                             "const": "tiled_list_checkpoints",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_create_checkpoint",
                             "type": "string"
                           },
                           {
@@ -13051,6 +13348,10 @@
                           },
                           {
                             "const": "tiled_list_checkpoints",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_create_checkpoint",
                             "type": "string"
                           },
                           {
@@ -13216,6 +13517,10 @@
                           },
                           {
                             "const": "tiled_list_checkpoints",
+                            "type": "string"
+                          },
+                          {
+                            "const": "tiled_create_checkpoint",
                             "type": "string"
                           },
                           {

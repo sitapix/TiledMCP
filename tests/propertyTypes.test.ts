@@ -260,3 +260,53 @@ async function createHarness(
     service: new MapService(resolver, store),
   };
 }
+
+describe("explicit checkpoints", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("snapshots current bytes as committed checkpoints", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "tiledmcp-explicit-cp-"),
+    );
+    roots.add(root);
+    await writeFile(
+      join(root, "notes.tiled-project"),
+      serializeJsonDocument({
+        propertyTypes: [],
+      }),
+    );
+    const resolver =
+      await ProjectPathResolver.create(root);
+    const store = new DocumentStore(resolver);
+    const results =
+      await store.createExplicitCheckpoints(
+        ["notes.tiled-project"],
+        "before rework",
+      );
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      path: "notes.tiled-project",
+      revision: expect.stringMatching(
+        /^sha256:/u,
+      ),
+    });
+    const listing = await store.checkpoints.list(
+      { status: "committed", limit: 10 },
+    );
+    expect(
+      listing.manifests.some(
+        (entry) =>
+          entry.id === results[0]!.checkpointId,
+      ),
+    ).toBe(true);
+  });
+});

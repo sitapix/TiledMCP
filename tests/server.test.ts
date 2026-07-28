@@ -163,6 +163,7 @@ const CORE_TOOLS = [
   "tiled_list_world_maps",
   "tiled_list_property_types",
   "tiled_list_checkpoints",
+  "tiled_create_checkpoint",
   "tiled_preview_prepared_checkpoint_discard",
   "tiled_preview_prepared_checkpoint_commit",
   "tiled_preview_prepared_checkpoint_abandon",
@@ -293,7 +294,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the thirty-eight core tools with safety annotations", async () => {
+  it("advertises exactly the thirty-nine core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 

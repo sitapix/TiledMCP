@@ -488,6 +488,15 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Take explicit save points
+
+\`tiled_create_checkpoint\` creates committed recovery checkpoints of
+the exact current bytes of 1 to 32 project files without modifying any
+asset — an explicit save point before risky work, on top of the
+automatic checkpoints every net-changing apply already takes. Restore
+one later with \`tiled_preview_checkpoint_restore\` to reproduce the
+snapshotted state byte for byte.
+
 ## Render a visual diff
 
 \`tiled_render_diff\` renders the same bounded region of two maps

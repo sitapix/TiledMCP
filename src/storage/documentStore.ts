@@ -434,6 +434,65 @@ export class DocumentStore {
     };
   }
 
+  /**
+   * Creates committed checkpoints of the exact current bytes of the
+   * given files, without modifying any project asset. Restoring such a
+   * checkpoint reproduces the snapshotted state byte for byte.
+   */
+  async createExplicitCheckpoints(
+    projectPaths: readonly string[],
+    label: string,
+  ): Promise<
+    Array<{
+      checkpointId: string;
+      path: string;
+      revision: string;
+      size: number;
+    }>
+  > {
+    const results: Array<{
+      checkpointId: string;
+      path: string;
+      revision: string;
+      size: number;
+    }> = [];
+    for (const projectPath of projectPaths) {
+      const normalized =
+        this.resolver.normalize(projectPath);
+      await this.mutex.runExclusive(
+        normalized,
+        () =>
+          withProjectFileLock(
+            this.resolver,
+            normalized,
+            async () => {
+              const snapshot =
+                await this.readSnapshot(
+                  normalized,
+                );
+              const manifest =
+                await this.checkpoints.prepare(
+                  normalized,
+                  snapshot.source,
+                  snapshot.revision,
+                  label,
+                );
+              await this.checkpoints.markCommitted(
+                manifest,
+              );
+              results.push({
+                checkpointId: manifest.id,
+                path: normalized,
+                revision: snapshot.revision,
+                size: snapshot.size,
+              });
+            },
+          ),
+      );
+    }
+    return results;
+  }
+
   async create(
     projectPath: string,
     document: JsonObject,

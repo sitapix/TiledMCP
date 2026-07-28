@@ -1601,6 +1601,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_list_world_maps",
     "tiled_list_property_types",
     "tiled_list_checkpoints",
+    "tiled_create_checkpoint",
     "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_prepared_checkpoint_commit",
     "tiled_preview_prepared_checkpoint_abandon",
@@ -3381,6 +3382,93 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           ...(status === undefined ? {} : { status }),
         }),
       ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_create_checkpoint",
+    {
+      title: "Create explicit checkpoints",
+      description:
+        "Creates committed recovery checkpoints of the exact current bytes of 1 to 32 project files, without modifying any project asset — an explicit save point before risky work, on top of the automatic checkpoints every net-changing apply already takes. Restoring one of these checkpoints reproduces the snapshotted state byte for byte.",
+      inputSchema: z
+        .object({
+          paths: z
+            .array(projectPathSchema)
+            .min(1)
+            .max(32)
+            .superRefine((paths, context) => {
+              const seen = new Set<string>();
+              for (const [
+                index,
+                path,
+              ] of paths.entries()) {
+                if (seen.has(path)) {
+                  context.addIssue({
+                    code: "custom",
+                    message: `Duplicate path ${path}`,
+                    path: [index],
+                  });
+                }
+                seen.add(path);
+              }
+            }),
+          label: z
+            .string()
+            .max(1_024)
+            .optional(),
+        })
+        .strict(),
+      outputSchema: toolOutputSchema(
+        z
+          .object({
+            checkpoints: z
+              .array(
+                z
+                  .object({
+                    checkpointId: z
+                      .string()
+                      .min(1),
+                    path: projectPathSchema,
+                    revision: revisionSchema,
+                    size: z
+                      .number()
+                      .int()
+                      .nonnegative(),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(32),
+            checkpointCount: z
+              .number()
+              .int()
+              .min(1)
+              .max(32),
+          })
+          .strict(),
+      ),
+      annotations: {
+        title: "Create explicit checkpoints",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ paths, label }) =>
+      executeTool(async () => {
+        const checkpoints =
+          await store.createExplicitCheckpoints(
+            paths,
+            label ?? "explicit checkpoint",
+          );
+        return {
+          checkpoints,
+          checkpointCount: checkpoints.length,
+        };
+      }),
   );
 
   register(

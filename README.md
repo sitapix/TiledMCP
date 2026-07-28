@@ -272,6 +272,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_list_world_maps` | 只读列出一个 JSON world 的显式地图成员（坐标、声明尺寸、逐成员存在性与 revision pin）；pattern 成员只计数 |
 | `tiled_preview_world_edits` | 预览 world 成员的 add/move/remove（按当前数组 index 定位、world revision pin）；被引用地图文件绝不改动 |
 | `tiled_list_checkpoints` | 有界列出恢复 checkpoint，并隔离报告损坏 manifest |
+| `tiled_create_checkpoint` | 对 1..32 个项目文件的当前 bytes 建显式 committed 快照（不改任何资产），配合 restore 逐字节回滚 |
 | `tiled_preview_prepared_checkpoint_discard` | 仅在目标仍精确等于写前状态时，固定 prepared manifest 与目标证据并生成 destructive discard change set |
 | `tiled_preview_prepared_checkpoint_commit` | 仅对 prepared create 的 exact-after 来源含混状态，固定完整 manifest/目标证据并生成内部状态 commit change set |
 | `tiled_preview_prepared_checkpoint_abandon` | 对机器无法自动处理的 prepared 冲突固定完整证据并生成永久删除恢复点、但不修改项目资产的 abandon change set |

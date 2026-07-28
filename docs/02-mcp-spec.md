@@ -521,7 +521,7 @@ registry 保持 29 core / 30 with rasterizer。语义按 Tiled 1.12.2 官方源�
 |---|---|---|
 | `tiled_preview_edits` | 预览同一 map 上的一组编辑，返回 change set；`operations` 是封闭的 discriminated union，不接受任意 `{tool,args}` | `mapPath`, `expectedRevision`, `expectedDependencyRevisions`, `operations` |
 | `tiled_apply_change_set` | 提交已经由客户端批准的 map edit、checkpoint restore、prepared-checkpoint discard/commit/abandon、单项或 batch committed-checkpoint prune change set；提交前重新做对应 revision guard | `changeSetId`, `expectedRevision` |
-| `tiled_create_checkpoint` | **候选 / 未注册**；未来为显式文档集合建立自有内容寻址快照；当前只有 net-changing 既有目标提交前的自动 checkpoint | `paths`, `label?` |
+| `tiled_create_checkpoint` | **已实现（直接执行）**：对 1..32 个项目文件的当前 bytes 各建一个 committed 内容寻址快照（逐文件互斥锁内读取+prepare+markCommitted），不修改任何项目资产；在每次 net-changing apply 的自动 checkpoint 之上提供显式保存点，restore 逐字节复现 | `paths`, `label?` |
 | `tiled_list_checkpoints` | **已实现**；有界列出 manifest，并把损坏条目隔离到 `corruptEntries`，不读取或恢复目标 | `status?`, `limit?`, `scanLimit?` |
 | `tiled_preview_prepared_checkpoint_discard` | **已实现安全单项版**；只有目标仍精确等于 checkpoint 的 before 状态时才固定 manifest/目标证据并返回 destructive discard change set；不读取 blob、不直接删除 | `checkpointId` |
 | `tiled_preview_prepared_checkpoint_commit` | **已实现窄权限人工裁决**；仅接受 prepared create 且安全普通目标 raw revision 精确等于 after，同时固定当前 size 作为 apply CAS，返回只推进内部 manifest 状态的 change set | `checkpointId` |
