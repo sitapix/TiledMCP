@@ -681,6 +681,17 @@ lands. The result is an ordinary \`mapEdit\` change set carrying the
 exact \`setTiles\` writes; a scatter that matches no cells fails
 closed.
 
+## Import reference images
+
+\`tiled_preview_import_image\` resamples one project reference image
+onto a bounded cell grid — each cell averages its alpha-weighted pixel
+block — and maps every cell to the nearest palette color by squared
+RGB distance (ties resolve to palette order), returning an ordinary
+\`mapEdit\` change set. Fully transparent blocks are skipped, a
+\`null\` palette tile erases where its color wins, and palette tiles
+accept semantic \`{name}\` references. Pure integer arithmetic: the
+same image and palette always produce the same plan.
+
 ## Stamp prefab regions
 
 \`tiled_preview_prefab\` stamps one source-map region onto a target

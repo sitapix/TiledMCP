@@ -1600,7 +1600,7 @@ layer density 和 tileset 摘要各最多 64 项，每个 tileset 的未使用 l
 | `tiled_render_tileset_sheet` | **已实现基础版**。按地图摘要给出的 opaque asset id 渲染连续 local id 的分页 atlas sheet；安全预算不足时自动减小每页容量，不静默缩放 tile。语义名仍是后续能力 | `mapPath`, `tilesetAssetId`, `page?`, `pageSize?`, `columns?`, `scale?` |
 | `tiled_render_tiles` | **已实现 static root-atlas v1**。按输入顺序放大并标注 1–64 个唯一、显式且可稀疏的 local IDs；不分页、不缩减选集，预算不足时整次失败。动画胶片条、Wang 分组和语义名不在 v1 内 | `mapPath`, `tilesetAssetId`, `localIds`, `columns?`, `scale?`, `expectedMapRevision?`, `expectedTilesetRevision?` |
 | `tiled_render_diff` | **已实现**：同一有界 region 的两次 native 渲染逐像素对比——差异像素纯红叠加、相同像素保留 A 渲染 25% 透明度、差异按 tile cell 聚合（≤64 样本）；两侧像素尺寸必须一致、双侧可各选图层（同图不同层自对比可行）；只读 | `mapPathA`, `mapPathB`, `region`, `layerIdsA?`, `layerIdsB?`, `scale?` |
-| `tiled_import_from_image` | 远期候选。把网格对齐参考图按 tile 匹配到目标图层，未匹配格子返回坐标与裁剪图 | `imagePath`, `mapPath`, `layerId`, `tileset`, `threshold?` |
+| `tiled_import_from_image` | **已实现为 `tiled_preview_import_image`**：参考图重采样到目标格网（每 cell 对其像素块做 alpha 加权平均）、按平方 RGB 距离映射最近 palette 色（并列取 palette 先序）为 tile（支持 `{name}` 语义引用、null 色为擦除、全透明块跳过），产出普通 `mapEdit` change set；纯整数算术确定性、全透明区域 fail closed、图片经 safeImage 有界解码 | `mapPath`, `layerId`, `imagePath`, `region`, `palette`, `expectedMapRevision`, `expectedDependencyRevisions` |
 
 #### 3.11.1 图片 wire contract 与限制
 

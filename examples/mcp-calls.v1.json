@@ -748,6 +748,48 @@
       }
     },
     {
+      "name": "tiled_preview_import_image",
+      "profile": "core",
+      "purpose": "Quantize a reference image onto the cell grid through a color-to-tile palette, as an ordinary setTiles change set.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "imagePath": "reference/sketch.png",
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 16,
+          "height": 16
+        },
+        "palette": [
+          {
+            "color": "#00ff00",
+            "tile": {
+              "name": "grass"
+            }
+          },
+          {
+            "color": "#0000ff",
+            "tile": {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 1
+            }
+          },
+          {
+            "color": "#ffffff",
+            "tile": null
+          }
+        ],
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
       "name": "tiled_preview_prefab",
       "profile": "core",
       "purpose": "Stamp a source-map region \u2014 tiles plus the objects anchored inside it \u2014 onto a target position as ordinary setTiles and createObject operations.",

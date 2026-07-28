@@ -1648,6 +1648,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_shape",
     "tiled_preview_generate",
     "tiled_preview_scatter",
+    "tiled_preview_import_image",
     "tiled_preview_prefab",
     "tiled_preview_template",
     "tiled_preview_write_tmx",
@@ -5495,6 +5496,96 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             }),
           ),
           skipOccupied,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_import_image",
+    {
+      title:
+        "Preview importing a reference image",
+      description:
+        "Resamples one project reference image onto a bounded cell grid — each cell averages its alpha-weighted pixel block — maps every cell to the nearest palette color by squared RGB distance (ties resolve to palette order), and returns an ordinary mapEdit change set carrying the setTiles writes. Fully transparent blocks are skipped, a null palette tile erases where its color wins, and palette tiles accept semantic {name} references. Pure integer arithmetic: the same image and palette always produce the same plan; a fully transparent region fails closed.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          imagePath: projectPathSchema,
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          palette: z
+            .array(
+              z
+                .object({
+                  color: z
+                    .string()
+                    .regex(
+                      /^#[0-9a-fA-F]{6}$/u,
+                    ),
+                  tile: namedTileRefSchema.nullable(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(32),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      imagePath,
+      region,
+      palette,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+    }) =>
+      executeTool(async () => {
+        const paletteTiles =
+          await maps.resolveNamedTiles(
+            mapPath,
+            palette.map(
+              (entry) =>
+                entry.tile as
+                  | TileRef
+                  | { name: string }
+                  | null,
+            ),
+          );
+        const plan = await maps.planImportImage({
+          mapPath,
+          layerId,
+          imagePath,
+          region,
+          palette: palette.map(
+            (entry, index) => ({
+              color: entry.color,
+              tile: paletteTiles[index] ?? null,
+            }),
+          ),
           expectedMapRevision,
           expectedDependencyRevisions,
         });

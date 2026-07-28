@@ -111,6 +111,7 @@ import {
 } from "../images/atlas.js";
 import {
   decodeSafeImage,
+  decodeSafeImageRgba,
   encodeRgbaPng,
   inspectSafeImage,
   type SafeImageFormat,
@@ -5683,6 +5684,231 @@ export class MapService {
       snapshotConsistency:
         "non-atomic-read-set",
     };
+  }
+
+  /**
+   * Image import: resamples one project reference image onto the
+   * target cell grid (each cell averaging its alpha-weighted pixel
+   * block), maps every cell to the nearest palette color by squared
+   * RGB distance (ties resolve to palette order), and returns an
+   * ordinary setTiles change set. Fully transparent blocks are
+   * skipped; a null palette tile erases where its color wins. Pure
+   * integer arithmetic — the same image and palette always produce
+   * the same plan.
+   */
+  async planImportImage(input: {
+    mapPath: string;
+    layerId: number;
+    imagePath: string;
+    region: GenerateRegion;
+    palette: Array<{
+      color: string;
+      tile: TileRef | null;
+    }>;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const region = input.region;
+    if (
+      !Number.isSafeInteger(region.x) ||
+      !Number.isSafeInteger(region.y) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.width * region.height >
+        MAX_GENERATE_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must use non-negative integer coordinates, positive dimensions, and at most ${MAX_GENERATE_CELLS} cells.`,
+        { limit: MAX_GENERATE_CELLS },
+      );
+    }
+    if (
+      input.palette.length < 1 ||
+      input.palette.length > 32
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "palette must contain between 1 and 32 colors.",
+      );
+    }
+    const paletteColors = input.palette.map(
+      (entry, index) => {
+        const match =
+          /^#([0-9a-f]{6})$/iu.exec(
+            entry.color,
+          );
+        if (match === null) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            `palette[${index}].color must be a #rrggbb color.`,
+          );
+        }
+        const value = Number.parseInt(
+          match[1]!,
+          16,
+        );
+        return [
+          (value >> 16) & 0xff,
+          (value >> 8) & 0xff,
+          value & 0xff,
+        ] as const;
+      },
+    );
+    const context =
+      await this.loadEditableContext(
+        input.mapPath,
+        {
+          allowIsometric: true,
+          expectedMapRevision:
+            input.expectedMapRevision,
+          expectedDependencyRevisions:
+            input.expectedDependencyRevisions,
+        },
+      );
+    if (
+      region.x + region.width > context.width ||
+      region.y + region.height > context.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must lie inside the ${context.width}x${context.height} map.`,
+        {
+          mapWidth: context.width,
+          mapHeight: context.height,
+        },
+      );
+    }
+    const snapshot =
+      await readImageFileSnapshot(
+        this.resolver,
+        input.imagePath,
+        MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
+      );
+    const decoded = await decodeSafeImageRgba({
+      path: snapshot.path,
+      bytes: snapshot.bytes,
+      limits: {
+        maxInputBytes:
+          MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES,
+        maxInputPixels:
+          MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
+        maxInputEdge: 8_192,
+      },
+    });
+    const { rgba, width: imageWidth, height: imageHeight } =
+      decoded;
+    const cells: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+    for (
+      let cy = 0;
+      cy < region.height;
+      cy += 1
+    ) {
+      const top = Math.floor(
+        (cy * imageHeight) / region.height,
+      );
+      const bottom = Math.max(
+        top + 1,
+        Math.floor(
+          ((cy + 1) * imageHeight) /
+            region.height,
+        ),
+      );
+      for (
+        let cx = 0;
+        cx < region.width;
+        cx += 1
+      ) {
+        const left = Math.floor(
+          (cx * imageWidth) / region.width,
+        );
+        const right = Math.max(
+          left + 1,
+          Math.floor(
+            ((cx + 1) * imageWidth) /
+              region.width,
+          ),
+        );
+        let sumR = 0;
+        let sumG = 0;
+        let sumB = 0;
+        let sumA = 0;
+        for (let py = top; py < bottom; py += 1) {
+          for (
+            let px = left;
+            px < right;
+            px += 1
+          ) {
+            const index =
+              (py * imageWidth + px) * 4;
+            const alpha = rgba[index + 3]!;
+            sumR += rgba[index]! * alpha;
+            sumG += rgba[index + 1]! * alpha;
+            sumB += rgba[index + 2]! * alpha;
+            sumA += alpha;
+          }
+        }
+        if (sumA === 0) {
+          continue;
+        }
+        const r = Math.round(sumR / sumA);
+        const g = Math.round(sumG / sumA);
+        const b = Math.round(sumB / sumA);
+        let bestIndex = 0;
+        let bestDistance =
+          Number.POSITIVE_INFINITY;
+        for (const [
+          index,
+          [pr, pg, pb],
+        ] of paletteColors.entries()) {
+          const distance =
+            (r - pr) * (r - pr) +
+            (g - pg) * (g - pg) +
+            (b - pb) * (b - pb);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+          }
+        }
+        cells.push({
+          x: region.x + cx,
+          y: region.y + cy,
+          tile:
+            input.palette[bestIndex]!.tile,
+        });
+      }
+    }
+    if (cells.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The reference image is fully transparent over the region; nothing to import.",
+      );
+    }
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: input.layerId,
+          cells,
+        },
+      ],
+    );
   }
 
   /**
