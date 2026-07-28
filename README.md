@@ -266,8 +266,10 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 }
 ```
 
-当前注册 29 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册第
-30 个可选工具：
+当前注册 52 个不依赖 Tiled CLI 的核心工具；本机探测到 `tmxrasterizer` 时再注册
+可选的 `tiled_render_map`，探测到 Tiled CLI 时再注册可选的 `tiled_preview_export`
+与 `tiled_preview_terrain`（合计最多 55 个）。下文各刀叙事段落中的"仍为 N core"
+计数为当刀历史快照，以本段与契约（`contracts/mcp-contract.v1.json`）为准：
 
 | 工具 | 作用 |
 |---|---|

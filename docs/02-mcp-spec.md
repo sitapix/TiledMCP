@@ -18,9 +18,9 @@
 - **Schema 单一来源**：共享类型和每个工具的输入、输出、错误结构在代码中定义；生成器通过真实 MCP `tools/list` / resource discovery 固化 wire JSON Schema、双 profile discovery contract、application-error registry 和参考文档，测试对已提交 artifact 做 byte-level drift check。本文表格中的“关键参数”只用于解释意图，不是完整 wire contract。
 - **冻结门槛**：所有已注册工具都必须有完整、固定字段且 `additionalProperties: false` 的 `inputSchema` / `outputSchema`、稳定且有界并且不复制大型 structured payload 的 text-content 策略、示例、稳定错误码、尺寸/分页限制、四项 annotations 和 Tiled 1.12.2 往返测试。仓库的 `pnpm run verify:tiled-1.12.2` 是独立强制门：CLI 缺失或版本不精确匹配都失败，不允许以 skip 代替验收。
 
-### 0.1 当前实现切片（2026-07-26）
+### 0.1 当前实现切片（2026-07-28）
 
-当前代码注册 29 个不依赖 Tiled CLI 的核心工具：capabilities、文件列表、checkpoint
+当前代码注册 52 个不依赖 Tiled CLI 的核心工具（另有最多 3 个 CLI 探测可选工具，合计 55；权威清单见 `contracts/mcp-contract.v1.json`，下文为早期切片的历史叙述）：capabilities、文件列表、checkpoint
 索引、单文件恢复预览、prepared-checkpoint discard/commit/abandon 预览，以及 committed-checkpoint
 单项与 2..32 项 batch prune 预览、地图摘要、whole-map tile
 usage analysis、有界外部 atlas TSJ
