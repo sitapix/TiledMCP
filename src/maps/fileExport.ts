@@ -47,6 +47,13 @@ export interface FileExportPlan {
   exportKind: "map" | "tileset" | "template";
   format: string;
   /**
+   * Present when class-typed properties serialize: the project file
+   * whose definitions typed the members, pinned by revision so apply
+   * re-resolves against the same definitions.
+   */
+  projectFilePath?: string;
+  projectRevision?: string;
+  /**
    * Raw SHA-256 of the exact approved export bytes. There is no existing
    * target file, so the no-replace create pins the approved content
    * itself; a drifting re-export refuses to apply.
@@ -83,6 +90,14 @@ export function assertFileExportPlan(
       plan.exportKind !== "template") ||
     typeof plan.format !== "string" ||
     !EXPORT_FORMAT_PATTERN.test(plan.format) ||
+    (plan.projectFilePath !== undefined &&
+      typeof plan.projectFilePath !==
+        "string") ||
+    (plan.projectRevision !== undefined &&
+      typeof plan.projectRevision !==
+        "string") ||
+    (plan.projectFilePath === undefined) !==
+      (plan.projectRevision === undefined) ||
     typeof plan.baseRevision !== "string" ||
     typeof plan.summary !== "object" ||
     plan.summary === null

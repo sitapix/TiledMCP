@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:0cf1d9a2e5f2f74e71e09b5780c6cd2feb3b7b360a8eb840476508b4c328b969",
+    "revision": "sha256:a5841d88d6fb4fa54872db8d8937a7f46d300b8dc900e2d1aa4054e0547ad834",
     "serverVersion": "0.0.1",
-    "size": 102334
+    "size": 102587
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 102334,
+  "size": 102587,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 102334 UTF-8 bytes, revision `sha256:0cf1d9a2e5f2f74e71e09b5780c6cd2feb3b7b360a8eb840476508b4c328b969`.
+Content contract: `text`, 102587 UTF-8 bytes, revision `sha256:a5841d88d6fb4fa54872db8d8937a7f46d300b8dc900e2d1aa4054e0547ad834`.
 
 Resource templates: none.
 
@@ -87806,6 +87806,12 @@ Input schema:
       "minLength": 1,
       "type": "string"
     },
+    "projectFilePath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
     "targetPath": {
       "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
       "maxLength": 4096,
@@ -88232,6 +88238,12 @@ Input schema:
     "expectedTilesetRevision": {
       "description": "SHA-256 revision returned by a read or preview",
       "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "projectFilePath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
       "type": "string"
     },
     "targetPath": {
@@ -88666,6 +88678,12 @@ Input schema:
     "expectedTemplateRevision": {
       "description": "SHA-256 revision returned by a read or preview",
       "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "projectFilePath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
       "type": "string"
     },
     "targetPath": {

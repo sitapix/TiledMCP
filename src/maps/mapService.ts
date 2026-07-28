@@ -172,6 +172,7 @@ import {
   serializeTmxMap,
   serializeTsxTileset,
   serializeTxTemplate,
+  type ClassPropertyResolver,
 } from "./tmxWrite.js";
 import {
   applyTileNameOperations,
@@ -4920,6 +4921,112 @@ export class MapService {
   }
 
   /**
+   * Builds a class-property resolver from one .tiled-project document:
+   * class name to member-name -> declared type (with propertyType for
+   * nested class members). Enum-typed members stay unresolved so the
+   * serializer fails closed on them.
+   */
+  private buildClassResolver(
+    document: JsonObject,
+    projectFilePath: string,
+  ): ClassPropertyResolver {
+    const classes = new Map<
+      string,
+      Map<
+        string,
+        { type: string; propertyType?: string }
+      >
+    >();
+    const types = document.propertyTypes;
+    if (types !== undefined) {
+      for (const entry of expectArray(
+        types,
+        `${projectFilePath}.propertyTypes`,
+      )) {
+        const record = expectObject(
+          entry,
+          `${projectFilePath}.propertyTypes[]`,
+        );
+        if (record.type !== "class") {
+          continue;
+        }
+        const name = expectString(
+          record.name,
+          `${projectFilePath}.propertyTypes[].name`,
+        );
+        const members = new Map<
+          string,
+          {
+            type: string;
+            propertyType?: string;
+          }
+        >();
+        for (const member of expectArray(
+          record.members ?? [],
+          `${projectFilePath}.propertyTypes[].members`,
+        )) {
+          const memberRecord = expectObject(
+            member,
+            `${projectFilePath} class member`,
+          );
+          members.set(
+            expectString(
+              memberRecord.name,
+              "member.name",
+            ),
+            {
+              type: expectString(
+                memberRecord.type ?? "string",
+                "member.type",
+              ),
+              ...(memberRecord.propertyType ===
+              undefined
+                ? {}
+                : {
+                    propertyType: expectString(
+                      memberRecord.propertyType,
+                      "member.propertyType",
+                    ),
+                  }),
+            },
+          );
+        }
+        classes.set(name, members);
+      }
+    }
+    return (name) => classes.get(name);
+  }
+
+  private async loadClassResolver(
+    projectFilePath: string | undefined,
+  ): Promise<{
+    resolver: ClassPropertyResolver | undefined;
+    pin?: {
+      projectFilePath: string;
+      projectRevision: string;
+    };
+  }> {
+    if (projectFilePath === undefined) {
+      return { resolver: undefined };
+    }
+    const normalized = this.resolver.normalize(
+      projectFilePath,
+    );
+    const snapshot =
+      await this.store.read(normalized);
+    return {
+      resolver: this.buildClassResolver(
+        snapshot.document,
+        normalized,
+      ),
+      pin: {
+        projectFilePath: normalized,
+        projectRevision: snapshot.revision,
+      },
+    };
+  }
+
+  /**
    * Native TMX write: serializes one restricted-profile .tmj map to
    * TMX bytes matching Tiled 1.12.2's own writer byte for byte and
    * returns a fileExport change set whose producer is the native
@@ -4932,6 +5039,7 @@ export class MapService {
     mapPath: string;
     targetPath: string;
     expectedMapRevision: string;
+    projectFilePath?: string | undefined;
   }): Promise<FileExportPlan> {
     assertRequiredRevision(
       input.expectedMapRevision,
@@ -4994,10 +5102,15 @@ export class MapService {
     await this.assertExportTargetAbsent(
       targetPath,
     );
+    const project =
+      await this.loadClassResolver(
+        input.projectFilePath,
+      );
     const content = Buffer.from(
       serializeTmxMap(
         snapshot.document,
         sourcePath,
+        project.resolver,
       ),
       "utf8",
     );
@@ -5013,6 +5126,7 @@ export class MapService {
       targetPath,
       exportKind: "map",
       format: "tmx",
+      ...(project.pin ?? {}),
       baseRevision: revisionOf(content),
       summary: {
         sourcePath,
@@ -5040,6 +5154,7 @@ export class MapService {
     tilesetPath: string;
     targetPath: string;
     expectedTilesetRevision: string;
+    projectFilePath?: string | undefined;
   }): Promise<FileExportPlan> {
     assertRequiredRevision(
       input.expectedTilesetRevision,
@@ -5101,10 +5216,15 @@ export class MapService {
     await this.assertExportTargetAbsent(
       targetPath,
     );
+    const project =
+      await this.loadClassResolver(
+        input.projectFilePath,
+      );
     const content = Buffer.from(
       serializeTsxTileset(
         snapshot.document,
         sourcePath,
+        project.resolver,
       ),
       "utf8",
     );
@@ -5120,6 +5240,7 @@ export class MapService {
       targetPath,
       exportKind: "tileset",
       format: "tsx",
+      ...(project.pin ?? {}),
       baseRevision: revisionOf(content),
       summary: {
         sourcePath,
@@ -5146,6 +5267,7 @@ export class MapService {
     templatePath: string;
     targetPath: string;
     expectedTemplateRevision: string;
+    projectFilePath?: string | undefined;
   }): Promise<FileExportPlan> {
     assertRequiredRevision(
       input.expectedTemplateRevision,
@@ -5207,10 +5329,15 @@ export class MapService {
     await this.assertExportTargetAbsent(
       targetPath,
     );
+    const project =
+      await this.loadClassResolver(
+        input.projectFilePath,
+      );
     const content = Buffer.from(
       serializeTxTemplate(
         snapshot.document,
         sourcePath,
+        project.resolver,
       ),
       "utf8",
     );
@@ -5226,6 +5353,7 @@ export class MapService {
       targetPath,
       exportKind: "template",
       format: "tx",
+      ...(project.pin ?? {}),
       baseRevision: revisionOf(content),
       summary: {
         sourcePath,
@@ -9326,6 +9454,38 @@ export class MapService {
         },
       );
     }
+    let applyResolver:
+      | ClassPropertyResolver
+      | undefined;
+    if (
+      plan.producer === "native" &&
+      plan.projectFilePath !== undefined
+    ) {
+      const projectSnapshot =
+        await this.store.read(
+          plan.projectFilePath,
+        );
+      if (
+        projectSnapshot.revision !==
+        plan.projectRevision
+      ) {
+        throw new TiledMcpError(
+          "DEPENDENCY_REVISION_CONFLICT",
+          `${plan.projectFilePath} changed since the export was previewed; class member types could differ.`,
+          {
+            path: plan.projectFilePath,
+            expectedRevision:
+              plan.projectRevision,
+            actualRevision:
+              projectSnapshot.revision,
+          },
+        );
+      }
+      applyResolver = this.buildClassResolver(
+        projectSnapshot.document,
+        plan.projectFilePath,
+      );
+    }
     const content =
       plan.producer === "native"
         ? Buffer.from(
@@ -9340,6 +9500,7 @@ export class MapService {
                 )
               ).document,
               plan.sourcePath,
+              applyResolver,
             ),
             "utf8",
           )

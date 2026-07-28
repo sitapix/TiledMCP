@@ -5857,6 +5857,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           mapPath: projectPathSchema,
           targetPath: projectPathSchema,
           expectedMapRevision: revisionSchema,
+          projectFilePath:
+            projectPathSchema.optional(),
         })
         .strict(),
       outputSchema:
@@ -5867,12 +5869,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       mapPath,
       targetPath,
       expectedMapRevision,
+      projectFilePath,
     }) =>
       executeTool(async () => {
         const plan = await maps.planWriteTmx({
           mapPath,
           targetPath,
           expectedMapRevision,
+          projectFilePath,
         });
         return changeSets.put(plan);
       }),
@@ -5892,6 +5896,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           targetPath: projectPathSchema,
           expectedTilesetRevision:
             revisionSchema,
+          projectFilePath:
+            projectPathSchema.optional(),
         })
         .strict(),
       outputSchema:
@@ -5902,12 +5908,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       tilesetPath,
       targetPath,
       expectedTilesetRevision,
+      projectFilePath,
     }) =>
       executeTool(async () => {
         const plan = await maps.planWriteTsx({
           tilesetPath,
           targetPath,
           expectedTilesetRevision,
+          projectFilePath,
         });
         return changeSets.put(plan);
       }),
@@ -5927,6 +5935,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           targetPath: projectPathSchema,
           expectedTemplateRevision:
             revisionSchema,
+          projectFilePath:
+            projectPathSchema.optional(),
         })
         .strict(),
       outputSchema:
@@ -5937,12 +5947,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       templatePath,
       targetPath,
       expectedTemplateRevision,
+      projectFilePath,
     }) =>
       executeTool(async () => {
         const plan = await maps.planWriteTx({
           templatePath,
           targetPath,
           expectedTemplateRevision,
+          projectFilePath,
         });
         return changeSets.put(plan);
       }),

@@ -355,6 +355,148 @@ b</property>
     );
   });
 
+  it("serializes class properties with project member types, byte-exact", async () => {
+    const roots = new Set<string>();
+    try {
+      const root = await mkdtemp(
+        join(tmpdir(), "tiledmcp-class-prop-"),
+      );
+      roots.add(root);
+      await mkdir(join(root, "maps"));
+      await mkdir(join(root, "tiles"));
+      await writeFile(
+        join(root, "tiles/decor.png"),
+        await sharp({
+          create: {
+            width: 32,
+            height: 16,
+            channels: 4,
+            background: {
+              r: 90,
+              g: 90,
+              b: 90,
+              alpha: 1,
+            },
+          },
+        })
+          .png()
+          .toBuffer(),
+      );
+      await writeFile(
+        join(root, "tiles/decor.tsj"),
+        serializeJsonDocument(goldenTileset()),
+      );
+      const map = goldenMap();
+      map.properties = [
+        {
+          name: "spawn",
+          type: "class",
+          propertytype: "SpawnInfo",
+          value: { hp: 5, boss: true },
+        },
+        { name: "linked", type: "object", value: 3 },
+      ];
+      await writeFile(
+        join(root, MAP_PATH),
+        serializeJsonDocument(map),
+      );
+      await writeFile(
+        join(root, "proj.tiled-project"),
+        JSON.stringify({
+          propertyTypes: [
+            {
+              id: 1,
+              members: [
+                {
+                  name: "boss",
+                  type: "bool",
+                  value: false,
+                },
+                {
+                  name: "hp",
+                  type: "int",
+                  value: 0,
+                },
+                {
+                  name: "tag",
+                  type: "string",
+                  value: "",
+                },
+              ],
+              name: "SpawnInfo",
+              type: "class",
+              useAs: ["property", "map"],
+            },
+          ],
+        }),
+      );
+      const resolver =
+        await ProjectPathResolver.create(root);
+      const store = new DocumentStore(resolver);
+      const service = new MapService(
+        resolver,
+        store,
+      );
+      const summary = (await service.getSummary(
+        MAP_PATH,
+      )) as { revision: string };
+      const plan = await service.planWriteTmx({
+        mapPath: MAP_PATH,
+        targetPath: "maps/level.tmx",
+        expectedMapRevision: summary.revision,
+        projectFilePath: "proj.tiled-project",
+      });
+      expect(plan).toMatchObject({
+        projectFilePath: "proj.tiled-project",
+        projectRevision: expect.stringMatching(
+          /^sha256:/u,
+        ),
+      });
+      await service.applyExportFile(
+        plan,
+        (): never => {
+          throw new Error("unused");
+        },
+      );
+      const written = await readFile(
+        join(root, "maps/level.tmx"),
+        "utf8",
+      );
+      // Byte-for-byte the --project golden export shape.
+      expect(written).toContain(
+        ` <properties>
+  <property name="linked" type="object" value="3"/>
+  <property name="spawn" type="class" propertytype="SpawnInfo">
+   <properties>
+    <property name="boss" type="bool" value="true"/>
+    <property name="hp" type="int" value="5"/>
+   </properties>
+  </property>
+ </properties>`,
+      );
+
+      // Without a project file, class properties keep failing closed.
+      await expect(
+        service.planWriteTmx({
+          mapPath: MAP_PATH,
+          targetPath: "maps/level2.tmx",
+          expectedMapRevision: summary.revision,
+        }),
+      ).rejects.toMatchObject({
+        code: "UNSUPPORTED_FORMAT",
+      });
+    } finally {
+      await Promise.all(
+        [...roots].map((root) =>
+          rm(root, {
+            recursive: true,
+            force: true,
+          }),
+        ),
+      );
+    }
+  });
+
   it("fails closed on structures outside the profile", () => {
     const withImageLayer = goldenMap();
     (withImageLayer.layers as JsonObject[]).push({

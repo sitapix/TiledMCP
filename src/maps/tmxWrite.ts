@@ -291,19 +291,232 @@ const PROPERTY_VALUE_TYPES = new Set([
 ]);
 
 /**
+ * Resolves one class definition from the project file: member name to
+ * its declared type (and propertyType for nested classes). Undefined
+ * when the class is not defined.
+ */
+export type ClassPropertyResolver = (
+  name: string,
+) =>
+  | Map<
+      string,
+      { type: string; propertyType?: string }
+    >
+  | undefined;
+
+const MAX_CLASS_PROPERTY_DEPTH = 8;
+
+function renderProperty(
+  record: JsonObject,
+  entryContext: string,
+  indent: string,
+  resolveClass:
+    | ClassPropertyResolver
+    | undefined,
+  depth: number,
+): { name: string; line: string } {
+  const unknown = Object.keys(record).find(
+    (member) =>
+      member !== "name" &&
+      member !== "type" &&
+      member !== "value" &&
+      member !== "propertytype",
+  );
+  if (unknown !== undefined) {
+    fail(
+      `${entryContext}.${unknown} is outside the TMX property profile.`,
+    );
+  }
+  const name = requireString(
+    record.name,
+    `${entryContext}.name`,
+  );
+  const type =
+    record.type === undefined
+      ? "string"
+      : requireString(
+          record.type,
+          `${entryContext}.type`,
+        );
+  if (
+    type !== "class" &&
+    record.propertytype !== undefined
+  ) {
+    fail(
+      `${entryContext}.propertytype is only writable on class properties (enum annotations are outside the profile).`,
+    );
+  }
+  if (type === "class") {
+    if (resolveClass === undefined) {
+      fail(
+        `${entryContext} is a class property; pass projectFilePath so member types resolve from the project definitions.`,
+      );
+    }
+    if (depth >= MAX_CLASS_PROPERTY_DEPTH) {
+      fail(
+        `${entryContext} nests class properties deeper than ${MAX_CLASS_PROPERTY_DEPTH} levels.`,
+      );
+    }
+    const className = requireString(
+      record.propertytype,
+      `${entryContext}.propertytype`,
+    );
+    const members = resolveClass(className);
+    if (members === undefined) {
+      fail(
+        `${entryContext} references class ${JSON.stringify(className)}, which the project file does not define.`,
+      );
+    }
+    const value = expectObject(
+      record.value ?? {},
+      `${entryContext}.value`,
+    );
+    const attributes = new Attributes();
+    attributes.add("name", name);
+    attributes.add("type", "class");
+    attributes.add("propertytype", className);
+    const inner: Array<{
+      name: string;
+      line: string;
+    }> = [];
+    for (const [
+      memberName,
+      memberValue,
+    ] of Object.entries(value)) {
+      const definition =
+        members.get(memberName);
+      if (definition === undefined) {
+        fail(
+          `${entryContext}.value.${memberName} is not a member of class ${JSON.stringify(className)}.`,
+        );
+      }
+      inner.push(
+        renderProperty(
+          {
+            name: memberName,
+            type: definition.type,
+            value: memberValue,
+            ...(definition.propertyType ===
+            undefined
+              ? {}
+              : {
+                  propertytype:
+                    definition.propertyType,
+                }),
+          },
+          `${entryContext}.value.${memberName}`,
+          `${indent}  `,
+          resolveClass,
+          depth + 1,
+        ),
+      );
+    }
+    inner.sort((a, b) =>
+      a.name < b.name
+        ? -1
+        : a.name > b.name
+          ? 1
+          : 0,
+    );
+    const lines: string[] = [
+      `${indent}<property${attributes.toString()}>`,
+      `${indent} <properties>`,
+    ];
+    for (const entry of inner) {
+      lines.push(entry.line);
+    }
+    lines.push(`${indent} </properties>`);
+    lines.push(`${indent}</property>`);
+    return { name, line: lines.join("\n") };
+  }
+  if (!PROPERTY_VALUE_TYPES.has(type)) {
+    fail(
+      `${entryContext}.type ${JSON.stringify(type)} is outside the TMX property profile.`,
+    );
+  }
+  const attributes = new Attributes();
+  attributes.add("name", name);
+  if (type !== "string") {
+    attributes.add("type", type);
+  }
+  if (type === "string") {
+    const value = requireString(
+      record.value,
+      `${entryContext}.value`,
+    );
+    if (/[\n\r]/u.test(value)) {
+      assertSerializableText(
+        value,
+        `${entryContext}.value`,
+      );
+      return {
+        name,
+        line: `${indent}<property${attributes.toString()}>${escapeText(value)}</property>`,
+      };
+    }
+    attributes.add("value", value);
+  } else if (type === "bool") {
+    if (typeof record.value !== "boolean") {
+      fail(
+        `${entryContext}.value must be a boolean.`,
+      );
+    }
+    attributes.add(
+      "value",
+      record.value ? "true" : "false",
+    );
+  } else if (
+    type === "int" ||
+    type === "float" ||
+    type === "object"
+  ) {
+    const value = requireDouble(
+      record.value,
+      `${entryContext}.value`,
+    );
+    attributes.add(
+      "value",
+      type !== "float"
+        ? String(
+            requireInt(
+              value,
+              `${entryContext}.value`,
+            ),
+          )
+        : formatQtDouble(
+            value,
+            `${entryContext}.value`,
+          ),
+    );
+  } else {
+    attributes.add(
+      "value",
+      requireString(
+        record.value,
+        `${entryContext}.value`,
+      ),
+    );
+  }
+  return {
+    name,
+    line: `${indent}<property${attributes.toString()}/>`,
+  };
+}
+
+/**
  * Serializes one custom-properties array with the exact official
- * writeProperties bytes: entries sort by name (QMap key order, i.e.
- * UTF-16 code-unit order), the string type is implicit, single-line
- * strings use the value attribute while strings containing newlines
- * become element text, bools render true/false, and floats use
- * QString::number %g. The object and class property types are outside
- * the profile and fail closed.
+ * writeProperties bytes: entries sort by name (QMap key order),
+ * scalar types render as before, and class-typed properties — when a
+ * project resolver is supplied — write propertytype plus their
+ * nested members (only those present in the value, typed from the
+ * project definition), verified against a --project golden export.
  */
 function serializeTmxProperties(
   raw: JsonValue | undefined,
   context: string,
   lines: string[],
   indent: string,
+  resolveClass?: ClassPropertyResolver,
 ): void {
   if (raw === undefined) {
     return;
@@ -315,116 +528,24 @@ function serializeTmxProperties(
   if (entries.length === 0) {
     return;
   }
-  const rendered: Array<{
-    name: string;
-    line: string;
-  }> = [];
-  for (const [
-    index,
-    entry,
-  ] of entries.entries()) {
-    const record = expectObject(
-      entry,
+  const rendered = entries.map((entry, index) =>
+    renderProperty(
+      expectObject(
+        entry,
+        `${context}.properties[${index}]`,
+      ),
       `${context}.properties[${index}]`,
-    );
-    const entryContext = `${context}.properties[${index}]`;
-    const unknown = Object.keys(record).find(
-      (member) =>
-        member !== "name" &&
-        member !== "type" &&
-        member !== "value",
-    );
-    if (unknown !== undefined) {
-      fail(
-        `${entryContext}.${unknown} is outside the TMX property profile (object and class properties are not writable).`,
-      );
-    }
-    const name = requireString(
-      record.name,
-      `${entryContext}.name`,
-    );
-    const type =
-      record.type === undefined
-        ? "string"
-        : requireString(
-            record.type,
-            `${entryContext}.type`,
-          );
-    if (!PROPERTY_VALUE_TYPES.has(type)) {
-      fail(
-        `${entryContext}.type ${JSON.stringify(type)} is outside the TMX property profile.`,
-      );
-    }
-    const attributes = new Attributes();
-    attributes.add("name", name);
-    if (type !== "string") {
-      attributes.add("type", type);
-    }
-    let line: string;
-    if (type === "string") {
-      const value = requireString(
-        record.value,
-        `${entryContext}.value`,
-      );
-      if (/[\n\r]/u.test(value)) {
-        assertSerializableText(
-          value,
-          `${entryContext}.value`,
-        );
-        line = `${indent}<property${attributes.toString()}>${escapeText(value)}</property>`;
-      } else {
-        attributes.add("value", value);
-        line = `${indent}<property${attributes.toString()}/>`;
-      }
-    } else if (type === "bool") {
-      if (typeof record.value !== "boolean") {
-        fail(
-          `${entryContext}.value must be a boolean.`,
-        );
-      }
-      attributes.add(
-        "value",
-        record.value ? "true" : "false",
-      );
-      line = `${indent}<property${attributes.toString()}/>`;
-    } else if (
-      type === "int" ||
-      type === "float" ||
-      type === "object"
-    ) {
-      const value = requireDouble(
-        record.value,
-        `${entryContext}.value`,
-      );
-      attributes.add(
-        "value",
-        type !== "float"
-          ? String(
-              requireInt(
-                value,
-                `${entryContext}.value`,
-              ),
-            )
-          : formatQtDouble(
-              value,
-              `${entryContext}.value`,
-            ),
-      );
-      line = `${indent}<property${attributes.toString()}/>`;
-    } else {
-      attributes.add(
-        "value",
-        requireString(
-          record.value,
-          `${entryContext}.value`,
-        ),
-      );
-      line = `${indent}<property${attributes.toString()}/>`;
-    }
-    rendered.push({ name, line });
-  }
+      indent,
+      resolveClass,
+      0,
+    ),
+  );
   rendered.sort((a, b) =>
-    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    a.name < b.name
+      ? -1
+      : a.name > b.name
+        ? 1
+        : 0,
   );
   const outer = indent.slice(0, -1);
   lines.push(`${outer}<properties>`);
@@ -594,6 +715,9 @@ function serializeTileLayer(
   layer: JsonObject,
   context: string,
   lines: string[],
+  resolveClass:
+    | ClassPropertyResolver
+    | undefined,
 ): void {
   assertKnownMembers(
     layer,
@@ -635,6 +759,7 @@ function serializeTileLayer(
     context,
     lines,
     "   ",
+    resolveClass,
   );
   lines.push('  <data encoding="csv">');
   for (let y = 0; y < height; y += 1) {
@@ -665,6 +790,9 @@ function serializeObject(
   raw: JsonObject,
   context: string,
   lines: string[],
+  resolveClass?:
+    | ClassPropertyResolver
+    | undefined,
   options: {
     /** Indent for the <object> element itself. */
     indent: string;
@@ -837,6 +965,7 @@ function serializeObject(
       context,
       lines,
       `${childIndent} `,
+      resolveClass,
     );
     lines.push(`${indent}</object>`);
     return;
@@ -926,6 +1055,7 @@ function serializeObject(
       context,
       lines,
       `${childIndent} `,
+      resolveClass,
     );
     lines.push(
       `${childIndent}<text${textAttributes.toString()}>${escapeText(fields.text)}</text>`,
@@ -976,6 +1106,7 @@ function serializeObject(
       context,
       lines,
       `${childIndent} `,
+      resolveClass,
     );
     lines.push(
       `${childIndent}<${marker} points="${rendered}"/>`,
@@ -991,6 +1122,7 @@ function serializeObject(
     context,
     lines,
     `${childIndent} `,
+    resolveClass,
   );
   lines.push(`${childIndent}<${marker}/>`);
   lines.push(`${indent}</object>`);
@@ -1000,6 +1132,9 @@ function serializeObjectLayer(
   layer: JsonObject,
   context: string,
   lines: string[],
+  resolveClass:
+    | ClassPropertyResolver
+    | undefined,
 ): void {
   assertKnownMembers(
     layer,
@@ -1060,6 +1195,7 @@ function serializeObjectLayer(
     context,
     lines,
     "   ",
+    resolveClass,
   );
   for (const [index, entry] of objects.entries()) {
     serializeObject(
@@ -1069,6 +1205,7 @@ function serializeObjectLayer(
       ),
       `${context}.objects[${index}]`,
       lines,
+      resolveClass,
     );
   }
   lines.push(" </objectgroup>");
@@ -1118,6 +1255,7 @@ const OBJECT_ALIGNMENTS = new Set([
 export function serializeTsxTileset(
   document: JsonObject,
   tilesetPath: string,
+  resolveClass?: ClassPropertyResolver,
 ): string {
   assertKnownMembers(
     document,
@@ -1281,6 +1419,7 @@ export function serializeTsxTileset(
     tilesetPath,
     lines,
     "  ",
+    resolveClass,
   );
   lines.push(
     ` <image${imageAttributes.toString()}/>`,
@@ -1302,6 +1441,7 @@ export function serializeTsxTileset(
 export function serializeTxTemplate(
   document: JsonObject,
   templatePath: string,
+  resolveClass?: ClassPropertyResolver,
 ): string {
   if (document.type !== "template") {
     fail(
@@ -1346,6 +1486,7 @@ export function serializeTxTemplate(
     base,
     `${templatePath}.object`,
     lines,
+    resolveClass,
     { indent: " ", templateBase: true },
   );
   lines.push("</template>");
@@ -1361,6 +1502,7 @@ export function serializeTxTemplate(
 export function serializeTmxMap(
   document: JsonObject,
   mapPath: string,
+  resolveClass?: ClassPropertyResolver,
 ): string {
   assertKnownMembers(
     document,
@@ -1491,6 +1633,7 @@ export function serializeTmxMap(
     mapPath,
     lines,
     "  ",
+    resolveClass,
   );
 
   const tilesets = expectArray(
@@ -1551,12 +1694,18 @@ export function serializeTmxMap(
     );
     const context = `${mapPath}.layers[${index}]`;
     if (layer.type === "tilelayer") {
-      serializeTileLayer(layer, context, lines);
+      serializeTileLayer(
+        layer,
+        context,
+        lines,
+        resolveClass,
+      );
     } else if (layer.type === "objectgroup") {
       serializeObjectLayer(
         layer,
         context,
         lines,
+        resolveClass,
       );
     } else {
       fail(

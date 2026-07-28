@@ -544,11 +544,14 @@ tileset references, CSV tile layers, and top-level tile/object layers
 the serializer fully understands, plus custom properties of the
 string/int/float/bool/color/file/object types (official
 writeProperties
-bytes: name-sorted, newline strings as element text); embedded
-tilesets, image and group layers, object- and class-typed properties,
-template instances, unknown members, and floats whose
-six-significant-digit rendering would lose precision all fail closed
-instead of drifting. Tileset references and GIDs carry
+bytes: name-sorted, newline strings as element text). Class-typed
+properties serialize losslessly when \`projectFilePath\` supplies the
+.tiled-project definitions (propertytype plus nested members typed
+from the project, pinned by revision through apply; verified against
+a --project golden export) and fail closed without it. Embedded
+tilesets, image and group layers, enum annotations, template
+instances, unknown members, and floats whose six-significant-digit
+rendering would lose precision all fail closed instead of drifting. Tileset references and GIDs carry
 verbatim, so the \`.tmx\` target must be a new file in the source
 map's directory. The result is a \`fileExport\` change set whose
 producer is the native serializer; apply re-serializes under the
