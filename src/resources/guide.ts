@@ -524,6 +524,16 @@ remains orthogonal-only. Staggered and hexagonal maps are
 summary/region/usage read-only (stagger members disclosed, hex flip
 bits decoded as rotate60/rotate120); edits and renders fail closed.
 
+## Render staggered and hexagonal maps
+
+\`tiled_render_hexagonal\` renders a bounded region of one staggered
+or hexagonal map with the exact Tiled 1.12.2 HexagonalRenderer
+transform — staggered maps are the hexSideLength=0 degenerate case,
+matching the official class hierarchy — compositing cells in the
+editor's row order. Same strict profile as the isometric renderer;
+hexagonal rotation flags fail closed and object layers are skipped
+with disclosure.
+
 ## Write TMX natively
 
 \`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`

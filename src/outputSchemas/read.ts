@@ -923,6 +923,100 @@ export const selectCellsToolOutputSchema =
     selectCellsResultOutputSchema,
   );
 
+const renderHexagonalResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    byteLength: positiveIntegerOutputSchema,
+    sha256: revisionOutputSchema,
+    map: mapSnapshotOutputSchema,
+    dependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    region: z
+      .object({
+        x: nonnegativeIntegerOutputSchema,
+        y: nonnegativeIntegerOutputSchema,
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    scale: positiveIntegerOutputSchema,
+    projection: z
+      .object({
+        orientation: z.enum([
+          "staggered",
+          "hexagonal",
+        ]),
+        tileWidth: positiveIntegerOutputSchema,
+        tileHeight: positiveIntegerOutputSchema,
+        staggerAxis: z.enum(["x", "y"]),
+        staggerIndex: z.enum(["odd", "even"]),
+        hexSideLength:
+          nonnegativeIntegerOutputSchema,
+        originPixel: z
+          .object({
+            x: integerOutputSchema,
+            y: integerOutputSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    layers: z
+      .array(
+        z
+          .object({
+            id: positiveIntegerOutputSchema,
+            name: z.string().max(128),
+            nameTruncated:
+              truncatedMarkerOutputSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(128),
+    omittedObjectLayerIds: z
+      .array(positiveIntegerOutputSchema)
+      .max(128),
+    sources: z
+      .array(
+        z
+          .object({
+            tileset: z
+              .object({
+                assetId: assetIdOutputSchema,
+                path: projectPathOutputSchema,
+                revision: revisionOutputSchema,
+              })
+              .strict(),
+            image: z
+              .object({
+                path: projectPathOutputSchema,
+                revision: revisionOutputSchema,
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .max(64),
+    renderProfile: z.literal(
+      "staggered-hexagonal-tile-layers-v1",
+    ),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const renderHexagonalToolOutputSchema =
+  toolOutputSchema(
+    renderHexagonalResultOutputSchema,
+  );
+
 export const listTileNamesToolOutputSchema =
   toolOutputSchema(
     listTileNamesResultOutputSchema,

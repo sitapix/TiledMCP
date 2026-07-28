@@ -179,6 +179,7 @@ const CORE_TOOLS = [
   "tiled_render_preview",
   "tiled_render_diff",
   "tiled_render_isometric",
+  "tiled_render_hexagonal",
   "tiled_list_objects",
   "tiled_get_object",
   "tiled_validate",
@@ -306,7 +307,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the fifty-one core tools with safety annotations", async () => {
+  it("advertises exactly the fifty-two core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 

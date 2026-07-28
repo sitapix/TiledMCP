@@ -264,3 +264,313 @@ export function renderIsometricTiles(input: {
   }
   return { rgba: canvas, width, height };
 }
+
+export interface HexagonalRenderParams {
+  tileWidth: number;
+  tileHeight: number;
+  /** 0 for staggered maps (the degenerate hexagonal case). */
+  hexSideLength: number;
+  staggerAxis: "x" | "y";
+  staggerIndex: "odd" | "even";
+}
+
+/**
+ * Computes one cell's top-left screen pixel with the exact Tiled
+ * 1.12.2 HexagonalRenderer::tileToScreenCoords math (staggered maps
+ * are the hexSideLength=0 degenerate case, matching the official
+ * class hierarchy). Integer arithmetic throughout, including Qt's
+ * truncating division for the side offsets.
+ */
+export function hexTileToScreen(
+  params: HexagonalRenderParams,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  const staggerX = params.staggerAxis === "x";
+  const staggerEven =
+    params.staggerIndex === "even";
+  const sideLengthX = staggerX
+    ? params.hexSideLength
+    : 0;
+  const sideLengthY = staggerX
+    ? 0
+    : params.hexSideLength;
+  const sideOffsetX = Math.floor(
+    (params.tileWidth - sideLengthX) / 2,
+  );
+  const sideOffsetY = Math.floor(
+    (params.tileHeight - sideLengthY) / 2,
+  );
+  const columnWidth = sideOffsetX + sideLengthX;
+  const rowHeight = sideOffsetY + sideLengthY;
+  const doStaggerX =
+    staggerX &&
+    ((x & 1) ^ (staggerEven ? 1 : 0)) === 1;
+  const doStaggerY =
+    !staggerX &&
+    ((y & 1) ^ (staggerEven ? 1 : 0)) === 1;
+  if (staggerX) {
+    return {
+      x: x * columnWidth,
+      y:
+        y * (params.tileHeight + sideLengthY) +
+        (doStaggerX ? rowHeight : 0),
+    };
+  }
+  return {
+    x:
+      x * (params.tileWidth + sideLengthX) +
+      (doStaggerY ? columnWidth : 0),
+    y: y * rowHeight,
+  };
+}
+
+/**
+ * Composites staggered/hexagonal tile layers: every region cell's
+ * screen position comes from the official transform, the canvas is
+ * the tight bounding box of the region's cells, and cells paint in
+ * (screenY, screenX) order — equivalent to the editor's row order on
+ * both stagger axes. Flip semantics: H/V mirror the sample; the
+ * hexagonal rotation flags fail closed.
+ */
+export function renderHexagonalTiles(input: {
+  params: HexagonalRenderParams;
+  region: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  layers: readonly IsometricRenderLayer[];
+  atlases: readonly NativePreviewAtlas[];
+  scale: number;
+}): {
+  rgba: Buffer;
+  width: number;
+  height: number;
+  originPixel: { x: number; y: number };
+} {
+  const { params, region, scale } = input;
+  const positions: Array<{
+    x: number;
+    y: number;
+  }> = [];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (let y = 0; y < region.height; y += 1) {
+    for (let x = 0; x < region.width; x += 1) {
+      const position = hexTileToScreen(
+        params,
+        region.x + x,
+        region.y + y,
+      );
+      positions.push(position);
+      minX = Math.min(minX, position.x);
+      minY = Math.min(minY, position.y);
+      maxX = Math.max(maxX, position.x);
+      maxY = Math.max(maxY, position.y);
+    }
+  }
+  const width =
+    (maxX - minX + params.tileWidth) * scale;
+  const height =
+    (maxY - minY + params.tileHeight) * scale;
+  if (
+    width * height >
+    MAX_ISOMETRIC_RENDER_PIXELS
+  ) {
+    throw new TiledMcpError(
+      "RESULT_LIMIT_EXCEEDED",
+      `The render would exceed ${MAX_ISOMETRIC_RENDER_PIXELS} pixels; shrink the region or the scale.`,
+      { limit: MAX_ISOMETRIC_RENDER_PIXELS },
+    );
+  }
+  const canvas = Buffer.alloc(width * height * 4);
+
+  const atlasFor = (
+    baseGid: number,
+  ): {
+    atlas: NativePreviewAtlas;
+    localId: number;
+  } => {
+    for (const atlas of input.atlases) {
+      if (
+        baseGid >= atlas.firstGid &&
+        baseGid < atlas.firstGid + atlas.tileCount
+      ) {
+        return {
+          atlas,
+          localId: baseGid - atlas.firstGid,
+        };
+      }
+    }
+    throw new TiledMcpError(
+      "GID_OUT_OF_RANGE",
+      `GID ${baseGid} does not fall inside any loaded tileset range.`,
+      { gid: baseGid },
+    );
+  };
+
+  for (const layer of input.layers) {
+    const draws: Array<{
+      screenX: number;
+      screenY: number;
+      gid: number;
+    }> = [];
+    for (let y = 0; y < region.height; y += 1) {
+      for (
+        let x = 0;
+        x < region.width;
+        x += 1
+      ) {
+        const gid =
+          layer.gids[y * region.width + x]!;
+        if (gid === 0) {
+          continue;
+        }
+        const position =
+          positions[y * region.width + x]!;
+        draws.push({
+          screenX: position.x - minX,
+          screenY: position.y - minY,
+          gid,
+        });
+      }
+    }
+    draws.sort(
+      (a, b) =>
+        a.screenY - b.screenY ||
+        a.screenX - b.screenX,
+    );
+    for (const draw of draws) {
+      const decoded = decodeGid(
+        draw.gid,
+        "hexagonal",
+      );
+      if (
+        decoded.transform.kind ===
+          "hexagonal" &&
+        (decoded.transform.rotate60 ||
+          decoded.transform.rotate120)
+      ) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_RENDER_FEATURE",
+          "Hexagonally rotated cells are outside the staggered/hexagonal render profile.",
+          { feature: "hexagonal-rotation" },
+        );
+      }
+      const flipH =
+        decoded.transform.kind === "hexagonal"
+          ? decoded.transform.flipH
+          : false;
+      const flipV =
+        decoded.transform.kind === "hexagonal"
+          ? decoded.transform.flipV
+          : false;
+      const { atlas, localId } = atlasFor(
+        decoded.baseGid,
+      );
+      if (localId >= atlas.geometry.tileCount) {
+        throw new TiledMcpError(
+          "GID_OUT_OF_RANGE",
+          `Local tile ${localId} does not exist in ${atlas.assetId}.`,
+          { assetId: atlas.assetId, localId },
+        );
+      }
+      const column =
+        localId % atlas.geometry.columns;
+      const row = Math.floor(
+        localId / atlas.geometry.columns,
+      );
+      const sourceLeft =
+        atlas.geometry.margin +
+        column *
+          (atlas.geometry.tileWidth +
+            atlas.geometry.spacing);
+      const sourceTop =
+        atlas.geometry.margin +
+        row *
+          (atlas.geometry.tileHeight +
+            atlas.geometry.spacing);
+      const destLeft = draw.screenX * scale;
+      const destTop = draw.screenY * scale;
+      const alphaScale = layer.opacity;
+      for (
+        let py = 0;
+        py < params.tileHeight * scale;
+        py += 1
+      ) {
+        const sampleY = flipV
+          ? params.tileHeight -
+            1 -
+            Math.floor(py / scale)
+          : Math.floor(py / scale);
+        const canvasY = destTop + py;
+        if (canvasY < 0 || canvasY >= height) {
+          continue;
+        }
+        for (
+          let px = 0;
+          px < params.tileWidth * scale;
+          px += 1
+        ) {
+          const sampleX = flipH
+            ? params.tileWidth -
+              1 -
+              Math.floor(px / scale)
+            : Math.floor(px / scale);
+          const canvasX = destLeft + px;
+          if (canvasX < 0 || canvasX >= width) {
+            continue;
+          }
+          const sourceIndex =
+            ((sourceTop + sampleY) *
+              atlas.geometry.imageWidth +
+              sourceLeft +
+              sampleX) *
+            4;
+          const alpha =
+            (atlas.rgba[sourceIndex + 3]! /
+              255) *
+            alphaScale;
+          if (alpha <= 0) {
+            continue;
+          }
+          const destIndex =
+            (canvasY * width + canvasX) * 4;
+          const inverse = 1 - alpha;
+          for (
+            let channel = 0;
+            channel < 3;
+            channel += 1
+          ) {
+            canvas[destIndex + channel] =
+              Math.round(
+                atlas.rgba[
+                  sourceIndex + channel
+                ]! *
+                  alpha +
+                  canvas[destIndex + channel]! *
+                    inverse,
+              );
+          }
+          canvas[destIndex + 3] = Math.round(
+            255 * alpha +
+              canvas[destIndex + 3]! * inverse,
+          );
+        }
+      }
+    }
+  }
+  return {
+    rgba: canvas,
+    width,
+    height,
+    originPixel: {
+      x: -minX * scale || 0,
+      y: -minY * scale || 0,
+    },
+  };
+}

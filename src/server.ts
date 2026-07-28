@@ -265,6 +265,7 @@ import {
   listPropertyTypesToolOutputSchema,
   renderDiffToolOutputSchema,
   renderIsometricToolOutputSchema,
+  renderHexagonalToolOutputSchema,
   listTileNamesToolOutputSchema,
   selectCellsToolOutputSchema,
   nativePreviewToolOutputSchema,
@@ -1632,6 +1633,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_render_preview",
     "tiled_render_diff",
     "tiled_render_isometric",
+    "tiled_render_hexagonal",
     "tiled_list_objects",
     "tiled_get_object",
     "tiled_validate",
@@ -4288,6 +4290,79 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           try {
             const rendered =
               await maps.renderIsometric({
+                mapPath,
+                region,
+                layerIds,
+                scale,
+              });
+            return imageToolResult(
+              rendered.result,
+              rendered.png,
+            );
+          } catch (error) {
+            return toolError(error);
+          }
+        },
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_render_hexagonal",
+    {
+      title:
+        "Render a staggered/hexagonal preview",
+      description:
+        "Renders a bounded region of one finite staggered or hexagonal TMJ map using the exact Tiled 1.12.2 HexagonalRenderer transform — staggered maps are the hexSideLength=0 degenerate case, matching the official class hierarchy — with cells compositing in the editor's row order on both stagger axes. Same strict profile as tiled_render_isometric: external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, hexagonal rotation flags, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Read-only.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          layerIds: z
+            .array(
+              z.number().int().positive(),
+            )
+            .min(1)
+            .max(128)
+            .optional(),
+          scale: z
+            .number()
+            .int()
+            .min(1)
+            .max(4)
+            .optional(),
+        })
+        .strict(),
+      outputSchema:
+        renderHexagonalToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({
+      mapPath,
+      region,
+      layerIds,
+      scale,
+    }) =>
+      renderMutex.runExclusive(
+        "sharp-render",
+        async () => {
+          try {
+            const rendered =
+              await maps.renderHexagonal({
                 mapPath,
                 region,
                 layerIds,

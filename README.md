@@ -313,6 +313,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_list_property_types` | 读取 `.tiled-project` 的 class/enum 定义——复杂属性类型注解的权威来源 |
 | `tiled_preview_property_types` | 预览项目 class/enum 定义的 upsert/delete（id 分配对照官方 `++mNextId`；被定义间引用的类型删除 fail closed） |
 | `tiled_render_isometric` | 等距地图原生渲染：按官方 IsometricRenderer 坐标变换把区域画成菱形 PNG（对角线扫描序、tile 底左锚定）；collection/透明色/反对角翻转/image/group 层 fail closed，object 层跳过并披露 |
+| `tiled_render_hexagonal` | staggered/hexagonal 原生渲染：官方 HexagonalRenderer 变换（staggered 为 hexSideLength=0 退化情形），行序合成；hex 旋转位 fail closed |
 | `tiled_preview_write_tmx` | 原生受限 TMX 写出：把 `.tmj` 序列化为与 Tiled 1.12.2 官方 writer 字节级一致的 `.tmx` 新文件（同目录、no-replace、无需 CLI）；profile 之外的结构与丢精度浮点 fail closed |
 | `tiled_preview_write_tsx` | 原生受限 TSX 写出：把 `.tsj` atlas 序列化为与官方 writer 字节级一致的 `.tsx` 新文件；声明网格必须与图片尺寸自洽（官方会重算），per-tile 元数据/wang/属性 fail closed |
 | `tiled_select` | 无状态选区：按 tile 集合/空/非空/魔棒（种子四向泛洪同 baseGid 连通区）谓词扫描有界区域，返回精确计数+紧包围盒+有界坐标采样；无 selectionId 无服务端状态 |

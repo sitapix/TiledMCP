@@ -281,6 +281,21 @@
       }
     },
     {
+      "name": "tiled_render_hexagonal",
+      "profile": "core",
+      "purpose": "Render a bounded staggered or hexagonal map region as a PNG using the official HexagonalRenderer transform.",
+      "arguments": {
+        "mapPath": "maps/hex.tmj",
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "scale": 2
+      }
+    },
+    {
       "name": "tiled_list_objects",
       "profile": "core",
       "arguments": {

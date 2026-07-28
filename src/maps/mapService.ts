@@ -189,6 +189,7 @@ import {
 import {
   MAX_ISOMETRIC_REGION_CELLS,
   MAX_ISOMETRIC_RENDER_SCALE,
+  renderHexagonalTiles,
   renderIsometricTiles,
   type IsometricRenderLayer,
 } from "../images/isometricPreview.js";
@@ -6537,6 +6538,399 @@ export class MapService {
         sources,
         renderProfile:
           "isometric-tile-layers-v1",
+        snapshotConsistency:
+          "non-atomic-read-set",
+      },
+    };
+  }
+
+  /**
+   * Staggered/hexagonal tile-layer renderer using the exact Tiled
+   * 1.12.2 HexagonalRenderer transform (staggered maps are the
+   * hexSideLength=0 degenerate case, matching the official class
+   * hierarchy). Same strict profile as the isometric renderer;
+   * hexagonal rotation flags fail closed.
+   */
+  async renderHexagonal(input: {
+    mapPath: string;
+    region: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    layerIds?: number[] | undefined;
+    scale?: number | undefined;
+  }): Promise<{
+    png: Buffer;
+    result: Record<string, unknown>;
+  }> {
+    const scale = input.scale ?? 1;
+    if (
+      !Number.isSafeInteger(scale) ||
+      scale < 1 ||
+      scale > MAX_ISOMETRIC_RENDER_SCALE
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `scale must be an integer between 1 and ${MAX_ISOMETRIC_RENDER_SCALE}.`,
+        { scale },
+      );
+    }
+    const region = input.region;
+    if (
+      !Number.isSafeInteger(region.x) ||
+      !Number.isSafeInteger(region.y) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.width * region.height >
+        MAX_ISOMETRIC_REGION_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must use non-negative integer coordinates, positive dimensions, and at most ${MAX_ISOMETRIC_REGION_CELLS} cells.`,
+        { limit: MAX_ISOMETRIC_REGION_CELLS },
+      );
+    }
+    const context =
+      await this.loadEditableContext(
+        input.mapPath,
+        { allowStaggeredHexagonal: true },
+      );
+    if (
+      context.orientation !== "staggered" &&
+      context.orientation !== "hexagonal"
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "tiled_render_hexagonal renders staggered and hexagonal maps; use tiled_render_preview or tiled_render_isometric otherwise.",
+        { orientation: context.orientation },
+      );
+    }
+    if (
+      region.x + region.width > context.width ||
+      region.y + region.height > context.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must lie inside the ${context.width}x${context.height} map.`,
+        {
+          mapWidth: context.width,
+          mapHeight: context.height,
+        },
+      );
+    }
+    const map = context.loaded.document;
+    const mapPath = context.loaded.path;
+    const tileWidth = expectInteger(
+      map.tilewidth,
+      `${mapPath}.tilewidth`,
+    );
+    const tileHeight = expectInteger(
+      map.tileheight,
+      `${mapPath}.tileheight`,
+    );
+    const staggerAxis = expectString(
+      map.staggeraxis,
+      `${mapPath}.staggeraxis`,
+    );
+    const staggerIndex = expectString(
+      map.staggerindex,
+      `${mapPath}.staggerindex`,
+    );
+    if (
+      (staggerAxis !== "x" &&
+        staggerAxis !== "y") ||
+      (staggerIndex !== "odd" &&
+        staggerIndex !== "even")
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${mapPath} must declare staggeraxis x|y and staggerindex odd|even.`,
+      );
+    }
+    const hexSideLength =
+      context.orientation === "hexagonal"
+        ? expectInteger(
+            map.hexsidelength,
+            `${mapPath}.hexsidelength`,
+          )
+        : 0;
+
+    const requestedLayerIds =
+      input.layerIds === undefined
+        ? undefined
+        : new Set(input.layerIds);
+    const renderLayers: IsometricRenderLayer[] =
+      [];
+    const renderedLayerSummaries: Array<{
+      id: number;
+      name: string;
+      nameTruncated?: true;
+    }> = [];
+    const omittedObjectLayerIds: number[] = [];
+    const topLayers = expectArray(
+      map.layers,
+      `${mapPath}.layers`,
+    );
+    const seenLayerIds = new Set<number>();
+    for (const [
+      index,
+      entry,
+    ] of topLayers.entries()) {
+      const layer = expectObject(
+        entry,
+        `${mapPath}.layers[${index}]`,
+      );
+      const layerId = expectInteger(
+        layer.id,
+        `${mapPath}.layers[${index}].id`,
+      );
+      seenLayerIds.add(layerId);
+      if (layer.type === "objectgroup") {
+        omittedObjectLayerIds.push(layerId);
+        continue;
+      }
+      if (layer.type !== "tilelayer") {
+        throw new TiledMcpError(
+          "UNSUPPORTED_RENDER_FEATURE",
+          `${mapPath}.layers[${index}] has type ${String(layer.type)}, which is outside the staggered/hexagonal render profile.`,
+          {
+            feature: "hexagonal-layer-type",
+            layerId,
+          },
+        );
+      }
+      if (
+        requestedLayerIds === undefined
+          ? layer.visible === false
+          : !requestedLayerIds.has(layerId)
+      ) {
+        continue;
+      }
+      const view = findTileLayer(
+        map,
+        layerId,
+        mapPath,
+        "read",
+      );
+      assertRegionInsideLayer(
+        view,
+        region.x,
+        region.y,
+        region.width,
+        region.height,
+      );
+      const gids: number[] = [];
+      for (
+        let y = region.y;
+        y < region.y + region.height;
+        y += 1
+      ) {
+        for (
+          let x = region.x;
+          x < region.x + region.width;
+          x += 1
+        ) {
+          gids.push(readLayerGid(view, x, y));
+        }
+      }
+      const opacity =
+        layer.opacity === undefined
+          ? 1
+          : layer.opacity;
+      if (
+        typeof opacity !== "number" ||
+        !(opacity >= 0) ||
+        !(opacity <= 1)
+      ) {
+        throw new TiledMcpError(
+          "INVALID_DOCUMENT",
+          `${mapPath}.layers[${index}].opacity must be in [0, 1].`,
+        );
+      }
+      renderLayers.push({
+        id: layerId,
+        name: view.name,
+        opacity,
+        gids,
+      });
+      renderedLayerSummaries.push({
+        id: layerId,
+        name: view.name.slice(0, 128),
+        ...(view.name.length > 128
+          ? { nameTruncated: true as const }
+          : {}),
+      });
+    }
+    if (requestedLayerIds !== undefined) {
+      for (const layerId of requestedLayerIds) {
+        if (!seenLayerIds.has(layerId)) {
+          throw new TiledMcpError(
+            "LAYER_NOT_FOUND",
+            `Layer ${layerId} does not exist at the top level of ${mapPath}.`,
+            { layerId },
+          );
+        }
+      }
+    }
+    if (renderLayers.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "No tile layers were selected for the render.",
+      );
+    }
+
+    const usedBindings = new Map<
+      string,
+      TilesetBinding
+    >();
+    for (const layer of renderLayers) {
+      for (const gid of layer.gids) {
+        if (gid === 0) {
+          continue;
+        }
+        const decoded = decodeGid(
+          gid,
+          "hexagonal",
+        );
+        const binding = context.bindings.find(
+          (candidate) =>
+            decoded.baseGid >=
+              candidate.firstGid &&
+            decoded.baseGid <
+              candidate.firstGid +
+                candidate.gidSpan,
+        );
+        if (binding === undefined) {
+          throw new TiledMcpError(
+            "GID_OUT_OF_RANGE",
+            `GID ${decoded.baseGid} does not fall inside any tileset range of ${mapPath}.`,
+            { gid: decoded.baseGid },
+          );
+        }
+        if (binding.collection === true) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_RENDER_FEATURE",
+            "Image-collection tilesets are outside the staggered/hexagonal render profile.",
+            {
+              feature: "hexagonal-collection",
+              assetId: binding.assetId,
+            },
+          );
+        }
+        usedBindings.set(
+          binding.assetId,
+          binding,
+        );
+      }
+    }
+
+    const atlases: NativePreviewAtlas[] = [];
+    let remainingImageBytes =
+      MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES;
+    let remainingDecodedPixels =
+      MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS;
+    const sources: Array<
+      Record<string, unknown>
+    > = [];
+    for (const binding of usedBindings.values()) {
+      const loaded = await this.loadPreviewAtlas(
+        binding,
+        tileWidth,
+        tileHeight,
+        remainingImageBytes,
+        remainingDecodedPixels,
+      );
+      if (loaded.transparentColor !== undefined) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_RENDER_FEATURE",
+          "Transparent-color keyed tilesets are outside the staggered/hexagonal render profile.",
+          {
+            feature:
+              "hexagonal-transparent-color",
+            assetId: binding.assetId,
+          },
+        );
+      }
+      remainingImageBytes -=
+        loaded.image.bytes.byteLength;
+      remainingDecodedPixels -=
+        loaded.geometry.imageWidth *
+        loaded.geometry.imageHeight;
+      atlases.push({
+        assetId: binding.assetId,
+        firstGid: binding.firstGid,
+        tileCount: binding.tileCount,
+        rgba: loaded.decoded.rgba,
+        format: loaded.decoded.format,
+        geometry: loaded.geometry,
+      });
+      sources.push({
+        tileset: {
+          assetId: binding.assetId,
+          path: binding.path,
+          revision: binding.revision,
+        },
+        image: {
+          path: loaded.image.path,
+          revision: loaded.image.revision,
+        },
+      });
+    }
+
+    const rendered = renderHexagonalTiles({
+      params: {
+        tileWidth,
+        tileHeight,
+        hexSideLength,
+        staggerAxis,
+        staggerIndex,
+      },
+      region,
+      layers: renderLayers,
+      atlases,
+      scale,
+    });
+    const png = await encodeRgbaPng({
+      rgba: rendered.rgba,
+      width: rendered.width,
+      height: rendered.height,
+    });
+    return {
+      png,
+      result: {
+        mimeType: "image/png",
+        pixelSize: {
+          width: rendered.width,
+          height: rendered.height,
+        },
+        byteLength: png.byteLength,
+        sha256: revisionOf(png),
+        map: {
+          path: mapPath,
+          revision: context.loaded.revision,
+        },
+        dependencyRevisions:
+          context.dependencyRevisions,
+        region,
+        scale,
+        projection: {
+          orientation: context.orientation,
+          tileWidth,
+          tileHeight,
+          staggerAxis,
+          staggerIndex,
+          hexSideLength,
+          originPixel: rendered.originPixel,
+        },
+        layers: renderedLayerSummaries,
+        omittedObjectLayerIds,
+        sources,
+        renderProfile:
+          "staggered-hexagonal-tile-layers-v1",
         snapshotConsistency:
           "non-atomic-read-set",
       },
