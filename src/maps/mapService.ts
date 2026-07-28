@@ -8637,6 +8637,10 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        // Verified against the real CLI: wangEdit on an isometric
+        // staging map behaves identically to orthogonal — wang
+        // adjacency is orientation-independent.
+        allowIsometric: true,
         expectedMapRevision:
           input.expectedMapRevision,
         expectedDependencyRevisions:

@@ -90,6 +90,36 @@ describe("terrain painting via Tiled wangEdit", () => {
     roots.clear();
   });
 
+  it("paints isometric maps identically — wang adjacency is orientation-independent", async () => {
+    const harness = await createHarness(roots, {
+      orientation: "isometric",
+    });
+    const plan = await harness.service.planTerrainPaint(
+      {
+        mapPath: MAP_PATH,
+        layerId: 1,
+        tilesetAssetId: harness.assetId,
+        wangSetIndex: 0,
+        corners: [
+          { x: 1, y: 1, colorIndex: 1 },
+        ],
+        expectedMapRevision:
+          harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      },
+      fakeEvaluate(() =>
+        baseMap({ data: [1, 1, 1, 1] }, "isometric"),
+      ),
+    );
+    expect(plan).toMatchObject({
+      kind: "mapEdit",
+      operations: [
+        { type: "setTiles", layerId: 1 },
+      ],
+    });
+  });
+
   it("turns the CLI result diff into an ordinary setTiles change set", async () => {
     const harness = await createHarness(roots);
     const plan = await harness.service.planTerrainPaint(
@@ -277,6 +307,7 @@ function baseMap(
   layer: { data: number[] } = {
     data: [1, 0, 0, 0],
   },
+  orientation = "orthogonal",
 ): JsonObject {
   return {
     compressionlevel: -1,
@@ -298,7 +329,7 @@ function baseMap(
     ],
     nextlayerid: 2,
     nextobjectid: 1,
-    orientation: "orthogonal",
+    orientation,
     renderorder: "right-down",
     tiledversion: "1.12.2",
     tileheight: 16,
@@ -317,7 +348,10 @@ function baseMap(
 
 async function createHarness(
   roots: Set<string>,
-  options: { realImage?: boolean } = {},
+  options: {
+    realImage?: boolean;
+    orientation?: string;
+  } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(
     join(tmpdir(), "tiledmcp-terrain-test-"),
@@ -393,7 +427,9 @@ async function createHarness(
   );
   await writeFile(
     join(root, MAP_PATH),
-    serializeJsonDocument(baseMap()),
+    serializeJsonDocument(
+      baseMap(undefined, options.orientation),
+    ),
   );
 
   const resolver =

@@ -517,10 +517,11 @@ Isometric maps are also editable through the standard map-edit path:
 cell storage and object pixel coordinates are orientation-independent,
 so \`tiled_preview_edits\` plans and applies against isometric maps
 exactly like orthogonal ones (the summary's \`editableProfile\`
-reports \`isometric-tmj-editable-core\`). The pure-computation
-procedural planners (shape, generate, scatter, prefab) accept
-isometric maps too; terrain, which stages through the official CLI,
-remains orthogonal-only. Staggered and hexagonal maps are
+reports \`isometric-tmj-editable-core\`). All procedural
+planners (shape, generate, scatter, prefab, and terrain) accept
+isometric maps too — wangEdit was verified against the real CLI to
+behave identically on isometric staging maps, since wang adjacency is
+orientation-independent. Staggered and hexagonal maps are
 summary/region/usage read-only (stagger members disclosed, hex flip
 bits decoded as rotate60/rotate120); edits and renders fail closed.
 
