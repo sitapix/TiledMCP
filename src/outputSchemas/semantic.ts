@@ -879,9 +879,10 @@ const usageAnalysisSuccessOutputSchema = z
     map: mapSnapshotOutputSchema,
     dependencyRevisions:
       dependencyRevisionsOutputSchema,
-    profile: z.literal(
+    profile: z.enum([
       "finite-orthogonal-tmj-external-atlas-tsj",
-    ),
+      "isometric-tmj-read-only",
+    ]),
     scope: z
       .object({
         tileLayers: z.literal("all-recursive"),

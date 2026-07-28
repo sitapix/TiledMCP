@@ -383,7 +383,7 @@ interface EditableContext {
   loaded: LoadedDocument;
   width: number;
   height: number;
-  orientation: "orthogonal";
+  orientation: "orthogonal" | "isometric";
   infinite: boolean;
   bindings: TilesetBinding[];
   /** Non-empty only when the caller opted in via allowEmbeddedTilesets. */
@@ -422,6 +422,14 @@ interface EditableContextRevisionGuards {
    * embedded tileset can never reach an edit planner or renderer.
    */
   allowEmbeddedTilesets?: boolean;
+  /**
+   * Read-only tools opt in to isometric maps explicitly. Tile data and
+   * GID semantics are identical to orthogonal storage; only rendering
+   * projects differently, so every edit and render path keeps the
+   * default fail-closed gate. Staggered, hexagonal, and oblique maps
+   * stay rejected everywhere.
+   */
+  allowIsometric?: boolean;
 }
 
 interface TilesetBinding {
@@ -854,6 +862,7 @@ export class MapService {
       allowInfinite: true,
       allowCollectionTilesets: true,
       allowEmbeddedTilesets: true,
+      allowIsometric: true,
     });
     const rootProperties = summarizeMapRootProperties(
       context.loaded.document,
@@ -907,9 +916,12 @@ export class MapService {
         }),
       ),
       dependencyRevisions: context.dependencyRevisions,
-      editableProfile: context.infinite
-        ? "infinite-orthogonal-tmj-read-only-chunked"
-        : "finite-orthogonal-tmj-external-atlas-tsj",
+      editableProfile:
+        context.orientation === "isometric"
+          ? "isometric-tmj-read-only"
+          : context.infinite
+            ? "infinite-orthogonal-tmj-read-only-chunked"
+            : "finite-orthogonal-tmj-external-atlas-tsj",
     };
   }
 
@@ -1003,6 +1015,7 @@ export class MapService {
     );
     const context = await this.loadEditableContext(input.mapPath, {
       allowInfinite: true,
+      allowIsometric: true,
       ...(input.expectedMapRevision === undefined
         ? {}
         : {
@@ -1043,7 +1056,9 @@ export class MapService {
       },
       dependencyRevisions: context.dependencyRevisions,
       profile:
-        "finite-orthogonal-tmj-external-atlas-tsj",
+        context.orientation === "isometric"
+          ? "isometric-tmj-read-only"
+          : "finite-orthogonal-tmj-external-atlas-tsj",
       ...projection,
       snapshotConsistency: "non-atomic-read-set",
     };
@@ -3302,6 +3317,7 @@ export class MapService {
       allowInfinite: true,
       allowCollectionTilesets: true,
       allowEmbeddedTilesets: true,
+      allowIsometric: true,
     });
     const rows: Array<Array<TileRef | null>> = [];
     let layerDescriptor: { id: number; name: string };
@@ -6692,10 +6708,18 @@ export class MapService {
       throw new TiledMcpError("INVALID_DOCUMENT", `${loaded.path} is not a Tiled map.`);
     }
     const orientation = expectString(map.orientation, `${loaded.path}.orientation`);
-    if (orientation !== "orthogonal") {
+    if (
+      orientation !== "orthogonal" &&
+      !(
+        orientation === "isometric" &&
+        revisionGuards.allowIsometric === true
+      )
+    ) {
       throw new TiledMcpError(
         "UNSUPPORTED_MAP_PROFILE",
-        "MVP semantic tools support only orthogonal maps.",
+        orientation === "isometric"
+          ? "This tool supports only orthogonal maps; isometric maps are readable through the summary, region, and usage tools."
+          : "MVP semantic tools support only orthogonal maps.",
         { path: loaded.path, orientation },
       );
     }
@@ -8128,7 +8152,9 @@ export class MapService {
 
 function validateAndSummarizeOperations(
   map: JsonObject,
-  orientation: "orthogonal",
+  // Edit planners only ever receive orthogonal contexts (the isometric
+  // gate is read-only opt-in), but the context type carries the union.
+  orientation: "orthogonal" | "isometric",
   bindings: readonly TilesetBinding[],
   operations: readonly PlannedMapEditOperation[],
   mapPath: string,
@@ -10345,7 +10371,7 @@ function collectResizeLayerViews(
 
 function performMapResize(
   map: JsonObject,
-  orientation: "orthogonal",
+  orientation: "orthogonal" | "isometric",
   bindings: readonly TilesetBinding[],
   views: ResizeLayerViews,
   input: {

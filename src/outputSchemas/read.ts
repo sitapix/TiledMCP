@@ -392,7 +392,10 @@ const mapSummaryResultOutputSchema = z
     path: projectPathOutputSchema,
     revision: revisionOutputSchema,
     format: z.literal("tmj"),
-    orientation: z.literal("orthogonal"),
+    orientation: z.enum([
+      "orthogonal",
+      "isometric",
+    ]),
     infinite: z.boolean(),
     renderOrder: z.enum([
       "right-down",
@@ -443,6 +446,7 @@ const mapSummaryResultOutputSchema = z
     editableProfile: z.enum([
       "finite-orthogonal-tmj-external-atlas-tsj",
       "infinite-orthogonal-tmj-read-only-chunked",
+      "isometric-tmj-read-only",
     ]),
   })
   .strict();

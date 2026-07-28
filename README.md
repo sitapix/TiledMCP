@@ -149,6 +149,10 @@ preview-edit 路径对无限地图继续 fail closed。
 native preview 中显式选择其 Tiled 对齐的 frame 轮廓调试，或再以 opt-in 方式叠加
 该 tile 的碰撞形状轮廓（均不渲染 tile 图像）。
 
+等距（isometric）地图获得 **summary/region/usage 只读**：tile data 与 GID 存储
+语义与正交完全一致，仅渲染投影不同，因此三个只读工具经内部 `allowIsometric`
+opt-in 放行（profile 报 `isometric-tmj-read-only`），一切编辑与渲染路径维持
+fail closed；staggered/hexagonal/oblique 全面继续拒绝。
 TMX/XML 获得**只读核心第一步**：`tiled_get_map_summary` 接受 `.tmx` 地图，经
 自研有界 fail closed XML 子集解析器（拒绝 DOCTYPE/实体/PI/CDATA——零 XXE 面、
 零新依赖）返回只读摘要（图层树含 data 编码、外部 tileset 引用逐个解析并 pin

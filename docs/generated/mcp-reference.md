@@ -1060,7 +1060,10 @@ Output schema:
               "type": "object"
             },
             "profile": {
-              "const": "finite-orthogonal-tmj-external-atlas-tsj",
+              "enum": [
+                "finite-orthogonal-tmj-external-atlas-tsj",
+                "isometric-tmj-read-only"
+              ],
               "type": "string"
             },
             "scan": {
@@ -14737,7 +14740,7 @@ Output schema:
 
 Availability: `core`
 
-Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Embedded (inline) atlas tilesets are listed separately with their tilesets[] index and GID range; they are pinned by the map revision and stay read-only. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker. XML maps (.tmx) return a bounded read-only summary through a fail-closed XML subset reader — layer tree with data encodings, external tileset references resolved with per-file existence and revision pins, and an editable:false marker; TMX never reaches any edit planner.
+Reads dimensions, normalized root render/background/class metadata, revision, layer tree and external tileset identities before editing. Embedded (inline) atlas tilesets are listed separately with their tilesets[] index and GID range; they are pinned by the map revision and stay read-only. Infinite maps are readable too: the summary reports infinite:true, chunked tile-layer content bounds with startX/startY, and a read-only profile marker; isometric maps likewise return a read-only profile (tile data and GIDs are storage-identical to orthogonal), while staggered and hexagonal maps stay rejected. XML maps (.tmx) return a bounded read-only summary through a fail-closed XML subset reader — layer tree with data encodings, external tileset references resolved with per-file existence and revision pins, and an editable:false marker; TMX never reaches any edit planner.
 
 Annotations:
 
@@ -15079,7 +15082,8 @@ Output schema:
                 "editableProfile": {
                   "enum": [
                     "finite-orthogonal-tmj-external-atlas-tsj",
-                    "infinite-orthogonal-tmj-read-only-chunked"
+                    "infinite-orthogonal-tmj-read-only-chunked",
+                    "isometric-tmj-read-only"
                   ],
                   "type": "string"
                 },
@@ -15158,7 +15162,10 @@ Output schema:
                   "type": "array"
                 },
                 "orientation": {
-                  "const": "orthogonal",
+                  "enum": [
+                    "orthogonal",
+                    "isometric"
+                  ],
                   "type": "string"
                 },
                 "path": {
