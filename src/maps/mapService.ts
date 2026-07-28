@@ -6021,6 +6021,13 @@ export class MapService {
       | {
           kind: "magicWand";
           seed: { x: number; y: number };
+        }
+      | {
+          kind: "polygon";
+          points: Array<{
+            x: number;
+            y: number;
+          }>;
         };
   }): Promise<Record<string, unknown>> {
     const context =
@@ -6096,6 +6103,64 @@ export class MapService {
       region.height,
     );
     const matchKind = input.match.kind;
+    let insidePolygon:
+      | ((x: number, y: number) => boolean)
+      | undefined;
+    if (input.match.kind === "polygon") {
+      const points = input.match.points;
+      if (
+        points.length < 3 ||
+        points.length > 64 ||
+        points.some(
+          (point) =>
+            !Number.isFinite(point.x) ||
+            !Number.isFinite(point.y),
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "match.points must contain 3 to 64 finite pixel-coordinate points.",
+        );
+      }
+      const tilePixelWidth = expectInteger(
+        context.loaded.document.tilewidth,
+        `${mapPath}.tilewidth`,
+      );
+      const tilePixelHeight = expectInteger(
+        context.loaded.document.tileheight,
+        `${mapPath}.tileheight`,
+      );
+      // Even-odd crossing test against the cell centre, with the
+      // half-open edge rule so boundary cells resolve consistently.
+      insidePolygon = (
+        cellX: number,
+        cellY: number,
+      ): boolean => {
+        const px =
+          (cellX + 0.5) * tilePixelWidth;
+        const py =
+          (cellY + 0.5) * tilePixelHeight;
+        let inside = false;
+        for (
+          let i = 0, j = points.length - 1;
+          i < points.length;
+          j = i, i += 1
+        ) {
+          const a = points[i]!;
+          const b = points[j]!;
+          if (
+            a.y > py !== b.y > py &&
+            px <
+              ((b.x - a.x) * (py - a.y)) /
+                (b.y - a.y) +
+                a.x
+          ) {
+            inside = !inside;
+          }
+        }
+        return inside;
+      };
+    }
     if (input.match.kind === "magicWand") {
       return this.selectMagicWand(
         context,
@@ -6129,6 +6194,10 @@ export class MapService {
           matched = gid === 0;
         } else if (matchKind === "nonEmpty") {
           matched = gid !== 0;
+        } else if (
+          matchKind === "polygon"
+        ) {
+          matched = insidePolygon!(x, y);
         } else {
           matched =
             gid !== 0 &&

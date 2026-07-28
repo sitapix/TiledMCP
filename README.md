@@ -316,7 +316,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_render_hexagonal` | staggered/hexagonal 原生渲染：官方 HexagonalRenderer 变换（staggered 为 hexSideLength=0 退化情形），行序合成；hex 旋转位 fail closed |
 | `tiled_preview_write_tmx` | 原生受限 TMX 写出：把 `.tmj` 序列化为与 Tiled 1.12.2 官方 writer 字节级一致的 `.tmx` 新文件（同目录、no-replace、无需 CLI）；自定义属性支持 string/int/float/bool/color/file（官方 writeProperties 字节序），object/class 型属性与其余 profile 外结构、丢精度浮点 fail closed |
 | `tiled_preview_write_tsx` | 原生受限 TSX 写出：把 `.tsj` atlas 序列化为与官方 writer 字节级一致的 `.tsx` 新文件；声明网格必须与图片尺寸自洽（官方会重算），per-tile 元数据/wang/属性 fail closed |
-| `tiled_select` | 无状态选区：按 tile 集合/空/非空/魔棒（种子四向泛洪同 baseGid 连通区）谓词扫描有界区域，返回精确计数+紧包围盒+有界坐标采样；无 selectionId 无服务端状态 |
+| `tiled_select` | 无状态选区：按 tile 集合/空/非空/魔棒（种子四向泛洪同 baseGid 连通区）/像素多边形（cell 中心偶奇规则）谓词扫描有界区域，返回精确计数+紧包围盒+有界坐标采样；无 selectionId 无服务端状态 |
 | `tiled_list_tile_names` | 读服务端自有 `.tiledmcp/tile-names.json` 语义命名注册表：name → {tileset, localId}，逐 tileset pin revision，缺文件读作空 |
 | `tiled_preview_tile_names` | 预览语义命名注册表的 upsert/delete（专用 `tileNameEdit` change set）：pin 注册表 revision（或其缺失）、upsert 校验 tileset 存在、apply 按批准内容 hash 重放；绝不碰 Tiled 资产。注册名可在 shape/generate/scatter/select 的 tile 位直接以 `{"name": ...}` 引用，服务端经 map binding 解析并 fail closed |
 | `tiled_preview_validation_fixes` | 机械校验修复：把所有悬空 gid cell 汇成可审批的 `setTiles` 擦除 change set；零问题或 >10,000 cell fail closed，悬空 tile object 只报告不代删 |

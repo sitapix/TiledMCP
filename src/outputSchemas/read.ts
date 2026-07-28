@@ -881,6 +881,7 @@ const selectCellsResultOutputSchema = z
       "empty",
       "nonEmpty",
       "magicWand",
+      "polygon",
     ]),
     seed: z
       .object({

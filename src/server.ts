@@ -6006,6 +6006,28 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                   .strict(),
               })
               .strict(),
+            z
+              .object({
+                kind: z.literal("polygon"),
+                points: z
+                  .array(
+                    z
+                      .object({
+                        x: z
+                          .number()
+                          .min(-1e9)
+                          .max(1e9),
+                        y: z
+                          .number()
+                          .min(-1e9)
+                          .max(1e9),
+                      })
+                      .strict(),
+                  )
+                  .min(3)
+                  .max(64),
+              })
+              .strict(),
           ]),
         })
         .strict(),
@@ -6040,6 +6062,13 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                       x: number;
                       y: number;
                     };
+                  }
+                | {
+                    kind: "polygon";
+                    points: Array<{
+                      x: number;
+                      y: number;
+                    }>;
                   });
         return maps.selectCells({
           mapPath,

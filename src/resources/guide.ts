@@ -589,8 +589,10 @@ under the pinned revision and hash-verifies.
 
 \`tiled_select\` evaluates one stateless predicate — a tile set
 matched by tileset+localId (flip bits ignored), empty cells, or
-non-empty cells, or a magic wand flooding the seed cell's connected
-same-value area — over a bounded tile-layer region and returns the
+non-empty cells, a magic wand flooding the seed cell's connected
+same-value area, or a pixel-coordinate polygon selecting every cell
+whose centre falls inside (even-odd rule) — over a bounded tile-layer
+region and returns the
 selection as plain data: exact count, tight bounding box, and a
 bounded coordinate sample. No selection id or server state exists;
 feed the result into region- or cell-based tools explicitly.

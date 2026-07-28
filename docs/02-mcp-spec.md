@@ -1007,7 +1007,7 @@ patch，验证 digest/revision pins/raw-byte CAS，并在锁内完成写前 chec
 | `tiled_copy_region` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 15 种 `copyRegion` 在同一 map 的 finite numeric tile layers 间按绝对坐标复制完整矩形 | `mapPath`, `source:{layerId,x,y,width,height}`, `destination:{layerId,x,y}` |
 | `tiled_clear_region` | 候选独立入口；当前直接使用 `fillRegion` + `tile:null` 清空矩形，不新增 operation/tool | `mapPath`, `layerId`, `region` |
 | `tiled_stamp_pattern` | **已实现等价 generic operation**：当前不注册 standalone tool，通过 `tiled_preview_edits` 的第 11 种 `stampPattern` 盖章。成型的多图层复用结构走预制件（3.5） | `mapPath`, `layerId`, `x`, `y`, `pattern: (TileRef|null)[][]` |
-| `tiled_select` | **已实现第一刀（无状态变体）**：按谓词（tile 集合按 tileset+localId 匹配忽略 flip 位 / 空 / 非空 / 魔棒——种子四向泛洪同 baseGid 连通区、空种子泛洪空区、限制于 region、结果披露 seedBaseGid）扫描一个有界 tile-layer 区域，把选区作为**纯数据**返回——精确计数、紧包围盒、≤2048 坐标采样（截断披露）；不发 selectionId、不留服务端选区状态，调用方显式把结果喂给 region/cell 工具；四种投影全支持；多边形/选区组合与 `Region.kind="selection"` 引用机制留后续 | `mapPath`, `layerId`, `region?`, `match` |
+| `tiled_select` | **已实现第一刀（无状态变体）**：按谓词（tile 集合按 tileset+localId 匹配忽略 flip 位 / 空 / 非空 / 魔棒——种子四向泛洪同 baseGid 连通区、空种子泛洪空区、限制于 region、结果披露 seedBaseGid）扫描一个有界 tile-layer 区域，把选区作为**纯数据**返回——精确计数、紧包围盒、≤2048 坐标采样（截断披露）；不发 selectionId、不留服务端选区状态，调用方显式把结果喂给 region/cell 工具；四种投影全支持；多边形已补齐（`polygon` 谓词：3..64 像素坐标点、cell 中心偶奇 crossing 判定、半开边规则）；选区组合与 `Region.kind="selection"` 引用机制留后续 | `mapPath`, `layerId`, `region?`, `match` |
 
 其中 `tile` 参数统一为 `TileRef` 或持久化注册过的语义名（见 3.10）；语义名解析结果必须在预览中回显为完整 `TileRef`，有歧义时拒绝执行。
 

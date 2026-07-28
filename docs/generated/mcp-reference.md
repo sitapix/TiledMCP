@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:3fc048d8b41f3dbf17c84480aa8c1de5ce07191b2a5f78b1a7d45882b1411d7d",
+    "revision": "sha256:af68213994f06dff04b170ed390508f5188653acf89f8dfca55ee887232c0288",
     "serverVersion": "0.0.1",
-    "size": 101912
+    "size": 102003
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 101912,
+  "size": 102003,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 101912 UTF-8 bytes, revision `sha256:3fc048d8b41f3dbf17c84480aa8c1de5ce07191b2a5f78b1a7d45882b1411d7d`.
+Content contract: `text`, 102003 UTF-8 bytes, revision `sha256:af68213994f06dff04b170ed390508f5188653acf89f8dfca55ee887232c0288`.
 
 Resource templates: none.
 
@@ -94674,6 +94674,45 @@ Input schema:
             "seed"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "polygon",
+              "type": "string"
+            },
+            "points": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "x": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "number"
+                  },
+                  "y": {
+                    "maximum": 1000000000,
+                    "minimum": -1000000000,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              },
+              "maxItems": 64,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "points"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -94856,7 +94895,8 @@ Output schema:
                 "tiles",
                 "empty",
                 "nonEmpty",
-                "magicWand"
+                "magicWand",
+                "polygon"
               ],
               "type": "string"
             },

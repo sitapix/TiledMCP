@@ -172,6 +172,68 @@ describe("magic wand selection", () => {
   });
 });
 
+describe("polygon selection", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("selects cells whose centre falls inside the pixel polygon", async () => {
+    const harness = await createHarness(roots, [
+      1, 1, 1,
+      1, 1, 1,
+    ]);
+    // Tile size 16: cell centres at x 8/24/40, y 8/24. A triangle
+    // covering the left column and the middle of the top row.
+    const result = await harness.service.selectCells(
+      {
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "polygon",
+          points: [
+            { x: 0, y: 0 },
+            { x: 34, y: 0 },
+            { x: 0, y: 32 },
+          ],
+        },
+      },
+    );
+    expect(result).toMatchObject({
+      match: "polygon",
+      cellCount: 3,
+      cells: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+      bounds: { x: 0, y: 0, width: 2, height: 2 },
+    });
+
+    await expect(
+      harness.service.selectCells({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        match: {
+          kind: "polygon",
+          points: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+});
+
 async function createHarness(
   roots: Set<string>,
   data: number[],
