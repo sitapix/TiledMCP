@@ -1631,6 +1631,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_edits",
     "tiled_preview_shape",
     "tiled_preview_generate",
+    "tiled_preview_scatter",
     "tiled_preview_template",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
@@ -5275,6 +5276,95 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             max: number;
             tile: TileRef | null;
           }>,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_scatter",
+    {
+      title:
+        "Preview seeded decoration scatter",
+      description:
+        "Scatters decoration tiles over one bounded region with a deterministic density roll per cell: a stateless coordinate hash gates each cell against the density and a second salted hash picks one weighted tile from the choice list, so the same seed always reproduces the same picks and results are translation-stable. Math.random is never involved. With skipOccupied, cells already holding a tile are left untouched; a null choice erases where it lands. Returns an ordinary mapEdit change set carrying the setTiles writes; a scatter that matches no cells fails closed.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          seed: z
+            .number()
+            .int()
+            .min(Number.MIN_SAFE_INTEGER)
+            .max(Number.MAX_SAFE_INTEGER),
+          density: z
+            .number()
+            .gt(0)
+            .max(1),
+          choices: z
+            .array(
+              z
+                .object({
+                  tile: tileRefSchema.nullable(),
+                  weight: z
+                    .number()
+                    .positive()
+                    .max(1_000_000),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(16),
+          skipOccupied: z.boolean().optional(),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      region,
+      seed,
+      density,
+      choices,
+      skipOccupied,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planScatter({
+          mapPath,
+          layerId,
+          region,
+          seed,
+          density,
+          choices: choices as Array<{
+            tile: TileRef | null;
+            weight: number;
+          }>,
+          skipOccupied,
           expectedMapRevision,
           expectedDependencyRevisions,
         });

@@ -192,6 +192,10 @@ import {
   type GenerateRegion,
 } from "./generate.js";
 import {
+  computeScatterPicks,
+  type ScatterChoice,
+} from "./scatter.js";
+import {
   applyPropertyTypeOperations,
   assertPropertyTypeEditPlan,
   projectPropertyTypes,
@@ -5470,6 +5474,118 @@ export class MapService {
           type: "setTiles",
           layerId: input.layerId,
           cells,
+        },
+      ],
+    );
+  }
+
+  /**
+   * Deterministic density scatter: each region cell independently rolls
+   * a stateless coordinate hash against the density, and matched cells
+   * pick one weighted tile from the choice list — decoration placement
+   * that is reproducible and translation-stable by construction. With
+   * skipOccupied, cells that already hold a tile are left untouched.
+   * The result is an ordinary setTiles map-edit change set.
+   */
+  async planScatter(input: {
+    mapPath: string;
+    layerId: number;
+    region: GenerateRegion;
+    seed: number;
+    density: number;
+    choices: Array<ScatterChoice<TileRef | null>>;
+    skipOccupied?: boolean | undefined;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    if (!Number.isSafeInteger(input.seed)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "seed must be a safe integer.",
+      );
+    }
+    const region = input.region;
+    if (
+      !Number.isSafeInteger(region.x) ||
+      !Number.isSafeInteger(region.y) ||
+      !Number.isSafeInteger(region.width) ||
+      !Number.isSafeInteger(region.height) ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.width * region.height >
+        MAX_GENERATE_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must use integer coordinates, positive dimensions, and at most ${MAX_GENERATE_CELLS} cells.`,
+        { limit: MAX_GENERATE_CELLS },
+      );
+    }
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      },
+    );
+    if (
+      region.x < 0 ||
+      region.y < 0 ||
+      region.x + region.width > context.width ||
+      region.y + region.height > context.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must lie inside the ${context.width}x${context.height} map.`,
+        {
+          mapWidth: context.width,
+          mapHeight: context.height,
+        },
+      );
+    }
+    let picks = computeScatterPicks(
+      input.seed,
+      region,
+      input.density,
+      input.choices,
+    );
+    if (input.skipOccupied === true) {
+      const layer = findTileLayer(
+        context.loaded.document,
+        input.layerId,
+        input.mapPath,
+        "read",
+      );
+      picks = picks.filter(
+        (pick) =>
+          readLayerGid(layer, pick.x, pick.y) ===
+          0,
+      );
+    }
+    if (picks.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The scatter matched no cells; raise the density, enlarge the region, or drop skipOccupied.",
+      );
+    }
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: input.layerId,
+          cells: picks,
         },
       ],
     );

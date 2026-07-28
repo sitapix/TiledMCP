@@ -689,6 +689,50 @@
       }
     },
     {
+      "name": "tiled_preview_scatter",
+      "profile": "core",
+      "purpose": "Scatter weighted decoration tiles over a region with a deterministic per-cell density roll, skipping occupied cells.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "seed": 42,
+        "density": 0.15,
+        "choices": [
+          {
+            "tile": {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 2
+            },
+            "weight": 3
+          },
+          {
+            "tile": {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 3
+            },
+            "weight": 1
+          }
+        ],
+        "skipOccupied": true,
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
       "name": "tiled_preview_template",
       "profile": "core",
       "purpose": "Place one minimal template instance ({id, template, x, y}) with the template revision pinned.",

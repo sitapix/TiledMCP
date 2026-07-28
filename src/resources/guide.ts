@@ -564,6 +564,19 @@ result is an ordinary \`mapEdit\` change set carrying the exact
 does a dungeon region too small for one minimum room plus its wall
 ring.
 
+## Scatter decoration tiles
+
+\`tiled_preview_scatter\` places decoration tiles over one bounded
+region with a deterministic density roll per cell: a stateless
+coordinate hash gates each cell against the density and a second
+salted hash picks one weighted tile from the choice list — the same
+seed always reproduces the same picks, results are translation-stable,
+and Math.random is never involved. \`skipOccupied\` leaves cells that
+already hold a tile untouched, and a \`null\` choice erases where it
+lands. The result is an ordinary \`mapEdit\` change set carrying the
+exact \`setTiles\` writes; a scatter that matches no cells fails
+closed.
+
 ## Draw geometric tile shapes
 
 \`tiled_preview_shape\` rasterizes one deterministic shape — a Bresenham
