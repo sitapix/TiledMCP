@@ -549,15 +549,20 @@ project-file revision.
 ## Generate tiles from a seed
 
 \`tiled_preview_generate\` computes a deterministic seeded value field
-over one bounded region — smooth value noise or a cellular cave
-automaton yielding exactly 0 (open) and 1 (wall) — and maps values to
-tiles through explicit \`[min, max)\` intervals (a max of 1 is
-inclusive; unmatched cells are skipped, allowing sparse generation).
-The generator is a stateless coordinate hash: the same seed always
-reproduces the same output, results are translation-stable, and
-Math.random is never involved. The result is an ordinary \`mapEdit\`
-change set carrying the exact \`setTiles\` writes; a mapping that
-matches no cells fails closed.
+over one bounded region — smooth value noise, a cellular cave
+automaton yielding exactly 0 (open) and 1 (wall), or a
+rooms-and-corridors dungeon yielding exactly 0 (floor) and 1 (wall)
+with every floor cell connected — and maps values to tiles through
+explicit \`[min, max)\` intervals (a max of 1 is inclusive; unmatched
+cells are skipped, allowing sparse generation). Noise and cellular use
+a stateless coordinate hash (translation-stable); the dungeon draws a
+sequential seeded stream region-relative, so a shifted region
+reproduces the same layout at its new location. The same seed always
+reproduces the same output and Math.random is never involved. The
+result is an ordinary \`mapEdit\` change set carrying the exact
+\`setTiles\` writes; a mapping that matches no cells fails closed, as
+does a dungeon region too small for one minimum room plus its wall
+ring.
 
 ## Draw geometric tile shapes
 

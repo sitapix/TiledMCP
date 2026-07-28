@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:a3a79b705d396c0ddb3de147d2bf3db26ef92b4100abfbb639201851fbef5036",
+    "revision": "sha256:aeacf4f7662a74861bfc6dbcd71c3334550ac9eb01f1478982aa76912cb68a8c",
     "serverVersion": "0.0.1",
-    "size": 93348
+    "size": 93652
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 93348,
+  "size": 93652,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 93348 UTF-8 bytes, revision `sha256:a3a79b705d396c0ddb3de147d2bf3db26ef92b4100abfbb639201851fbef5036`.
+Content contract: `text`, 93652 UTF-8 bytes, revision `sha256:aeacf4f7662a74861bfc6dbcd71c3334550ac9eb01f1478982aa76912cb68a8c`.
 
 Resource templates: none.
 
@@ -36629,7 +36629,7 @@ Output schema:
 
 Availability: `core`
 
-Computes a deterministic seeded value field over one bounded region — smooth value noise (stateless coordinate hash, so the same seed always reproduces the same output and results are translation-stable) or a cellular cave automaton yielding exactly 0 (open) and 1 (wall) — then maps values to tiles through explicit [min, max) intervals (max 1 inclusive; unmatched cells are skipped for sparse generation) and returns an ordinary mapEdit change set carrying the setTiles writes. Math.random is never involved; a mapping that matches no cells fails closed.
+Computes a deterministic seeded value field over one bounded region — smooth value noise (stateless coordinate hash, so the same seed always reproduces the same output and results are translation-stable), a cellular cave automaton yielding exactly 0 (open) and 1 (wall), or a rooms-and-corridors dungeon yielding exactly 0 (floor) and 1 (wall) with every floor cell connected (sequential seeded stream drawn region-relative, so a shifted region reproduces the same layout) — then maps values to tiles through explicit [min, max) intervals (max 1 inclusive; unmatched cells are skipped for sparse generation) and returns an ordinary mapEdit change set carrying the setTiles writes. Math.random is never involved; a mapping that matches no cells fails closed, as does a dungeon region too small for one minimum room plus its wall ring.
 
 Annotations:
 
@@ -36759,6 +36759,39 @@ Input schema:
             "iterations": {
               "maximum": 16,
               "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "algorithm"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "dungeon",
+              "type": "string"
+            },
+            "maxRoomSize": {
+              "maximum": 64,
+              "minimum": 2,
+              "type": "integer"
+            },
+            "maxRooms": {
+              "maximum": 64,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "minRoomSize": {
+              "maximum": 64,
+              "minimum": 2,
+              "type": "integer"
+            },
+            "roomAttempts": {
+              "maximum": 256,
+              "minimum": 1,
               "type": "integer"
             }
           },

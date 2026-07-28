@@ -1155,7 +1155,7 @@ copy 执行时实际变化的 destination layer 才进入 `affectedTileLayerIds`
 
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
-| `tiled_generate` | **已实现为 `tiled_preview_generate`**：确定性 seed 值场（无状态坐标 hash 的 value noise——同 seed 同输出、平移稳定；或细胞自动机洞穴，输出精确 0/1、界外按墙计）+ 显式 `[min,max)` 区间映射 tile（max=1 含端、未命中跳过支持稀疏生成），产出普通 `mapEdit` change set；绝不使用 Math.random，空命中 fail closed；`dungeon` 算法留后续 | `mapPath`, `layerId`, `region`, `seed`, `generator`, `mapping`, `expectedMapRevision`, `expectedDependencyRevisions` |
+| `tiled_generate` | **已实现为 `tiled_preview_generate`**：确定性 seed 值场（无状态坐标 hash 的 value noise——同 seed 同输出、平移稳定；或细胞自动机洞穴，输出精确 0/1、界外按墙计）+ 显式 `[min,max)` 区间映射 tile（max=1 含端、未命中跳过支持稀疏生成），产出普通 `mapEdit` change set；绝不使用 Math.random，空命中 fail closed；`dungeon` 算法已补齐：确定性 rooms-and-corridors（seeded splitmix32 序列流按 region 相对坐标抽取——平移 region 得同一布局；1 格墙圈内放不重叠房间、房间间保 1 格墙，L 形走廊连相邻房间中心保证地板全连通；输出精确 0=地板/1=墙；区域装不下最小房间即 fail closed） | `mapPath`, `layerId`, `region`, `seed`, `generator`, `mapping`, `expectedMapRevision`, `expectedDependencyRevisions` |
 | `tiled_scatter` | 在显式 Region 内按密度撒装饰 tile 或模板对象，带避让、最小间距和边缘留白规则 | `mapPath`, `layerId`, `items`, `density`, `region: Region`, `seed`, `minSpacing?`, `avoid?` |
 | `tiled_draw_shape` | **已实现为 `tiled_preview_shape`**：确定性几何画笔（Bresenham 线段、矩形描边/填充、外接矩形内切中点椭圆），纯有界计算产出普通 `mapEdit` change set（精确 `setTiles`）；无随机、无裁剪（出界 fail closed）、≤10,000 cell、`null` tile 沿形状清除；wang 颜色收边走 `tiled_preview_terrain` | `mapPath`, `layerId`, `draw`, `tile`, `expectedMapRevision`, `expectedDependencyRevisions` |
 | `tiled_save_prefab` | 从地图截取一个区域的**多图层结构**（tile + 对象，按图层名组织）存为预制件（`.tiledmcp/prefabs/*.json`）。工作流：模型先精雕一间房 → 存 prefab →"这种房子来五间" | `mapPath`, `region`, `layerIds?`, `name` |

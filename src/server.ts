@@ -5140,7 +5140,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       title:
         "Preview seeded procedural generation",
       description:
-        "Computes a deterministic seeded value field over one bounded region — smooth value noise (stateless coordinate hash, so the same seed always reproduces the same output and results are translation-stable) or a cellular cave automaton yielding exactly 0 (open) and 1 (wall) — then maps values to tiles through explicit [min, max) intervals (max 1 inclusive; unmatched cells are skipped for sparse generation) and returns an ordinary mapEdit change set carrying the setTiles writes. Math.random is never involved; a mapping that matches no cells fails closed.",
+        "Computes a deterministic seeded value field over one bounded region — smooth value noise (stateless coordinate hash, so the same seed always reproduces the same output and results are translation-stable), a cellular cave automaton yielding exactly 0 (open) and 1 (wall), or a rooms-and-corridors dungeon yielding exactly 0 (floor) and 1 (wall) with every floor cell connected (sequential seeded stream drawn region-relative, so a shifted region reproduces the same layout) — then maps values to tiles through explicit [min, max) intervals (max 1 inclusive; unmatched cells are skipped for sparse generation) and returns an ordinary mapEdit change set carrying the setTiles writes. Math.random is never involved; a mapping that matches no cells fails closed, as does a dungeon region too small for one minimum room plus its wall ring.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -5198,6 +5198,36 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                     .int()
                     .min(1)
                     .max(8)
+                    .optional(),
+                })
+                .strict(),
+              z
+                .object({
+                  algorithm:
+                    z.literal("dungeon"),
+                  maxRooms: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(64)
+                    .optional(),
+                  roomAttempts: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(256)
+                    .optional(),
+                  minRoomSize: z
+                    .number()
+                    .int()
+                    .min(2)
+                    .max(64)
+                    .optional(),
+                  maxRoomSize: z
+                    .number()
+                    .int()
+                    .min(2)
+                    .max(64)
                     .optional(),
                 })
                 .strict(),
