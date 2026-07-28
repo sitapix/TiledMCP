@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChangeSetRegistry } from "../src/changeSets.js";
@@ -22,6 +23,7 @@ import { MapService } from "../src/maps/mapService.js";
 import {
   formatQtDouble,
   serializeTmxMap,
+  serializeTsxTileset,
 } from "../src/maps/tmxWrite.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
@@ -528,6 +530,164 @@ describe("native TMX write via change sets", () => {
   );
 });
 
+const GOLDEN_TSX = `<?xml version="1.0" encoding="UTF-8"?>
+<tileset version="1.10" tiledversion="1.12.2" name="Decor" tilewidth="16" tileheight="16" tilecount="2" columns="2">
+ <image source="decor.png" width="32" height="16"/>
+</tileset>
+`;
+
+function goldenTileset(): JsonObject {
+  return {
+    columns: 2,
+    image: "decor.png",
+    imageheight: 16,
+    imagewidth: 32,
+    margin: 0,
+    name: "Decor",
+    spacing: 0,
+    tilecount: 2,
+    tiledversion: "1.12.2",
+    tileheight: 16,
+    tilewidth: 16,
+    type: "tileset",
+    version: "1.10",
+  };
+}
+
+describe("native TSX serialization and write", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("matches the official Tiled 1.12.2 tileset writer byte for byte", () => {
+    expect(
+      serializeTsxTileset(
+        goldenTileset(),
+        "tiles/decor.tsj",
+      ),
+    ).toBe(GOLDEN_TSX);
+  });
+
+  it("fails closed on grids the exporter would rewrite and on per-tile data", () => {
+    const disagreeing = goldenTileset();
+    disagreeing.tilecount = 4;
+    expect(() =>
+      serializeTsxTileset(
+        disagreeing,
+        "tiles/decor.tsj",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FORMAT",
+      }),
+    );
+    const withTiles = goldenTileset();
+    withTiles.tiles = [
+      { id: 0, probability: 0.5 },
+    ];
+    expect(() =>
+      serializeTsxTileset(
+        withTiles,
+        "tiles/decor.tsj",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FORMAT",
+      }),
+    );
+  });
+
+  it("plans and applies a byte-exact sibling .tsx", async () => {
+    const harness = await createHarness(roots);
+    const revision = (
+      await harness.service.getSummary(MAP_PATH)
+    ) as { dependencyRevisions: Record<string, string> };
+    const tilesetRevision = Object.values(
+      revision.dependencyRevisions,
+    )[0]!;
+    const plan = await harness.service.planWriteTsx(
+      {
+        tilesetPath: "tiles/decor.tsj",
+        targetPath: "tiles/decor.tsx",
+        expectedTilesetRevision: tilesetRevision,
+      },
+    );
+    expect(plan).toMatchObject({
+      kind: "fileExport",
+      producer: "native",
+      exportKind: "tileset",
+      format: "tsx",
+    });
+    await harness.service.applyExportFile(
+      plan,
+      (): never => {
+        throw new Error("unused");
+      },
+    );
+    expect(
+      await readFile(
+        join(harness.root, "tiles/decor.tsx"),
+        "utf8",
+      ),
+    ).toBe(GOLDEN_TSX);
+  });
+
+  it.runIf(existsSync(REAL_TILED))(
+    "matches the real Tiled CLI tileset export byte for byte",
+    { timeout: 60_000 },
+    async () => {
+      const harness = await createHarness(roots);
+      const revision = (
+        await harness.service.getSummary(
+          MAP_PATH,
+        )
+      ) as {
+        dependencyRevisions: Record<
+          string,
+          string
+        >;
+      };
+      const plan =
+        await harness.service.planWriteTsx({
+          tilesetPath: "tiles/decor.tsj",
+          targetPath: "tiles/decor.tsx",
+          expectedTilesetRevision: Object.values(
+            revision.dependencyRevisions,
+          )[0]!,
+        });
+      await harness.service.applyExportFile(
+        plan,
+        (): never => {
+          throw new Error("unused");
+        },
+      );
+      const cliTarget = join(
+        harness.root,
+        "tiles/cli.tsx",
+      );
+      await promisify(execFile)(REAL_TILED, [
+        "--export-tileset",
+        "tsx",
+        join(harness.root, "tiles/decor.tsj"),
+        cliTarget,
+      ]);
+      expect(
+        await readFile(
+          join(harness.root, "tiles/decor.tsx"),
+          "utf8",
+        ),
+      ).toBe(await readFile(cliTarget, "utf8"));
+    },
+  );
+});
+
 interface Harness {
   root: string;
   service: MapService;
@@ -545,7 +705,23 @@ async function createHarness(
   await mkdir(join(root, "tiles"));
   await writeFile(
     join(root, "tiles/decor.png"),
-    Buffer.from("placeholder image bytes", "utf8"),
+    // A real 32x16 PNG: the official CLI reloads the image and
+    // recomputes the grid, so the golden comparison needs it decodable.
+    await sharp({
+      create: {
+        width: 32,
+        height: 16,
+        channels: 4,
+        background: {
+          r: 90,
+          g: 90,
+          b: 90,
+          alpha: 1,
+        },
+      },
+    })
+      .png()
+      .toBuffer(),
   );
   await writeFile(
     join(root, "tiles/decor.tsj"),

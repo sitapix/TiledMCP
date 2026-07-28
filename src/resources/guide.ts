@@ -537,6 +537,18 @@ producer is the native serializer; apply re-serializes under the
 pinned source revision and fails closed unless the bytes exactly match
 the approved content hash.
 
+## Write TSX natively
+
+\`tiled_preview_write_tsx\` serializes one restricted-profile
+\`.tsj\` atlas tileset to TSX bytes matching Tiled 1.12.2's own
+writer, as a new sibling \`.tsx\` file. The declared grid must be
+derivable from the declared image size, margin, and spacing — the
+official exporter recomputes it, so a disagreeing declaration fails
+closed rather than drifting — and per-tile metadata, wang sets,
+custom properties, and unknown members also fail closed. Apply
+re-serializes under the pinned source revision and hash-verifies,
+exactly like \`tiled_preview_write_tmx\`.
+
 ## Take explicit save points
 
 \`tiled_create_checkpoint\` creates committed recovery checkpoints of

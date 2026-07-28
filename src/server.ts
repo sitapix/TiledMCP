@@ -1637,6 +1637,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_prefab",
     "tiled_preview_template",
     "tiled_preview_write_tmx",
+    "tiled_preview_write_tsx",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
@@ -5629,6 +5630,41 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           mapPath,
           targetPath,
           expectedMapRevision,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_write_tsx",
+    {
+      title: "Preview a native TSX write",
+      description:
+        "Serializes one restricted-profile project .tsj atlas tileset to TSX bytes matching Tiled 1.12.2's own writer byte for byte. The declared grid must be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, custom properties, and unknown members also fail closed. The image reference carries verbatim, so the .tsx target must be a new file in the source tileset's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
+      inputSchema: z
+        .object({
+          tilesetPath: projectPathSchema,
+          targetPath: projectPathSchema,
+          expectedTilesetRevision:
+            revisionSchema,
+        })
+        .strict(),
+      outputSchema:
+        fileExportPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      tilesetPath,
+      targetPath,
+      expectedTilesetRevision,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planWriteTsx({
+          tilesetPath,
+          targetPath,
+          expectedTilesetRevision,
         });
         return changeSets.put(plan);
       }),

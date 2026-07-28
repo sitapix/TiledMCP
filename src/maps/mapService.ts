@@ -167,7 +167,10 @@ import {
   MAX_EXPORT_OUTPUT_BYTES,
   type FileExportPlan,
 } from "./fileExport.js";
-import { serializeTmxMap } from "./tmxWrite.js";
+import {
+  serializeTmxMap,
+  serializeTsxTileset,
+} from "./tmxWrite.js";
 import {
   MAX_ISOMETRIC_REGION_CELLS,
   MAX_ISOMETRIC_RENDER_SCALE,
@@ -4952,6 +4955,113 @@ export class MapService {
   }
 
   /**
+   * Native TSX write: serializes one restricted-profile .tsj atlas
+   * tileset to TSX bytes matching Tiled 1.12.2's own writer, as a new
+   * sibling .tsx file. The declared grid must be derivable from the
+   * image size (the official exporter recomputes it); per-tile
+   * metadata, wang sets, and custom properties fail closed.
+   */
+  async planWriteTsx(input: {
+    tilesetPath: string;
+    targetPath: string;
+    expectedTilesetRevision: string;
+  }): Promise<FileExportPlan> {
+    assertRequiredRevision(
+      input.expectedTilesetRevision,
+      "expectedTilesetRevision",
+    );
+    const sourcePath = this.resolver.normalize(
+      input.tilesetPath,
+    );
+    const targetPath = this.resolver.normalize(
+      input.targetPath,
+    );
+    if (
+      posix.extname(sourcePath).toLowerCase() !==
+      ".tsj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Native TSX writing reads project .tsj tilesets.",
+        { path: sourcePath },
+      );
+    }
+    if (
+      posix.extname(targetPath).toLowerCase() !==
+      ".tsx"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "The native TSX write target must use the .tsx extension.",
+        { path: targetPath },
+      );
+    }
+    if (
+      posix.dirname(targetPath) !==
+      posix.dirname(sourcePath)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The TSX target must live in the source tileset's directory so the relative image reference keeps resolving.",
+        { sourcePath, targetPath },
+      );
+    }
+    const snapshot =
+      await this.store.read(sourcePath);
+    if (
+      snapshot.revision !==
+      input.expectedTilesetRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${sourcePath} does not match the expected tileset revision.`,
+        {
+          path: sourcePath,
+          expectedRevision:
+            input.expectedTilesetRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    await this.assertExportTargetAbsent(
+      targetPath,
+    );
+    const content = Buffer.from(
+      serializeTsxTileset(
+        snapshot.document,
+        sourcePath,
+      ),
+      "utf8",
+    );
+    const unsignedPlan: Omit<
+      FileExportPlan,
+      "id"
+    > = {
+      kind: "fileExport",
+      version: 1,
+      producer: "native",
+      sourcePath,
+      sourceRevision: snapshot.revision,
+      targetPath,
+      exportKind: "tileset",
+      format: "tsx",
+      baseRevision: revisionOf(content),
+      summary: {
+        sourcePath,
+        targetPath,
+        exportKind: "tileset",
+        format: "tsx",
+        contentBytes: content.byteLength,
+        wouldChange: true,
+      },
+    };
+    return {
+      ...unsignedPlan,
+      id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
    * Dedicated isometric tile-layer renderer using the exact Tiled
    * 1.12.2 IsometricRenderer placement math. The profile is strict:
    * finite isometric TMJ maps, external atlas tilesets whose tile size
@@ -6982,7 +7092,9 @@ export class MapService {
     const content =
       plan.producer === "native"
         ? Buffer.from(
-            serializeTmxMap(
+            (plan.exportKind === "tileset"
+              ? serializeTsxTileset
+              : serializeTmxMap)(
               (
                 await this.store.read(
                   plan.sourcePath,

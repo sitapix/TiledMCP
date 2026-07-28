@@ -853,6 +853,212 @@ function serializeObjectLayer(
   lines.push(" </objectgroup>");
 }
 
+const KNOWN_TILESET_MEMBERS = new Set([
+  "class",
+  "columns",
+  "image",
+  "imageheight",
+  "imagewidth",
+  "margin",
+  "name",
+  "objectalignment",
+  "spacing",
+  "tilecount",
+  "tiledversion",
+  "tileheight",
+  "tilewidth",
+  "type",
+  "version",
+]);
+
+const OBJECT_ALIGNMENTS = new Set([
+  "unspecified",
+  "topleft",
+  "top",
+  "topright",
+  "left",
+  "center",
+  "right",
+  "bottomleft",
+  "bottom",
+  "bottomright",
+]);
+
+/**
+ * Serializes one restricted-profile TSJ atlas tileset to TSX bytes
+ * matching Tiled 1.12.2's own writer byte for byte. The official
+ * exporter reloads the image and recomputes the grid, so the profile
+ * requires the declared geometry to be self-consistent (columns and
+ * tilecount derivable from the image size, margin, and spacing) and
+ * fails closed otherwise; per-tile metadata, wang sets, custom
+ * properties, tile offsets, and unknown members also fail closed.
+ */
+export function serializeTsxTileset(
+  document: JsonObject,
+  tilesetPath: string,
+): string {
+  assertKnownMembers(
+    document,
+    KNOWN_TILESET_MEMBERS,
+    tilesetPath,
+  );
+  if (document.type !== "tileset") {
+    fail(`${tilesetPath} is not a Tiled tileset.`);
+  }
+  const version = requireString(
+    document.version,
+    `${tilesetPath}.version`,
+  );
+  const tiledVersion = requireString(
+    document.tiledversion,
+    `${tilesetPath}.tiledversion`,
+  );
+  const name = requireString(
+    document.name,
+    `${tilesetPath}.name`,
+  );
+  const tileWidth = requireInt(
+    document.tilewidth,
+    `${tilesetPath}.tilewidth`,
+  );
+  const tileHeight = requireInt(
+    document.tileheight,
+    `${tilesetPath}.tileheight`,
+  );
+  const spacing =
+    document.spacing === undefined
+      ? 0
+      : requireInt(
+          document.spacing,
+          `${tilesetPath}.spacing`,
+        );
+  const margin =
+    document.margin === undefined
+      ? 0
+      : requireInt(
+          document.margin,
+          `${tilesetPath}.margin`,
+        );
+  const tileCount = requireInt(
+    document.tilecount,
+    `${tilesetPath}.tilecount`,
+  );
+  const columns = requireInt(
+    document.columns,
+    `${tilesetPath}.columns`,
+  );
+  const image = requireString(
+    document.image,
+    `${tilesetPath}.image`,
+  );
+  const imageWidth = requireInt(
+    document.imagewidth,
+    `${tilesetPath}.imagewidth`,
+  );
+  const imageHeight = requireInt(
+    document.imageheight,
+    `${tilesetPath}.imageheight`,
+  );
+  if (
+    tileWidth < 1 ||
+    tileHeight < 1 ||
+    spacing < 0 ||
+    margin < 0 ||
+    columns < 1 ||
+    tileCount < 1
+  ) {
+    fail(
+      `${tilesetPath} must declare a positive tile grid.`,
+    );
+  }
+  // The official exporter recomputes the grid from the image; the
+  // native writer instead requires the declaration to already agree.
+  const derivedColumns = Math.floor(
+    (imageWidth - margin * 2 + spacing) /
+      (tileWidth + spacing),
+  );
+  const derivedRows = Math.floor(
+    (imageHeight - margin * 2 + spacing) /
+      (tileHeight + spacing),
+  );
+  if (
+    derivedColumns !== columns ||
+    derivedRows < 1 ||
+    columns * derivedRows !== tileCount
+  ) {
+    fail(
+      `${tilesetPath} declares a grid that does not match its image size; Tiled's exporter would rewrite it.`,
+    );
+  }
+
+  const attributes = new Attributes();
+  attributes.add("version", version);
+  attributes.add("tiledversion", tiledVersion);
+  attributes.add("name", name);
+  if (document.class !== undefined) {
+    const className = requireString(
+      document.class,
+      `${tilesetPath}.class`,
+    );
+    if (className.length > 0) {
+      attributes.add("class", className);
+    }
+  }
+  attributes.add(
+    "tilewidth",
+    String(tileWidth),
+  );
+  attributes.add(
+    "tileheight",
+    String(tileHeight),
+  );
+  if (spacing !== 0) {
+    attributes.add("spacing", String(spacing));
+  }
+  if (margin !== 0) {
+    attributes.add("margin", String(margin));
+  }
+  attributes.add(
+    "tilecount",
+    String(tileCount),
+  );
+  attributes.add("columns", String(columns));
+  if (document.objectalignment !== undefined) {
+    const alignment = requireString(
+      document.objectalignment,
+      `${tilesetPath}.objectalignment`,
+    );
+    if (!OBJECT_ALIGNMENTS.has(alignment)) {
+      fail(
+        `${tilesetPath}.objectalignment is not a Tiled object alignment.`,
+      );
+    }
+    if (alignment !== "unspecified") {
+      attributes.add(
+        "objectalignment",
+        alignment,
+      );
+    }
+  }
+  const imageAttributes = new Attributes();
+  imageAttributes.add("source", image);
+  imageAttributes.add(
+    "width",
+    String(imageWidth),
+  );
+  imageAttributes.add(
+    "height",
+    String(imageHeight),
+  );
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<tileset${attributes.toString()}>`,
+    ` <image${imageAttributes.toString()}/>`,
+    "</tileset>",
+    "",
+  ].join("\n");
+}
+
 /**
  * Serializes one restricted-profile TMJ map document to TMX bytes that
  * match Tiled 1.12.2's own writer byte for byte. Tileset references and

@@ -802,6 +802,16 @@
       }
     },
     {
+      "name": "tiled_preview_write_tsx",
+      "profile": "core",
+      "purpose": "Serialize a restricted-profile .tsj atlas tileset to byte-exact Tiled 1.12.2 TSX as a new sibling file, without the Tiled CLI.",
+      "arguments": {
+        "tilesetPath": "tiles/terrain.tsj",
+        "targetPath": "tiles/terrain.tsx",
+        "expectedTilesetRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
       "name": "tiled_preview_property_types",
       "profile": "core",
       "purpose": "Define one class with two members and one string enum in the project file as a previewed change set.",
