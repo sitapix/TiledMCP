@@ -161,6 +161,7 @@ const CORE_TOOLS = [
   "tiled_get_capabilities",
   "tiled_list_files",
   "tiled_list_world_maps",
+  "tiled_list_property_types",
   "tiled_list_checkpoints",
   "tiled_preview_prepared_checkpoint_discard",
   "tiled_preview_prepared_checkpoint_commit",
@@ -189,6 +190,7 @@ const CORE_TOOLS = [
   "tiled_preview_edits",
   "tiled_preview_shape",
   "tiled_preview_generate",
+  "tiled_preview_property_types",
   "tiled_preview_world_edits",
   "tiled_preview_transaction",
   "tiled_apply_change_set",
@@ -289,7 +291,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the thirty-four core tools with safety annotations", async () => {
+  it("advertises exactly the thirty-six core tools with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 

@@ -1553,9 +1553,9 @@ map object 标量属性经 `updateObject.patch.properties`（见 3.6/3.7），�
 |---|---|---|
 | `tiled_get_properties` | 读取任意实体的自定义属性 | `target`（统一定位符，见下） |
 | `tiled_set_properties` | 设置/删除自定义属性；覆盖 Tiled 1.12 的全部 9 种属性类型，包含 `list`，并支持 class/list 递归嵌套 | `target`, `set?`, `remove?` |
-| `tiled_list_property_types` | 只读列出项目级自定义 class/enum 定义 | `kind?`, `cursor?` |
-| `tiled_upsert_property_type` | 新增或更新一项 property type，返回 change set | `definition` |
-| `tiled_delete_property_type` | 删除一项 property type（**destructive**），返回 change set | `propertyTypeId` |
+| `tiled_list_property_types` | **已实现**：读取 `.tiled-project` 的 `propertyTypes` 定义逐字投影（class/enum、成员/values、id/name 校验 fail closed）——TMJ 不携带的复杂属性类型注解的权威来源 | `projectFilePath` |
+| `tiled_upsert_property_type` | **已并入 `tiled_preview_property_types`**：`upsertClass`（成员序对照 `ClassPropertyType::toJson`，color 缺省 #ffa0a0a4、drawFill 缺省 true、useAs 缺省全集）与 `upsertEnum`（storageType/values/valuesAsFlags）；同名替换保留 id、新建 id = max+1（对照官方 `++mNextId`）；走 `propertyTypeEdit` change set、单 `propertyTypes` 成员 patch、revision CAS | `projectFilePath`, `expectedRevision`, `operations` |
+| `tiled_delete_property_type` | **已并入 `tiled_preview_property_types`**：`deleteType`（preview 标记 destructive）；被其他定义的成员 `propertyType` 引用时 fail closed，地图/图块集内的序列化值不扫描（保持可用、仅失去注解，工具描述明示） | `projectFilePath`, `expectedRevision`, `operations` |
 
 所有属性工具使用第 1 节的 `Target` discriminated union，禁止依赖可重名的字符串名称定位实体。
 

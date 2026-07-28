@@ -597,6 +597,33 @@ const regionResultOutputSchema = z
 export const regionToolOutputSchema =
   toolOutputSchema(regionResultOutputSchema);
 
+const listPropertyTypesResultOutputSchema = z
+  .object({
+    path: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    propertyTypes: z
+      .array(
+        z
+          .object({
+            type: z.enum(["class", "enum"]),
+            id: integerOutputSchema,
+            name: z.string().min(1),
+          })
+          .catchall(z.json()),
+      )
+      .max(1_000),
+    typeCount: nonnegativeIntegerOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const listPropertyTypesToolOutputSchema =
+  toolOutputSchema(
+    listPropertyTypesResultOutputSchema,
+  );
+
 const listedObjectOutputSchema = z
   .object({
     id: positiveIntegerOutputSchema,

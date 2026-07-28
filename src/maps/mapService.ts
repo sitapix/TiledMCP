@@ -190,6 +190,14 @@ import {
   type GenerateMappingEntry,
   type GenerateRegion,
 } from "./generate.js";
+import {
+  applyPropertyTypeOperations,
+  assertPropertyTypeEditPlan,
+  projectPropertyTypes,
+  propertyTypeEditPlanId,
+  type PropertyTypeEditPlan,
+  type PropertyTypeOperation,
+} from "./propertyTypes.js";
 import { parseXmlDocument } from "../formats/xml.js";
 import {
   collectXmlTilesetReferences,
@@ -4561,6 +4569,173 @@ export class MapService {
     return {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Bounded read-only projection of a .tiled-project's property type
+   * definitions — the authoritative source of class member and enum
+   * type annotations that TMJ documents themselves never carry.
+   */
+  async listPropertyTypes(
+    projectFilePath: string,
+  ): Promise<Record<string, unknown>> {
+    const normalized = this.resolver.normalize(
+      projectFilePath,
+    );
+    this.assertTiledProjectPath(normalized);
+    const loaded =
+      await this.store.read(normalized);
+    const types = projectPropertyTypes(
+      loaded.document,
+      normalized,
+    );
+    return {
+      path: normalized,
+      revision: loaded.revision,
+      propertyTypes: types,
+      typeCount: types.length,
+      snapshotConsistency:
+        "non-atomic-read-set",
+    };
+  }
+
+  async planPropertyTypeEdits(input: {
+    projectFilePath: string;
+    expectedRevision: string;
+    operations: PropertyTypeOperation[];
+  }): Promise<PropertyTypeEditPlan> {
+    assertRequiredRevision(
+      input.expectedRevision,
+      "expectedRevision",
+    );
+    const prepared =
+      await this.preparePropertyTypeEdit(
+        input.projectFilePath,
+        input.expectedRevision,
+        input.operations,
+      );
+    const unsignedPlan: Omit<
+      PropertyTypeEditPlan,
+      "id"
+    > = {
+      kind: "propertyTypeEdit",
+      version: 1,
+      projectFilePath: prepared.projectFilePath,
+      baseRevision: input.expectedRevision,
+      operations: structuredClone(
+        input.operations,
+      ) as PropertyTypeOperation[],
+      summary: prepared.summary,
+    };
+    await assertRevisionUnchanged(
+      this.store,
+      prepared.projectFilePath,
+      input.expectedRevision,
+      "REVISION_CONFLICT",
+    );
+    return {
+      ...unsignedPlan,
+      id: propertyTypeEditPlanId(unsignedPlan),
+    };
+  }
+
+  async applyPropertyTypeEdit(
+    plan: PropertyTypeEditPlan,
+  ): Promise<
+    CommitResult & { changeSetId: string }
+  > {
+    assertPropertyTypeEditPlan(plan);
+    const prepared =
+      await this.preparePropertyTypeEdit(
+        plan.projectFilePath,
+        plan.baseRevision,
+        structuredClone(
+          plan.operations,
+        ) as PropertyTypeOperation[],
+      );
+    if (
+      stableJson(
+        prepared.summary as unknown as JsonValue,
+      ) !==
+      stableJson(plan.summary as unknown as JsonValue)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "The property type edit summary does not match its operations.",
+      );
+    }
+    const result = await this.store.commitBytes(
+      plan.projectFilePath,
+      plan.baseRevision,
+      prepared.patchedSource,
+      `apply change set ${plan.id}`,
+    );
+    return { ...result, changeSetId: plan.id };
+  }
+
+  private assertTiledProjectPath(
+    normalized: string,
+  ): void {
+    if (
+      !normalized
+        .toLowerCase()
+        .endsWith(".tiled-project")
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Property types live in a .tiled-project file.",
+        { path: normalized },
+      );
+    }
+  }
+
+  private async preparePropertyTypeEdit(
+    projectFilePath: string,
+    expectedRevision: string,
+    operations: PropertyTypeOperation[],
+  ): Promise<{
+    projectFilePath: string;
+    summary: PropertyTypeEditPlan["summary"];
+    patchedSource: Buffer;
+  }> {
+    const normalized = this.resolver.normalize(
+      projectFilePath,
+    );
+    this.assertTiledProjectPath(normalized);
+    const loaded =
+      await this.store.read(normalized);
+    if (loaded.revision !== expectedRevision) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${normalized} does not match the expected revision.`,
+        {
+          path: normalized,
+          expectedRevision,
+          actualRevision: loaded.revision,
+        },
+      );
+    }
+    const edited = cloneJson(loaded.document);
+    const applied = applyPropertyTypeOperations(
+      edited,
+      normalized,
+      operations,
+    );
+    const patchedSource = patchJsonDocumentSource(
+      loaded.source,
+      edited,
+      [],
+      normalized,
+      [],
+      [{ path: [], key: "propertyTypes" }],
+      [],
+      [],
+    );
+    return {
+      projectFilePath: normalized,
+      summary: applied.summary,
+      patchedSource,
     };
   }
 

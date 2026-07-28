@@ -3637,6 +3637,103 @@ const fileExportPreviewOutputSchema = z
 export const fileExportPreviewToolOutputSchema =
   toolOutputSchema(fileExportPreviewOutputSchema);
 
+const propertyTypeNameOutputSchema = z
+  .string()
+  .min(1)
+  .max(512);
+
+const propertyTypeEditSummaryOutputSchema = z
+  .object({
+    operationCount:
+      positiveIntegerOutputSchema.max(16),
+    upserted: z
+      .array(
+        z
+          .object({
+            name: propertyTypeNameOutputSchema,
+            kind: z.enum(["class", "enum"]),
+            id: positiveIntegerOutputSchema,
+            created: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(16),
+    deleted: z
+      .array(
+        z
+          .object({
+            name: propertyTypeNameOutputSchema,
+            id: positiveIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(16),
+    typeCountBefore:
+      nonnegativeIntegerOutputSchema,
+    typeCountAfter:
+      nonnegativeIntegerOutputSchema,
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const propertyTypeEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("propertyTypeEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    projectFilePath: projectPathOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        z.discriminatedUnion("type", [
+          z
+            .object({
+              type: z.literal(
+                "upsertPropertyType",
+              ),
+              destructive: z.literal(false),
+              warning: z.string(),
+              name: propertyTypeNameOutputSchema,
+              typeKind: z.enum([
+                "class",
+                "enum",
+              ]),
+              typeId:
+                positiveIntegerOutputSchema,
+              created: z.boolean(),
+            })
+            .strict(),
+          z
+            .object({
+              type: z.literal(
+                "deletePropertyType",
+              ),
+              destructive: z.literal(true),
+              warning: z.string(),
+              name: propertyTypeNameOutputSchema,
+              typeId:
+                positiveIntegerOutputSchema,
+            })
+            .strict(),
+        ]),
+      )
+      .min(1)
+      .max(16),
+    summary:
+      propertyTypeEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const propertyTypeEditPreviewToolOutputSchema =
+  toolOutputSchema(
+    propertyTypeEditPreviewOutputSchema,
+  );
+
 export const previewTransactionToolOutputSchema =
   toolOutputSchema(
     transactionPreviewOutputSchema,

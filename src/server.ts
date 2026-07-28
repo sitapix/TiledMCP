@@ -205,6 +205,7 @@ import {
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
   fileExportPreviewToolOutputSchema,
+  propertyTypeEditPreviewToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -260,6 +261,7 @@ import {
   listFilesToolOutputSchema,
   worldListToolOutputSchema,
   mapSummaryToolOutputSchema,
+  listPropertyTypesToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
@@ -1595,6 +1597,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_get_capabilities",
     "tiled_list_files",
     "tiled_list_world_maps",
+    "tiled_list_property_types",
     "tiled_list_checkpoints",
     "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_prepared_checkpoint_commit",
@@ -1623,6 +1626,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_edits",
     "tiled_preview_shape",
     "tiled_preview_generate",
+    "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
     "tiled_apply_change_set",
@@ -3320,6 +3324,29 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_list_property_types",
+    {
+      title: "List project property types",
+      description:
+        "Reads one project-local .tiled-project file and returns its propertyTypes definitions verbatim — the authoritative source of class member and enum type annotations that TMJ documents themselves never carry. Read-only; malformed entries fail closed.",
+      inputSchema: z
+        .object({
+          projectFilePath: projectPathSchema,
+        })
+        .strict(),
+      outputSchema:
+        listPropertyTypesToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ projectFilePath }) =>
+      executeTool(() =>
+        maps.listPropertyTypes(projectFilePath),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_list_checkpoints",
     {
       title: "List recovery checkpoints",
@@ -4973,6 +5000,156 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_preview_property_types",
+    {
+      title:
+        "Preview project property type edits",
+      description:
+        "Validates sequential upsert/delete edits to one .tiled-project file's propertyTypes definitions and returns an expiring propertyTypeEdit change set. upsertClass and upsertEnum replace a same-name definition in place (keeping its id) or append with id = max + 1, exactly like Tiled's own allocation; deleteType (destructive) refuses to remove a type still referenced by another definition's member, but references from maps and tilesets are not scanned — serialized values there keep working and simply lose their annotations. Apply patches only the propertyTypes member under the pinned project-file revision.",
+      inputSchema: z
+        .object({
+          projectFilePath: projectPathSchema,
+          expectedRevision: revisionSchema,
+          operations: z
+            .array(
+              z.discriminatedUnion("type", [
+                z
+                  .object({
+                    type: z.literal(
+                      "upsertClass",
+                    ),
+                    name: z
+                      .string()
+                      .min(1)
+                      .max(512),
+                    color: z
+                      .string()
+                      .regex(/^#[0-9a-f]{8}$/iu)
+                      .optional(),
+                    drawFill: z
+                      .boolean()
+                      .optional(),
+                    useAs: z
+                      .array(
+                        z.enum([
+                          "property",
+                          "map",
+                          "layer",
+                          "object",
+                          "tile",
+                          "tileset",
+                          "wangcolor",
+                          "wangset",
+                          "project",
+                        ]),
+                      )
+                      .min(1)
+                      .max(9)
+                      .optional(),
+                    members: z
+                      .array(
+                        z
+                          .object({
+                            name: z
+                              .string()
+                              .min(1)
+                              .max(512),
+                            type: z.enum([
+                              "string",
+                              "int",
+                              "float",
+                              "bool",
+                              "color",
+                              "file",
+                              "object",
+                            ]),
+                            value: z.union([
+                              z
+                                .string()
+                                .max(4_096),
+                              z
+                                .number()
+                                .finite(),
+                              z.boolean(),
+                            ]),
+                            propertyType: z
+                              .string()
+                              .min(1)
+                              .max(512)
+                              .optional(),
+                          })
+                          .strict(),
+                      )
+                      .max(256),
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal(
+                      "upsertEnum",
+                    ),
+                    name: z
+                      .string()
+                      .min(1)
+                      .max(512),
+                    storageType: z.enum([
+                      "string",
+                      "int",
+                    ]),
+                    values: z
+                      .array(
+                        z
+                          .string()
+                          .min(1)
+                          .max(512),
+                      )
+                      .min(1)
+                      .max(256),
+                    valuesAsFlags: z
+                      .boolean()
+                      .optional(),
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal(
+                      "deleteType",
+                    ),
+                    name: z
+                      .string()
+                      .min(1)
+                      .max(512),
+                  })
+                  .strict(),
+              ]),
+            )
+            .min(1)
+            .max(16),
+        })
+        .strict(),
+      outputSchema:
+        propertyTypeEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      projectFilePath,
+      expectedRevision,
+      operations,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planPropertyTypeEdits({
+            projectFilePath,
+            expectedRevision,
+            operations,
+          });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_preview_world_edits",
     {
       title: "Preview world member edits",
@@ -5222,9 +5399,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                         ? maps.applyEmbeddedTilesetEdit(
                                             plan,
                                           )
-                                        : maps.applyEdits(
-                                            plan,
-                                          ),
+                                        : plan.kind ===
+                                            "propertyTypeEdit"
+                                          ? maps.applyPropertyTypeEdit(
+                                              plan,
+                                            )
+                                          : maps.applyEdits(
+                                              plan,
+                                            ),
         ),
       ),
   );

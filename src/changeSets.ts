@@ -66,6 +66,10 @@ import {
   type EmbeddedTilesetEditPlan,
 } from "./maps/embeddedTilesetEdit.js";
 import {
+  assertPropertyTypeEditPlan,
+  type PropertyTypeEditPlan,
+} from "./maps/propertyTypes.js";
+import {
   PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
   preparedCheckpointDiscardOperationPreview,
   type PreparedCheckpointDiscardOperationPreview,
@@ -151,6 +155,7 @@ export type ChangeSetPlan =
   | WangEditPlan
   | FileExportPlan
   | EmbeddedTilesetEditPlan
+  | PropertyTypeEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -292,6 +297,13 @@ export interface EmbeddedTilesetEditChangeSetPreview
   mapPath: string;
   embeddedIndex: number;
   summary: EmbeddedTilesetEditPlan["summary"];
+}
+
+export interface PropertyTypeEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "propertyTypeEdit";
+  projectFilePath: string;
+  summary: PropertyTypeEditPlan["summary"];
 }
 
 export const MIN_TRANSACTION_MEMBERS = 2;
@@ -755,6 +767,7 @@ export type ChangeSetPreview =
   | WangEditChangeSetPreview
   | FileExportChangeSetPreview
   | EmbeddedTilesetEditChangeSetPreview
+  | PropertyTypeEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -1198,6 +1211,22 @@ type OperationPreview =
       upserts: number;
       removals: number;
       noOps: number;
+    }
+  | {
+      type: "upsertPropertyType";
+      destructive: false;
+      warning: string;
+      name: string;
+      typeKind: "class" | "enum";
+      typeId: number;
+      created: boolean;
+    }
+  | {
+      type: "deletePropertyType";
+      destructive: true;
+      warning: string;
+      name: string;
+      typeId: number;
     }
   | {
       type: "exportFile";
@@ -2454,6 +2483,47 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "propertyTypeEdit") {
+    const plan = entry.plan;
+    assertPropertyTypeEditPlan(plan);
+    const operations: OperationPreview[] = [];
+    for (const upsert of plan.summary.upserted) {
+      operations.push({
+        type: "upsertPropertyType",
+        destructive: false,
+        warning:
+          "This rewrites the project file's propertyTypes member; existing maps and tilesets referencing the type keep their serialized values unchanged.",
+        name: upsert.name,
+        typeKind: upsert.kind,
+        typeId: upsert.id,
+        created: upsert.created,
+      });
+    }
+    for (const removal of plan.summary.deleted) {
+      operations.push({
+        type: "deletePropertyType",
+        destructive: true,
+        warning:
+          "This permanently removes one project type definition; serialized values referencing it in maps and tilesets are not scanned and will lose their annotations.",
+        name: removal.name,
+        typeId: removal.id,
+      });
+    }
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      projectFilePath: plan.projectFilePath,
+      expectedRevision: plan.baseRevision,
+      operations,
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "fileExport") {
     const plan = entry.plan;
     assertFileExportPlan(plan);
@@ -2929,6 +2999,9 @@ function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
   }
   if (plan.kind === "embeddedTilesetEdit") {
     return { ...plan, updates: [] };
+  }
+  if (plan.kind === "propertyTypeEdit") {
+    return { ...plan, operations: [] };
   }
   return plan;
 }

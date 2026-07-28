@@ -25,6 +25,14 @@
       "purpose": "\u53ea\u8bfb\u5217\u51fa\u4e00\u4e2a JSON world \u7684\u663e\u5f0f\u5730\u56fe\u6210\u5458\uff1a\u4e16\u754c\u5750\u6807\u3001\u58f0\u660e\u5c3a\u5bf8\u3001\u9010\u6210\u5458\u5b58\u5728\u6027\u4e0e revision pin\uff1bpattern \u6210\u5458\u53ea\u8ba1\u6570\u3001\u7edd\u4e0d\u505a\u6587\u4ef6\u7cfb\u7edf\u5339\u914d\u3002"
     },
     {
+      "name": "tiled_list_property_types",
+      "profile": "core",
+      "purpose": "Read the project's class and enum definitions \u2014 the authoritative type annotations for complex properties.",
+      "arguments": {
+        "projectFilePath": "example.tiled-project"
+      }
+    },
+    {
       "name": "tiled_preview_world_edits",
       "profile": "core",
       "arguments": {
@@ -625,6 +633,42 @@
         "expectedDependencyRevisions": {
           "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
         }
+      }
+    },
+    {
+      "name": "tiled_preview_property_types",
+      "profile": "core",
+      "purpose": "Define one class with two members and one string enum in the project file as a previewed change set.",
+      "arguments": {
+        "projectFilePath": "example.tiled-project",
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "operations": [
+          {
+            "type": "upsertClass",
+            "name": "LootTable",
+            "members": [
+              {
+                "name": "gold",
+                "type": "int",
+                "value": 10
+              },
+              {
+                "name": "rare",
+                "type": "bool",
+                "value": false
+              }
+            ]
+          },
+          {
+            "type": "upsertEnum",
+            "name": "Biome",
+            "storageType": "string",
+            "values": [
+              "forest",
+              "desert"
+            ]
+          }
+        ]
       }
     },
     {

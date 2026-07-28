@@ -486,6 +486,21 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Manage project property types
+
+\`tiled_list_property_types\` reads one \`.tiled-project\` file's
+\`propertyTypes\` definitions verbatim — the authoritative source of
+class member and enum type annotations that TMJ documents never carry.
+\`tiled_preview_property_types\` edits them through sequential
+operations: \`upsertClass\` and \`upsertEnum\` replace a same-name
+definition in place (keeping its id) or append with id = max + 1,
+exactly like Tiled's own allocation, and \`deleteType\` (destructive)
+refuses to remove a type still referenced by another definition's
+member. References from maps and tilesets are not scanned — serialized
+values there keep working and simply lose their annotations. Apply
+patches only the \`propertyTypes\` member under the pinned
+project-file revision.
+
 ## Generate tiles from a seed
 
 \`tiled_preview_generate\` computes a deterministic seeded value field
