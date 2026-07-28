@@ -145,14 +145,14 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d3fd3c889461023d65e5932d91bdeaddc1be45e46e566ed2c6bddc32ef6b9fad",
+        "revision": "sha256:13bfe8560e4f4027d3623f85878b28840cbe83aadb7b660cc5cdb39959e80b16",
         "serverVersion": "0.0.1",
-        "size": 98218
+        "size": 98284
       },
-      "byteLength": 98218,
+      "byteLength": 98284,
       "contentKind": "text",
       "mimeType": "text/markdown",
-      "sha256": "sha256:d3fd3c889461023d65e5932d91bdeaddc1be45e46e566ed2c6bddc32ef6b9fad",
+      "sha256": "sha256:13bfe8560e4f4027d3623f85878b28840cbe83aadb7b660cc5cdb39959e80b16",
       "uri": "tiled://guide"
     }
   ],
@@ -180,9 +180,9 @@
     },
     {
       "_meta": {
-        "revision": "sha256:d3fd3c889461023d65e5932d91bdeaddc1be45e46e566ed2c6bddc32ef6b9fad",
+        "revision": "sha256:13bfe8560e4f4027d3623f85878b28840cbe83aadb7b660cc5cdb39959e80b16",
         "serverVersion": "0.0.1",
-        "size": 98218
+        "size": 98284
       },
       "annotations": {
         "audience": [
@@ -194,7 +194,7 @@
       "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
       "mimeType": "text/markdown",
       "name": "guide",
-      "size": 98218,
+      "size": 98284,
       "title": "TiledMCP safe editing guide",
       "uri": "tiled://guide"
     }

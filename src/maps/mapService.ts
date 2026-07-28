@@ -6056,6 +6056,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        allowIsometric: true,
         expectedMapRevision:
           input.expectedMapRevision,
         expectedDependencyRevisions:
@@ -6174,6 +6175,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        allowIsometric: true,
         expectedMapRevision:
           input.expectedMapRevision,
         expectedDependencyRevisions:
@@ -6469,7 +6471,7 @@ export class MapService {
     const sourceContext =
       await this.loadEditableContext(
         sourceMapPath,
-        {},
+        { allowIsometric: true },
       );
     if (
       input.expectedSourceRevision !==
@@ -6572,6 +6574,7 @@ export class MapService {
           await this.loadEditableContext(
             targetMapPath,
             {
+              allowIsometric: true,
               expectedMapRevision:
                 input.expectedMapRevision,
               expectedDependencyRevisions:
@@ -6807,6 +6810,7 @@ export class MapService {
     const context = await this.loadEditableContext(
       input.mapPath,
       {
+        allowIsometric: true,
         expectedMapRevision:
           input.expectedMapRevision,
         expectedDependencyRevisions:
