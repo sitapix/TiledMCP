@@ -262,6 +262,7 @@ import {
   worldListToolOutputSchema,
   mapSummaryToolOutputSchema,
   listPropertyTypesToolOutputSchema,
+  renderDiffToolOutputSchema,
   nativePreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
@@ -1613,6 +1614,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_render_tileset_sheet",
     "tiled_render_tiles",
     "tiled_render_preview",
+    "tiled_render_diff",
     "tiled_list_objects",
     "tiled_get_object",
     "tiled_validate",
@@ -4030,6 +4032,81 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         } catch (error) {
           return toolError(error);
         }
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_render_diff",
+    {
+      title: "Render a visual map diff",
+      description:
+        "Renders the same bounded region of two maps through the native preview and compares them pixel by pixel: differing pixels paint solid red over a faded copy of the first render, matching pixels keep the first render at reduced opacity, and differences also aggregate to tile-cell granularity (bounded sample). Both renders must agree on pixel size; layer selections may differ per side, so the same map can be diffed against itself with different layers visible. Read-only.",
+      inputSchema: z
+        .object({
+          mapPathA: projectPathSchema,
+          mapPathB: projectPathSchema,
+          region: z
+            .object({
+              x: z.number().int(),
+              y: z.number().int(),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          layerIdsA: z
+            .array(
+              z.number().int().positive(),
+            )
+            .min(1)
+            .max(1_000)
+            .optional(),
+          layerIdsB: z
+            .array(
+              z.number().int().positive(),
+            )
+            .min(1)
+            .max(1_000)
+            .optional(),
+          scale: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_NATIVE_PREVIEW_SCALE)
+            .optional(),
+        })
+        .strict(),
+      outputSchema: renderDiffToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({
+      mapPathA,
+      mapPathB,
+      region,
+      layerIdsA,
+      layerIdsB,
+      scale,
+    }) =>
+      executeTool(async () => {
+        const rendered = await maps.renderDiff({
+          mapPathA,
+          mapPathB,
+          region,
+          layerIdsA,
+          layerIdsB,
+          scale,
+        });
+        return imageToolResult(
+          rendered.result,
+          rendered.png,
+        );
       }),
   );
 

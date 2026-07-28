@@ -486,6 +486,16 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Render a visual diff
+
+\`tiled_render_diff\` renders the same bounded region of two maps
+through the native preview and compares them pixel by pixel: differing
+pixels paint solid red over a faded copy of the first render, matching
+pixels keep the first render at reduced opacity, and differences also
+aggregate to tile-cell granularity with a bounded sample. Both renders
+must agree on pixel size; per-side layer selections let one map be
+diffed against itself with different layers visible.
+
 ## Check layer connectivity
 
 \`tiled_check_connectivity\` runs a bounded four-way flood analysis

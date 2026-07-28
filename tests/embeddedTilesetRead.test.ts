@@ -422,6 +422,27 @@ describe("embedded tileset reading", () => {
     });
   });
 
+  it("renders a pixel diff between layer selections", async () => {
+    const harness = await createHarness(roots, {
+      realImages: true,
+    });
+    const rendered =
+      await harness.service.renderDiff({
+        mapPathA: MAP_PATH,
+        mapPathB: MAP_PATH,
+        region: { x: 0, y: 0, width: 2, height: 2 },
+      });
+    expect(rendered.result).toMatchObject({
+      mimeType: "image/png",
+      identical: true,
+      differingPixelCount: 0,
+      differingCells: { count: 0 },
+    });
+    expect(rendered.png.length).toBeGreaterThan(
+      0,
+    );
+  });
+
   it("fails closed on embedded collections, legacy terrains, and GID overlaps", async () => {
     const collection = await createHarness(roots, {
       embeddedOverride: {

@@ -619,6 +619,59 @@ const listPropertyTypesResultOutputSchema = z
   })
   .strict();
 
+const renderDiffResultOutputSchema = z
+  .object({
+    mimeType: z.literal("image/png"),
+    pixelSize: z
+      .object({
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    byteLength: positiveIntegerOutputSchema,
+    sha256: revisionOutputSchema,
+    a: mapSnapshotOutputSchema,
+    b: mapSnapshotOutputSchema,
+    region: z
+      .object({
+        x: integerOutputSchema,
+        y: integerOutputSchema,
+        width: positiveIntegerOutputSchema,
+        height: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    identical: z.boolean(),
+    differingPixelCount:
+      nonnegativeIntegerOutputSchema,
+    totalPixels: positiveIntegerOutputSchema,
+    differingCells: z
+      .object({
+        count: nonnegativeIntegerOutputSchema,
+        sample: z
+          .array(
+            z
+              .object({
+                x: integerOutputSchema,
+                y: integerOutputSchema,
+              })
+              .strict(),
+          )
+          .max(64),
+        truncated: z.boolean(),
+      })
+      .strict(),
+    renderProfile: z.literal(
+      "native-preview-pixel-diff-v1",
+    ),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const renderDiffToolOutputSchema =
+  toolOutputSchema(renderDiffResultOutputSchema);
+
 export const listPropertyTypesToolOutputSchema =
   toolOutputSchema(
     listPropertyTypesResultOutputSchema,

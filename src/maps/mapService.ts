@@ -111,6 +111,7 @@ import {
 } from "../images/atlas.js";
 import {
   decodeSafeImage,
+  encodeRgbaPng,
   inspectSafeImage,
   type SafeImageFormat,
 } from "../images/safeImage.js";
@@ -4573,6 +4574,207 @@ export class MapService {
     return {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Renders the same bounded region of two maps through the native
+   * preview and compares them pixel by pixel. Differing pixels paint
+   * solid red over a faded copy of the first render; matching pixels
+   * keep the first render at reduced opacity, so the diff is readable
+   * on its own. Differences also aggregate to tile-cell granularity.
+   */
+  async renderDiff(input: {
+    mapPathA: string;
+    mapPathB: string;
+    region: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    layerIdsA?: number[] | undefined;
+    layerIdsB?: number[] | undefined;
+    scale?: number | undefined;
+  }): Promise<{
+    png: Buffer;
+    result: Record<string, unknown>;
+  }> {
+    const renderedA = await this.renderPreview({
+      mapPath: input.mapPathA,
+      region: input.region,
+      ...(input.layerIdsA === undefined
+        ? {}
+        : { layerIds: input.layerIdsA }),
+      ...(input.scale === undefined
+        ? {}
+        : { scale: input.scale }),
+    });
+    const renderedB = await this.renderPreview({
+      mapPath: input.mapPathB,
+      region: input.region,
+      ...(input.layerIdsB === undefined
+        ? {}
+        : { layerIds: input.layerIdsB }),
+      ...(input.scale === undefined
+        ? {}
+        : { scale: input.scale }),
+    });
+    const sizeA = (
+      renderedA.result as {
+        pixelSize: {
+          width: number;
+          height: number;
+        };
+      }
+    ).pixelSize;
+    const sizeB = (
+      renderedB.result as {
+        pixelSize: {
+          width: number;
+          height: number;
+        };
+      }
+    ).pixelSize;
+    const rawA = await decodeSafeImage({
+      bytes: renderedA.png,
+      path: `${input.mapPathA} (render)`,
+      declaredWidth: sizeA.width,
+      declaredHeight: sizeA.height,
+      limits: {
+        maxInputBytes: renderedA.png.byteLength,
+        maxInputPixels:
+          MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
+        maxInputEdge: 65_535,
+      },
+    });
+    const rawB = await decodeSafeImage({
+      bytes: renderedB.png,
+      path: `${input.mapPathB} (render)`,
+      declaredWidth: sizeB.width,
+      declaredHeight: sizeB.height,
+      limits: {
+        maxInputBytes: renderedB.png.byteLength,
+        maxInputPixels:
+          MAX_NATIVE_PREVIEW_AGGREGATE_DECODED_PIXELS,
+        maxInputEdge: 65_535,
+      },
+    });
+    if (
+      rawA.pixelSize.width !==
+        rawB.pixelSize.width ||
+      rawA.pixelSize.height !==
+        rawB.pixelSize.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Both renders must produce identical pixel sizes; the maps disagree on tile size for this region.",
+        {
+          a: rawA.pixelSize,
+          b: rawB.pixelSize,
+        },
+      );
+    }
+    const { width, height } = rawA.pixelSize;
+    const pixelsPerTileX =
+      (renderedA.result.coordinateTransform as {
+        pixelsPerTile: { x: number; y: number };
+      }).pixelsPerTile.x;
+    const pixelsPerTileY =
+      (renderedA.result.coordinateTransform as {
+        pixelsPerTile: { x: number; y: number };
+      }).pixelsPerTile.y;
+
+    const diff = Buffer.alloc(width * height * 4);
+    const differingCellKeys = new Set<string>();
+    let differingPixelCount = 0;
+    for (let index = 0; index < width * height; index += 1) {
+      const offset = index * 4;
+      const same =
+        rawA.rgba[offset] === rawB.rgba[offset] &&
+        rawA.rgba[offset + 1] ===
+          rawB.rgba[offset + 1] &&
+        rawA.rgba[offset + 2] ===
+          rawB.rgba[offset + 2] &&
+        rawA.rgba[offset + 3] ===
+          rawB.rgba[offset + 3];
+      if (same) {
+        diff[offset] = rawA.rgba[offset]!;
+        diff[offset + 1] =
+          rawA.rgba[offset + 1]!;
+        diff[offset + 2] =
+          rawA.rgba[offset + 2]!;
+        diff[offset + 3] = Math.floor(
+          rawA.rgba[offset + 3]! / 4,
+        );
+        continue;
+      }
+      differingPixelCount += 1;
+      diff[offset] = 255;
+      diff[offset + 1] = 0;
+      diff[offset + 2] = 0;
+      diff[offset + 3] = 255;
+      const pixelX = index % width;
+      const pixelY = Math.floor(index / width);
+      differingCellKeys.add(
+        `${input.region.x + Math.floor(pixelX / pixelsPerTileX)},${input.region.y + Math.floor(pixelY / pixelsPerTileY)}`,
+      );
+    }
+    const differingCells = [
+      ...differingCellKeys,
+    ].map((key) => {
+      const [x, y] = key.split(",");
+      return {
+        x: Number.parseInt(x!, 10),
+        y: Number.parseInt(y!, 10),
+      };
+    });
+    differingCells.sort(
+      (left, right) =>
+        left.y - right.y || left.x - right.x,
+    );
+    const png = await encodeRgbaPng({
+      rgba: diff,
+      width,
+      height,
+    });
+    return {
+      png,
+      result: {
+        mimeType: "image/png",
+        pixelSize: { width, height },
+        byteLength: png.byteLength,
+        sha256: revisionOf(png),
+        a: {
+          path: (renderedA.result.map as {
+            path: string;
+          }).path,
+          revision: (renderedA.result.map as {
+            revision: string;
+          }).revision,
+        },
+        b: {
+          path: (renderedB.result.map as {
+            path: string;
+          }).path,
+          revision: (renderedB.result.map as {
+            revision: string;
+          }).revision,
+        },
+        region: input.region,
+        identical: differingPixelCount === 0,
+        differingPixelCount,
+        totalPixels: width * height,
+        differingCells: {
+          count: differingCells.length,
+          sample: differingCells.slice(0, 64),
+          truncated: differingCells.length > 64,
+        },
+        renderProfile:
+          "native-preview-pixel-diff-v1",
+        snapshotConsistency:
+          "non-atomic-read-set",
+      },
     };
   }
 

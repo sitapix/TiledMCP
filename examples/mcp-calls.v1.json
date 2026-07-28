@@ -233,6 +233,27 @@
       "purpose": "\u7528\u5185\u5efa\u6e32\u67d3\u5668\u751f\u6210\u5e26\u7f51\u683c\u3001\u7edd\u5bf9\u5750\u6807\u548c tile-union \u77e9\u5f62\u9ad8\u4eae\u7684\u6709\u754c\u5730\u56fe\u9884\u89c8\u3002"
     },
     {
+      "name": "tiled_render_diff",
+      "profile": "core",
+      "purpose": "Visually compare the same region of two maps; differing pixels paint red over a faded base render.",
+      "arguments": {
+        "mapPathA": "maps/example.tmj",
+        "mapPathB": "maps/example.tmj",
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "layerIdsA": [
+          1
+        ],
+        "layerIdsB": [
+          2
+        ]
+      }
+    },
+    {
       "name": "tiled_list_objects",
       "profile": "core",
       "arguments": {
