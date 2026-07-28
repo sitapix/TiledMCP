@@ -3755,6 +3755,72 @@ const propertyTypeEditPreviewOutputSchema = z
   })
   .strict();
 
+const tileNameOutputSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u);
+
+const tileNameEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("tileNameEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    registryRevision:
+      revisionOutputSchema.nullable(),
+    expectedRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        z.discriminatedUnion("type", [
+          z
+            .object({
+              type: z.literal(
+                "upsertTileName",
+              ),
+              destructive: z.literal(false),
+              warning: z.string(),
+              name: tileNameOutputSchema,
+              tileset: projectPathOutputSchema,
+              localId:
+                nonnegativeIntegerOutputSchema,
+            })
+            .strict(),
+          z
+            .object({
+              type: z.literal(
+                "deleteTileName",
+              ),
+              destructive: z.literal(true),
+              warning: z.string(),
+              name: tileNameOutputSchema,
+            })
+            .strict(),
+        ]),
+      )
+      .min(1)
+      .max(64),
+    summary: z
+      .object({
+        upserts:
+          nonnegativeIntegerOutputSchema,
+        deletes:
+          nonnegativeIntegerOutputSchema,
+        resultingCount:
+          nonnegativeIntegerOutputSchema,
+        wouldChange: z.literal(true),
+      })
+      .strict(),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const tileNameEditPreviewToolOutputSchema =
+  toolOutputSchema(
+    tileNameEditPreviewOutputSchema,
+  );
+
 export const propertyTypeEditPreviewToolOutputSchema =
   toolOutputSchema(
     propertyTypeEditPreviewOutputSchema,

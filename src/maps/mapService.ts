@@ -173,9 +173,17 @@ import {
   serializeTxTemplate,
 } from "./tmxWrite.js";
 import {
+  applyTileNameOperations,
+  assertTileNameEditPlan,
+  MAX_TILE_NAME_OPERATIONS,
   MAX_TILE_NAMES_BYTES,
   readTileNamesDocument,
+  serializeTileNames,
   TILE_NAMES_FILE,
+  tileNameEditPlanId,
+  type TileNameEditApplyResult,
+  type TileNameEditPlan,
+  type TileNameOperation,
 } from "./tileNames.js";
 import {
   MAX_ISOMETRIC_REGION_CELLS,
@@ -5324,6 +5332,239 @@ export class MapService {
       count: names.length,
       snapshotConsistency:
         "non-atomic-read-set",
+    };
+  }
+
+  private async readTileNameRegistry(): Promise<{
+    revision: string | null;
+    names: Map<
+      string,
+      { tileset: string; localId: number }
+    >;
+  }> {
+    const directory =
+      await this.resolver.ensureInternalDirectory(
+        ".tiledmcp",
+      );
+    let raw: Buffer;
+    try {
+      raw = await readFile(
+        join(directory, TILE_NAMES_FILE),
+      );
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code ===
+        "ENOENT"
+      ) {
+        return {
+          revision: null,
+          names: new Map(),
+        };
+      }
+      throw error;
+    }
+    if (raw.byteLength > MAX_TILE_NAMES_BYTES) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `The tile-name registry may be at most ${MAX_TILE_NAMES_BYTES} bytes.`,
+        { limit: MAX_TILE_NAMES_BYTES },
+      );
+    }
+    let document: JsonObject;
+    try {
+      document = JSON.parse(
+        raw.toString("utf8"),
+      ) as JsonObject;
+    } catch {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        ".tiledmcp/tile-names.json is not valid JSON.",
+      );
+    }
+    const entries = readTileNamesDocument(
+      document,
+      ".tiledmcp/tile-names.json",
+    );
+    return {
+      revision: revisionOf(raw),
+      names: new Map(
+        entries.map((entry) => [
+          entry.name,
+          {
+            tileset: entry.tileset,
+            localId: entry.localId,
+          },
+        ]),
+      ),
+    };
+  }
+
+  /**
+   * Previews upsert/delete edits to the server-owned tile-name
+   * registry as a tileNameEdit change set. Upserted tilesets must
+   * exist as project .tsj files (re-verified at apply); the registry
+   * file's revision — or its absence — is pinned so a concurrent
+   * registry write fails closed.
+   */
+  async planTileNameEdits(input: {
+    operations: TileNameOperation[];
+    expectedRegistryRevision?:
+      | string
+      | null
+      | undefined;
+  }): Promise<TileNameEditPlan> {
+    if (
+      !Array.isArray(input.operations) ||
+      input.operations.length === 0 ||
+      input.operations.length >
+        MAX_TILE_NAME_OPERATIONS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `operations must contain between 1 and ${MAX_TILE_NAME_OPERATIONS} entries.`,
+        { limit: MAX_TILE_NAME_OPERATIONS },
+      );
+    }
+    const operations: TileNameOperation[] = [];
+    let upserts = 0;
+    let deletes = 0;
+    for (const operation of input.operations) {
+      if (operation.type === "upsertName") {
+        const tilesetPath =
+          this.resolver.normalize(
+            operation.tileset,
+          );
+        if (
+          posix
+            .extname(tilesetPath)
+            .toLowerCase() !== ".tsj"
+        ) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_FORMAT",
+            `Tile names reference project .tsj tilesets; got ${tilesetPath}.`,
+          );
+        }
+        await this.store.readRevision(
+          tilesetPath,
+        );
+        operations.push({
+          type: "upsertName",
+          name: operation.name,
+          tileset: tilesetPath,
+          localId: operation.localId,
+        });
+        upserts += 1;
+      } else {
+        operations.push({
+          type: "deleteName",
+          name: operation.name,
+        });
+        deletes += 1;
+      }
+    }
+    const registry =
+      await this.readTileNameRegistry();
+    if (
+      input.expectedRegistryRevision !==
+        undefined &&
+      registry.revision !==
+        input.expectedRegistryRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        "The tile-name registry does not match the expected revision.",
+        {
+          expectedRevision:
+            input.expectedRegistryRevision,
+          actualRevision: registry.revision,
+        },
+      );
+    }
+    const next = applyTileNameOperations(
+      registry.names,
+      operations,
+    );
+    const content = Buffer.from(
+      serializeTileNames(next),
+      "utf8",
+    );
+    const unsignedPlan: Omit<
+      TileNameEditPlan,
+      "id"
+    > = {
+      kind: "tileNameEdit",
+      version: 1,
+      registryRevision: registry.revision,
+      baseRevision: revisionOf(content),
+      operations,
+      summary: {
+        upserts,
+        deletes,
+        resultingCount: next.size,
+        wouldChange: true,
+      },
+    };
+    return {
+      ...unsignedPlan,
+      id: tileNameEditPlanId(unsignedPlan),
+    };
+  }
+
+  async applyTileNameEdit(
+    plan: TileNameEditPlan,
+  ): Promise<TileNameEditApplyResult> {
+    assertTileNameEditPlan(plan);
+    const registry =
+      await this.readTileNameRegistry();
+    if (
+      registry.revision !== plan.registryRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        "The tile-name registry changed since the edit was planned.",
+        {
+          expectedRevision:
+            plan.registryRevision,
+          actualRevision: registry.revision,
+        },
+      );
+    }
+    for (const operation of plan.operations) {
+      if (operation.type === "upsertName") {
+        await this.store.readRevision(
+          operation.tileset,
+        );
+      }
+    }
+    const next = applyTileNameOperations(
+      registry.names,
+      plan.operations,
+    );
+    const content = Buffer.from(
+      serializeTileNames(next),
+      "utf8",
+    );
+    if (revisionOf(content) !== plan.baseRevision) {
+      throw new TiledMcpError(
+        "INVALID_CHANGE_SET",
+        "Replaying the tile-name edits produced different content than the approved plan; preview again.",
+      );
+    }
+    const directory =
+      await this.resolver.ensureInternalDirectory(
+        ".tiledmcp",
+      );
+    await writeFile(
+      join(directory, TILE_NAMES_FILE),
+      content,
+    );
+    return {
+      path: ".tiledmcp/tile-names.json",
+      beforeRevision: plan.registryRevision,
+      revision: revisionOf(content),
+      changed: true,
+      changeSetId: plan.id,
+      nameCount: next.size,
     };
   }
 

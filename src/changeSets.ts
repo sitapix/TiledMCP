@@ -67,6 +67,11 @@ import {
   type EmbeddedTilesetEditPlan,
 } from "./maps/embeddedTilesetEdit.js";
 import {
+  assertTileNameEditPlan,
+  type TileNameEditApplyResult,
+  type TileNameEditPlan,
+} from "./maps/tileNames.js";
+import {
   assertPropertyTypeEditPlan,
   type PropertyTypeEditPlan,
 } from "./maps/propertyTypes.js";
@@ -157,6 +162,7 @@ export type ChangeSetPlan =
   | FileExportPlan
   | EmbeddedTilesetEditPlan
   | PropertyTypeEditPlan
+  | TileNameEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
   | CheckpointPrunePlan
@@ -166,6 +172,7 @@ export type ChangeSetPlan =
   | PreparedCheckpointDiscardPlan;
 
 type ChangeSetOperationResult =
+  | TileNameEditApplyResult
   | (CommitResult & {
       changeSetId: string;
     })
@@ -180,6 +187,7 @@ type ChangeSetOperationResult =
   | PreparedCheckpointDiscardResult;
 
 export type ChangeSetApplyResult =
+  | TileNameEditApplyResult
   | (CommitResult & {
       changeSetId: string;
     })
@@ -305,6 +313,13 @@ export interface PropertyTypeEditChangeSetPreview
   kind: "propertyTypeEdit";
   projectFilePath: string;
   summary: PropertyTypeEditPlan["summary"];
+}
+
+export interface TileNameEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "tileNameEdit";
+  registryRevision: string | null;
+  summary: TileNameEditPlan["summary"];
 }
 
 export const MIN_TRANSACTION_MEMBERS = 2;
@@ -769,6 +784,7 @@ export type ChangeSetPreview =
   | FileExportChangeSetPreview
   | EmbeddedTilesetEditChangeSetPreview
   | PropertyTypeEditChangeSetPreview
+  | TileNameEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
   | CheckpointPruneChangeSetPreview
@@ -1239,6 +1255,20 @@ type OperationPreview =
       warning: string;
       name: string;
       typeId: number;
+    }
+  | {
+      type: "upsertTileName";
+      destructive: false;
+      warning: string;
+      name: string;
+      tileset: string;
+      localId: number;
+    }
+  | {
+      type: "deleteTileName";
+      destructive: true;
+      warning: string;
+      name: string;
     }
   | {
       type: "exportFile";
@@ -2537,6 +2567,44 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
       ).toISOString(),
     };
   }
+  if (entry.plan.kind === "tileNameEdit") {
+    const plan = entry.plan;
+    assertTileNameEditPlan(plan);
+    const operations: OperationPreview[] =
+      plan.operations.map((operation) =>
+        operation.type === "upsertName"
+          ? {
+              type: "upsertTileName" as const,
+              destructive: false,
+              warning:
+                "This rewrites the server-owned .tiledmcp/tile-names.json registry; no Tiled asset is touched.",
+              name: operation.name,
+              tileset: operation.tileset,
+              localId: operation.localId,
+            }
+          : {
+              type: "deleteTileName" as const,
+              destructive: true,
+              warning:
+                "This removes one semantic name from the server-owned registry; the mapping is not recoverable from Tiled assets.",
+              name: operation.name,
+            },
+      );
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      registryRevision: plan.registryRevision,
+      expectedRevision: plan.baseRevision,
+      operations,
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
   if (entry.plan.kind === "fileExport") {
     const plan = entry.plan;
     assertFileExportPlan(plan);
@@ -3018,6 +3086,9 @@ function scrubAppliedPlan(plan: ChangeSetPlan): ChangeSetPlan {
     return { ...plan, updates: [] };
   }
   if (plan.kind === "propertyTypeEdit") {
+    return { ...plan, operations: [] };
+  }
+  if (plan.kind === "tileNameEdit") {
     return { ...plan, operations: [] };
   }
   return plan;

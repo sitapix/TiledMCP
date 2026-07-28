@@ -128,6 +128,108 @@ describe("semantic tile-name registry", () => {
   });
 });
 
+describe("tile-name registry edits", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  it("plans against an absent registry, applies, and pins revisions", async () => {
+    const harness = await createHarness(roots);
+    const plan =
+      await harness.service.planTileNameEdits({
+        operations: [
+          {
+            type: "upsertName",
+            name: "grass",
+            tileset: "tiles/decor.tsj",
+            localId: 0,
+          },
+        ],
+        expectedRegistryRevision: null,
+      });
+    expect(plan).toMatchObject({
+      kind: "tileNameEdit",
+      registryRevision: null,
+      summary: {
+        upserts: 1,
+        deletes: 0,
+        resultingCount: 1,
+      },
+    });
+    const applied =
+      await harness.service.applyTileNameEdit(
+        plan,
+      );
+    expect(applied).toMatchObject({
+      changed: true,
+      nameCount: 1,
+    });
+    const listed =
+      await harness.service.listTileNames();
+    expect(listed).toMatchObject({
+      registryPresent: true,
+      count: 1,
+      names: [
+        { name: "grass", localId: 0 },
+      ],
+    });
+
+    // A second plan pins the now-present revision; the stale null pin
+    // fails closed at apply.
+    await expect(
+      harness.service.applyTileNameEdit(plan),
+    ).rejects.toMatchObject({
+      code: "REVISION_CONFLICT",
+    });
+    const second =
+      await harness.service.planTileNameEdits({
+        operations: [
+          { type: "deleteName", name: "grass" },
+        ],
+      });
+    await harness.service.applyTileNameEdit(
+      second,
+    );
+    expect(
+      await harness.service.listTileNames(),
+    ).toMatchObject({ count: 0 });
+  });
+
+  it("fails closed on missing tilesets and unregistered deletes", async () => {
+    const harness = await createHarness(roots);
+    await expect(
+      harness.service.planTileNameEdits({
+        operations: [
+          {
+            type: "upsertName",
+            name: "ghost",
+            tileset: "tiles/missing.tsj",
+            localId: 0,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "FILE_NOT_FOUND",
+    });
+    await expect(
+      harness.service.planTileNameEdits({
+        operations: [
+          { type: "deleteName", name: "nope" },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+});
+
 async function createHarness(
   roots: Set<string>,
 ): Promise<{

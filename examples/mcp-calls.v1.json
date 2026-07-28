@@ -828,6 +828,28 @@
       "arguments": {}
     },
     {
+      "name": "tiled_preview_tile_names",
+      "profile": "core",
+      "purpose": "Register semantic tile names in the server-owned registry as an approvable tileNameEdit change set.",
+      "arguments": {
+        "operations": [
+          {
+            "type": "upsertName",
+            "name": "grass",
+            "tileset": "tiles/terrain.tsj",
+            "localId": 0
+          },
+          {
+            "type": "upsertName",
+            "name": "water",
+            "tileset": "tiles/terrain.tsj",
+            "localId": 1
+          }
+        ],
+        "expectedRegistryRevision": null
+      }
+    },
+    {
       "name": "tiled_preview_validation_fixes",
       "profile": "core",
       "purpose": "Erase every tile cell whose GID resolves to no bound tileset, as an approvable setTiles change set.",

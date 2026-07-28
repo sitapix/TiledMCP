@@ -581,7 +581,11 @@ lowercase identifiers (at most 4,096 entries), every referenced
 tileset must exist and gets its revision pinned into the result, and a
 missing registry reads as empty. The registry is weak metadata —
 \`localId\` is disclosed verbatim without re-checking tileset
-contents.
+contents. \`tiled_preview_tile_names\` edits the registry through an
+expiring \`tileNameEdit\` change set: upserts pin tileset existence,
+deleting an unregistered name fails closed, the file's revision (or
+its absence) is pinned against concurrent writes, and apply replays
+against the approved content hash. No Tiled asset is ever touched.
 
 ## Take explicit save points
 

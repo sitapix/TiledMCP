@@ -206,6 +206,7 @@ import {
   wangEditPreviewToolOutputSchema,
   fileExportPreviewToolOutputSchema,
   propertyTypeEditPreviewToolOutputSchema,
+  tileNameEditPreviewToolOutputSchema,
   updateTilePreviewToolOutputSchema,
 } from "./outputSchemas/changeSets.js";
 import {
@@ -1641,6 +1642,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_write_tsx",
     "tiled_preview_write_tx",
     "tiled_list_tile_names",
+    "tiled_preview_tile_names",
     "tiled_preview_validation_fixes",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
@@ -5729,6 +5731,76 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   register(
     server,
     registeredTools,
+    "tiled_preview_tile_names",
+    {
+      title: "Preview tile-name registry edits",
+      description:
+        "Validates upsert/delete edits to the server-owned .tiledmcp/tile-names.json semantic registry and returns an expiring tileNameEdit change set — no Tiled asset is touched. Upserted names are restricted lowercase identifiers whose tilesets must exist as project .tsj files (re-verified at apply); deleting an unregistered name fails closed, the registry is bounded at 4,096 names, and the registry file's revision — or its absence — is pinned so a concurrent registry write fails closed. Apply replays the operations, verifies the result against the approved content hash, and rewrites the registry canonically.",
+      inputSchema: z
+        .object({
+          operations: z
+            .array(
+              z.discriminatedUnion("type", [
+                z
+                  .object({
+                    type: z.literal(
+                      "upsertName",
+                    ),
+                    name: z
+                      .string()
+                      .regex(
+                        /^[a-z0-9][a-z0-9_-]{0,63}$/u,
+                      ),
+                    tileset:
+                      projectPathSchema,
+                    localId: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(1_000_000),
+                  })
+                  .strict(),
+                z
+                  .object({
+                    type: z.literal(
+                      "deleteName",
+                    ),
+                    name: z
+                      .string()
+                      .regex(
+                        /^[a-z0-9][a-z0-9_-]{0,63}$/u,
+                      ),
+                  })
+                  .strict(),
+              ]),
+            )
+            .min(1)
+            .max(64),
+          expectedRegistryRevision:
+            revisionSchema.nullable().optional(),
+        })
+        .strict(),
+      outputSchema:
+        tileNameEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      operations,
+      expectedRegistryRevision,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planTileNameEdits({
+            operations,
+            expectedRegistryRevision,
+          });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
     "tiled_preview_validation_fixes",
     {
       title:
@@ -6169,9 +6241,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                                           ? maps.applyPropertyTypeEdit(
                                               plan,
                                             )
-                                          : maps.applyEdits(
-                                              plan,
-                                            ),
+                                          : plan.kind ===
+                                              "tileNameEdit"
+                                            ? maps.applyTileNameEdit(
+                                                plan,
+                                              )
+                                            : maps.applyEdits(
+                                                plan,
+                                              ),
         ),
       ),
   );
