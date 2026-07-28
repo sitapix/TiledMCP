@@ -549,6 +549,18 @@ custom properties, and unknown members also fail closed. Apply
 re-serializes under the pinned source revision and hash-verifies,
 exactly like \`tiled_preview_write_tmx\`.
 
+## Fix validation issues mechanically
+
+\`tiled_preview_validation_fixes\` scans every tile layer for cells
+whose base GID falls outside all bound tileset ranges and returns an
+ordinary \`mapEdit\` change set erasing exactly those dangling cells.
+Erasing is destructive in spirit, so the plan goes through the usual
+preview and approval; a map with nothing mechanically fixable fails
+closed, as does one with more than 10,000 dangling cells — that scale
+points at a broken tileset reference, not at data worth erasing.
+Dangling tile-object GIDs are reported by \`tiled_validate\` but
+never auto-fixed.
+
 ## Take explicit save points
 
 \`tiled_create_checkpoint\` creates committed recovery checkpoints of

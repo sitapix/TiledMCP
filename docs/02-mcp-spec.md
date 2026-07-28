@@ -1563,7 +1563,7 @@ map object 标量属性经 `updateObject.patch.properties`（见 3.6/3.7），�
 | 工具 | 说明 | 关键参数 |
 |---|---|---|
 | `tiled_validate` | **项目资产只读格式校验**：GID 越界、tileset/图片路径失效、id 一致性、重复对象 id、chunk 完整性；成功结果为 `{path, revision, valid, diagnostics: Diagnostic[]}`；不修改项目资产，但可能更新项目内部 safety metadata | `path` |
-| `tiled_preview_validation_fixes` | 把明确选择的 `fixId` 计算为待批准 change set；不与只读 validate 共用工具名 | `path`, `expectedRevision`, `fixIds` |
+| `tiled_preview_validation_fixes` | **已实现第一刀**：扫描全部 tile layer（含 group 嵌套）中 base GID 落在所有 tileset 范围之外的悬空 cell，汇成普通 `mapEdit` change set（精确 `setTiles` null 擦除）——零可修复项 fail closed 而非空 plan、>10,000 悬空 cell fail closed（那是 tileset 引用坏了，不是该擦的数据）、悬空 tile object 只由 `tiled_validate` 报告绝不代删；`fixId` 显式选择机制留后续（当前仅一类机械修复，无需选择面）| `mapPath`, `expectedMapRevision`, `expectedDependencyRevisions` |
 | `tiled_check_connectivity` | **已实现**：有界四向洪泛连通性分析（可通行定义显式：空 cell 可走或列举 tile 集可走 + `includeEmpty`；翻转位不参与匹配），返回可通行/阻挡计数、按大小排序的连通分量样本（≤32）与可选 from/to 同分量判定；阻挡端点 fail closed | `mapPath`, `layerId`, `passable`, `from?`, `to?` |
 | `tiled_register_tile_names` | 语义 tile 注册表：把 `grass`、`water_corner_tl` 等名字映射到具体 tile，之后所有工具的 `tile` 参数可直接用名字（借鉴 hoberobin 思路；配合 `auto-name-tiles` Prompt 可由模型看图自动完成） | `tilesetPath`, `names: {name: tileId}` |
 | `tiled_analyze_usage` | **已实现/只读。** 递归统计整张地图的 tile cell/tile object 使用、raw flags、图层密度、tileset/未使用 local ID 与 top tiles，返回有界摘要 | `mapPath`, `topTileLimit?`, `expectedMapRevision?`, `expectedDependencyRevisions?` |

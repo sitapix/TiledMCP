@@ -6190,6 +6190,159 @@ export class MapService {
   }
 
   /**
+   * Mechanical validation fixes: scans every tile layer for cells
+   * whose base GID falls outside all bound tileset ranges and returns
+   * an ordinary setTiles change set that erases exactly those cells.
+   * Erasing data is destructive in spirit, so nothing applies without
+   * the usual preview and approval; a map with nothing to fix fails
+   * closed instead of returning an empty plan. Dangling tile-object
+   * GIDs are reported by tiled_validate but deliberately not auto-
+   * fixed — deleting objects is a human decision.
+   */
+  async planValidationFixes(input: {
+    mapPath: string;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const context =
+      await this.loadEditableContext(
+        input.mapPath,
+        {
+          allowIsometric: true,
+          expectedMapRevision:
+            input.expectedMapRevision,
+          expectedDependencyRevisions:
+            input.expectedDependencyRevisions,
+        },
+      );
+    const mapPath = context.loaded.path;
+    const map = context.loaded.document;
+    const ranges = context.bindings.map(
+      (binding) => ({
+        first: binding.firstGid,
+        last:
+          binding.firstGid +
+          binding.gidSpan -
+          1,
+      }),
+    );
+    const resolvable = (
+      baseGid: number,
+    ): boolean =>
+      ranges.some(
+        (range) =>
+          baseGid >= range.first &&
+          baseGid <= range.last,
+      );
+
+    const tileLayerIds: number[] = [];
+    const collect = (
+      layers: JsonValue | undefined,
+      context_: string,
+    ): void => {
+      for (const [
+        index,
+        entry,
+      ] of expectArray(
+        layers,
+        context_,
+      ).entries()) {
+        const layer = expectObject(
+          entry,
+          `${context_}[${index}]`,
+        );
+        if (layer.type === "tilelayer") {
+          tileLayerIds.push(
+            expectInteger(
+              layer.id,
+              `${context_}[${index}].id`,
+            ),
+          );
+        } else if (layer.type === "group") {
+          collect(
+            layer.layers ?? [],
+            `${context_}[${index}].layers`,
+          );
+        }
+      }
+    };
+    collect(map.layers, `${mapPath}.layers`);
+
+    const operations: MapEditOperation[] = [];
+    let totalCells = 0;
+    for (const layerId of tileLayerIds) {
+      const view = findTileLayer(
+        map,
+        layerId,
+        mapPath,
+        "read",
+      );
+      const cells: Array<{
+        x: number;
+        y: number;
+        tile: null;
+      }> = [];
+      for (
+        let y = view.y;
+        y < view.y + view.height;
+        y += 1
+      ) {
+        for (
+          let x = view.x;
+          x < view.x + view.width;
+          x += 1
+        ) {
+          const gid = readLayerGid(view, x, y);
+          if (gid === 0) {
+            continue;
+          }
+          const decoded = decodeGid(
+            gid,
+            context.orientation,
+          );
+          if (!resolvable(decoded.baseGid)) {
+            cells.push({ x, y, tile: null });
+            totalCells += 1;
+            if (totalCells > 10_000) {
+              throw new TiledMcpError(
+                "RESULT_LIMIT_EXCEEDED",
+                "More than 10,000 cells carry dangling GIDs; fix the tileset references instead of erasing this much data.",
+                { limit: 10_000 },
+              );
+            }
+          }
+        }
+      }
+      if (cells.length > 0) {
+        operations.push({
+          type: "setTiles",
+          layerId,
+          cells,
+        });
+      }
+    }
+    if (operations.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "Validation found no mechanically fixable issues; nothing to erase.",
+      );
+    }
+    return this.planEdits(
+      mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      operations,
+    );
+  }
+
+  /**
    * Prefab stamping: reads one source-map region — tiles from one tile
    * layer, optionally objects anchored inside the region's pixel bounds
    * from one object layer — and materializes it at planning time into

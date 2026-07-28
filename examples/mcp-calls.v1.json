@@ -812,6 +812,18 @@
       }
     },
     {
+      "name": "tiled_preview_validation_fixes",
+      "profile": "core",
+      "purpose": "Erase every tile cell whose GID resolves to no bound tileset, as an approvable setTiles change set.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
       "name": "tiled_preview_property_types",
       "profile": "core",
       "purpose": "Define one class with two members and one string enum in the project file as a previewed change set.",

@@ -1638,6 +1638,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_template",
     "tiled_preview_write_tmx",
     "tiled_preview_write_tsx",
+    "tiled_preview_validation_fixes",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
@@ -5666,6 +5667,42 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           targetPath,
           expectedTilesetRevision,
         });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_validation_fixes",
+    {
+      title:
+        "Preview mechanical validation fixes",
+      description:
+        "Scans every tile layer of one map for cells whose base GID falls outside all bound tileset ranges and returns an ordinary mapEdit change set erasing exactly those dangling cells — nothing applies without the usual preview and approval, and a map with nothing mechanically fixable fails closed instead of returning an empty plan. Dangling tile-object GIDs are reported by tiled_validate but deliberately not auto-fixed: deleting objects is a human decision. More than 10,000 dangling cells also fails closed — that scale points at a broken tileset reference, not at data worth erasing.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planValidationFixes({
+            mapPath,
+            expectedMapRevision,
+            expectedDependencyRevisions,
+          });
         return changeSets.put(plan);
       }),
   );
