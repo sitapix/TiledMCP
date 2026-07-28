@@ -223,9 +223,9 @@ describe("generated MCP contract", () => {
     );
 
     expect(coreTools).toHaveLength(32);
-    expect(fullTools).toHaveLength(34);
+    expect(fullTools).toHaveLength(35);
     expect(new Set(coreTools).size).toBe(32);
-    expect(new Set(fullTools).size).toBe(34);
+    expect(new Set(fullTools).size).toBe(35);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
@@ -233,6 +233,7 @@ describe("generated MCP contract", () => {
     ).toEqual([
       "tiled_render_map",
       "tiled_preview_export",
+      "tiled_preview_terrain",
     ]);
     expect(
       coreTools.filter(
@@ -251,8 +252,8 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(34);
-    expect(new Set(toolNames).size).toBe(34);
+    expect(toolDefinitions).toHaveLength(35);
+    expect(new Set(toolNames).size).toBe(35);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );

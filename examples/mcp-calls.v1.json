@@ -590,6 +590,33 @@
         "targetPath": "exports/example.tmx",
         "expectedSourceRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       }
+    },
+    {
+      "name": "tiled_preview_terrain",
+      "profile": "with-tmxrasterizer",
+      "purpose": "Paint two Wang terrain corners through Tiled's own matcher and stage the resulting exact cell writes as a mapEdit change set.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "wangSetIndex": 0,
+        "corners": [
+          {
+            "x": 1,
+            "y": 1,
+            "colorIndex": 1
+          },
+          {
+            "x": 2,
+            "y": 1,
+            "colorIndex": 1
+          }
+        ],
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
     }
   ]
 }

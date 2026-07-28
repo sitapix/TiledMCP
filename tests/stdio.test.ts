@@ -180,7 +180,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     );
     expect(tools.tools.length === 32 ||
         tools.tools.length === 33 ||
-        tools.tools.length === 34).toBe(
+        tools.tools.length === 35).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -1897,6 +1897,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:32|33|34) tools\)/u,
+    /ready for .+ \((?:32|33|34|35) tools\)/u,
   );
 });

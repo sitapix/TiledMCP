@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 
@@ -11,6 +17,7 @@ import {
   expectObject,
   expectString,
   isJsonObject,
+  parseJsonDocument,
   serializeJsonDocument,
   stableJson,
   type JsonObject,
@@ -158,6 +165,12 @@ import {
   MAX_EXPORT_OUTPUT_BYTES,
   type FileExportPlan,
 } from "./fileExport.js";
+import {
+  assertTerrainScriptSucceeded,
+  buildTerrainPaintScript,
+  validateTerrainCorners,
+  type TerrainCornerInput,
+} from "./terrainPaint.js";
 import {
   assertTileFindResultSize,
   DEFAULT_TILE_FIND_LIMIT,
@@ -4442,6 +4455,248 @@ export class MapService {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
     };
+  }
+
+  /**
+   * Terrain painting through Tiled's own Wang matcher: a server-authored
+   * static script runs `TileLayer.wangEdit()` headlessly against the
+   * pinned map and writes only a staging copy; the service then diffs the
+   * target layer and turns the exact cell changes into an ordinary
+   * setTiles map-edit change set. The CLI is a pure calculator here — the
+   * plan carries plain cell data, so apply needs no CLI replay, untouched
+   * fragments keep their exact bytes, and every existing preview, pin,
+   * and transaction rule applies unchanged.
+   */
+  async planTerrainPaint(
+    input: {
+      mapPath: string;
+      layerId: number;
+      tilesetAssetId: string;
+      wangSetIndex: number;
+      corners: TerrainCornerInput[];
+      expectedMapRevision: string;
+      expectedDependencyRevisions: Record<
+        string,
+        string
+      >;
+    },
+    evaluate: (scriptPath: string) => Promise<{
+      stdout: string;
+      stderr: string;
+    }>,
+  ): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    if (
+      !Number.isSafeInteger(input.wangSetIndex) ||
+      input.wangSetIndex < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "wangSetIndex must be a nonnegative integer.",
+      );
+    }
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      },
+    );
+    const binding = this.requireTilesetBinding(
+      context,
+      input.tilesetAssetId,
+    );
+    if (binding.collection === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_TILESET",
+        `${binding.path} is an image-collection tileset; terrain painting supports only atlas tilesets.`,
+        { assetId: binding.assetId },
+      );
+    }
+    const tilesetIndex =
+      context.bindings.indexOf(binding);
+    const tileset = await this.store.read(
+      binding.path,
+    );
+    if (tileset.revision !== binding.revision) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${binding.path} changed while the terrain paint was being prepared.`,
+        {
+          assetId: binding.assetId,
+          expectedRevision: binding.revision,
+          actualRevision: tileset.revision,
+        },
+      );
+    }
+    const wangSets = tileset.document.wangsets;
+    const wangSetValue = Array.isArray(wangSets)
+      ? wangSets[input.wangSetIndex]
+      : undefined;
+    if (
+      typeof wangSetValue !== "object" ||
+      wangSetValue === null ||
+      Array.isArray(wangSetValue)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${binding.path} has no Wang set at index ${input.wangSetIndex}.`,
+        {
+          wangSetIndex: input.wangSetIndex,
+          wangSetCount: Array.isArray(wangSets)
+            ? wangSets.length
+            : 0,
+        },
+      );
+    }
+    const wangSet = wangSetValue as JsonObject;
+    if (
+      wangSet.edgecolors !== undefined ||
+      wangSet.cornercolors !== undefined
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        `${binding.path}.wangsets[${input.wangSetIndex}] uses pre-1.5 edgecolors/cornercolors; their color remapping semantics are not supported.`,
+        { wangSetIndex: input.wangSetIndex },
+      );
+    }
+    if (
+      wangSet.type !== "corner" &&
+      wangSet.type !== "mixed"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Corner painting requires a corner or mixed Wang set.",
+        {
+          wangSetIndex: input.wangSetIndex,
+          type: wangSet.type ?? null,
+        },
+      );
+    }
+    const colorCount = Array.isArray(
+      wangSet.colors,
+    )
+      ? wangSet.colors.length
+      : 0;
+    validateTerrainCorners(
+      input.corners,
+      context.width,
+      context.height,
+      colorCount,
+    );
+    const layer = findTileLayer(
+      context.loaded.document,
+      input.layerId,
+      input.mapPath,
+      "read",
+    );
+
+    const absoluteSource =
+      await this.resolver.resolveExisting(
+        input.mapPath,
+      );
+    const stagingDir = await mkdtemp(
+      join(tmpdir(), "tiledmcp-terrain-"),
+    );
+    let outputDocument: JsonObject;
+    try {
+      const outputPath = join(
+        stagingDir,
+        "out.tmj",
+      );
+      const scriptPath = join(
+        stagingDir,
+        "paint.js",
+      );
+      await writeFile(
+        scriptPath,
+        buildTerrainPaintScript({
+          sourcePath: absoluteSource,
+          outputPath,
+          layerId: input.layerId,
+          tilesetIndex,
+          wangSetIndex: input.wangSetIndex,
+          corners: input.corners,
+        }),
+        "utf8",
+      );
+      const result = await evaluate(scriptPath);
+      assertTerrainScriptSucceeded(result.stdout);
+      outputDocument = parseJsonDocument(
+        (await readFile(outputPath)).toString(
+          "utf8",
+        ),
+        input.mapPath,
+      );
+    } finally {
+      await rm(stagingDir, {
+        recursive: true,
+        force: true,
+      });
+    }
+    await assertRevisionUnchanged(
+      this.store,
+      input.mapPath,
+      context.loaded.revision,
+      "REVISION_CONFLICT",
+    );
+
+    const outputLayer = findTileLayer(
+      outputDocument,
+      input.layerId,
+      input.mapPath,
+      "read",
+    );
+    const cells: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+    for (let y = 0; y < context.height; y += 1) {
+      for (let x = 0; x < context.width; x += 1) {
+        const before = readLayerGid(layer, x, y);
+        const after = readLayerGid(
+          outputLayer,
+          x,
+          y,
+        );
+        if (before !== after) {
+          cells.push({
+            x,
+            y,
+            tile: gidToTileRef(
+              after,
+              context.orientation,
+              context.bindings,
+            ),
+          });
+        }
+      }
+    }
+    if (cells.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The terrain paint produced no cell changes; the painted corners already match the Wang set.",
+        { cornerCount: input.corners.length },
+      );
+    }
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: input.layerId,
+          cells,
+        },
+      ],
+    );
   }
 
   async applyExportFile(

@@ -336,6 +336,33 @@ export class TiledCliAdapter {
     );
   }
 
+  /**
+   * Runs one bounded `tiled --evaluate` invocation of a server-authored
+   * static script. Callers stage the script and its JSON parameter file
+   * themselves; user input never reaches the script source, only the
+   * parameter file, so there is no code-injection surface.
+   */
+  async runEvaluate(options: {
+    scriptPath: string;
+    timeoutMs?: number;
+  }): Promise<{ stdout: string; stderr: string }> {
+    requirePath(options.scriptPath, "scriptPath");
+    return this.run(
+      "tiled",
+      this.tiledCliPath,
+      ["--evaluate", options.scriptPath],
+      {
+        timeoutMs:
+          options.timeoutMs === undefined
+            ? this.renderTimeoutMs
+            : requirePositiveInteger(
+                options.timeoutMs,
+                "timeoutMs",
+              ),
+      },
+    );
+  }
+
   private run(
     tool: ToolKind,
     executable: string,

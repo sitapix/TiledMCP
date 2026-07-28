@@ -1626,6 +1626,7 @@ export const TILED_MCP_OPTIONAL_TOOL_NAMES =
   Object.freeze([
     "tiled_render_map",
     "tiled_preview_export",
+    "tiled_preview_terrain",
   ] as const);
 const capabilityIssueOutputSchema = z
   .object({
@@ -1722,6 +1723,7 @@ const registeredToolNamesOutputSchema = z.union([
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       "tiled_preview_export",
+      "tiled_preview_terrain",
     ] as unknown as JsonValue,
   ),
   exactJsonValueOutputSchema(
@@ -1847,7 +1849,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ? (["tiled_render_map"] as const)
       : []),
     ...(cliCapabilities.tiled.available
-      ? (["tiled_preview_export"] as const)
+      ? ([
+          "tiled_preview_export",
+          "tiled_preview_terrain",
+        ] as const)
       : []),
   ];
   const capabilitiesResult = {
@@ -5115,6 +5120,88 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                 cliCapabilities.tiled
                   .tilesetExportFormats,
             },
+          );
+          return changeSets.put(plan);
+        }),
+    );
+
+    register(
+      server,
+      registeredTools,
+      "tiled_preview_terrain",
+      {
+        title:
+          "Preview terrain painting via Tiled's Wang matcher",
+        description:
+          "Paints Wang terrain corners through Tiled's own TileLayer.wangEdit() matcher, run headlessly by a server-authored static script against the pinned map (the CLI writes only a staging copy; parameters are embedded as an inert JSON literal, so no user input reaches script code). The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — apply needs no CLI replay, untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed.",
+        inputSchema: z
+          .object({
+            mapPath: projectPathSchema,
+            layerId: z.number().int().positive(),
+            tilesetAssetId: z
+              .string()
+              .min(1)
+              .max(128),
+            wangSetIndex: z
+              .number()
+              .int()
+              .min(0)
+              .max(9_999),
+            corners: z
+              .array(
+                z
+                  .object({
+                    x: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(100_000),
+                    y: z
+                      .number()
+                      .int()
+                      .min(0)
+                      .max(100_000),
+                    colorIndex: z
+                      .number()
+                      .int()
+                      .min(1)
+                      .max(254),
+                  })
+                  .strict(),
+              )
+              .min(1)
+              .max(64),
+            expectedMapRevision: revisionSchema,
+            expectedDependencyRevisions:
+              dependencyRevisionsSchema,
+          })
+          .strict(),
+        outputSchema:
+          previewEditsToolOutputSchema,
+        annotations: PREVIEW_ONLY,
+      },
+      async ({
+        mapPath,
+        layerId,
+        tilesetAssetId,
+        wangSetIndex,
+        corners,
+        expectedMapRevision,
+        expectedDependencyRevisions,
+      }) =>
+        executeTool(async () => {
+          const plan = await maps.planTerrainPaint(
+            {
+              mapPath,
+              layerId,
+              tilesetAssetId,
+              wangSetIndex,
+              corners,
+              expectedMapRevision,
+              expectedDependencyRevisions,
+            },
+            (scriptPath) =>
+              cli.runEvaluate({ scriptPath }),
           );
           return changeSets.put(plan);
         }),

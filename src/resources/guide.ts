@@ -486,6 +486,21 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Paint terrain with Tiled's own matcher
+
+When the local Tiled CLI is available, the optional
+\`tiled_preview_terrain\` paints Wang corners through Tiled's own
+\`TileLayer.wangEdit()\` — the same matcher as the editor's Terrain
+Brush — run headlessly by a server-authored static script (parameters
+are embedded as an inert JSON literal; the CLI writes only a staging
+copy of the map). Corners address the corner grid, \`x\` in
+\`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based wang color
+indexes, and the selected set must be corner or mixed type on an
+external atlas tileset. The result is an ordinary \`mapEdit\` change
+set carrying the exact \`setTiles\` cell diff — apply never re-runs the
+CLI, untouched bytes stay untouched, and the plan can join transactions
+like any map edit. A paint that changes nothing fails closed.
+
 ## Edit Wang terrain sets
 
 \`tiled_update_wangsets\` previews sequential Wang edits on one currently
