@@ -580,6 +580,54 @@
       }
     },
     {
+      "name": "tiled_preview_generate",
+      "profile": "core",
+      "purpose": "Generate a seeded noise field over a region and map value intervals to tiles as an ordinary setTiles change set.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 8,
+          "height": 8
+        },
+        "seed": 42,
+        "generator": {
+          "algorithm": "noise",
+          "scale": 4
+        },
+        "mapping": [
+          {
+            "min": 0,
+            "max": 0.5,
+            "tile": {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 0
+            }
+          },
+          {
+            "min": 0.5,
+            "max": 1,
+            "tile": {
+              "tileset": {
+                "kind": "external",
+                "assetId": "asset_0123456789abcdef01234567"
+              },
+              "localId": 1
+            }
+          }
+        ],
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
       "name": "tiled_preview_transaction",
       "profile": "core",
       "arguments": {

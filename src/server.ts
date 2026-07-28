@@ -1622,6 +1622,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_create_layer",
     "tiled_preview_edits",
     "tiled_preview_shape",
+    "tiled_preview_generate",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
     "tiled_apply_change_set",
@@ -4842,6 +4843,126 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           layerId,
           draw,
           tile: tile as TileRef | null,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_generate",
+    {
+      title:
+        "Preview seeded procedural generation",
+      description:
+        "Computes a deterministic seeded value field over one bounded region — smooth value noise (stateless coordinate hash, so the same seed always reproduces the same output and results are translation-stable) or a cellular cave automaton yielding exactly 0 (open) and 1 (wall) — then maps values to tiles through explicit [min, max) intervals (max 1 inclusive; unmatched cells are skipped for sparse generation) and returns an ordinary mapEdit change set carrying the setTiles writes. Math.random is never involved; a mapping that matches no cells fails closed.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          region: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          seed: z
+            .number()
+            .int()
+            .min(Number.MIN_SAFE_INTEGER)
+            .max(Number.MAX_SAFE_INTEGER),
+          generator: z.discriminatedUnion(
+            "algorithm",
+            [
+              z
+                .object({
+                  algorithm: z.literal("noise"),
+                  scale: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(256)
+                    .optional(),
+                })
+                .strict(),
+              z
+                .object({
+                  algorithm:
+                    z.literal("cellular"),
+                  fillProbability: z
+                    .number()
+                    .min(0)
+                    .max(1)
+                    .optional(),
+                  iterations: z
+                    .number()
+                    .int()
+                    .min(0)
+                    .max(16)
+                    .optional(),
+                  birthLimit: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(8)
+                    .optional(),
+                })
+                .strict(),
+            ],
+          ),
+          mapping: z
+            .array(
+              z
+                .object({
+                  min: z.number().min(0).max(1),
+                  max: z.number().min(0).max(1),
+                  tile: tileRefSchema.nullable(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(16),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      region,
+      seed,
+      generator,
+      mapping,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planGenerate({
+          mapPath,
+          layerId,
+          region,
+          seed,
+          generator,
+          mapping: mapping as Array<{
+            min: number;
+            max: number;
+            tile: TileRef | null;
+          }>,
           expectedMapRevision,
           expectedDependencyRevisions,
         });

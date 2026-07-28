@@ -486,6 +486,19 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Generate tiles from a seed
+
+\`tiled_preview_generate\` computes a deterministic seeded value field
+over one bounded region — smooth value noise or a cellular cave
+automaton yielding exactly 0 (open) and 1 (wall) — and maps values to
+tiles through explicit \`[min, max)\` intervals (a max of 1 is
+inclusive; unmatched cells are skipped, allowing sparse generation).
+The generator is a stateless coordinate hash: the same seed always
+reproduces the same output, results are translation-stable, and
+Math.random is never involved. The result is an ordinary \`mapEdit\`
+change set carrying the exact \`setTiles\` writes; a mapping that
+matches no cells fails closed.
+
 ## Draw geometric tile shapes
 
 \`tiled_preview_shape\` rasterizes one deterministic shape — a Bresenham

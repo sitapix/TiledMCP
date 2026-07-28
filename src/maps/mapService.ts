@@ -181,6 +181,15 @@ import {
   computeShapeCells,
   type ShapeDrawInput,
 } from "./shapeDraw.js";
+import {
+  computeGeneratedValues,
+  MAX_GENERATE_CELLS,
+  mapGeneratedValue,
+  validateGenerateMapping,
+  type GenerateAlgorithmInput,
+  type GenerateMappingEntry,
+  type GenerateRegion,
+} from "./generate.js";
 import { parseXmlDocument } from "../formats/xml.js";
 import {
   collectXmlTilesetReferences,
@@ -4553,6 +4562,124 @@ export class MapService {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
     };
+  }
+
+  /**
+   * Deterministic procedural generation: computes a seeded value field
+   * (smooth value noise, or a cellular cave automaton yielding 0/1) over
+   * one bounded region, maps values to tiles through explicit [min, max)
+   * intervals, and returns an ordinary setTiles map-edit change set.
+   * The same seed always produces the same output — the generator is a
+   * stateless coordinate hash, so results are also translation-stable.
+   */
+  async planGenerate(input: {
+    mapPath: string;
+    layerId: number;
+    region: GenerateRegion;
+    seed: number;
+    generator: GenerateAlgorithmInput;
+    mapping: GenerateMappingEntry<TileRef | null>[];
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    if (!Number.isSafeInteger(input.seed)) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "seed must be a safe integer.",
+      );
+    }
+    const region = input.region;
+    if (
+      !Number.isSafeInteger(region.x) ||
+      !Number.isSafeInteger(region.y) ||
+      !Number.isSafeInteger(region.width) ||
+      !Number.isSafeInteger(region.height) ||
+      region.width < 1 ||
+      region.height < 1 ||
+      region.width * region.height >
+        MAX_GENERATE_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must use integer coordinates, positive dimensions, and at most ${MAX_GENERATE_CELLS} cells.`,
+        { limit: MAX_GENERATE_CELLS },
+      );
+    }
+    validateGenerateMapping(input.mapping);
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      },
+    );
+    if (
+      region.x < 0 ||
+      region.y < 0 ||
+      region.x + region.width > context.width ||
+      region.y + region.height > context.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `region must lie inside the ${context.width}x${context.height} map.`,
+        {
+          mapWidth: context.width,
+          mapHeight: context.height,
+        },
+      );
+    }
+    const values = computeGeneratedValues(
+      input.generator,
+      input.seed,
+      region,
+    );
+    const cells: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+    for (let y = 0; y < region.height; y += 1) {
+      for (let x = 0; x < region.width; x += 1) {
+        const tile = mapGeneratedValue(
+          values[y * region.width + x]!,
+          input.mapping,
+        );
+        if (tile !== undefined) {
+          cells.push({
+            x: region.x + x,
+            y: region.y + y,
+            tile,
+          });
+        }
+      }
+    }
+    if (cells.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The generation mapping matched no cells; widen the intervals or adjust the generator options.",
+      );
+    }
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      [
+        {
+          type: "setTiles",
+          layerId: input.layerId,
+          cells,
+        },
+      ],
+    );
   }
 
   /**
