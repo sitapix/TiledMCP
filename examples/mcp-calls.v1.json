@@ -733,6 +733,36 @@
       }
     },
     {
+      "name": "tiled_preview_prefab",
+      "profile": "core",
+      "purpose": "Stamp a source-map region \u2014 tiles plus the objects anchored inside it \u2014 onto a target position as ordinary setTiles and createObject operations.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "sourceMapPath": "maps/prefabs.tmj",
+        "source": {
+          "layerId": 1,
+          "x": 0,
+          "y": 0,
+          "width": 4,
+          "height": 3
+        },
+        "target": {
+          "layerId": 1,
+          "x": 10,
+          "y": 6
+        },
+        "objects": {
+          "sourceLayerId": 2,
+          "targetLayerId": 2
+        },
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "expectedSourceRevision": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
       "name": "tiled_preview_template",
       "profile": "core",
       "purpose": "Place one minimal template instance ({id, template, x, y}) with the template revision pinned.",

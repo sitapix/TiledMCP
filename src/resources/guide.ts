@@ -577,6 +577,21 @@ lands. The result is an ordinary \`mapEdit\` change set carrying the
 exact \`setTiles\` writes; a scatter that matches no cells fails
 closed.
 
+## Stamp prefab regions
+
+\`tiled_preview_prefab\` stamps one source-map region onto a target
+position: tiles from one source tile layer, carried as
+tileset+localId references (a target map missing the tileset fails
+closed), and optionally the objects anchored inside the region's pixel
+bounds from one source object layer. Everything is materialized at
+planning time into ordinary \`setTiles\` and \`createObject\`
+operations — the plan itself is the frozen prefab and nothing re-reads
+the source at apply; \`expectedSourceRevision\` asserts the source up
+front. Empty source cells are skipped unless \`copyEmpty\` stamps the
+rectangle verbatim as erasure, and objects outside the supported draft
+profile (custom properties, template instances, unknown members) fail
+closed rather than being silently dropped.
+
 ## Draw geometric tile shapes
 
 \`tiled_preview_shape\` rasterizes one deterministic shape — a Bresenham

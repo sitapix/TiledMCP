@@ -1632,6 +1632,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_shape",
     "tiled_preview_generate",
     "tiled_preview_scatter",
+    "tiled_preview_prefab",
     "tiled_preview_template",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
@@ -5367,6 +5368,97 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           skipOccupied,
           expectedMapRevision,
           expectedDependencyRevisions,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_prefab",
+    {
+      title: "Preview stamping a prefab region",
+      description:
+        "Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure. Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          sourceMapPath: projectPathSchema,
+          source: z
+            .object({
+              layerId: z
+                .number()
+                .int()
+                .positive(),
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+              width: z
+                .number()
+                .int()
+                .positive(),
+              height: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict(),
+          target: z
+            .object({
+              layerId: z
+                .number()
+                .int()
+                .positive(),
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+            })
+            .strict(),
+          objects: z
+            .object({
+              sourceLayerId: z
+                .number()
+                .int()
+                .positive(),
+              targetLayerId: z
+                .number()
+                .int()
+                .positive(),
+            })
+            .strict()
+            .optional(),
+          copyEmpty: z.boolean().optional(),
+          expectedMapRevision: revisionSchema,
+          expectedDependencyRevisions:
+            dependencyRevisionsSchema,
+          expectedSourceRevision:
+            revisionSchema.optional(),
+        })
+        .strict(),
+      outputSchema: previewEditsToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      sourceMapPath,
+      source,
+      target,
+      objects,
+      copyEmpty,
+      expectedMapRevision,
+      expectedDependencyRevisions,
+      expectedSourceRevision,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planStampPrefab({
+          mapPath,
+          sourceMapPath,
+          source,
+          target,
+          objects,
+          copyEmpty,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+          expectedSourceRevision,
         });
         return changeSets.put(plan);
       }),

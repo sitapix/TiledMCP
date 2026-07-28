@@ -196,6 +196,10 @@ import {
   type ScatterChoice,
 } from "./scatter.js";
 import {
+  convertPrefabObject,
+  MAX_PREFAB_OBJECTS,
+} from "./prefab.js";
+import {
   applyPropertyTypeOperations,
   assertPropertyTypeEditPlan,
   projectPropertyTypes,
@@ -5588,6 +5592,311 @@ export class MapService {
           cells: picks,
         },
       ],
+    );
+  }
+
+  /**
+   * Prefab stamping: reads one source-map region — tiles from one tile
+   * layer, optionally objects anchored inside the region's pixel bounds
+   * from one object layer — and materializes it at planning time into
+   * ordinary setTiles and createObject operations against the target
+   * map. Nothing is re-read at apply, so the plan itself is the frozen
+   * prefab; an optional expectedSourceRevision asserts the source
+   * up front. Tiles carry as tileset+localId references, so a target
+   * map missing the tileset fails closed in draft validation, and
+   * objects outside the supported draft profile (custom properties,
+   * template instances, unknown members) fail closed rather than being
+   * silently dropped.
+   */
+  async planStampPrefab(input: {
+    mapPath: string;
+    sourceMapPath: string;
+    source: {
+      layerId: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    target: {
+      layerId: number;
+      x: number;
+      y: number;
+    };
+    objects?:
+      | {
+          sourceLayerId: number;
+          targetLayerId: number;
+        }
+      | undefined;
+    copyEmpty?: boolean | undefined;
+    expectedMapRevision: string;
+    expectedDependencyRevisions: Record<
+      string,
+      string
+    >;
+    expectedSourceRevision?: string | undefined;
+  }): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    const source = input.source;
+    if (
+      !Number.isSafeInteger(source.x) ||
+      !Number.isSafeInteger(source.y) ||
+      !Number.isSafeInteger(source.width) ||
+      !Number.isSafeInteger(source.height) ||
+      source.x < 0 ||
+      source.y < 0 ||
+      source.width < 1 ||
+      source.height < 1 ||
+      source.width * source.height >
+        MAX_GENERATE_CELLS
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `source must use non-negative integer coordinates, positive dimensions, and at most ${MAX_GENERATE_CELLS} cells.`,
+        { limit: MAX_GENERATE_CELLS },
+      );
+    }
+    if (
+      !Number.isSafeInteger(input.target.x) ||
+      !Number.isSafeInteger(input.target.y) ||
+      input.target.x < 0 ||
+      input.target.y < 0
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "target coordinates must be non-negative integers.",
+      );
+    }
+    const sourceMapPath = this.resolver.normalize(
+      input.sourceMapPath,
+    );
+    const sourceContext =
+      await this.loadEditableContext(
+        sourceMapPath,
+        {},
+      );
+    if (
+      input.expectedSourceRevision !==
+        undefined &&
+      sourceContext.loaded.revision !==
+        input.expectedSourceRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${sourceMapPath} does not match the expected source revision.`,
+        {
+          path: sourceMapPath,
+          expectedRevision:
+            input.expectedSourceRevision,
+          actualRevision:
+            sourceContext.loaded.revision,
+        },
+      );
+    }
+    if (
+      source.x + source.width >
+        sourceContext.width ||
+      source.y + source.height >
+        sourceContext.height
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `source must lie inside the ${sourceContext.width}x${sourceContext.height} source map.`,
+        {
+          mapWidth: sourceContext.width,
+          mapHeight: sourceContext.height,
+        },
+      );
+    }
+
+    const sourceLayer = findTileLayer(
+      sourceContext.loaded.document,
+      source.layerId,
+      sourceMapPath,
+      "read",
+    );
+    assertRegionInsideLayer(
+      sourceLayer,
+      source.x,
+      source.y,
+      source.width,
+      source.height,
+    );
+    const cells: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+    for (let y = 0; y < source.height; y += 1) {
+      for (let x = 0; x < source.width; x += 1) {
+        const gid = readLayerGid(
+          sourceLayer,
+          source.x + x,
+          source.y + y,
+        );
+        if (gid === 0 && input.copyEmpty !== true) {
+          continue;
+        }
+        cells.push({
+          x: input.target.x + x,
+          y: input.target.y + y,
+          tile: gidToTileRef(
+            gid,
+            sourceContext.orientation,
+            sourceContext.bindings,
+            sourceContext.embeddedBindings,
+          ),
+        });
+      }
+    }
+
+    const operations: MapEditOperation[] = [];
+    if (cells.length > 0) {
+      operations.push({
+        type: "setTiles",
+        layerId: input.target.layerId,
+        cells,
+      });
+    }
+    if (input.objects !== undefined) {
+      const sourceDocument =
+        sourceContext.loaded.document;
+      const tileWidth = expectInteger(
+        sourceDocument.tilewidth,
+        `${sourceMapPath}.tilewidth`,
+      );
+      const tileHeight = expectInteger(
+        sourceDocument.tileheight,
+        `${sourceMapPath}.tileheight`,
+      );
+      const targetMapPath =
+        this.resolver.normalize(input.mapPath);
+      if (targetMapPath !== sourceMapPath) {
+        const targetDocument = (
+          await this.loadEditableContext(
+            targetMapPath,
+            {
+              expectedMapRevision:
+                input.expectedMapRevision,
+              expectedDependencyRevisions:
+                input.expectedDependencyRevisions,
+            },
+          )
+        ).loaded.document;
+        // Object offsets are pixel math in tile units; differing grids
+        // would silently misplace every stamped object.
+        if (
+          expectInteger(
+            targetDocument.tilewidth,
+            `${targetMapPath}.tilewidth`,
+          ) !== tileWidth ||
+          expectInteger(
+            targetDocument.tileheight,
+            `${targetMapPath}.tileheight`,
+          ) !== tileHeight
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            "Object stamping requires the source and target maps to share the same tile size.",
+            {
+              sourceMapPath,
+              targetMapPath,
+            },
+          );
+        }
+      }
+      const objectLayer = findObjectLayer(
+        sourceDocument,
+        input.objects.sourceLayerId,
+        sourceMapPath,
+      );
+      const boundsLeft = source.x * tileWidth;
+      const boundsTop = source.y * tileHeight;
+      const boundsRight =
+        (source.x + source.width) * tileWidth;
+      const boundsBottom =
+        (source.y + source.height) * tileHeight;
+      const selected: JsonObject[] = [];
+      for (const [
+        entryIndex,
+        raw,
+      ] of objectLayer.objects.entries()) {
+        const record = expectObject(
+          raw,
+          `${sourceMapPath} layer ${input.objects.sourceLayerId} objects[${entryIndex}]`,
+        );
+        const rawX = record.x;
+        const rawY = record.y;
+        if (
+          typeof rawX === "number" &&
+          typeof rawY === "number" &&
+          rawX >= boundsLeft &&
+          rawX < boundsRight &&
+          rawY >= boundsTop &&
+          rawY < boundsBottom
+        ) {
+          selected.push(record);
+        }
+      }
+      if (selected.length > MAX_PREFAB_OBJECTS) {
+        throw new TiledMcpError(
+          "RESULT_LIMIT_EXCEEDED",
+          `The source region anchors ${selected.length} objects; a prefab stamp carries at most ${MAX_PREFAB_OBJECTS}.`,
+          { limit: MAX_PREFAB_OBJECTS },
+        );
+      }
+      const offsetX =
+        input.target.x * tileWidth - boundsLeft;
+      const offsetY =
+        input.target.y * tileHeight - boundsTop;
+      for (const [
+        rawIndex,
+        raw,
+      ] of selected.entries()) {
+        const draft = convertPrefabObject(
+          raw,
+          `${sourceMapPath} object ${String(raw.id ?? rawIndex)}`,
+          (gid) => {
+            const tile = gidToTileRef(
+              gid,
+              sourceContext.orientation,
+              sourceContext.bindings,
+              sourceContext.embeddedBindings,
+            );
+            if (tile === null) {
+              throw new TiledMcpError(
+                "GID_OUT_OF_RANGE",
+                `${sourceMapPath} object ${String(raw.id ?? rawIndex)} carries an unresolvable gid.`,
+                { gid },
+              );
+            }
+            return tile;
+          },
+        );
+        draft.x += offsetX;
+        draft.y += offsetY;
+        operations.push({
+          type: "createObject",
+          layerId: input.objects.targetLayerId,
+          object: draft,
+        });
+      }
+    }
+    if (operations.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The prefab stamp matched nothing; the source tile region is empty and no objects were requested.",
+      );
+    }
+    return this.planEdits(
+      input.mapPath,
+      input.expectedMapRevision,
+      input.expectedDependencyRevisions,
+      operations,
     );
   }
 

@@ -303,6 +303,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_shape` | 确定性几何画笔：Bresenham 线段/矩形描边与填充/中点椭圆，产出普通 `setTiles` change set；出界与超 10,000 cell fail closed |
 | `tiled_preview_generate` | 确定性 seed 程序化生成：value noise/细胞自动机洞穴/rooms-and-corridors 地牢（地板全连通）+ 区间映射 tile，产出普通 `setTiles` change set；同 seed 同输出、绝不用 Math.random |
 | `tiled_preview_scatter` | 确定性密度散布：坐标 hash 逐格判定 + 加权 tile 选择（可跳过已占用格、null 选择为擦除），产出普通 `setTiles` change set；同 seed 同输出、平移稳定 |
+| `tiled_preview_prefab` | 预制件盖章：把源地图一块区域（tile 连区域内锚定的 object）在规划期物化为普通 `setTiles`+`createObject` 操作盖到目标位置；apply 不回读源，不支持的对象成员 fail closed |
 | `tiled_preview_template` | 以 Tiled 最小序列化形态（`{id, template, x, y}`）放置一个 JSON `.tj` 模板实例；模板经与读取相同的 fail-closed profile 校验并 pin revision，apply 复核 pin 与相对引用解析 |
 | `tiled_list_property_types` | 读取 `.tiled-project` 的 class/enum 定义——复杂属性类型注解的权威来源 |
 | `tiled_preview_property_types` | 预览项目 class/enum 定义的 upsert/delete（id 分配对照官方 `++mNextId`；被定义间引用的类型删除 fail closed） |
