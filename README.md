@@ -280,6 +280,7 @@ storage 默认配额为 1 GiB，可用 `--checkpoint-bytes` 或
 | `tiled_preview_checkpoint_restore` | 校验单文件 checkpoint 并生成 destructive 恢复 change set；不直接写盘 |
 | `tiled_get_map_summary` | 读取 revision、根显示/元数据、图层树和 tileset asset id |
 | `tiled_analyze_usage` | 只读统计整张地图的 tile 使用、图层密度、变换位和未使用 local ID |
+| `tiled_check_connectivity` | 只读四向连通性分析：显式可通行定义（空 cell 或列举 tile 集）、连通分量统计与 from/to 可达判定 |
 | `tiled_get_tileset` | 按 map + asset id（或内嵌条目的 `embeddedIndex`）读取有界 atlas/稀疏 tile metadata（含 per-tile 标量属性值）/Wang 语义展开 |
 | `tiled_find_tiles` | 按 map + asset id 精确检索显式 class/property metadata，返回分页 `TileRef` |
 | `tiled_get_region` | 用 `TileRef` 读取有界矩形区域 |

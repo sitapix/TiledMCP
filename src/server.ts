@@ -275,6 +275,7 @@ import {
   tileFindToolOutputSchema,
   tilesetDetailToolOutputSchema,
   usageAnalysisToolOutputSchema,
+  connectivityToolOutputSchema,
 } from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
@@ -1616,6 +1617,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_get_object",
     "tiled_validate",
     "tiled_analyze_usage",
+    "tiled_check_connectivity",
     "tiled_create_map",
     "tiled_create_tileset",
     "tiled_delete_file",
@@ -4117,6 +4119,87 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async (input) =>
       executeTool(() =>
         maps.analyzeUsage(input as AnalyzeUsageInput),
+      ),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_check_connectivity",
+    {
+      title: "Check tile layer connectivity",
+      description:
+        "Bounded four-way connectivity analysis over one finite tile layer with explicit passability: either empty cells walk (mode empty-cells) or a listed tile set walks (mode listed-tiles, with includeEmpty opting empty cells in); flip bits never affect matching. Returns passable/blocked counts, connected components ranked by size with one representative cell each, and — when from/to are both given — whether they share a component. Read-only; endpoints on blocked cells fail closed.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          layerId: z.number().int().positive(),
+          passable: z.discriminatedUnion(
+            "mode",
+            [
+              z
+                .object({
+                  mode: z.literal(
+                    "empty-cells",
+                  ),
+                })
+                .strict(),
+              z
+                .object({
+                  mode: z.literal(
+                    "listed-tiles",
+                  ),
+                  tiles: z
+                    .array(tileRefSchema)
+                    .min(1)
+                    .max(64),
+                  includeEmpty: z
+                    .boolean()
+                    .optional(),
+                })
+                .strict(),
+            ],
+          ),
+          from: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+            })
+            .strict()
+            .optional(),
+          to: z
+            .object({
+              x: z.number().int().min(0),
+              y: z.number().int().min(0),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+      outputSchema: connectivityToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({
+      mapPath,
+      layerId,
+      passable,
+      from,
+      to,
+    }) =>
+      executeTool(() =>
+        maps.checkConnectivity({
+          mapPath,
+          layerId,
+          passable: passable as
+            | { mode: "empty-cells" }
+            | {
+                mode: "listed-tiles";
+                tiles: TileRef[];
+                includeEmpty?: boolean;
+              },
+          from,
+          to,
+        }),
       ),
   );
 

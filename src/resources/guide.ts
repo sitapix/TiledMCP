@@ -486,6 +486,18 @@ revision-pinned. The returned \`fileExport\` change set's
 re-runs the export under the same source pin and fails closed unless the
 bytes match exactly, then commits via no-replace creation.
 
+## Check layer connectivity
+
+\`tiled_check_connectivity\` runs a bounded four-way flood analysis
+over one finite tile layer with explicit passability: either empty
+cells walk (\`mode: "empty-cells"\`) or a listed tile set walks
+(\`mode: "listed-tiles"\`, with \`includeEmpty\` opting empty cells
+in); flip bits never affect matching. The result reports passable and
+blocked counts, connected components ranked by size with one
+representative cell each, and — when \`from\`/\`to\` are both given —
+whether the two cells share a component. Endpoints on blocked cells
+fail closed.
+
 ## Manage project property types
 
 \`tiled_list_property_types\` reads one \`.tiled-project\` file's

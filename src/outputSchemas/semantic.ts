@@ -857,6 +857,52 @@ const usageTilesetOutputSchema = z
   })
   .strict();
 
+const connectivityResultOutputSchema = z
+  .object({
+    mapPath: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    layer: z
+      .object({
+        id: positiveIntegerOutputSchema,
+        name: z.string(),
+      })
+      .strict(),
+    profile: z.literal(
+      "four-way-explicit-passability-v1",
+    ),
+    adjacency: z.literal("orthogonal-4-way"),
+    passableCellCount:
+      nonnegativeIntegerOutputSchema,
+    blockedCellCount:
+      nonnegativeIntegerOutputSchema,
+    componentCount:
+      nonnegativeIntegerOutputSchema,
+    largestComponentSize:
+      nonnegativeIntegerOutputSchema,
+    componentSamples: z
+      .array(
+        z
+          .object({
+            x: nonnegativeIntegerOutputSchema,
+            y: nonnegativeIntegerOutputSchema,
+            size: positiveIntegerOutputSchema,
+          })
+          .strict(),
+      )
+      .max(32),
+    componentSamplesTruncated: z.boolean(),
+    reachable: z.boolean().optional(),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const connectivityToolOutputSchema =
+  toolOutputSchema(
+    connectivityResultOutputSchema,
+  );
+
 const usageTopTileOutputSchema = z
   .object({
     tile: externalTileIdentityOutputSchema,

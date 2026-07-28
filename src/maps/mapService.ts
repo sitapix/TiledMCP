@@ -198,6 +198,10 @@ import {
   type PropertyTypeEditPlan,
   type PropertyTypeOperation,
 } from "./propertyTypes.js";
+import {
+  analyzeConnectivity,
+  MAX_PASSABLE_TILE_SELECTORS,
+} from "./connectivity.js";
 import { parseXmlDocument } from "../formats/xml.js";
 import {
   collectXmlTilesetReferences,
@@ -4569,6 +4573,170 @@ export class MapService {
     return {
       ...unsignedPlan,
       id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
+   * Bounded four-way connectivity analysis over one finite tile layer.
+   * Passability is explicit: either empty cells walk (non-empty block)
+   * or a listed tile set walks (everything else blocks, empty included
+   * only when listed via includeEmpty). Flip bits never affect
+   * passability — matching is by tileset and local id.
+   */
+  async checkConnectivity(input: {
+    mapPath: string;
+    layerId: number;
+    passable:
+      | { mode: "empty-cells" }
+      | {
+          mode: "listed-tiles";
+          tiles: TileRef[];
+          includeEmpty?: boolean | undefined;
+        };
+    from?: { x: number; y: number } | undefined;
+    to?: { x: number; y: number } | undefined;
+  }): Promise<Record<string, unknown>> {
+    if (
+      (input.from === undefined) !==
+      (input.to === undefined)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "from and to must be provided together.",
+      );
+    }
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        allowCollectionTilesets: true,
+        allowIsometric: true,
+      },
+    );
+    const layer = findTileLayer(
+      context.loaded.document,
+      input.layerId,
+      input.mapPath,
+      "read",
+    );
+    let passableKeys: Set<string> | undefined;
+    let includeEmpty = false;
+    if (input.passable.mode === "listed-tiles") {
+      const tiles = input.passable.tiles;
+      if (
+        !Array.isArray(tiles) ||
+        tiles.length === 0 ||
+        tiles.length > MAX_PASSABLE_TILE_SELECTORS
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `passable.tiles must list between 1 and ${MAX_PASSABLE_TILE_SELECTORS} tiles.`,
+          {
+            limit: MAX_PASSABLE_TILE_SELECTORS,
+          },
+        );
+      }
+      passableKeys = new Set();
+      for (const tile of tiles) {
+        const tilesetRef = tile.tileset;
+        if (tilesetRef.kind !== "external") {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            "passable.tiles must reference external tilesets.",
+          );
+        }
+        const binding = context.bindings.find(
+          (candidate) =>
+            candidate.assetId ===
+            tilesetRef.assetId,
+        );
+        if (binding === undefined) {
+          throw new TiledMcpError(
+            "TILESET_NOT_IN_MAP",
+            `Tileset ${tilesetRef.assetId} is not referenced by this map.`,
+            {
+              tilesetAssetId: tilesetRef.assetId,
+            },
+          );
+        }
+        passableKeys.add(
+          `${binding.assetId}:${tile.localId}`,
+        );
+      }
+      includeEmpty =
+        input.passable.includeEmpty === true;
+    }
+
+    const passable = new Uint8Array(
+      context.width * context.height,
+    );
+    for (let y = 0; y < context.height; y += 1) {
+      for (let x = 0; x < context.width; x += 1) {
+        const gid = readLayerGid(layer, x, y);
+        const tile = gidToTileRef(
+          gid,
+          context.orientation,
+          context.bindings,
+        );
+        let walkable: boolean;
+        if (passableKeys === undefined) {
+          walkable = tile === null;
+        } else if (tile === null) {
+          walkable = includeEmpty;
+        } else {
+          walkable =
+            tile.tileset.kind === "external" &&
+            passableKeys.has(
+              `${tile.tileset.assetId}:${tile.localId}`,
+            );
+        }
+        passable[y * context.width + x] = walkable
+          ? 1
+          : 0;
+      }
+    }
+
+    const endpoints =
+      input.from !== undefined &&
+      input.to !== undefined
+        ? { from: input.from, to: input.to }
+        : undefined;
+    if (endpoints !== undefined) {
+      for (const [label, point] of [
+        ["from", endpoints.from],
+        ["to", endpoints.to],
+      ] as const) {
+        if (
+          !Number.isSafeInteger(point.x) ||
+          !Number.isSafeInteger(point.y) ||
+          point.x < 0 ||
+          point.y < 0 ||
+          point.x >= context.width ||
+          point.y >= context.height
+        ) {
+          throw new TiledMcpError(
+            "INVALID_ARGUMENT",
+            `${label} must address a cell inside the ${context.width}x${context.height} map.`,
+            { [label]: point },
+          );
+        }
+      }
+    }
+    const analysis = analyzeConnectivity(
+      passable,
+      context.width,
+      context.height,
+      endpoints,
+    );
+    return {
+      mapPath: context.loaded.path,
+      revision: context.loaded.revision,
+      layer: { id: layer.id, name: layer.name },
+      profile:
+        "four-way-explicit-passability-v1",
+      adjacency: "orthogonal-4-way",
+      ...analysis,
+      snapshotConsistency:
+        "non-atomic-read-set",
     };
   }
 

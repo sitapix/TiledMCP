@@ -273,6 +273,26 @@
       "purpose": "\u5728\u540c\u4e00 map/dependency \u5feb\u7167\u4e0a\u5206\u6790 tile \u4f7f\u7528\u7387\u3001\u5bc6\u5ea6\u4e0e\u672a\u4f7f\u7528 local IDs\u3002"
     },
     {
+      "name": "tiled_check_connectivity",
+      "profile": "core",
+      "purpose": "Check whether two cells share a connected component when empty cells are walkable.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "layerId": 1,
+        "passable": {
+          "mode": "empty-cells"
+        },
+        "from": {
+          "x": 0,
+          "y": 0
+        },
+        "to": {
+          "x": 5,
+          "y": 3
+        }
+      }
+    },
+    {
       "name": "tiled_create_map",
       "profile": "core",
       "arguments": {
