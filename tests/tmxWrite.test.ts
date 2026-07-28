@@ -321,7 +321,19 @@ b</property>
    </properties>
   </object>`,
     );
-    // Object- and class-typed properties stay outside the profile.
+    // Object-typed properties render as their id; class-typed ones
+    // stay outside the profile (the CLI itself drops propertytype and
+    // drifts member types without project context).
+    const withObjectRef = goldenMap();
+    withObjectRef.properties = [
+      { name: "linked", type: "object", value: 3 },
+    ];
+    expect(
+      serializeTmxMap(withObjectRef, MAP_PATH),
+    ).toContain(
+      `<property name="linked" type="object" value="3"/>`,
+    );
+
     const withClassProperty = goldenMap();
     withClassProperty.properties = [
       {
@@ -643,6 +655,24 @@ describe("native TSX serialization and write", () => {
         "tiles/decor.tsj",
       ),
     ).toBe(GOLDEN_TSX);
+  });
+
+  it("serializes tileset-level properties before the image", () => {
+    const withProperties = goldenTileset();
+    withProperties.properties = [
+      { name: "kind", type: "string", value: "ground" },
+      { name: "cost", type: "int", value: 2 },
+    ];
+    expect(
+      serializeTsxTileset(
+        withProperties,
+        "tiles/decor.tsj",
+      ),
+    ).toContain(` <properties>
+  <property name="cost" type="int" value="2"/>
+  <property name="kind" value="ground"/>
+ </properties>
+ <image`);
   });
 
   it("fails closed on grids the exporter would rewrite and on per-tile data", () => {

@@ -223,6 +223,7 @@ import {
 } from "./scatter.js";
 import {
   convertPrefabObject,
+  convertPrefabProperties,
   MAX_PREFAB_OBJECTS,
 } from "./prefab.js";
 import {
@@ -8204,6 +8205,10 @@ export class MapService {
       );
       const targetMapPath =
         this.resolver.normalize(input.mapPath);
+      let targetNextObjectId = expectInteger(
+        sourceDocument.nextobjectid,
+        `${sourceMapPath}.nextobjectid`,
+      );
       if (targetMapPath !== sourceMapPath) {
         const targetDocument = (
           await this.loadEditableContext(
@@ -8217,6 +8222,10 @@ export class MapService {
             },
           )
         ).loaded.document;
+        targetNextObjectId = expectInteger(
+          targetDocument.nextobjectid,
+          `${targetMapPath}.nextobjectid`,
+        );
         // Object offsets are pixel math in tile units; differing grids
         // would silently misplace every stamped object.
         if (
@@ -8314,6 +8323,28 @@ export class MapService {
           layerId: input.objects.targetLayerId,
           object: draft,
         });
+        // createObject assigns ids sequentially from nextobjectid, so
+        // the follow-up property patch can address the new object; the
+        // revision pin makes the prediction stable through apply.
+        const properties =
+          convertPrefabProperties(
+            raw,
+            `${sourceMapPath} object ${String(raw.id ?? rawIndex)}`,
+          );
+        const assignedId = targetNextObjectId;
+        targetNextObjectId += 1;
+        if (
+          properties !== undefined &&
+          properties.length > 0
+        ) {
+          operations.push({
+            type: "updateObject",
+            objectId: assignedId,
+            patch: {
+              properties: { set: properties },
+            },
+          });
+        }
       }
     }
     if (operations.length === 0) {

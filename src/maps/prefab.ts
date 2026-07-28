@@ -29,6 +29,7 @@ const KNOWN_OBJECT_MEMBERS = new Set([
   "polyline",
   "text",
   "gid",
+  "properties",
 ]);
 
 const SHAPE_MARKERS = [
@@ -99,6 +100,92 @@ function readPathPoints(
  * dropped, so a stamp never loses data it did not understand. The
  * returned draft keeps the source pixel position; callers offset it.
  */
+const SCALAR_PROPERTY_TYPES = new Set([
+  "string",
+  "int",
+  "float",
+  "bool",
+  "color",
+  "file",
+]);
+
+export interface PrefabPropertyWrite {
+  name: string;
+  type:
+    | "string"
+    | "int"
+    | "float"
+    | "bool"
+    | "color"
+    | "file";
+  value: string | number | boolean;
+}
+
+/**
+ * Converts a source object's serialized properties into property
+ * writes for the standard updateObject patch. Only the six scalar
+ * types are expressible; class- and object-typed properties fail
+ * closed rather than being silently dropped.
+ */
+export function convertPrefabProperties(
+  raw: JsonObject,
+  context: string,
+): PrefabPropertyWrite[] | undefined {
+  if (raw.properties === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw.properties)) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context}.properties must be an array.`,
+    );
+  }
+  return raw.properties.map((entry, index) => {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      Array.isArray(entry)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_DOCUMENT",
+        `${context}.properties[${index}] must be an object.`,
+      );
+    }
+    const record = entry as JsonObject;
+    const name = record.name;
+    const type =
+      record.type === undefined
+        ? "string"
+        : record.type;
+    if (
+      typeof name !== "string" ||
+      typeof type !== "string" ||
+      !SCALAR_PROPERTY_TYPES.has(type)
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_OBJECT_PROFILE",
+        `${context}.properties[${index}] is outside the stamping profile; only scalar string/int/float/bool/color/file properties stamp.`,
+      );
+    }
+    const value = record.value;
+    if (
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "boolean"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_OBJECT_PROFILE",
+        `${context}.properties[${index}].value must be a scalar.`,
+      );
+    }
+    return {
+      name,
+      type: type as PrefabPropertyWrite["type"],
+      value,
+    };
+  });
+}
+
 export function convertPrefabObject(
   raw: JsonObject,
   context: string,
@@ -110,12 +197,7 @@ export function convertPrefabObject(
       `${context} is a template instance; stamp expanded objects or place the template with tiled_preview_template instead.`,
     );
   }
-  if (raw.properties !== undefined) {
-    throw new TiledMcpError(
-      "UNSUPPORTED_OBJECT_PROFILE",
-      `${context} carries custom properties, which a stamped draft cannot express; remove them or copy the object with tiled_preview_edits.`,
-    );
-  }
+
   const unknownMember = Object.keys(raw).find(
     (member) => !KNOWN_OBJECT_MEMBERS.has(member),
   );

@@ -542,7 +542,8 @@ map to TMX bytes that match Tiled 1.12.2's own writer byte for byte —
 no CLI involved. The profile covers finite orthogonal maps, external
 tileset references, CSV tile layers, and top-level tile/object layers
 the serializer fully understands, plus custom properties of the
-string/int/float/bool/color/file types (official writeProperties
+string/int/float/bool/color/file/object types (official
+writeProperties
 bytes: name-sorted, newline strings as element text); embedded
 tilesets, image and group layers, object- and class-typed properties,
 template instances, unknown members, and floats whose
@@ -562,7 +563,8 @@ writer, as a new sibling \`.tsx\` file. The declared grid must be
 derivable from the declared image size, margin, and spacing — the
 official exporter recomputes it, so a disagreeing declaration fails
 closed rather than drifting — and per-tile metadata, wang sets,
-properties, and unknown members fail closed. Apply re-serializes
+and unknown members fail closed (tileset-level scalar properties
+serialize before the image, byte-exact). Apply re-serializes
 under the pinned revision and hash-verifies, like
 \`tiled_preview_write_tmx\`.
 
@@ -722,10 +724,10 @@ front. Empty source cells are skipped unless \`copyEmpty\` stamps the
 rectangle verbatim as erasure; \`extraTileLayers\` stamps additional
 layer pairs over the same region in one plan, and \`flipHorizontal\`
 mirrors the tile stamp with official TileLayer::flip bit semantics
-(tile layers only — combining it with objects fails closed). Objects
-outside the supported draft profile (custom properties, template
-instances, unknown members) fail closed rather than being silently
-dropped.
+(tile layers only — combining it with objects fails closed). Scalar object
+properties stamp through a follow-up updateObject patch on the
+predicted new id; class-typed properties, template instances, and
+unknown members fail closed rather than being silently dropped.
 
 ## Draw geometric tile shapes
 

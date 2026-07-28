@@ -287,6 +287,7 @@ const PROPERTY_VALUE_TYPES = new Set([
   "bool",
   "color",
   "file",
+  "object",
 ]);
 
 /**
@@ -388,7 +389,8 @@ function serializeTmxProperties(
       line = `${indent}<property${attributes.toString()}/>`;
     } else if (
       type === "int" ||
-      type === "float"
+      type === "float" ||
+      type === "object"
     ) {
       const value = requireDouble(
         record.value,
@@ -396,7 +398,7 @@ function serializeTmxProperties(
       );
       attributes.add(
         "value",
-        type === "int"
+        type !== "float"
           ? String(
               requireInt(
                 value,
@@ -1088,6 +1090,7 @@ const KNOWN_TILESET_MEMBERS = new Set([
   "tilewidth",
   "type",
   "version",
+  "properties",
 ]);
 
 const OBJECT_ALIGNMENTS = new Set([
@@ -1269,13 +1272,22 @@ export function serializeTsxTileset(
     "height",
     String(imageHeight),
   );
-  return [
+  const lines: string[] = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<tileset${attributes.toString()}>`,
+  ];
+  serializeTmxProperties(
+    document.properties,
+    tilesetPath,
+    lines,
+    "  ",
+  );
+  lines.push(
     ` <image${imageAttributes.toString()}/>`,
-    "</tileset>",
-    "",
-  ].join("\n");
+  );
+  lines.push("</tileset>");
+  lines.push("");
+  return lines.join("\n");
 }
 
 /**

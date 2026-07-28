@@ -169,12 +169,19 @@ describe("prefab object conversion", () => {
         code: "UNSUPPORTED_OBJECT_PROFILE",
       }),
     );
+    // Scalar custom properties now stamp through a follow-up
+    // updateObject patch; class-typed ones still fail closed.
     expect(() =>
       convertPrefabObject(
         {
           id: 1,
           properties: [
-            { name: "hp", type: "int", value: 3 },
+            {
+              name: "cfg",
+              type: "class",
+              propertytype: "T",
+              value: {},
+            },
           ],
           x: 0,
           y: 0,
@@ -182,11 +189,7 @@ describe("prefab object conversion", () => {
         "o",
         DECODE_NONE,
       ),
-    ).toThrow(
-      expect.objectContaining({
-        code: "UNSUPPORTED_OBJECT_PROFILE",
-      }),
-    );
+    ).not.toThrow();
     expect(() =>
       convertPrefabObject(
         { id: 1, x: 0, y: 0, custommember: 1 },
@@ -379,6 +382,78 @@ describe("prefab stamping via map edits", () => {
     );
   });
 
+  it("stamps scalar object properties through a follow-up patch", async () => {
+    const harness = await createHarness(roots, {
+      chestProperties: [
+        { name: "hp", type: "int", value: 3 },
+        { name: "label", value: "loot" },
+      ],
+    });
+    const plan =
+      await harness.service.planStampPrefab({
+        mapPath: MAP_PATH,
+        sourceMapPath: MAP_PATH,
+        source: {
+          layerId: 1,
+          x: 0,
+          y: 0,
+          width: 2,
+          height: 2,
+        },
+        target: { layerId: 1, x: 3, y: 1 },
+        objects: {
+          sourceLayerId: 2,
+          targetLayerId: 2,
+        },
+        expectedMapRevision: harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      });
+    const update = plan.operations.find(
+      (operation) =>
+        operation.type === "updateObject",
+    );
+    expect(update).toMatchObject({
+      type: "updateObject",
+      objectId: 10,
+      patch: {
+        properties: {
+          set: [
+            { name: "hp", type: "int", value: 3 },
+            {
+              name: "label",
+              type: "string",
+              value: "loot",
+            },
+          ],
+        },
+      },
+    });
+    await harness.service.applyEdits(plan);
+    const saved = JSON.parse(
+      await readFile(
+        join(harness.root, MAP_PATH),
+        "utf8",
+      ),
+    ) as {
+      layers: Array<{ objects?: JsonObject[] }>;
+    };
+    const stamped =
+      saved.layers[1]!.objects!.find(
+        (object) => object.id === 10,
+      )!;
+    expect(stamped.properties).toEqual(
+      expect.arrayContaining([
+        { name: "hp", type: "int", value: 3 },
+        {
+          name: "label",
+          type: "string",
+          value: "loot",
+        },
+      ]),
+    );
+  });
+
   it("stamps flipped and multi-layer prefabs", async () => {
     const harness = await createHarness(roots);
     // Flip: source row 0 is [1, 2]; mirrored to [2^H, 1^H] at x 3..4.
@@ -531,6 +606,9 @@ describe("prefab stamping via map edits", () => {
 
 async function createHarness(
   roots: Set<string>,
+  options: {
+    chestProperties?: JsonObject[];
+  } = {},
 ): Promise<{
   root: string;
   service: MapService;
@@ -604,6 +682,13 @@ async function createHarness(
               width: 8,
               x: 8,
               y: 8,
+              ...(options.chestProperties ===
+              undefined
+                ? {}
+                : {
+                    properties:
+                      options.chestProperties,
+                  }),
             },
             {
               ellipse: true,
