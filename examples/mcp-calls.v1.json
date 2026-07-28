@@ -812,6 +812,16 @@
       }
     },
     {
+      "name": "tiled_preview_write_tx",
+      "profile": "core",
+      "purpose": "Serialize a restricted-profile .tj object template to Tiled 1.12.2 TX as a new sibling file, without the Tiled CLI.",
+      "arguments": {
+        "templatePath": "templates/crate.tj",
+        "targetPath": "templates/crate.tx",
+        "expectedTemplateRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
       "name": "tiled_preview_validation_fixes",
       "profile": "core",
       "purpose": "Erase every tile cell whose GID resolves to no bound tileset, as an approvable setTiles change set.",

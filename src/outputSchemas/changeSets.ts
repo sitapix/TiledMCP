@@ -3602,7 +3602,11 @@ const fileExportSummaryOutputSchema = z
   .object({
     sourcePath: projectPathOutputSchema,
     targetPath: projectPathOutputSchema,
-    exportKind: z.enum(["map", "tileset"]),
+    exportKind: z.enum([
+      "map",
+      "tileset",
+      "template",
+    ]),
     format: z
       .string()
       .regex(/^[a-z0-9]{1,16}$/u),
@@ -3636,6 +3640,7 @@ const fileExportPreviewOutputSchema = z
             exportKind: z.enum([
               "map",
               "tileset",
+              "template",
             ]),
             format: z
               .string()

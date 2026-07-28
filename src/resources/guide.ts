@@ -5,7 +5,7 @@ import { SERVER_VERSION } from "../version.js";
 
 export const GUIDE_RESOURCE_URI = "tiled://guide";
 export const GUIDE_RESOURCE_MIME_TYPE = "text/markdown";
-export const MAX_GUIDE_RESOURCE_BYTES = 96 * 1024;
+export const MAX_GUIDE_RESOURCE_BYTES = 128 * 1024;
 
 export const GUIDE_RESOURCE_TEXT = `# TiledMCP safe editing guide
 
@@ -561,6 +561,15 @@ Nothing fixable fails closed, as do more than 10,000 dangling cells —
 that scale points at a broken tileset reference, not at data worth
 erasing. Dangling tile-object GIDs are reported by \`tiled_validate\`
 but never auto-fixed.
+
+## Write TX templates natively
+
+\`tiled_preview_write_tx\` serializes one restricted-profile \`.tj\`
+object template to TX bytes following Tiled's writeObjectTemplate: a
+bare \`<template>\` root and the base object without id, x, or y,
+through the same object writer verified byte-exactly against official
+TMX exports. Tile and nested templates fail closed; apply re-serializes
+under the pinned revision and hash-verifies.
 
 ## Take explicit save points
 

@@ -505,7 +505,15 @@ function serializeObject(
   raw: JsonObject,
   context: string,
   lines: string[],
+  options: {
+    /** Indent for the <object> element itself. */
+    indent: string;
+    /** True for a template base: id, x, and y are not serialized. */
+    templateBase: boolean;
+  } = { indent: "  ", templateBase: false },
 ): void {
+  const indent = options.indent;
+  const childIndent = `${indent} `;
   assertKnownMembers(
     raw,
     KNOWN_OBJECT_MEMBERS,
@@ -544,8 +552,13 @@ function serializeObject(
   }
 
   const attributes = new Attributes();
-  const id = requireInt(raw.id, `${context}.id`);
-  attributes.add("id", String(id));
+  if (!options.templateBase) {
+    const id = requireInt(
+      raw.id,
+      `${context}.id`,
+    );
+    attributes.add("id", String(id));
+  }
   const name = requireString(
     raw.name ?? "",
     `${context}.name`,
@@ -570,20 +583,22 @@ function serializeObject(
     }
     attributes.add("gid", String(gid));
   }
-  attributes.add(
-    "x",
-    formatQtDouble(
-      requireDouble(raw.x, `${context}.x`),
-      `${context}.x`,
-    ),
-  );
-  attributes.add(
-    "y",
-    formatQtDouble(
-      requireDouble(raw.y, `${context}.y`),
-      `${context}.y`,
-    ),
-  );
+  if (!options.templateBase) {
+    attributes.add(
+      "x",
+      formatQtDouble(
+        requireDouble(raw.x, `${context}.x`),
+        `${context}.x`,
+      ),
+    );
+    attributes.add(
+      "y",
+      formatQtDouble(
+        requireDouble(raw.y, `${context}.y`),
+        `${context}.y`,
+      ),
+    );
+  }
   const width =
     raw.width === undefined
       ? 0
@@ -643,7 +658,7 @@ function serializeObject(
     marker === "gid"
   ) {
     lines.push(
-      `  <object${attributes.toString()}/>`,
+      `${indent}<object${attributes.toString()}/>`,
     );
     return;
   }
@@ -725,12 +740,12 @@ function serializeObject(
       `${context}.text.text`,
     );
     lines.push(
-      `  <object${attributes.toString()}>`,
+      `${indent}<object${attributes.toString()}>`,
     );
     lines.push(
-      `   <text${textAttributes.toString()}>${escapeText(fields.text)}</text>`,
+      `${childIndent}<text${textAttributes.toString()}>${escapeText(fields.text)}</text>`,
     );
-    lines.push("  </object>");
+    lines.push(`${indent}</object>`);
     return;
   }
   if (
@@ -769,19 +784,19 @@ function serializeObject(
       })
       .join(" ");
     lines.push(
-      `  <object${attributes.toString()}>`,
+      `${indent}<object${attributes.toString()}>`,
     );
     lines.push(
-      `   <${marker} points="${rendered}"/>`,
+      `${childIndent}<${marker} points="${rendered}"/>`,
     );
-    lines.push("  </object>");
+    lines.push(`${indent}</object>`);
     return;
   }
   lines.push(
-    `  <object${attributes.toString()}>`,
+    `${indent}<object${attributes.toString()}>`,
   );
-  lines.push(`   <${marker}/>`);
-  lines.push("  </object>");
+  lines.push(`${childIndent}<${marker}/>`);
+  lines.push(`${indent}</object>`);
 }
 
 function serializeObjectLayer(
@@ -1057,6 +1072,68 @@ export function serializeTsxTileset(
     "</tileset>",
     "",
   ].join("\n");
+}
+
+/**
+ * Serializes one restricted-profile JSON object template (.tj) to TX
+ * bytes following Tiled 1.12.2's writeObjectTemplate exactly: a bare
+ * <template> root and the base object serialized without id, x, or y
+ * (isTemplateBase). Tile templates carry a tileset child in Tiled and
+ * fail closed here, matching the template reading profile; unknown
+ * members fail closed too. The object writer is the same code path
+ * verified byte-exactly against official TMX exports.
+ */
+export function serializeTxTemplate(
+  document: JsonObject,
+  templatePath: string,
+): string {
+  if (document.type !== "template") {
+    fail(
+      `${templatePath} is not a Tiled object template.`,
+    );
+  }
+  const unknown = Object.keys(document).find(
+    (member) =>
+      member !== "type" && member !== "object",
+  );
+  if (unknown !== undefined) {
+    fail(
+      `${templatePath}.${unknown} is outside the TX writer profile; tile templates carry a tileset and are not writable.`,
+    );
+  }
+  const object = expectObject(
+    document.object,
+    `${templatePath}.object`,
+  );
+  if (object.gid !== undefined) {
+    fail(
+      `${templatePath} templates a tile object, which is outside the TX writer profile.`,
+    );
+  }
+  if (object.template !== undefined) {
+    fail(
+      `${templatePath} nests another template reference.`,
+    );
+  }
+  const lines: string[] = [];
+  lines.push(
+    '<?xml version="1.0" encoding="UTF-8"?>',
+  );
+  lines.push("<template>");
+  // The base object may serialize id/x/y members; Tiled ignores them
+  // for template bases, so drop them before the strict member check.
+  const base: JsonObject = { ...object };
+  delete base.id;
+  delete base.x;
+  delete base.y;
+  serializeObject(
+    base,
+    `${templatePath}.object`,
+    lines,
+    { indent: " ", templateBase: true },
+  );
+  lines.push("</template>");
+  return `${lines.join("\n")}\n`;
 }
 
 /**

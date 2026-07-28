@@ -1247,7 +1247,7 @@ type OperationPreview =
       producer: "tiled-cli" | "native";
       sourcePath: string;
       targetPath: string;
-      exportKind: "map" | "tileset";
+      exportKind: "map" | "tileset" | "template";
       format: string;
       contentBytes: number;
     }

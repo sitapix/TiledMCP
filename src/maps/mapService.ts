@@ -170,6 +170,7 @@ import {
 import {
   serializeTmxMap,
   serializeTsxTileset,
+  serializeTxTemplate,
 } from "./tmxWrite.js";
 import {
   MAX_ISOMETRIC_REGION_CELLS,
@@ -5107,6 +5108,112 @@ export class MapService {
   }
 
   /**
+   * Native TX write: serializes one restricted-profile .tj object
+   * template to TX bytes following Tiled 1.12.2's writeObjectTemplate
+   * (template base objects drop id/x/y), as a new sibling .tx file.
+   * Tile templates and nested templates fail closed.
+   */
+  async planWriteTx(input: {
+    templatePath: string;
+    targetPath: string;
+    expectedTemplateRevision: string;
+  }): Promise<FileExportPlan> {
+    assertRequiredRevision(
+      input.expectedTemplateRevision,
+      "expectedTemplateRevision",
+    );
+    const sourcePath = this.resolver.normalize(
+      input.templatePath,
+    );
+    const targetPath = this.resolver.normalize(
+      input.targetPath,
+    );
+    if (
+      posix.extname(sourcePath).toLowerCase() !==
+      ".tj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Native TX writing reads project .tj templates.",
+        { path: sourcePath },
+      );
+    }
+    if (
+      posix.extname(targetPath).toLowerCase() !==
+      ".tx"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "The native TX write target must use the .tx extension.",
+        { path: targetPath },
+      );
+    }
+    if (
+      posix.dirname(targetPath) !==
+      posix.dirname(sourcePath)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "The TX target must live in the source template's directory.",
+        { sourcePath, targetPath },
+      );
+    }
+    const snapshot =
+      await this.store.read(sourcePath);
+    if (
+      snapshot.revision !==
+      input.expectedTemplateRevision
+    ) {
+      throw new TiledMcpError(
+        "REVISION_CONFLICT",
+        `${sourcePath} does not match the expected template revision.`,
+        {
+          path: sourcePath,
+          expectedRevision:
+            input.expectedTemplateRevision,
+          actualRevision: snapshot.revision,
+        },
+      );
+    }
+    await this.assertExportTargetAbsent(
+      targetPath,
+    );
+    const content = Buffer.from(
+      serializeTxTemplate(
+        snapshot.document,
+        sourcePath,
+      ),
+      "utf8",
+    );
+    const unsignedPlan: Omit<
+      FileExportPlan,
+      "id"
+    > = {
+      kind: "fileExport",
+      version: 1,
+      producer: "native",
+      sourcePath,
+      sourceRevision: snapshot.revision,
+      targetPath,
+      exportKind: "template",
+      format: "tx",
+      baseRevision: revisionOf(content),
+      summary: {
+        sourcePath,
+        targetPath,
+        exportKind: "template",
+        format: "tx",
+        contentBytes: content.byteLength,
+        wouldChange: true,
+      },
+    };
+    return {
+      ...unsignedPlan,
+      id: fileExportPlanId(unsignedPlan),
+    };
+  }
+
+  /**
    * Dedicated isometric tile-layer renderer using the exact Tiled
    * 1.12.2 IsometricRenderer placement math. The profile is strict:
    * finite isometric TMJ maps, external atlas tilesets whose tile size
@@ -7296,7 +7403,9 @@ export class MapService {
         ? Buffer.from(
             (plan.exportKind === "tileset"
               ? serializeTsxTileset
-              : serializeTmxMap)(
+              : plan.exportKind === "template"
+                ? serializeTxTemplate
+                : serializeTmxMap)(
               (
                 await this.store.read(
                   plan.sourcePath,
@@ -7308,7 +7417,11 @@ export class MapService {
           )
         : await this.runExport(
             runner,
-            plan.exportKind,
+            // CLI plans never carry the template kind — only the
+            // native producer creates it.
+            plan.exportKind as
+              | "map"
+              | "tileset",
             plan.format,
             plan.sourcePath,
             plan.sourceRevision,

@@ -21,7 +21,7 @@ const FILE_EXPORT_PLAN_HASH_DOMAIN =
 export interface FileExportSummary {
   sourcePath: string;
   targetPath: string;
-  exportKind: "map" | "tileset";
+  exportKind: "map" | "tileset" | "template";
   format: string;
   contentBytes: number;
   wouldChange: true;
@@ -44,7 +44,7 @@ export interface FileExportPlan {
    */
   sourceRevision: string;
   targetPath: string;
-  exportKind: "map" | "tileset";
+  exportKind: "map" | "tileset" | "template";
   format: string;
   /**
    * Raw SHA-256 of the exact approved export bytes. There is no existing
@@ -79,7 +79,8 @@ export function assertFileExportPlan(
     typeof plan.sourceRevision !== "string" ||
     typeof plan.targetPath !== "string" ||
     (plan.exportKind !== "map" &&
-      plan.exportKind !== "tileset") ||
+      plan.exportKind !== "tileset" &&
+      plan.exportKind !== "template") ||
     typeof plan.format !== "string" ||
     !EXPORT_FORMAT_PATTERN.test(plan.format) ||
     typeof plan.baseRevision !== "string" ||

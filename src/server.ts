@@ -1638,6 +1638,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_template",
     "tiled_preview_write_tmx",
     "tiled_preview_write_tsx",
+    "tiled_preview_write_tx",
     "tiled_preview_validation_fixes",
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
@@ -5666,6 +5667,41 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           tilesetPath,
           targetPath,
           expectedTilesetRevision,
+        });
+        return changeSets.put(plan);
+      }),
+  );
+
+  register(
+    server,
+    registeredTools,
+    "tiled_preview_write_tx",
+    {
+      title: "Preview a native TX write",
+      description:
+        "Serializes one restricted-profile project .tj object template to TX bytes following Tiled 1.12.2's writeObjectTemplate exactly: a bare <template> root with the base object serialized without id, x, or y, through the same object writer verified byte-exactly against official TMX exports. Tile templates (which carry a tileset) and nested templates fail closed, matching the template reading profile. The .tx target must be a new file in the source template's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
+      inputSchema: z
+        .object({
+          templatePath: projectPathSchema,
+          targetPath: projectPathSchema,
+          expectedTemplateRevision:
+            revisionSchema,
+        })
+        .strict(),
+      outputSchema:
+        fileExportPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      templatePath,
+      targetPath,
+      expectedTemplateRevision,
+    }) =>
+      executeTool(async () => {
+        const plan = await maps.planWriteTx({
+          templatePath,
+          targetPath,
+          expectedTemplateRevision,
         });
         return changeSets.put(plan);
       }),

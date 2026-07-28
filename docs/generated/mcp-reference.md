@@ -14,8 +14,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 46 tools
-- `with-tmxrasterizer`: 49 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 47 tools
+- `with-tmxrasterizer`: 50 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -191,9 +191,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:13bfe8560e4f4027d3623f85878b28840cbe83aadb7b660cc5cdb39959e80b16",
+    "revision": "sha256:ca64535f4d95074335a8fc9406adac4e52a91ccc040ff9626029146f6b2813ab",
     "serverVersion": "0.0.1",
-    "size": 98284
+    "size": 98702
   },
   "annotations": {
     "audience": [
@@ -205,7 +205,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 98284,
+  "size": 98702,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +213,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 98284 UTF-8 bytes, revision `sha256:13bfe8560e4f4027d3623f85878b28840cbe83aadb7b660cc5cdb39959e80b16`.
+Content contract: `text`, 98702 UTF-8 bytes, revision `sha256:ca64535f4d95074335a8fc9406adac4e52a91ccc040ff9626029146f6b2813ab`.
 
 Resource templates: none.
 
@@ -13469,6 +13469,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_write_tx",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_preview_validation_fixes",
                       "type": "string"
                     },
@@ -13655,6 +13659,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_write_tsx",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_write_tx",
                       "type": "string"
                     },
                     {
@@ -13848,6 +13856,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_write_tsx",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_write_tx",
                       "type": "string"
                     },
                     {
@@ -14045,6 +14057,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_write_tsx",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_write_tx",
                       "type": "string"
                     },
                     {
@@ -36468,7 +36484,8 @@ Output schema:
                   "exportKind": {
                     "enum": [
                       "map",
-                      "tileset"
+                      "tileset",
+                      "template"
                     ],
                     "type": "string"
                   },
@@ -36543,7 +36560,8 @@ Output schema:
                 "exportKind": {
                   "enum": [
                     "map",
-                    "tileset"
+                    "tileset",
+                    "template"
                   ],
                   "type": "string"
                 },
@@ -81116,7 +81134,8 @@ Output schema:
                   "exportKind": {
                     "enum": [
                       "map",
-                      "tileset"
+                      "tileset",
+                      "template"
                     ],
                     "type": "string"
                   },
@@ -81191,7 +81210,8 @@ Output schema:
                 "exportKind": {
                   "enum": [
                     "map",
-                    "tileset"
+                    "tileset",
+                    "template"
                   ],
                   "type": "string"
                 },
@@ -81548,7 +81568,8 @@ Output schema:
                   "exportKind": {
                     "enum": [
                       "map",
-                      "tileset"
+                      "tileset",
+                      "template"
                     ],
                     "type": "string"
                   },
@@ -81623,7 +81644,442 @@ Output schema:
                 "exportKind": {
                   "enum": [
                     "map",
-                    "tileset"
+                    "tileset",
+                    "template"
+                  ],
+                  "type": "string"
+                },
+                "format": {
+                  "pattern": "^[a-z0-9]{1,16}$",
+                  "type": "string"
+                },
+                "sourcePath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "targetPath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "wouldChange": {
+                  "const": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "sourcePath",
+                "targetPath",
+                "exportKind",
+                "format",
+                "contentBytes",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "targetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "sourcePath",
+            "sourceRevision",
+            "targetPath",
+            "expectedRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_preview_write_tx`
+
+Availability: `core`
+
+Serializes one restricted-profile project .tj object template to TX bytes following Tiled 1.12.2's writeObjectTemplate exactly: a bare <template> root with the base object serialized without id, x, or y, through the same object writer verified byte-exactly against official TMX exports. Tile templates (which carry a tileset) and nested templates fail closed, matching the template reading profile. The .tx target must be a new file in the source template's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: Serialize a restricted-profile .tj object template to Tiled 1.12.2 TX as a new sibling file, without the Tiled CLI.
+
+```json
+{
+  "arguments": {
+    "expectedTemplateRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "targetPath": "templates/crate.tx",
+    "templatePath": "templates/crate.tj"
+  },
+  "name": "tiled_preview_write_tx"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "expectedTemplateRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "targetPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "templatePath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "templatePath",
+    "targetPath",
+    "expectedTemplateRevision"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "fileExport",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "contentBytes": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "destructive": {
+                    "const": false,
+                    "type": "boolean"
+                  },
+                  "exportKind": {
+                    "enum": [
+                      "map",
+                      "tileset",
+                      "template"
+                    ],
+                    "type": "string"
+                  },
+                  "format": {
+                    "pattern": "^[a-z0-9]{1,16}$",
+                    "type": "string"
+                  },
+                  "producer": {
+                    "enum": [
+                      "tiled-cli",
+                      "native"
+                    ],
+                    "type": "string"
+                  },
+                  "sourcePath": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "targetPath": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "exportFile",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "producer",
+                  "sourcePath",
+                  "targetPath",
+                  "exportKind",
+                  "format",
+                  "contentBytes"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "sourcePath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sourceRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "contentBytes": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "exportKind": {
+                  "enum": [
+                    "map",
+                    "tileset",
+                    "template"
                   ],
                   "type": "string"
                 },

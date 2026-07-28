@@ -24,6 +24,7 @@ import {
   formatQtDouble,
   serializeTmxMap,
   serializeTsxTileset,
+  serializeTxTemplate,
 } from "../src/maps/tmxWrite.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
@@ -686,6 +687,135 @@ describe("native TSX serialization and write", () => {
       ).toBe(await readFile(cliTarget, "utf8"));
     },
   );
+});
+
+describe("native TX template serialization and write", () => {
+  const roots = new Set<string>();
+
+  afterEach(async () => {
+    await Promise.all(
+      [...roots].map((root) =>
+        rm(root, { recursive: true, force: true }),
+      ),
+    );
+    roots.clear();
+  });
+
+  const template = (): JsonObject => ({
+    type: "template",
+    object: {
+      id: 0,
+      name: "Crate",
+      type: "Prop",
+      width: 12,
+      height: 8,
+      rotation: 45,
+      visible: false,
+      ellipse: true,
+      x: 0,
+      y: 0,
+    },
+  });
+  const goldenTx = `<?xml version="1.0" encoding="UTF-8"?>
+<template>
+ <object name="Crate" type="Prop" width="12" height="8" rotation="45" visible="0">
+  <ellipse/>
+ </object>
+</template>
+`;
+
+  it("serializes template bases without id, x, or y", () => {
+    expect(
+      serializeTxTemplate(
+        template(),
+        "templates/crate.tj",
+      ),
+    ).toBe(goldenTx);
+  });
+
+  it("fails closed on tile and nested templates", () => {
+    const tileTemplate: JsonObject = {
+      type: "template",
+      tileset: {
+        firstgid: 1,
+        source: "../tiles/decor.tsj",
+      },
+      object: { id: 0, gid: 1, x: 0, y: 0 },
+    };
+    expect(() =>
+      serializeTxTemplate(
+        tileTemplate,
+        "templates/crate.tj",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FORMAT",
+      }),
+    );
+    const nested: JsonObject = {
+      type: "template",
+      object: {
+        id: 0,
+        template: "other.tj",
+        x: 0,
+        y: 0,
+      },
+    };
+    expect(() =>
+      serializeTxTemplate(
+        nested,
+        "templates/crate.tj",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FORMAT",
+      }),
+    );
+  });
+
+  it("plans and applies a sibling .tx", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "tiledmcp-tx-write-"),
+    );
+    roots.add(root);
+    await mkdir(join(root, "templates"));
+    await writeFile(
+      join(root, "templates/crate.tj"),
+      serializeJsonDocument(template()),
+    );
+    const resolver =
+      await ProjectPathResolver.create(root);
+    const store = new DocumentStore(resolver);
+    const service = new MapService(
+      resolver,
+      store,
+    );
+    const revision = (
+      await store.read("templates/crate.tj")
+    ).revision;
+    const plan = await service.planWriteTx({
+      templatePath: "templates/crate.tj",
+      targetPath: "templates/crate.tx",
+      expectedTemplateRevision: revision,
+    });
+    expect(plan).toMatchObject({
+      producer: "native",
+      exportKind: "template",
+      format: "tx",
+    });
+    await service.applyExportFile(
+      plan,
+      (): never => {
+        throw new Error("unused");
+      },
+    );
+    expect(
+      await readFile(
+        join(root, "templates/crate.tx"),
+        "utf8",
+      ),
+    ).toBe(goldenTx);
+  });
 });
 
 interface Harness {
