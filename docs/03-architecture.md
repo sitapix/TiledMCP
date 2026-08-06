@@ -753,6 +753,42 @@ the negative cases — a test that calls `MapService` directly does not exercise
 all and will not catch the failure. Both assert the summary's key set *exactly*, which is what
 proves no optional member appeared; a `toMatchObject` would pass even when one did.
 
+### Deduplicating input schemas with `$ref` does not pay — measured
+
+The tool surface costs ~117 KB of model context per session: 87,327 bytes of input schemas, 29,014
+of descriptions, 1,117 of names. The obvious lever looks like deduplication — `projectPathSchema`
+is inlined 54 times across the surface, `revisionSchema` 50 times, and the `.meta({ id })`
+mechanism that already emits `#/definitions/TileRef` would collapse them.
+
+It was tried, measured, and reverted. Counting repeats *across the surface* says ~19,500 bytes are
+recoverable; the real figure is **362 bytes**. The error is that `definitions` is per-tool — each
+tool's `inputSchema` is an independent document, so there is no cross-tool sharing. What matters is
+repeats *within one tool*, and the common scalars appear about 1.3 times per tool:
+
+| schema | uses | tools | avg/tool | net |
+|---|---|---|---|---|
+| `projectPathSchema` | 54 | 43 | 1.3 | **−1,060** |
+| `uint32Schema` | 7 | 7 | 1.0 | **−287** |
+| `coordinateOrdinateSchema` | 61 | 5 | 12.2 | +627 |
+| `revisionSchema` | 50 | 26 | 1.9 | +774 |
+
+Extracting a schema used once in a tool costs a `definitions` entry *plus* a `$ref` where an inline
+constraint used to be — strictly worse. Only a schema concentrated in few tools wins, and even the
+profitable subset netted 362 bytes, 0.3% of the surface. Do not re-attempt this without a
+per-tool-repeat count; a surface-wide count will mislead by roughly 50×.
+
+Two mechanics worth keeping, since they are not obvious. `.meta()` does **not** propagate to
+derived schemas, so `safeIntegerSchema.min(1)` needs its own id to be extracted. And the emitted
+dialect is draft-07, where a `$ref` sibling is ignored — but Zod emits a narrowed derivative as
+`{"minimum":1,"allOf":[{"$ref":…}]}` rather than as a sibling, so constraints layered on an id'd
+base are preserved rather than silently widened.
+
+`tests/schemaRefIntegrity.test.ts` survives from that work and is worth keeping regardless: it
+fails on a `$ref` that resolves to nothing and on a `definitions` entry nothing references, over a
+live server. A dangling ref breaks at the client rather than here, and commit 50fecd0 had to repair
+exactly that by hand. Its third case pins the detectors against a known-broken schema, because two
+all-clear assertions and a detector that silently finds nothing look identical.
+
 ## 16. Configuration
 
 | Setting | Purpose | Default |
