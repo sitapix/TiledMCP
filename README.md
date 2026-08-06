@@ -66,10 +66,6 @@ the sheet with every tile labeled by its local ID, so it picks tiles by looking 
 not by guessing. Every edit comes back as a preview you approve before anything is
 written.
 
-Running from a clone instead (for development): `pnpm install --frozen-lockfile && pnpm build`,
-then use `node /absolute/path/to/TiledMCP/dist/index.js` as the command in place of
-`npx -y tiled-mcp-server`.
-
 ## Status
 
 Version 0.0.1. The interface is a draft and is not frozen.
