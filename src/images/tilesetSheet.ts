@@ -20,7 +20,8 @@ export const MAX_TILESET_INPUT_PIXELS = 4_096 * 4_096;
 export const MAX_TILESET_INPUT_EDGE = 8_192;
 export const MAX_TILESET_SHEET_EDGE = 2_048;
 export const MAX_TILESET_SHEET_PIXELS = 1_500_000;
-export const MAX_TILESET_SHEET_BYTES = 8 * 1024 * 1024;
+/** Held to the inline-image ceiling; see `MAX_RASTER_PNG_BYTES`. */
+export const MAX_TILESET_SHEET_BYTES = 7 * 1024 * 1024;
 export const MAX_TILESET_SHEET_PAGE_SIZE = 256;
 export const DEFAULT_TILESET_SHEET_PAGE_SIZE = 64;
 export const MAX_TILESET_SHEET_COLUMNS = 32;

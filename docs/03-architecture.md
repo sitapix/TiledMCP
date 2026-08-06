@@ -686,6 +686,36 @@ Test layers:
 6. **Security** — hostile JSON, compression, images, paths, symlink races, timeouts, subprocess
    output floods.
 
+### Preview output-schema breadth is deliberate
+
+Nine preview tools share `previewEditsToolOutputSchema`, the generic `mapEdit` union, at roughly
+74 KB apiece — about half of all output-schema bytes in `tools/list`. That repetition is a
+considered trade, not an oversight, and it should stay unless someone brings evidence.
+
+Narrowing a tool means proving two things: which operation kinds it can emit, and which optional
+summary members it can populate. The first is usually easy to read off a planner. The second is
+not — `transcodes` and `chunkedTileLayerIds` depend on the target layer's encoding and on whether
+the map is infinite, so the reachable set is a property of the caller's project, not of the tool.
+
+The asymmetry that matters is how a wrong guess fails. `register()` validates the handler's
+`structuredContent` against the declared output schema and turns a mismatch into `INTERNAL_ERROR`
+with empty details. An over-tight output schema therefore does not fail loudly at review time; it
+fails in production, on someone's map, as an opaque error with no indication that a schema is
+responsible. Breadth is the safe direction.
+
+The payoff for getting it right is also smaller than it looks. `outputSchema` is not part of the
+Anthropic Messages API tool definition — that carries `name`, `description`, and `input_schema` —
+so this breadth costs transport bytes on one `tools/list` per session, not model context. The
+number worth watching is the ~90 KB of *input* schemas, where `tiled_preview_edits` alone is
+about a quarter of the total.
+
+`tiled_preview_shape` is the one narrowed case, and only halfway: `MapService.planDrawShape` calls
+`planEdits` with a hardcoded single-element `[{ type: "setTiles" }]` that `planEdits` deep-copies
+straight into the plan, so `operations` is provably a one-element tuple. Its `summary` stays on
+the generic union for the reason above. Narrow another tool only behind end-to-end coverage
+through the MCP surface — `tests/previewShape.test.ts` is the pattern; a test that calls
+`MapService` directly does not exercise output validation at all and will not catch the failure.
+
 ## 16. Configuration
 
 | Setting | Purpose | Default |
