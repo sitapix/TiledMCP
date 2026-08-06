@@ -12,6 +12,60 @@ Two rules shape everything else:
 - **Undefined semantics fail closed.** Where Tiled 1.12.2's own behavior is ambiguous or
   unimplemented, the server errors instead of approximating.
 
+## Quickstart
+
+All you need is Node.js 20.19+. Tiled itself is **not** required — everything runs on a
+built-in JSON and PNG path (installing Tiled later just unlocks two extra tools).
+
+**1. Pick a project folder.** Any directory holding your `.tmj` maps, `.tsj` tilesets,
+and tile images — or an empty one you want maps created in. The server treats it as a
+hard sandbox and never touches anything outside it.
+
+**2. Connect your client.**
+
+Claude Code:
+
+```bash
+claude mcp add tiled -- npx -y tiled-mcp-server --project-dir /absolute/path/to/your/tiled-project
+```
+
+Claude Desktop or any client with JSON config:
+
+```json
+{
+  "mcpServers": {
+    "tiled": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tiled-mcp-server",
+        "--project-dir",
+        "/absolute/path/to/your/tiled-project"
+      ]
+    }
+  }
+}
+```
+
+The first `npx` run downloads the package, so the first connection takes a moment;
+after that it starts from the cache. To poke at the tools by hand instead, use the
+MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector npx -y tiled-mcp-server --project-dir /absolute/path/to/your/tiled-project
+```
+
+**3. Try it.** Drop a tilesheet PNG into the project folder and ask your assistant to
+*"build a map from tiles/sheet.png — tiles are 16×16"*, or invoke the
+`create_map_from_tilesheet` prompt, which carries the whole sequence. The model renders
+the sheet with every tile labeled by its local ID, so it picks tiles by looking at them,
+not by guessing. Every edit comes back as a preview you approve before anything is
+written.
+
+Running from a clone instead (for development): `pnpm install --frozen-lockfile && pnpm build`,
+then use `node /absolute/path/to/TiledMCP/dist/index.js` as the command in place of
+`npx -y tiled-mcp-server`.
+
 ## Status
 
 Version 0.0.1. The interface is a draft and is not frozen.
@@ -21,30 +75,7 @@ Version 0.0.1. The interface is a draft and is not frozen.
 including `tiled_preview_terrain`, runs on the built-in JSON and PNG path with no
 external binary. The suite is 1,524 passing tests across 123 files.
 
-## Install
-
-Requires Node.js 20.19+ and pnpm 11.
-
-```bash
-pnpm install --frozen-lockfile
-pnpm build
-node dist/index.js --project-dir /absolute/path/to/your/tiled-project
-```
-
-```json
-{
-  "mcpServers": {
-    "tiled": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/TiledMCP/dist/index.js",
-        "--project-dir",
-        "/absolute/path/to/your/tiled-project"
-      ]
-    }
-  }
-}
-```
+## Configuration
 
 Transport is stdio. stdout carries MCP protocol only; diagnostics go to stderr.
 `--project-dir` (or `TILED_PROJECT_DIR`) is required and defines a hard sandbox: paths

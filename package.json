@@ -1,18 +1,41 @@
 {
-  "name": "tiled-mcp",
+  "name": "tiled-mcp-server",
   "version": "0.0.1",
-  "private": true,
   "description": "A safety-first MCP server for inspecting and editing Tiled maps.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sitapix/TiledMCP.git"
+  },
+  "homepage": "https://github.com/sitapix/TiledMCP#readme",
+  "bugs": {
+    "url": "https://github.com/sitapix/TiledMCP/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "tiled",
+    "tilemap",
+    "tmx",
+    "tmj",
+    "map-editor",
+    "gamedev"
+  ],
   "type": "module",
   "bin": {
-    "tiled-mcp": "./dist/index.js"
+    "tiled-mcp-server": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "contract:check": "tsx scripts/generate-mcp-contract.ts --check",
     "contract:generate": "tsx scripts/generate-mcp-contract.ts --write",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "prepublishOnly": "pnpm run verify",
     "pretest": "pnpm run contract:check && pnpm run build",
     "test": "vitest run",
     "test:watch": "vitest --exclude tests/stdio.test.ts",
