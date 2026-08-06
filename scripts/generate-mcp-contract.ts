@@ -693,10 +693,12 @@ function assertProfileInvariants(
   assertStringArraysEqual(
     core.prompts.map(({ name }) => name),
     // Registration order is the advertised order, and it is deliberate:
-    // the flagship build workflow first, the setup it depends on second,
-    // read-only review last.
+    // the two build workflows first -- the flagship plan-to-map, then the
+    // cold start for when no map exists yet -- the setup they both depend on
+    // third, read-only review last.
     [
       "build_from_floor_plan",
+      "create_map_from_tilesheet",
       "set_up_tile_roles",
       "review_map",
     ],

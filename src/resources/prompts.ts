@@ -160,6 +160,104 @@ Report what the map contains, anything structurally broken, and anything that
 looks unintentional (unused tilesets, empty layers, unreachable regions,
 objects outside the map bounds). Recommend fixes; do not make them.`;
 
+const CREATE_MAP_FROM_TILESHEET_TEMPLATE = (
+  tilesheetImagePath: string,
+  mapPath: string,
+  tilesetPath: string | undefined,
+  tileSize: string | undefined,
+): string => `Build a new Tiled map at \`${mapPath}\` from the tilesheet image at
+\`${tilesheetImagePath}\`${
+  tilesetPath === undefined
+    ? ""
+    : `, writing the tileset to \`${tilesetPath}\``
+}${
+  tileSize === undefined
+    ? ""
+    : `. The sheet's tiles are ${tileSize}`
+}.
+
+This is the cold start: an image, and nothing else yet. The other prompts all
+assume a map and a tileset already exist.
+
+Three things fail a first attempt, in the order you will meet them:
+
+1. **Parent directories are never created.** \`tiled_create_map\` and
+   \`tiled_create_tileset\` both refuse a path whose directory does not already
+   exist, and no tool in this server can create one. Run \`tiled_list_files\`
+   first and choose paths inside a directory that is already there.
+2. **A new map has no layers at all.** \`tiled_create_map\` produces an empty
+   map, so any attempt to paint before step 5 fails with no such layer.
+3. **Pins go stale on every apply.** Each apply changes the map revision, and
+   once the map references a tileset the dependency record is no longer empty.
+   Re-read the summary after each apply and pass the whole record back.
+
+${PIN_RULES}
+
+## 1. Orient
+- \`tiled_get_capabilities\` -- confirm which tools are registered and the
+  renderer and edit limits you are working inside.
+- \`tiled_list_files\` -- confirm the image path, and pick a map and tileset
+  path in a directory that already exists. Do not invent a new folder.
+
+## 2. Create the tileset from the sheet
+- \`tiled_create_tileset\` with the image path and the tile width and height.
+  It computes columns and tilecount from the Tiled margin/spacing grid, and
+  returns a change set rather than writing.
+- \`tiled_apply_change_set\` to write the TSJ.
+
+If the tile size is wrong the grid is wrong and every later tile id is wrong,
+so confirm it against the sheet before applying rather than after painting.
+
+## 3. Create the map
+- \`tiled_create_map\` with width, height, tile width and tile height. This is
+  the one tool that writes directly, without a preview; it never overwrites an
+  existing file, including one with identical bytes.
+
+## 4. Attach the tileset
+- \`tiled_get_map_summary\` -- keep the revision.
+- \`tiled_add_tileset_to_map\`, then \`tiled_apply_change_set\`.
+- Re-read the summary. It now carries the tileset's \`assetId\` and revision,
+  which every later write must pin.
+
+## 5. Add a layer to paint into
+- \`tiled_create_layer\` with \`layerType: "tilelayer"\`, then apply it.
+- Re-read the summary and keep the new layer's id.
+
+## 6. Learn which tile is which
+This is the step that makes the difference between placing tiles and guessing
+at them. Do at least one of:
+- \`tiled_render_tileset_sheet\` -- renders the atlas with **every tile labeled
+  by its local ID**. Look at it. This is how you find out that the grass tile
+  is local id 0 and the water tile is local id 1.
+- \`tiled_find_tiles\` -- if the tiles already carry classes or properties,
+  search for them instead of reading the picture.
+- \`tiled_preview_tile_names\` -- record roles now
+  (\`grass\`, \`wall_brick\`, ...) and every later edit can say
+  \`{"name": "wall_brick"}\` instead of a local id. Worth it for anything
+  beyond a handful of writes; the \`set_up_tile_roles\` prompt does this
+  properly.
+
+## 7. Paint
+- \`tiled_preview_edits\` with the operations you need, then apply:
+  - \`fillRegion\` for a solid base,
+  - \`setTiles\` for specific cells,
+  - \`stampPattern\` for a repeated block,
+  - \`floodFill\` to fill a bounded area,
+  - \`tiled_preview_terrain\` for walls that must join up correctly -- it
+    matches Wang corners natively and needs no Tiled install.
+- Remember \`resizeMap\`, \`deleteLayer\`, \`moveLayer\`, \`duplicateLayer\`,
+  \`removeTilesetFromMap\` and \`transcodeTileLayer\` must each be the only
+  operation in their change set.
+
+## 8. Look at what you built
+- \`tiled_render_map\` or \`tiled_render_preview\` (\`tiled_render_isometric\`
+  or \`tiled_render_hexagonal\` for those projections) and actually inspect the
+  image.
+- \`tiled_analyze_usage\` to confirm the cell counts are what you intended, and
+  \`tiled_validate\` to catch anything malformed.
+
+Report the final map path, its layers, and which tiles you used for what.`;
+
 export function registerTiledMcpPrompts(
   server: McpServer,
 ): void {
@@ -203,6 +301,61 @@ export function registerTiledMcpPrompts(
               planImagePath,
               mapPath,
               tilesetPath,
+            ),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "create_map_from_tilesheet",
+    {
+      title:
+        "Create a map from a tilesheet image",
+      description:
+        "Cold-start procedure for building a new map when only a tilesheet image exists: cut the sheet into a tileset, create the map, attach the tileset, add a layer, identify tiles by rendering the sheet with its local IDs, then paint and verify.",
+      argsSchema: {
+        tilesheetImagePath: z
+          .string()
+          .describe(
+            "Project-relative path to the tilesheet image, for example art/tiles.png",
+          ),
+        mapPath: z
+          .string()
+          .describe(
+            "Project-relative path for the new map. Its parent directory must already exist, for example maps/world.tmj",
+          ),
+        tilesetPath: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project-relative path for the tileset to create, for example maps/art.tsj. Its parent directory must already exist.",
+          ),
+        tileSize: z
+          .string()
+          .optional()
+          .describe(
+            "Optional tile size of the sheet, for example 32x32 or 64x32 for isometric.",
+          ),
+      },
+    },
+    ({
+      tilesheetImagePath,
+      mapPath,
+      tilesetPath,
+      tileSize,
+    }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: CREATE_MAP_FROM_TILESHEET_TEMPLATE(
+              tilesheetImagePath,
+              mapPath,
+              tilesetPath,
+              tileSize,
             ),
           },
         },

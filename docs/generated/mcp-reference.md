@@ -63,6 +63,11 @@ Render to check your work: `tiled_render_preview` for the current state and
 This server registers MCP prompts that carry the exact call sequence for a
 whole task, which is faster and safer than assembling one from the tool list:
 
+- `create_map_from_tilesheet` -- start here when all you have is a tilesheet
+  image and no map yet: cut the sheet into a tileset, create the map, attach
+  the tileset, add a layer, identify tiles by rendering the sheet with its
+  local IDs, then paint and verify. The other three assume a map already
+  exists.
 - `build_from_floor_plan` -- turn a floor-plan image into a finished map:
   inspect the tiles, build a colour-to-tile palette, import the plan as floors,
   run the walls, place the sprites, verify by rendering.
@@ -255,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:77be1e14f18c1d70e165767e59013ae568e20a6dbc6b3d10b3b19c9cedef6f5c",
+    "revision": "sha256:589274ecc9468aeae00fe6bad953be6d7da0747b636b43353bfe84b0f14899d0",
     "serverVersion": "0.0.1",
-    "size": 108533
+    "size": 108705
   },
   "annotations": {
     "audience": [
@@ -269,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 108533,
+  "size": 108705,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -277,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 108533 UTF-8 bytes, revision `sha256:77be1e14f18c1d70e165767e59013ae568e20a6dbc6b3d10b3b19c9cedef6f5c`.
+Content contract: `text`, 108705 UTF-8 bytes, revision `sha256:589274ecc9468aeae00fe6bad953be6d7da0747b636b43353bfe84b0f14899d0`.
 
 Resource templates: none.
 

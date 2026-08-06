@@ -134,6 +134,25 @@ schema rejects before it reaches a handler returns text only, with no
 No resource templates register yet. Trust `resources/list` and
 `resources/templates/list` over this table.
 
+## Prompts
+
+The tool list answers "what can this server do". It cannot answer "which eight of these
+fifty-seven calls, in what order". These carry the sequence:
+
+| Prompt | Start here when |
+|---|---|
+| `create_map_from_tilesheet` | you have a tilesheet image and no map yet |
+| `build_from_floor_plan` | you have a map, a tileset, and a floor-plan image to turn into a room |
+| `set_up_tile_roles` | you want later edits to say `{"name": "wall_brick"}` instead of a local id |
+| `review_map` | you want a read-only report and no changes |
+
+Each names exact tools in exact order and restates the invariants that decide whether a
+first call succeeds — revision pinning, `TileRef` rather than raw GIDs, preview before
+apply. `create_map_from_tilesheet` additionally calls out the three things that fail a
+cold start: parent directories are never created by any tool, a newly created map has no
+layer to paint into, and the dependency pin stops being empty the moment a tileset is
+attached.
+
 ## Documentation
 
 | File | Contents |

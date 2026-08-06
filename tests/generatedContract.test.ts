@@ -1587,8 +1587,9 @@ describe("generated MCP contract", () => {
       [],
     );
     // Prompts are the task-shaped entry points into the tool surface. The
-    // contract records them in advertised order, flagship build workflow
-    // first, so a client can read the intended starting point off the list.
+    // contract records them in advertised order -- the two build workflows
+    // first, then the setup they depend on, then read-only review -- so a
+    // client can read the intended starting point off the list.
     expect(contract.prompts).toEqual([
       expect.objectContaining({
         name: "build_from_floor_plan",
@@ -1603,6 +1604,27 @@ describe("generated MCP contract", () => {
           }),
           expect.objectContaining({
             name: "tilesetPath",
+            required: false,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "create_map_from_tilesheet",
+        arguments: [
+          expect.objectContaining({
+            name: "tilesheetImagePath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: false,
+          }),
+          expect.objectContaining({
+            name: "tileSize",
             required: false,
           }),
         ],

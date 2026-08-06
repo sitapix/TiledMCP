@@ -17,9 +17,11 @@ root. Treat every path as a project-relative POSIX path. Absolute paths and
 
 Most of this document is per-tool reference, organised by tool. If you have a
 task rather than a question, start from one of the registered MCP prompts --
-\`build_from_floor_plan\`, \`set_up_tile_roles\` or \`review_map\` -- which
-carry the whole call sequence. The recipe immediately below is the one worth
-reading inline, because it is the path most builds take.
+\`build_from_floor_plan\`, \`create_map_from_tilesheet\`, \`set_up_tile_roles\`
+or \`review_map\` -- which carry the whole call sequence. Start from
+\`create_map_from_tilesheet\` when all you have is an image and there is no map
+yet; the other three all assume a map already exists. The recipe immediately
+below is the one worth reading inline, because it is the path most builds take.
 
 ## Recipe: build a map from a floor-plan image
 

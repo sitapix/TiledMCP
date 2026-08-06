@@ -25,6 +25,7 @@ const ADVERTISED = new Set<string>([
 
 const PROMPT_NAMES = [
   "build_from_floor_plan",
+  "create_map_from_tilesheet",
   "set_up_tile_roles",
   "review_map",
 ] as const;
@@ -67,6 +68,8 @@ async function renderPrompts(): Promise<
       planImagePath: "floorplans/tavern.png",
       mapPath: "maps/tavern.tmj",
       tilesetPath: "tilesets/interior.tsj",
+      tilesheetImagePath: "art/tiles.png",
+      tileSize: "64x32",
     });
     rendered.set(
       name,
@@ -121,6 +124,42 @@ describe("prompt surface", () => {
     expect(rendered.get("review_map")).toContain(
       "maps/tavern.tmj",
     );
+  });
+
+  /**
+   * The cold-start prompt exists because of three specific first-attempt
+   * failures, each observed by driving the sequence: a parent directory that
+   * no tool can create, a freshly created map having no layer to paint into,
+   * and a dependency pin that stops being empty the moment a tileset is
+   * attached. A rewrite that drops any of them turns the prompt back into a
+   * tool list, so assert they survive.
+   */
+  it("warns about the three cold-start failures", async () => {
+    const rendered =
+      (await renderPrompts()).get(
+        "create_map_from_tilesheet",
+      ) ?? "";
+    expect(rendered).toContain("art/tiles.png");
+    // 1. directories are never created
+    expect(rendered).toContain(
+      "Parent directories are never created",
+    );
+    // 2. a new map has no layers
+    expect(rendered).toContain(
+      "no layers at all",
+    );
+    expect(rendered).toContain(
+      "tiled_create_layer",
+    );
+    // 3. pins go stale, and the dependency record stops being empty
+    expect(rendered).toContain(
+      "Pins go stale",
+    );
+    // The step that makes tilesheets usable: local IDs are read off the render.
+    expect(rendered).toContain(
+      "tiled_render_tileset_sheet",
+    );
+    expect(rendered).toContain("local ID");
   });
 
   it("keeps the read-only review free of planning and applying tools", async () => {

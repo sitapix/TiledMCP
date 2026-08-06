@@ -66,6 +66,11 @@ Render to check your work: \`tiled_render_preview\` for the current state and
 This server registers MCP prompts that carry the exact call sequence for a
 whole task, which is faster and safer than assembling one from the tool list:
 
+- \`create_map_from_tilesheet\` -- start here when all you have is a tilesheet
+  image and no map yet: cut the sheet into a tileset, create the map, attach
+  the tileset, add a layer, identify tiles by rendering the sheet with its
+  local IDs, then paint and verify. The other three assume a map already
+  exists.
 - \`build_from_floor_plan\` -- turn a floor-plan image into a finished map:
   inspect the tiles, build a colour-to-tile palette, import the plan as floors,
   run the walls, place the sprites, verify by rendering.
