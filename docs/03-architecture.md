@@ -686,46 +686,72 @@ Test layers:
 6. **Security** — hostile JSON, compression, images, paths, symlink races, timeouts, subprocess
    output floods.
 
-### Preview output-schema breadth is deliberate
+### Preview output schemas are narrowed to what each planner can emit
 
-Nine preview tools share `previewEditsToolOutputSchema`, the generic `mapEdit` union, at roughly
-74 KB apiece — about half of all output-schema bytes in `tools/list`. That repetition is a
-considered trade, not an oversight, and it should stay unless someone brings evidence.
+Nine preview tools once shared `previewEditsToolOutputSchema`, the generic `mapEdit` union, at
+73,837 bytes apiece — about half of all output-schema bytes in `tools/list`. Eight of them are now
+narrowed, taking the total from 1,207,968 to 690,793 bytes.
 
 Narrowing a tool means proving two things: which operation kinds it can emit, and which optional
-summary members it can populate. The first is usually easy to read off a planner. The second is
-not — `transcodes` and `chunkedTileLayerIds` depend on the target layer's encoding and on whether
-the map is infinite, so the reachable set is a property of the caller's project, not of the tool.
+summary members it can populate. The asymmetry that governs the bar is how a wrong guess fails.
+`register()` validates the handler's `structuredContent` against the declared output schema and
+turns a mismatch into `INTERNAL_ERROR` with empty details. An over-tight output schema therefore
+does not fail loudly at review time; it fails in production, on someone's map, as an opaque error
+with no indication that a schema is responsible. So the bar is unreachability **proven from
+source**, never a shape observed on a fixture — a fixture only shows what one project produced.
 
-The asymmetry that matters is how a wrong guess fails. `register()` validates the handler's
-`structuredContent` against the declared output schema and turns a mismatch into `INTERNAL_ERROR`
-with empty details. An over-tight output schema therefore does not fail loudly at review time; it
-fails in production, on someone's map, as an opaque error with no indication that a schema is
-responsible. Breadth is the safe direction.
+The payoff is also smaller than it looks. `outputSchema` is not part of the Anthropic Messages API
+tool definition — that carries `name`, `description`, and `input_schema` — so this is transport
+bytes on one `tools/list` per session, not model context. The number worth watching is the ~87 KB
+of *input* schemas, where `tiled_preview_edits` alone is 20,389 bytes, about a quarter of the
+total.
 
-The payoff for getting it right is also smaller than it looks. `outputSchema` is not part of the
-Anthropic Messages API tool definition — that carries `name`, `description`, and `input_schema` —
-so this breadth costs transport bytes on one `tools/list` per session, not model context. The
-number worth watching is the ~90 KB of *input* schemas, where `tiled_preview_edits` alone is
-about a quarter of the total.
+Two facts do the work for all eight. `MapService.planEdits` `structuredClone`s the operation array
+its caller passes and puts it into the plan unchanged — it appends nothing — so a planner that
+constructs its own array *is* the entire operation surface. And each optional summary member is
+pushed from exactly one operation branch of `mapOperations.ts`: `transcodes` from
+`transcodeTileLayer`, `tileStamps` from `stampPattern`, `tileFloodFills` from `floodFill`,
+`tileCopies` from `copyRegion`, `layerUpdates` from `updateLayer`, and so on. A planner that emits
+none of those kinds cannot populate them.
 
-`tiled_preview_shape` is the one narrowed case, at 7,765 bytes against the generic 73,837. It is
-worth reading as the template for what "enough evidence" means, because the bar is unreachability
-proven from source, not a summary observed on a fixture:
+| Tool | Planner | Operations | Bytes |
+|---|---|---|---|
+| `tiled_preview_shape` | `planDrawShape` | one `setTiles` | 7,765 |
+| `tiled_preview_generate` | `planGenerate` | one `setTiles` | 7,765 |
+| `tiled_preview_scatter` | `planScatter` | one `setTiles` | 7,765 |
+| `tiled_preview_import_image` | `planImportImage` | one `setTiles` | 7,765 |
+| `tiled_preview_terrain` | `planTerrainPaint` | one `setTiles` | 7,765 |
+| `tiled_preview_validation_fixes` | `planValidationFixes` | 1..128 `setTiles` | 7,804 |
+| `tiled_preview_merge_map` | `planMergeMap` | 1..128 `setTiles` | 7,804 |
+| `tiled_preview_template` | `planInstantiateTemplate` | one `instantiateTemplate` | 6,649 |
+| `tiled_preview_prefab` | `planStampPrefab` | `setTiles`, `createObject`, `updateObject` | 20,204 |
+| `tiled_preview_edits` | `planEdits` | all 18 kinds | 73,837 |
 
-- `operations` — `MapService.planDrawShape` calls `planEdits` with a hardcoded single-element
-  `[{ type: "setTiles" }]`, and `planEdits` deep-copies that array straight into the plan. No
-  second element and no other kind is constructible.
-- `summary.transcodes` — pushed at exactly one site in `mapOperations.ts`, inside the
-  `operation.type === "transcodeTileLayer"` branch. Note that a zlib layer does *not* reach it:
-  writes are source-preserving, so the layer keeps its encoding and nothing re-encodes.
-- `summary.chunkedTileLayerIds` — requires a chunked layer, which exists only on an infinite map,
-  and the planner rejects those with `UNSUPPORTED_MAP_PROFILE`.
-- the remaining optional members each require their own operation kind.
+`tiled_preview_edits` keeps the generic union and should: its operations come straight from the
+caller, so every kind really is reachable. `planMergeMap` is the one planner that builds its plan
+inline rather than through `planEdits`, but it pushes only `setTiles` and calls the same
+`validateAndSummarizeOperations`.
+
+`summary.chunkedTileLayerIds` is the one member that depends on the map rather than the operation,
+and it is the easiest to get wrong. `finalizeChunkedTileLayerWrite` records any layer holding a
+`chunked` view — dirty or not — and the `setTiles` branch calls it. Chunked layers exist only on
+infinite maps. The guarantee comes from **each planner's own** `loadEditableContext` call omitting
+`allowInfinite`, which rejects with `UNSUPPORTED_MAP_PROFILE` before an operation is built; it does
+*not* come from the shared path, because `planEdits` itself passes `allowInfinite: true`.
+`planInstantiateTemplate` has no load of its own and needs none — `instantiateTemplate` never
+touches a tile layer, so it cannot reach the recording site on any map.
+
+Two more traps worth naming, both settled by reading the branch rather than a fixture: a zlib layer
+does *not* populate `transcodes`, because writes are source-preserving, so the layer keeps its
+encoding and nothing re-encodes; and `cellWrites` stays declared non-negative even where the
+`setTiles` branch guarantees ≥ 1, because a schema looser than the code cannot cause the
+`INTERNAL_ERROR` a tighter one could.
 
 Narrow another tool only behind end-to-end coverage through the MCP surface.
-`tests/previewShape.test.ts` is the pattern, including the negative case — a test that calls
-`MapService` directly does not exercise output validation at all and will not catch the failure.
+`tests/previewShape.test.ts` and `tests/previewNarrowedOutputs.test.ts` are the pattern, including
+the negative cases — a test that calls `MapService` directly does not exercise output validation at
+all and will not catch the failure. Both assert the summary's key set *exactly*, which is what
+proves no optional member appeared; a `toMatchObject` would pass even when one did.
 
 ## 16. Configuration
 

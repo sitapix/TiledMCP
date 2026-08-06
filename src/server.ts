@@ -199,7 +199,10 @@ import {
   deleteFilePreviewToolOutputSchema,
   preparedCheckpointPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
-  previewShapeToolOutputSchema,
+  previewInstantiateTemplateToolOutputSchema,
+  previewPrefabToolOutputSchema,
+  previewSetTilesSequenceToolOutputSchema,
+  previewSingleSetTilesToolOutputSchema,
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
@@ -4853,7 +4856,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               .optional(),
           })
           .strict(),
-        outputSchema: previewEditsToolOutputSchema,
+        outputSchema: previewSetTilesSequenceToolOutputSchema,
         annotations: PREVIEW_ONLY,
       },
       async ({
@@ -5499,7 +5502,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewShapeToolOutputSchema,
+      outputSchema: previewSingleSetTilesToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5649,7 +5652,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewSingleSetTilesToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5751,7 +5754,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewSingleSetTilesToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5846,7 +5849,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewSingleSetTilesToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5971,7 +5974,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             revisionSchema.optional(),
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewPrefabToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6037,7 +6040,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             revisionSchema.optional(),
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewInstantiateTemplateToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6436,7 +6439,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewSetTilesSequenceToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -7022,7 +7025,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           })
           .strict(),
         outputSchema:
-          previewEditsToolOutputSchema,
+          previewSingleSetTilesToolOutputSchema,
         annotations: PREVIEW_ONLY,
       },
       async ({

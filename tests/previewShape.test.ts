@@ -83,8 +83,9 @@ describe("tiled_preview_shape over the MCP tool surface", () => {
     expect(plan.kind).toBe("mapEdit");
     // planDrawShape hands planEdits a hardcoded single-element array, and
     // planEdits echoes it through structuredClone, so this is the entire
-    // operation surface the tool can produce. previewShapeToolOutputSchema
-    // narrows `operations` to exactly this on the strength of it.
+    // operation surface the tool can produce.
+    // previewSingleSetTilesToolOutputSchema narrows `operations` to exactly
+    // this on the strength of it, and four other planners share it.
     expect(
       plan.operations.map(({ type }) => type),
     ).toEqual(["setTiles"]);
@@ -104,7 +105,7 @@ describe("tiled_preview_shape over the MCP tool surface", () => {
     // Writes are source-preserving: the layer keeps base64+zlib, so nothing
     // re-encodes and `summary.transcodes` stays absent. That member is pushed
     // only from the transcodeTileLayer branch, which this tool cannot emit --
-    // which is what lets drawShapeSummaryOutputSchema omit it.
+    // which is what lets singleSetTilesSummaryOutputSchema omit it.
     expect(await drawOn(open, zlibLayer())).toEqual({
       operationCount: 1,
       cellWrites: 8,
@@ -118,7 +119,7 @@ describe("tiled_preview_shape over the MCP tool surface", () => {
   });
 
   it("refuses infinite maps, so no chunked summary is reachable", async () => {
-    // The other member drawShapeSummaryOutputSchema omits is
+    // The other member singleSetTilesSummaryOutputSchema omits is
     // chunkedTileLayerIds, which needs a chunked layer. Chunked layers exist
     // only on infinite maps, and those never reach the planner at all.
     await expect(

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MAX_PLAN_OPERATIONS } from "../maps/mapDomain.js";
 import {
   MAX_OBJECT_SHAPE_POINTS,
   MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
@@ -3948,34 +3949,63 @@ export const previewEditsToolOutputSchema =
     genericMapEditPreviewOutputSchema,
   );
 
-/**
- * `tiled_preview_shape` narrowed to the one operation it can emit.
+/*
+ * The eight narrowed map-edit preview schemas below.
  *
- * `MapService.planDrawShape` calls `planEdits` with a hardcoded single-element
- * `[{ type: "setTiles", ... }]`, and `planEdits` puts a `structuredClone` of
- * that array straight into the plan, so no other operation kind -- and no
- * second element -- is reachable. Declaring the full 18-kind union here would
- * advertise 17 operations the tool cannot produce.
+ * `tiled_preview_edits` keeps the generic union above: its `operations` come
+ * straight from the caller, so all 18 kinds really are reachable. Every other
+ * map-edit preview tool drives a planner that constructs the operation array
+ * itself, and `MapService.planEdits` puts a `structuredClone` of exactly that
+ * array into the plan -- it appends nothing -- so the planner's construction
+ * site is the whole operation surface. `MapService.planMergeMap` builds its
+ * plan inline rather than through `planEdits`, but pushes only `setTiles` and
+ * calls the same `validateAndSummarizeOperations`.
  *
- * `summary` carries only the base members, with none of the optional ones the
- * generic union allows. Every optional is reachable only through an operation
- * this tool cannot emit:
+ * Each `summary` therefore carries only the base members. The optional ones the
+ * generic union allows are each pushed from exactly one operation branch of
+ * `mapOperations.ts` -- `transcodes` from `transcodeTileLayer`, `mapUpdates`
+ * from `updateMap`, `mapResizes` from `resizeMap`, `removedTilesets` from
+ * `removeTilesetFromMap`, `deletedLayers`/`movedLayers`/`duplicatedLayers` from
+ * their matching layer operations, `tileReplacements` from `replaceTiles`,
+ * `tileStamps` from `stampPattern`, `tileFloodFills` from `floodFill`,
+ * `tileCopies` from `copyRegion`, and `layerUpdates` from `updateLayer` -- and
+ * no planner here emits any of those kinds.
  *
- * - `transcodes` is pushed at exactly one site, inside the
- *   `operation.type === "transcodeTileLayer"` branch of `mapOperations.ts`.
- * - `chunkedTileLayerIds` needs a chunked layer, which only exists on an
- *   infinite map, and this tool rejects those with `UNSUPPORTED_MAP_PROFILE`.
- * - `mapUpdates`, `mapResizes`, `removedTilesets`, `deletedLayers`,
- *   `movedLayers`, `duplicatedLayers` and `tileReplacements` each require their
- *   own operation kind, and `layerUpdates` requires `updateLayer`.
+ * `chunkedTileLayerIds` is the one member that depends on the map rather than
+ * on the operation: `finalizeChunkedTileLayerWrite` records any layer with a
+ * `chunked` view, dirty or not, and the `setTiles` branch calls it. Chunked
+ * layers exist only on infinite maps, and every planner here loads its context
+ * without `allowInfinite`, so `loadEditableContext` rejects those with
+ * `UNSUPPORTED_MAP_PROFILE` before an operation is built. That check is the
+ * planner's own: `planEdits` itself passes `allowInfinite: true`, so the
+ * guarantee comes from the planner's load, not from the shared path.
+ * `planInstantiateTemplate` has no load of its own, and does not need one --
+ * `instantiateTemplate` never touches a tile layer, so it cannot reach
+ * `finalizeChunkedTileLayerWrite` on any map.
  *
  * That reasoning is load-bearing: `register()` turns an output-schema mismatch
  * into an opaque `INTERNAL_ERROR` rather than a loud failure, so a member that
  * turns out to be reachable would surface as an unexplained error on a user's
- * map. `tests/previewShape.test.ts` pins the CSV and zlib cases over the MCP
- * surface and asserts the infinite-map rejection that closes the last gap.
+ * map rather than as a test failure here. `tests/previewShape.test.ts` and
+ * `tests/previewNarrowedOutputs.test.ts` drive every one of these tools over
+ * the MCP surface, which is what exercises output validation at all.
  */
-const drawShapeSummaryOutputSchema = z
+
+/**
+ * A plan of exactly one `setTiles` against one tile layer.
+ *
+ * `planDrawShape`, `planGenerate`, `planScatter`, `planImportImage` and
+ * `planTerrainPaint` each call `planEdits` with a hardcoded single-element
+ * `[{ type: "setTiles", ... }]`, so neither a second element nor another kind
+ * is constructible. The `setTiles` branch adds the one layer to both
+ * `affectedLayerIds` and `affectedTileLayerIds` and never touches an object
+ * accumulator, which is what pins the four object members empty.
+ *
+ * `cellWrites` stays non-negative rather than positive: the branch rejects an
+ * empty `cells` array, so it is in fact always >= 1, but a schema looser than
+ * the code cannot cause the `INTERNAL_ERROR` a tighter one could.
+ */
+const singleSetTilesSummaryOutputSchema = z
   .object({
     operationCount: z.literal(1),
     cellWrites: nonnegativeIntegerOutputSchema,
@@ -3992,7 +4022,7 @@ const drawShapeSummaryOutputSchema = z
   })
   .strict();
 
-export const previewShapeToolOutputSchema =
+export const previewSingleSetTilesToolOutputSchema =
   toolOutputSchema(
     z
       .object({
@@ -4000,7 +4030,147 @@ export const previewShapeToolOutputSchema =
         operations: z.tuple([
           setTilesOperationPreviewOutputSchema,
         ]),
-        summary: drawShapeSummaryOutputSchema,
+        summary: singleSetTilesSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A plan of one or more `setTiles`, one per touched tile layer.
+ *
+ * `planValidationFixes` pushes one `setTiles` per tile layer holding dangling
+ * GIDs; `planMergeMap` pushes one per non-empty source tile layer. Both fail
+ * closed with `INVALID_ARGUMENT` on an empty array, and
+ * `validateAndSummarizeOperations` caps the length at `MAX_PLAN_OPERATIONS`,
+ * which is the 128 declared here. The summary members are the single-operation
+ * ones widened to N layers.
+ */
+const setTilesSequenceSummaryOutputSchema = z
+  .object({
+    operationCount: positiveIntegerOutputSchema,
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedTileLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewSetTilesSequenceToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z
+          .array(
+            setTilesOperationPreviewOutputSchema,
+          )
+          .min(1)
+          .max(MAX_PLAN_OPERATIONS),
+        summary:
+          setTilesSequenceSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A plan of exactly one `instantiateTemplate`.
+ *
+ * `planInstantiateTemplate` calls `planEdits` with a hardcoded single-element
+ * `[{ type: "instantiateTemplate", ... }]`. The branch resolves one object
+ * layer, appends one minimal instance, and adds to `affectedLayerIds`,
+ * `affectedObjectLayerIds` and `createdObjectIds` only -- it writes no cells,
+ * so `cellWrites` is the literal 0 and `affectedTileLayerIds` is empty.
+ */
+const instantiateTemplateSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    cellWrites: z.literal(0),
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedTileLayerIds: z.tuple([]),
+    affectedObjectLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    createdObjectIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewInstantiateTemplateToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z.tuple([
+          instantiateTemplateOperationPreviewOutputSchema,
+        ]),
+        summary:
+          instantiateTemplateSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A prefab stamp: `setTiles` per layer pair, then `createObject` per selected
+ * object with an optional `updateObject` carrying its custom properties.
+ *
+ * Those are the only three kinds `planStampPrefab` pushes; objects that are
+ * template instances fail closed rather than becoming `instantiateTemplate`.
+ * `deletedObjectIds` stays empty because it is populated only in the
+ * `deleteObjects` branch. The remaining members stay plain arrays: a
+ * tiles-only or objects-only stamp is legal, so neither `affectedTileLayerIds`
+ * nor `createdObjectIds` has a floor above zero.
+ */
+const prefabSummaryOutputSchema = z
+  .object({
+    operationCount: positiveIntegerOutputSchema,
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedTileLayerIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    affectedObjectLayerIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    createdObjectIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    updatedObjectIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewPrefabToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z
+          .array(
+            z.discriminatedUnion("type", [
+              setTilesOperationPreviewOutputSchema,
+              createObjectOperationPreviewOutputSchema,
+              updateObjectOperationPreviewOutputSchema,
+            ]),
+          )
+          .min(1)
+          .max(MAX_PLAN_OPERATIONS),
+        summary: prefabSummaryOutputSchema,
       })
       .strict(),
   );
