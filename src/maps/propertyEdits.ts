@@ -87,9 +87,22 @@ export type PropertyTargetDetails = Record<
   JsonValue
 >;
 
-export function assertExactKeys(
-  value: Record<string, unknown>,
-  expected: readonly string[],
+/**
+ * Rejects unknown (and, unless `subsetOnly`, missing) keys on a caller-supplied
+ * object.
+ *
+ * Generic over `T` rather than taking `Record<string, unknown>`: an `interface`
+ * has no implicit index signature, so every typed caller previously had to
+ * launder its argument through `as unknown as Record<string, unknown>` — a cast
+ * that also erased the argument's type. Binding `expected` to `keyof T` instead
+ * makes the key list checked against the shape it describes, so a typo or a key
+ * left behind by a rename is a compile error rather than a validator that
+ * quietly stops guarding that field. Callers passing a dynamic object still get
+ * `keyof T = string`, which is exactly the old behaviour.
+ */
+export function assertExactKeys<T extends object>(
+  value: T,
+  expected: readonly (keyof T & string)[],
   context: string,
   subsetOnly = false,
 ): void {
@@ -104,7 +117,9 @@ export function assertExactKeys(
     );
   }
   const keys = Object.keys(value).sort();
-  const allowed = new Set(expected);
+  // Widened to `string`: the runtime key set is compared against arbitrary
+  // caller-supplied keys, which are not statically known to be `keyof T`.
+  const allowed = new Set<string>(expected);
   const unknown = keys.find(
     (key) => !allowed.has(key),
   );
@@ -155,7 +170,7 @@ export function validatePropertiesPatch(
     );
   }
   assertExactKeys(
-    patch as unknown as Record<string, unknown>,
+    patch,
     [
       "remove",
       "set",
@@ -224,7 +239,7 @@ export function validatePropertiesPatch(
   for (const [index, write] of sets.entries()) {
     const writeContext = `${context}.set[${index}]`;
     assertExactKeys(
-      write as unknown as Record<string, unknown>,
+      write,
       ["name", "type", "value"],
       writeContext,
     );
@@ -258,10 +273,7 @@ export function validatePropertiesPatch(
   ] of classWrites.entries()) {
     const writeContext = `${context}.setClassMembers[${index}]`;
     assertExactKeys(
-      write as unknown as Record<
-        string,
-        unknown
-      >,
+      write,
       ["path", "property", "value"],
       writeContext,
     );
@@ -348,10 +360,7 @@ export function validatePropertiesPatch(
   ] of listWrites.entries()) {
     const writeContext = `${context}.setListElements[${index}]`;
     assertExactKeys(
-      write as unknown as Record<
-        string,
-        unknown
-      >,
+      write,
       ["index", "property", "value"],
       writeContext,
     );

@@ -4152,7 +4152,7 @@ export function collectLayerSummaries(
 }
 
 export function planId(value: Omit<MapEditPlan, "id">): string {
-  const canonical = stableJson(value as unknown as JsonValue);
+  const canonical = stableJson(value);
   return `changeset:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
@@ -4198,7 +4198,7 @@ export function assertDependencyRevisions(
   ) {
     throw new TiledMcpError(
       "DEPENDENCY_REVISION_CONFLICT",
-      "A referenced tileset changed after this change set was planned.",
+      `Referenced dependency revisions changed after this change set was planned (${describeDependencyDifferences(expected, actual)}). Re-read the changed dependencies, then re-run the preview so expectedDependencyRevisions match.`,
       {
         expectedCount: expectedKeys.length,
         actualCount: actualKeys.length,
@@ -4356,7 +4356,7 @@ export async function assertRevisionUnchanged(
   if (actualRevision !== expectedRevision) {
     throw new TiledMcpError(
       errorCode,
-      `${path} changed while ${activity}.`,
+      `${path} changed while ${activity} (expected ${expectedRevision}, found ${actualRevision}). Re-read it for the current revision and retry the request with that revision.`,
       {
         path,
         ...details,
@@ -4398,6 +4398,20 @@ export function assertDependencyRevisionRecord(
       );
     }
   }
+}
+
+function describeDependencyDifferences(
+  expected: Record<string, string>,
+  actual: Record<string, string>,
+): string {
+  const differences = dependencyDifferenceSample(expected, actual);
+  const named = differences
+    .slice(0, 4)
+    .map((difference) => difference.assetId)
+    .join(", ");
+  return differences.length > 4
+    ? `${named}, and ${differences.length - 4} more`
+    : named;
 }
 
 function dependencyDifferenceSample(
@@ -5879,7 +5893,7 @@ export function tileRefToGid(
     throw new TiledMcpError("INVALID_ARGUMENT", "tile must be a TileRef or null.");
   }
   const tileRecord =
-    tile as unknown as Record<string, unknown>;
+    tile;
   assertExactObjectKeys(
     tileRecord,
     new Set([
@@ -5907,7 +5921,7 @@ export function tileRefToGid(
     );
   }
   assertExactObjectKeys(
-    tile.tileset as unknown as Record<string, unknown>,
+    tile.tileset,
     new Set(["assetId", "kind"]),
     "tile.tileset",
   );
@@ -6083,8 +6097,8 @@ export function readLayerGid(layer: TileLayerView, x: number, y: number): number
 }
 
 
-export function assertExactObjectKeys(
-  value: Record<string, unknown>,
+export function assertExactObjectKeys<T extends object>(
+  value: T,
   allowed: ReadonlySet<string>,
   context: string,
 ): void {

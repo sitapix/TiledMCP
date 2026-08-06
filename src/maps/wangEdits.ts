@@ -118,7 +118,7 @@ export function wangEditPlanId(
 ): string {
   return `changeset:${createHash("sha256")
     .update(WANG_EDIT_PLAN_HASH_DOMAIN)
-    .update(stableJson(value as unknown as JsonValue))
+    .update(stableJson(value))
     .digest("hex")}`;
 }
 

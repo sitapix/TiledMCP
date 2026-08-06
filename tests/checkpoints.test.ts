@@ -234,6 +234,48 @@ describe("CheckpointStore listing", () => {
     });
   });
 
+  it("pages the whole store deterministically through startAfter", async () => {
+    for (const index of [1, 2, 3]) {
+      await store.prepare(
+        `maps/${index}.tmj`,
+        undefined,
+        revisionOf(Buffer.from(`after-${index}`, "utf8")),
+        `checkpoint ${index}`,
+      );
+    }
+
+    const collected: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    while (true) {
+      const page = await store.list({
+        limit: 1,
+        ...(cursor === undefined ? {} : { startAfter: cursor }),
+      });
+      expect(page.manifests.length + page.corruptEntries.length).toBe(1);
+      collected.push(...page.manifests.map((manifest) => manifest.id));
+      pages += 1;
+      if (!page.hasMore) {
+        expect(page.nextStartAfter).toBeUndefined();
+        break;
+      }
+      expect(page.nextStartAfter).toBeDefined();
+      cursor = page.nextStartAfter;
+    }
+
+    const all = await store.list();
+    expect(all.hasMore).toBe(false);
+    expect(pages).toBe(3);
+    expect([...collected].sort()).toEqual(
+      all.manifests.map((manifest) => manifest.id).sort(),
+    );
+    expect(new Set(collected).size).toBe(3);
+
+    await expect(store.list({ startAfter: "" })).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+  });
+
   it("uses an exact UUID-shaped checkpoint id", async () => {
     await expect(
       store.read("aaaaaaaa------------------------------------"),

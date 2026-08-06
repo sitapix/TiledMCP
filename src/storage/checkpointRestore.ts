@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 import { CHECKPOINT_ID_PATTERN } from "./checkpoints.js";
 import type {
@@ -131,8 +130,8 @@ export async function applyCheckpointRestore(
     wouldChange: plan.wouldChange,
   });
   if (
-    stableJson(plan.summary as unknown as JsonValue) !==
-    stableJson(expectedSummary as unknown as JsonValue)
+    stableJson(plan.summary) !==
+    stableJson(expectedSummary)
   ) {
     throw new TiledMcpError(
       "INVALID_CHANGE_SET",
@@ -193,7 +192,7 @@ function checkpointRestoreSummary(input: {
 function checkpointRestorePlanId(
   value: Omit<CheckpointRestorePlan, "id">,
 ): string {
-  const canonical = stableJson(value as unknown as JsonValue);
+  const canonical = stableJson(value);
   return `changeset:${createHash("sha256")
     .update(RESTORE_PLAN_HASH_DOMAIN)
     .update(canonical)

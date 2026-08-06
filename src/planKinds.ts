@@ -7,7 +7,6 @@ import type {
   TiledExportRunner,
 } from "./maps/mapService.js";
 import { applyCheckpointPruneBatch } from "./storage/checkpointBatchPrune.js";
-import { applyCheckpointPrune } from "./storage/checkpointPrune.js";
 import { applyCheckpointRestore } from "./storage/checkpointRestore.js";
 import { applyPreparedCheckpointDiscard } from "./storage/preparedCheckpointDiscard.js";
 import {
@@ -77,8 +76,6 @@ const PLAN_KIND_APPLIERS: PlanKindRegistry = {
     applyTransaction(plan),
   checkpointRestore: (plan, { store }) =>
     applyCheckpointRestore(store, plan),
-  checkpointPrune: (plan, { store }) =>
-    applyCheckpointPrune(store, plan),
   checkpointPruneBatch: (plan, { store }) =>
     applyCheckpointPruneBatch(store, plan),
   preparedCheckpointCommit: (plan, { store }) =>

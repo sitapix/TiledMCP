@@ -156,16 +156,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       "tiled_create_layer",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_discard",
-    );
-    expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_commit",
-    );
-    expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_abandon",
-    );
-    expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_checkpoint_prune",
+      "tiled_preview_prepared_checkpoint",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_prune_batch",
@@ -242,8 +233,8 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         },
         pruneBatch: {
           scope:
-            "2-to-32-explicit-committed-checkpoints",
-          minCheckpointCount: 2,
+            "1-to-32-explicit-committed-checkpoints",
+          minCheckpointCount: 1,
           maxCheckpointCount: 32,
           workflow: "preview-then-apply",
           ordering:
@@ -552,7 +543,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
         maxTileRenderLocalIds: 64,
         maxTileRenderColumns: 32,
         maxTileRenderScale: 4,
-        maxTileRenderBytes: 8 * 1024 * 1024,
+        maxTileRenderBytes: 7 * 1024 * 1024,
         maxTileRenderEdge: 2_048,
         maxTileRenderPixels: 1_500_000,
         maxPendingObjectShapePoints: 65_536,

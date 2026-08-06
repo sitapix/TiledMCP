@@ -140,6 +140,27 @@ import {
 import {
   inspectTilesetUsage,
 } from "./mapPrimitives.js";
+
+/**
+ * The one message for every cell-write budget breach, so each site reports
+ * the attempted total and the split-the-edit remediation instead of only
+ * restating the constant.
+ */
+function cellWriteBudgetExceeded(
+  attemptedCellWrites: number,
+  details: Record<string, unknown> = {},
+): TiledMcpError {
+  return new TiledMcpError(
+    "RESULT_LIMIT_EXCEEDED",
+    `This change set would write ${attemptedCellWrites} cells; the limit is ${MAX_CELL_WRITES}. Split the edit into smaller regions and preview each separately.`,
+    {
+      limit: MAX_CELL_WRITES,
+      actual: attemptedCellWrites,
+      ...details,
+    },
+  );
+}
+
 export function validateAndSummarizeOperations(
   map: JsonObject,
   // Edit planners never receive staggered/hexagonal contexts (that
@@ -165,8 +186,8 @@ export function validateAndSummarizeOperations(
   if (operations.length > MAX_PLAN_OPERATIONS) {
     throw new TiledMcpError(
       "RESULT_LIMIT_EXCEEDED",
-      `A change set may contain at most ${MAX_PLAN_OPERATIONS} operations.`,
-      { limit: MAX_PLAN_OPERATIONS },
+      `This change set contains ${operations.length} operations; the limit is ${MAX_PLAN_OPERATIONS}. Split the operations across multiple previews.`,
+      { limit: MAX_PLAN_OPERATIONS, actual: operations.length },
     );
   }
   const removeTilesetOperationCount = operations.filter(
@@ -350,11 +371,9 @@ export function validateAndSummarizeOperations(
         mapPath,
       );
       if (cellWrites + created.allocatedCellCount > MAX_CELL_WRITES) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          { limit: MAX_CELL_WRITES },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + created.allocatedCellCount, {
+          operationIndex,
+        });
       }
       cellWrites += created.allocatedCellCount;
       affectedLayerIds.add(operation.layerId);
@@ -465,7 +484,7 @@ export function validateAndSummarizeOperations(
       operation.type === "removeTilesetFromMap"
     ) {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["tilesetAssetId", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -491,7 +510,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "updateMap") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["patch", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -515,7 +534,7 @@ export function validateAndSummarizeOperations(
     } else if (operation.type === "resizeMap") {
       const operationContext = `operations[${operationIndex}]`;
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["height", "offsetX", "offsetY", "type", "width"]),
         operationContext,
       );
@@ -527,7 +546,7 @@ export function validateAndSummarizeOperations(
         );
       }
       const input = readResizeMapInput(
-        operation as unknown as Record<string, unknown>,
+        operation,
         operationContext,
       );
       const oldWidth = expectInteger(map.width, `${mapPath}.width`);
@@ -566,15 +585,9 @@ export function validateAndSummarizeOperations(
         !Number.isSafeInteger(rewrittenCellCount) ||
         cellWrites + rewrittenCellCount > MAX_CELL_WRITES
       ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          {
-            limit: MAX_CELL_WRITES,
-            actual: cellWrites + rewrittenCellCount,
-            operationIndex,
-          },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + rewrittenCellCount, {
+          operationIndex,
+        });
       }
       if (
         !Number.isSafeInteger(scannedCellCount) ||
@@ -665,7 +678,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "transcodeTileLayer") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["compression", "encoding", "layerId", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -765,11 +778,9 @@ export function validateAndSummarizeOperations(
         );
       }
       if (cellWrites + operation.cells.length > MAX_CELL_WRITES) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          { limit: MAX_CELL_WRITES },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + operation.cells.length, {
+          operationIndex,
+        });
       }
       const layer = findTileLayer(map, operation.layerId, mapPath, "edit", true);
       affectedLayerIds.add(layer.id);
@@ -810,11 +821,9 @@ export function validateAndSummarizeOperations(
         !Number.isSafeInteger(regionCells) ||
         cellWrites + regionCells > MAX_CELL_WRITES
       ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          { limit: MAX_CELL_WRITES },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + regionCells, {
+          operationIndex,
+        });
       }
       const layer = findTileLayer(
         map,
@@ -858,7 +867,7 @@ export function validateAndSummarizeOperations(
       );
     } else if (operation.type === "floodFill") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set([
           "layerId",
           "tile",
@@ -988,15 +997,9 @@ export function validateAndSummarizeOperations(
         fillBounds !== null
       ) {
         if (cellWrites + 1 > MAX_CELL_WRITES) {
-          throw new TiledMcpError(
-            "RESULT_LIMIT_EXCEEDED",
-            `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-            {
-              limit: MAX_CELL_WRITES,
-              actual: cellWrites + 1,
-              operationIndex,
-            },
-          );
+          throw cellWriteBudgetExceeded(cellWrites + 1, {
+            operationIndex,
+          });
         }
         const queue: Array<{
           x: number;
@@ -1058,14 +1061,9 @@ export function validateAndSummarizeOperations(
                 nextChangedCellCount >
               MAX_CELL_WRITES
             ) {
-              throw new TiledMcpError(
-                "RESULT_LIMIT_EXCEEDED",
-                `A change set may write at most ${MAX_CELL_WRITES} cells.`,
+              throw cellWriteBudgetExceeded(
+                cellWrites + nextChangedCellCount,
                 {
-                  limit: MAX_CELL_WRITES,
-                  actual:
-                    cellWrites +
-                    nextChangedCellCount,
                   operationIndex,
                 },
               );
@@ -1140,10 +1138,7 @@ export function validateAndSummarizeOperations(
       const operationContext =
         `operations[${operationIndex}]`;
       assertExactObjectKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         new Set(["destination", "source", "type"]),
         operationContext,
       );
@@ -1160,10 +1155,7 @@ export function validateAndSummarizeOperations(
         );
       }
       assertExactObjectKeys(
-        operation.source as unknown as Record<
-          string,
-          unknown
-        >,
+        operation.source,
         new Set([
           "height",
           "layerId",
@@ -1174,10 +1166,7 @@ export function validateAndSummarizeOperations(
         `${operationContext}.source`,
       );
       assertExactObjectKeys(
-        operation.destination as unknown as Record<
-          string,
-          unknown
-        >,
+        operation.destination,
         new Set(["layerId", "x", "y"]),
         `${operationContext}.destination`,
       );
@@ -1244,15 +1233,9 @@ export function validateAndSummarizeOperations(
         cellWrites + copyCellCount >
           MAX_CELL_WRITES
       ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          {
-            limit: MAX_CELL_WRITES,
-            actual: cellWrites + copyCellCount,
-            operationIndex,
-          },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + copyCellCount, {
+          operationIndex,
+        });
       }
       const scannedCellCount = copyCellCount * 2;
       if (
@@ -1466,7 +1449,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "stampPattern") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set([
           "layerId",
           "pattern",
@@ -1508,14 +1491,9 @@ export function validateAndSummarizeOperations(
         cellWrites + patternCellCount >
         MAX_CELL_WRITES
       ) {
-        throw new TiledMcpError(
-          "RESULT_LIMIT_EXCEEDED",
-          `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-          {
-            limit: MAX_CELL_WRITES,
-            actual: cellWrites + patternCellCount,
-          },
-        );
+        throw cellWriteBudgetExceeded(cellWrites + patternCellCount, {
+          operationIndex,
+        });
       }
       const layer = findTileLayer(
         map,
@@ -1793,10 +1771,9 @@ export function validateAndSummarizeOperations(
           cellWrites + replacedCellCount + 1 >
           MAX_CELL_WRITES
         ) {
-          throw new TiledMcpError(
-            "RESULT_LIMIT_EXCEEDED",
-            `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-            { limit: MAX_CELL_WRITES },
+          throw cellWriteBudgetExceeded(
+            cellWrites + replacedCellCount + 1,
+            { operationIndex },
           );
         }
         writeLayerGid(layer, x, y, replacement);
@@ -1956,7 +1933,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "createObject") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["layerId", "object", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -1998,10 +1975,7 @@ export function validateAndSummarizeOperations(
       operation.type === "instantiateTemplate"
     ) {
       assertExactObjectKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         new Set([
           "expectedTemplateRevision",
           "layerId",
@@ -2078,7 +2052,7 @@ export function validateAndSummarizeOperations(
       objectMutations += 1;
     } else if (operation.type === "updateObject") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["objectId", "patch", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -2128,7 +2102,7 @@ export function validateAndSummarizeOperations(
       objectMutations += 1;
     } else if (operation.type === "deleteObjects") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["objectIds", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -2182,11 +2156,7 @@ export function validateAndSummarizeOperations(
       );
     }
     if (cellWrites > MAX_CELL_WRITES) {
-      throw new TiledMcpError(
-        "RESULT_LIMIT_EXCEEDED",
-        `A change set may write at most ${MAX_CELL_WRITES} cells.`,
-        { limit: MAX_CELL_WRITES },
-      );
+      throw cellWriteBudgetExceeded(cellWrites, { operationIndex });
     }
     if (objectMutations > MAX_OBJECT_MUTATIONS) {
       throw new TiledMcpError(
@@ -4934,7 +4904,7 @@ function updateBasicObject(
   if (hasTextPatch && shape !== "text") {
     throw new TiledMcpError(
       "OBJECT_SHAPE_MISMATCH",
-      "Text-specific fields can be updated only on text objects.",
+      `Object ${objectId} in ${mapPath} is a ${shape} object; text fields apply only to text objects. Drop the text fields, or confirm the object with tiled_get_object.`,
       { path: mapPath, objectId, shape },
     );
   }
@@ -4950,7 +4920,7 @@ function updateBasicObject(
   ) {
     throw new TiledMcpError(
       "OBJECT_SHAPE_MISMATCH",
-      "Points can be updated only on polygon or polyline objects.",
+      `Object ${objectId} in ${mapPath} is a ${shape} object; points apply only to polygon or polyline objects.`,
       { path: mapPath, objectId, shape },
     );
   }
@@ -4961,7 +4931,7 @@ function updateBasicObject(
   ) {
     throw new TiledMcpError(
       "OBJECT_SHAPE_MISMATCH",
-      "Point objects do not have editable width or height.",
+      `Object ${objectId} in ${mapPath} is a point object, which has no editable width or height.`,
       { path: mapPath, objectId },
     );
   }
@@ -4972,7 +4942,7 @@ function updateBasicObject(
   ) {
     throw new TiledMcpError(
       "OBJECT_SHAPE_MISMATCH",
-      "Polygon and polyline objects do not have editable width or height.",
+      `Object ${objectId} in ${mapPath} is a ${shape} object; its size derives from its points, so width and height are not editable.`,
       { path: mapPath, objectId, shape },
     );
   }
@@ -4984,7 +4954,7 @@ function updateBasicObject(
   if (hasTilePatch && shape !== "tile") {
     throw new TiledMcpError(
       "OBJECT_SHAPE_MISMATCH",
-      "The tile reference can be replaced only on existing tile objects.",
+      `Object ${objectId} in ${mapPath} is a ${shape} object; the tile reference can be replaced only on existing tile objects.`,
       { path: mapPath, objectId, shape },
     );
   }
@@ -5655,7 +5625,7 @@ function finalizeChunkedTileLayerWrite(
     layerId: layer.id,
     mapPath,
   });
-  layer.object.chunks = serialized.chunks as unknown as JsonValue;
+  layer.object.chunks = serialized.chunks;
   layer.object.width = serialized.width;
   layer.object.height = serialized.height;
   layer.object.startx = serialized.startX;

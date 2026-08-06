@@ -72,36 +72,13 @@
       }
     },
     {
-      "name": "tiled_preview_prepared_checkpoint_discard",
+      "name": "tiled_preview_prepared_checkpoint",
       "profile": "core",
       "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
+        "checkpointId": "00000000-0000-4000-8000-000000000000",
+        "resolution": "discard"
       },
-      "purpose": "仅在当前目标仍精确等于写前状态时，预览丢弃一个 prepared checkpoint，不立即删除。"
-    },
-    {
-      "name": "tiled_preview_prepared_checkpoint_commit",
-      "profile": "core",
-      "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
-      },
-      "purpose": "对目标精确匹配 after revision、但来源无法自动证明的 create checkpoint，预览显式确认其为 committed；只改变内部 manifest。"
-    },
-    {
-      "name": "tiled_preview_prepared_checkpoint_abandon",
-      "profile": "core",
-      "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
-      },
-      "purpose": "对机器分类为含混冲突的 prepared checkpoint，预览永久放弃恢复点；项目文件保持不变。"
-    },
-    {
-      "name": "tiled_preview_checkpoint_prune",
-      "profile": "core",
-      "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
-      },
-      "purpose": "固定一个已提交 checkpoint 的原始 manifest revision，预览永久删除该恢复点但不立即执行。"
+      "purpose": "预览裁定一个 prepared checkpoint；resolution 选择 discard / commit / abandon，此处证明目标仍等于写入前状态并提议移除 manifest。"
     },
     {
       "name": "tiled_preview_checkpoint_prune_batch",
@@ -263,36 +240,6 @@
         "layerIdsB": [
           2
         ]
-      }
-    },
-    {
-      "name": "tiled_render_isometric",
-      "profile": "core",
-      "purpose": "Render a bounded isometric map region as a PNG diamond using the official IsometricRenderer placement math.",
-      "arguments": {
-        "mapPath": "maps/iso.tmj",
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 8,
-          "height": 8
-        },
-        "scale": 2
-      }
-    },
-    {
-      "name": "tiled_render_hexagonal",
-      "profile": "core",
-      "purpose": "Render a bounded staggered or hexagonal map region as a PNG using the official HexagonalRenderer transform.",
-      "arguments": {
-        "mapPath": "maps/hex.tmj",
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 8,
-          "height": 8
-        },
-        "scale": 2
       }
     },
     {
@@ -927,34 +874,14 @@
       }
     },
     {
-      "name": "tiled_preview_write_tmx",
+      "name": "tiled_preview_write_xml",
       "profile": "core",
-      "purpose": "Serialize a restricted-profile .tmj map to byte-exact Tiled 1.12.2 TMX as a new sibling file, without the Tiled CLI.",
       "arguments": {
-        "mapPath": "maps/example.tmj",
+        "sourcePath": "maps/example.tmj",
         "targetPath": "maps/example.tmx",
-        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
-    },
-    {
-      "name": "tiled_preview_write_tsx",
-      "profile": "core",
-      "purpose": "Serialize a restricted-profile .tsj atlas tileset to byte-exact Tiled 1.12.2 TSX as a new sibling file, without the Tiled CLI.",
-      "arguments": {
-        "tilesetPath": "tiles/terrain.tsj",
-        "targetPath": "tiles/terrain.tsx",
-        "expectedTilesetRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
-    },
-    {
-      "name": "tiled_preview_write_tx",
-      "profile": "core",
-      "purpose": "Serialize a restricted-profile .tj object template to Tiled 1.12.2 TX as a new sibling file, without the Tiled CLI.",
-      "arguments": {
-        "templatePath": "templates/crate.tj",
-        "targetPath": "templates/crate.tx",
-        "expectedTemplateRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "purpose": "预览把一个受限档案的 .tmj 原生序列化为字节级一致的 .tmx；写入器由源扩展名 (.tmj/.tsj/.tj) 选择。"
     },
     {
       "name": "tiled_select",

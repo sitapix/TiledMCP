@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 
 export const MAX_DELETE_REFERENCE_SCAN_ASSETS = 2_000;
@@ -75,7 +74,7 @@ export function fileDeletePlanId(
   value: Omit<FileDeletePlan, "id">,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(FILE_DELETE_PLAN_HASH_DOMAIN)
@@ -161,10 +160,10 @@ export function assertFileDeletePlan(
   });
   if (
     stableJson(
-      plan.summary as unknown as JsonValue,
+      plan.summary,
     ) !==
     stableJson(
-      expectedSummary as unknown as JsonValue,
+      expectedSummary,
     )
   ) {
     throw new TiledMcpError(

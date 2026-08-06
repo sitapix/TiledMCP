@@ -61,6 +61,8 @@ export interface SummarizeTilesetDocumentInput {
   tileCount: number;
   startTileId: number;
   limit: number;
+  /** First wangsets[] index to return; earlier sets page out, not error. */
+  startWangSetIndex: number;
   /** Present exactly for image-collection tilesets. */
   collection?: TilesetCollectionProfile;
   /**
@@ -518,12 +520,35 @@ export function summarizeTilesetDocument(
       budget,
     ),
   );
+  const startWangSetIndex = input.startWangSetIndex;
+  if (
+    !Number.isSafeInteger(startWangSetIndex) ||
+    startWangSetIndex < 0 ||
+    (startWangSetIndex > 0 &&
+      startWangSetIndex >= wangSetSummaries.length)
+  ) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      wangSetSummaries.length === 0
+        ? `${path} has no Wang sets; startWangSetIndex must be 0.`
+        : `startWangSetIndex must be between 0 and ${wangSetSummaries.length - 1}.`,
+      {
+        path,
+        startWangSetIndex,
+        wangSets: wangSetSummaries.length,
+      },
+    );
+  }
   const returnedWangSets = wangSetSummaries.slice(
-    0,
-    MAX_TILESET_WANG_SET_SUMMARIES,
+    startWangSetIndex,
+    startWangSetIndex + MAX_TILESET_WANG_SET_SUMMARIES,
   );
+  const wangSetsHaveEarlier = startWangSetIndex > 0;
+  const wangSetsHaveMore =
+    startWangSetIndex + returnedWangSets.length <
+    wangSetSummaries.length;
   const wangSetsTruncated =
-    returnedWangSets.length < wangSetSummaries.length;
+    wangSetsHaveEarlier || wangSetsHaveMore;
 
   const animatedTiles = tileSummaries.filter(
     ({ animation }) => animation !== undefined,
@@ -648,9 +673,18 @@ export function summarizeTilesetDocument(
     },
     wangSets: {
       order: "source",
+      startWangSetIndex,
       total: wangSetSummaries.length,
       returned: returnedWangSets.length,
+      hasEarlier: wangSetsHaveEarlier,
+      hasMore: wangSetsHaveMore,
       truncated: wangSetsTruncated,
+      ...(wangSetsHaveMore
+        ? {
+            nextStartWangSetIndex:
+              startWangSetIndex + returnedWangSets.length,
+          }
+        : {}),
       items: returnedWangSets,
     },
     truncated:

@@ -5,7 +5,7 @@ import { z } from "zod";
  * MCP prompts: the task-shaped entry points into a tool-shaped surface.
  *
  * The tool list answers "what can this server do"; it cannot answer "which
- * eight of these fifty-seven calls, in what order, do I make to get a room
+ * eight of these fifty-two calls, in what order, do I make to get a room
  * built". The guide answers that, but only for a reader willing to work
  * through it. A prompt hands the caller the sequence directly.
  *
@@ -46,8 +46,9 @@ is only correct if you have actually looked at both the plan and the tiles.
 ## 1. Orient
 - \`tiled_get_capabilities\` -- confirm which tools are registered (some are
   gated on a local Tiled CLI), plus renderer limits and the edit profile.
-- \`tiled_list_files\` -- confirm the project-relative paths of the map, the
-  tileset and the plan image.
+- \`tiled_list_files\` -- confirm the project-relative paths of the map and the
+  tileset. It lists Tiled assets only, never images: take the plan image path
+  from the request as given (a wrong image path fails closed at import time).
 
 ## 2. Read the target map
 - \`tiled_get_map_summary\` on \`${mapPath}\`. Keep everything it returns.
@@ -83,11 +84,12 @@ is only correct if you have actually looked at both the plan and the tiles.
   before going further. Fix the palette now if the shapes are wrong.
 
 ## 6. Run the walls
-- Preferred, if \`tiled_preview_terrain\` is registered: paint Wang corners so
-  junctions and corners pick the right tile automatically. Corners address the
-  corner grid -- \`x\` in \`[0, width]\`, \`y\` in \`[0, height]\` -- with 1-based
-  wang colour indexes, and the set must be corner or mixed type.
-- Otherwise place walls explicitly with \`tiled_preview_shape\` (a rectangle
+- Preferred, when the tileset defines a Wang set: \`tiled_preview_terrain\`
+  paints Wang corners so junctions and corners pick the right tile
+  automatically -- it matches natively, with no Tiled install. Corners address
+  the corner grid -- \`x\` in \`[0, width]\`, \`y\` in \`[0, height]\` -- with
+  1-based wang colour indexes, and the set must be corner or mixed type.
+- Without a Wang set, place walls explicitly with \`tiled_preview_shape\` (a rectangle
   outline traces a room; a Bresenham line traces a run) or with a
   \`fillRegion\` / \`setTiles\` operation through \`tiled_preview_edits\`.
 
@@ -196,8 +198,10 @@ ${PIN_RULES}
 ## 1. Orient
 - \`tiled_get_capabilities\` -- confirm which tools are registered and the
   renderer and edit limits you are working inside.
-- \`tiled_list_files\` -- confirm the image path, and pick a map and tileset
-  path in a directory that already exists. Do not invent a new folder.
+- \`tiled_list_files\` -- pick a map and tileset path in a directory that
+  already exists. Do not invent a new folder. It lists Tiled assets only,
+  never images: take the sheet image path from the request as given
+  (\`tiled_create_tileset\` fails closed if the image is missing).
 
 ## 2. Create the tileset from the sheet
 - \`tiled_create_tileset\` with the image path and the tile width and height.
@@ -207,6 +211,10 @@ ${PIN_RULES}
 
 If the tile size is wrong the grid is wrong and every later tile id is wrong,
 so confirm it against the sheet before applying rather than after painting.
+If you had to guess the tile size, verify it immediately after step 2: render
+the new tileset with \`tiled_render_tileset_sheet\` and look at the grid. If
+tiles are misaligned, \`tiled_delete_file\` the TSJ and redo step 2 with the
+corrected size before creating anything else.
 
 ## 3. Create the map
 - \`tiled_create_map\` with width, height, tile width and tile height. This is
@@ -250,8 +258,8 @@ at them. Do at least one of:
   operation in their change set.
 
 ## 8. Look at what you built
-- \`tiled_render_map\` or \`tiled_render_preview\` (\`tiled_render_isometric\`
-  or \`tiled_render_hexagonal\` for those projections) and actually inspect the
+- \`tiled_render_map\` or \`tiled_render_preview\` (which dispatches on the
+  map's own projection) and actually inspect the
   image.
 - \`tiled_analyze_usage\` to confirm the cell counts are what you intended, and
   \`tiled_validate\` to catch anything malformed.

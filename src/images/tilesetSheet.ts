@@ -20,7 +20,8 @@ export const MAX_TILESET_INPUT_PIXELS = 4_096 * 4_096;
 export const MAX_TILESET_INPUT_EDGE = 8_192;
 export const MAX_TILESET_SHEET_EDGE = 2_048;
 export const MAX_TILESET_SHEET_PIXELS = 1_500_000;
-export const MAX_TILESET_SHEET_BYTES = 8 * 1024 * 1024;
+/** Held to the inline-image ceiling; see `MAX_RASTER_PNG_BYTES`. */
+export const MAX_TILESET_SHEET_BYTES = 7 * 1024 * 1024;
 export const MAX_TILESET_SHEET_PAGE_SIZE = 256;
 export const DEFAULT_TILESET_SHEET_PAGE_SIZE = 64;
 export const MAX_TILESET_SHEET_COLUMNS = 32;
@@ -470,7 +471,7 @@ export async function renderCollectionTiles(
   if (maximumColumns < 1) {
     throw new TiledMcpError(
       "IMAGE_DIMENSIONS_EXCEEDED",
-      "A single scaled collection tile and its local ID label do not fit the tile render budget.",
+      `The largest collection tile (${maxTileWidth}x${maxTileHeight}) at scale ${scale}, plus its local-ID label, exceeds the ${MAX_TILE_RENDER_EDGE}px render edge budget. Lower scale and retry.`,
       {
         maxTileWidth,
         maxTileHeight,
@@ -991,7 +992,7 @@ function computeTilesLayout(
   if (maximumColumns < 1) {
     throw new TiledMcpError(
       "IMAGE_DIMENSIONS_EXCEEDED",
-      "A single scaled tile and its local ID label do not fit the tile render budget.",
+      `A single ${input.tileWidth}x${input.tileHeight} tile at scale ${scale}, plus its local-ID label, exceeds the ${MAX_TILE_RENDER_EDGE}px render edge budget. Lower scale and retry.`,
       {
         tileWidth: input.tileWidth,
         tileHeight: input.tileHeight,

@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 import type {
   TileMetadataUpdate,
@@ -40,7 +39,7 @@ export function embeddedTilesetEditPlanId(
     .update(
       EMBEDDED_TILESET_EDIT_PLAN_HASH_DOMAIN,
     )
-    .update(stableJson(value as unknown as JsonValue))
+    .update(stableJson(value))
     .digest("hex")}`;
 }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MAX_PLAN_OPERATIONS } from "../maps/mapDomain.js";
 import {
   MAX_OBJECT_SHAPE_POINTS,
   MAX_OBJECT_SHAPE_POINTS_PER_CHANGE_SET,
@@ -1260,27 +1261,6 @@ const restoreCheckpointOperationPreviewOutputSchema = z
   })
   .strict();
 
-const pruneCheckpointOperationPreviewOutputSchema = z
-  .object({
-    type: z.literal("pruneCheckpoint"),
-    destructive: z.literal(true),
-    warning: z.string(),
-    checkpointId: checkpointIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    status: z.literal("committed"),
-    manifestRevision: revisionOutputSchema,
-    manifestBytes:
-      positiveIntegerOutputSchema.max(
-        Number.MAX_SAFE_INTEGER,
-      ),
-    removesRecoveryPoint: z.literal(true),
-    removesProjectAsset: z.literal(false),
-    garbageCollection: z.literal(
-      "fail-closed-after-manifest-prune",
-    ),
-  })
-  .strict();
-
 const pruneCheckpointBatchOperationPreviewOutputSchema =
   z
     .object({
@@ -2186,71 +2166,6 @@ const checkpointPruneBeforeOutputSchema = z.union([
     }),
 ]);
 
-const checkpointPruneSummaryOutputSchema = z
-  .object({
-    operationCount: z.literal(1),
-    destructive: z.literal(true),
-    checkpointId: checkpointIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    status: z.literal("committed"),
-    manifestRevision: revisionOutputSchema,
-    manifestBytes:
-      positiveIntegerOutputSchema.max(
-        Number.MAX_SAFE_INTEGER,
-      ),
-    removesRecoveryPoint: z.literal(true),
-    removesProjectAsset: z.literal(false),
-    garbageCollection: z.literal(
-      "fail-closed-after-manifest-prune",
-    ),
-    warning: z.string(),
-  })
-  .strict();
-
-const checkpointPrunePreviewOutputSchema = z
-  .object({
-    kind: z.literal("checkpointPrune"),
-    changeSetId: changeSetIdOutputSchema,
-    planDigest: changeSetIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    expectedRevision: revisionOutputSchema,
-    checkpoint: z
-      .object({
-        id: checkpointIdOutputSchema,
-        status: z.literal("committed"),
-        label: z
-          .string()
-          .max(1_024)
-          .optional(),
-        createdAt:
-          checkpointTimestampOutputSchema,
-        path: projectPathOutputSchema,
-        before:
-          checkpointPruneBeforeOutputSchema,
-        afterRevision: revisionOutputSchema,
-      })
-      .strict(),
-    manifest: z
-      .object({
-        revision: revisionOutputSchema,
-        size: positiveIntegerOutputSchema.max(
-          Number.MAX_SAFE_INTEGER,
-        ),
-      })
-      .strict(),
-    operations: z.tuple([
-      pruneCheckpointOperationPreviewOutputSchema,
-    ]),
-    summary:
-      checkpointPruneSummaryOutputSchema,
-    snapshotConsistency: z.literal(
-      "non-atomic-read-set",
-    ),
-    createdAt: isoTimestampOutputSchema,
-    expiresAt: isoTimestampOutputSchema,
-  })
-  .strict();
-
 const checkpointPruneBatchSummaryOutputSchema =
   z
     .object({
@@ -2948,10 +2863,6 @@ export const checkpointRestorePreviewToolOutputSchema =
     checkpointRestorePreviewOutputSchema,
   );
 
-export const checkpointPrunePreviewToolOutputSchema =
-  toolOutputSchema(
-    checkpointPrunePreviewOutputSchema,
-  );
 
 export const checkpointPruneBatchPreviewToolOutputSchema =
   toolOutputSchema(
@@ -2971,6 +2882,22 @@ export const preparedCheckpointCommitPreviewToolOutputSchema =
 export const preparedCheckpointAbandonPreviewToolOutputSchema =
   toolOutputSchema(
     preparedCheckpointAbandonPreviewOutputSchema,
+  );
+
+/**
+ * `tiled_preview_prepared_checkpoint` absorbed the three per-resolution tools,
+ * which took an identical `checkpointId` and identical annotations and differed
+ * only in which adjudication they proposed. The result is one of the three
+ * proposal shapes, kept as separate closed schemas so each keeps its own `kind`
+ * discriminator and its own evidence block.
+ */
+export const preparedCheckpointPreviewToolOutputSchema =
+  toolOutputSchema(
+    z.union([
+      preparedCheckpointDiscardPreviewOutputSchema,
+      preparedCheckpointCommitPreviewOutputSchema,
+      preparedCheckpointAbandonPreviewOutputSchema,
+    ]),
   );
 
 export const addTilesetPreviewToolOutputSchema =
@@ -4020,4 +3947,230 @@ export const createLayerPreviewToolOutputSchema =
 export const previewEditsToolOutputSchema =
   toolOutputSchema(
     genericMapEditPreviewOutputSchema,
+  );
+
+/*
+ * The eight narrowed map-edit preview schemas below.
+ *
+ * `tiled_preview_edits` keeps the generic union above: its `operations` come
+ * straight from the caller, so all 18 kinds really are reachable. Every other
+ * map-edit preview tool drives a planner that constructs the operation array
+ * itself, and `MapService.planEdits` puts a `structuredClone` of exactly that
+ * array into the plan -- it appends nothing -- so the planner's construction
+ * site is the whole operation surface. `MapService.planMergeMap` builds its
+ * plan inline rather than through `planEdits`, but pushes only `setTiles` and
+ * calls the same `validateAndSummarizeOperations`.
+ *
+ * Each `summary` therefore carries only the base members. The optional ones the
+ * generic union allows are each pushed from exactly one operation branch of
+ * `mapOperations.ts` -- `transcodes` from `transcodeTileLayer`, `mapUpdates`
+ * from `updateMap`, `mapResizes` from `resizeMap`, `removedTilesets` from
+ * `removeTilesetFromMap`, `deletedLayers`/`movedLayers`/`duplicatedLayers` from
+ * their matching layer operations, `tileReplacements` from `replaceTiles`,
+ * `tileStamps` from `stampPattern`, `tileFloodFills` from `floodFill`,
+ * `tileCopies` from `copyRegion`, and `layerUpdates` from `updateLayer` -- and
+ * no planner here emits any of those kinds.
+ *
+ * `chunkedTileLayerIds` is the one member that depends on the map rather than
+ * on the operation: `finalizeChunkedTileLayerWrite` records any layer with a
+ * `chunked` view, dirty or not, and the `setTiles` branch calls it. Chunked
+ * layers exist only on infinite maps, and every planner here loads its context
+ * without `allowInfinite`, so `loadEditableContext` rejects those with
+ * `UNSUPPORTED_MAP_PROFILE` before an operation is built. That check is the
+ * planner's own: `planEdits` itself passes `allowInfinite: true`, so the
+ * guarantee comes from the planner's load, not from the shared path.
+ * `planInstantiateTemplate` has no load of its own, and does not need one --
+ * `instantiateTemplate` never touches a tile layer, so it cannot reach
+ * `finalizeChunkedTileLayerWrite` on any map.
+ *
+ * That reasoning is load-bearing: `register()` turns an output-schema mismatch
+ * into an opaque `INTERNAL_ERROR` rather than a loud failure, so a member that
+ * turns out to be reachable would surface as an unexplained error on a user's
+ * map rather than as a test failure here. `tests/previewShape.test.ts` and
+ * `tests/previewNarrowedOutputs.test.ts` drive every one of these tools over
+ * the MCP surface, which is what exercises output validation at all.
+ */
+
+/**
+ * A plan of exactly one `setTiles` against one tile layer.
+ *
+ * `planDrawShape`, `planGenerate`, `planScatter`, `planImportImage` and
+ * `planTerrainPaint` each call `planEdits` with a hardcoded single-element
+ * `[{ type: "setTiles", ... }]`, so neither a second element nor another kind
+ * is constructible. The `setTiles` branch adds the one layer to both
+ * `affectedLayerIds` and `affectedTileLayerIds` and never touches an object
+ * accumulator, which is what pins the four object members empty.
+ *
+ * `cellWrites` stays non-negative rather than positive: the branch rejects an
+ * empty `cells` array, so it is in fact always >= 1, but a schema looser than
+ * the code cannot cause the `INTERNAL_ERROR` a tighter one could.
+ */
+const singleSetTilesSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedTileLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewSingleSetTilesToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z.tuple([
+          setTilesOperationPreviewOutputSchema,
+        ]),
+        summary: singleSetTilesSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A plan of one or more `setTiles`, one per touched tile layer.
+ *
+ * `planValidationFixes` pushes one `setTiles` per tile layer holding dangling
+ * GIDs; `planMergeMap` pushes one per non-empty source tile layer. Both fail
+ * closed with `INVALID_ARGUMENT` on an empty array, and
+ * `validateAndSummarizeOperations` caps the length at `MAX_PLAN_OPERATIONS`,
+ * which is the 128 declared here. The summary members are the single-operation
+ * ones widened to N layers.
+ */
+const setTilesSequenceSummaryOutputSchema = z
+  .object({
+    operationCount: positiveIntegerOutputSchema,
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedTileLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewSetTilesSequenceToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z
+          .array(
+            setTilesOperationPreviewOutputSchema,
+          )
+          .min(1)
+          .max(MAX_PLAN_OPERATIONS),
+        summary:
+          setTilesSequenceSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A plan of exactly one `instantiateTemplate`.
+ *
+ * `planInstantiateTemplate` calls `planEdits` with a hardcoded single-element
+ * `[{ type: "instantiateTemplate", ... }]`. The branch resolves one object
+ * layer, appends one minimal instance, and adds to `affectedLayerIds`,
+ * `affectedObjectLayerIds` and `createdObjectIds` only -- it writes no cells,
+ * so `cellWrites` is the literal 0 and `affectedTileLayerIds` is empty.
+ */
+const instantiateTemplateSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    cellWrites: z.literal(0),
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedTileLayerIds: z.tuple([]),
+    affectedObjectLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    createdObjectIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewInstantiateTemplateToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z.tuple([
+          instantiateTemplateOperationPreviewOutputSchema,
+        ]),
+        summary:
+          instantiateTemplateSummaryOutputSchema,
+      })
+      .strict(),
+  );
+
+/**
+ * A prefab stamp: `setTiles` per layer pair, then `createObject` per selected
+ * object with an optional `updateObject` carrying its custom properties.
+ *
+ * Those are the only three kinds `planStampPrefab` pushes; objects that are
+ * template instances fail closed rather than becoming `instantiateTemplate`.
+ * `deletedObjectIds` stays empty because it is populated only in the
+ * `deleteObjects` branch. The remaining members stay plain arrays: a
+ * tiles-only or objects-only stamp is legal, so neither `affectedTileLayerIds`
+ * nor `createdObjectIds` has a floor above zero.
+ */
+const prefabSummaryOutputSchema = z
+  .object({
+    operationCount: positiveIntegerOutputSchema,
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .min(1),
+    affectedTileLayerIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    affectedObjectLayerIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    createdObjectIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    updatedObjectIds: z.array(
+      positiveIdOutputSchema,
+    ),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
+export const previewPrefabToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z
+          .array(
+            z.discriminatedUnion("type", [
+              setTilesOperationPreviewOutputSchema,
+              createObjectOperationPreviewOutputSchema,
+              updateObjectOperationPreviewOutputSchema,
+            ]),
+          )
+          .min(1)
+          .max(MAX_PLAN_OPERATIONS),
+        summary: prefabSummaryOutputSchema,
+      })
+      .strict(),
   );

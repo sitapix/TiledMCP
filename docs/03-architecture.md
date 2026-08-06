@@ -686,6 +686,109 @@ Test layers:
 6. **Security** — hostile JSON, compression, images, paths, symlink races, timeouts, subprocess
    output floods.
 
+### Preview output schemas are narrowed to what each planner can emit
+
+Nine preview tools once shared `previewEditsToolOutputSchema`, the generic `mapEdit` union, at
+73,837 bytes apiece — about half of all output-schema bytes in `tools/list`. Eight of them are now
+narrowed, taking the total from 1,207,968 to 690,793 bytes.
+
+Narrowing a tool means proving two things: which operation kinds it can emit, and which optional
+summary members it can populate. The asymmetry that governs the bar is how a wrong guess fails.
+`register()` validates the handler's `structuredContent` against the declared output schema and
+turns a mismatch into `INTERNAL_ERROR` with empty details. An over-tight output schema therefore
+does not fail loudly at review time; it fails in production, on someone's map, as an opaque error
+with no indication that a schema is responsible. So the bar is unreachability **proven from
+source**, never a shape observed on a fixture — a fixture only shows what one project produced.
+
+The payoff is also smaller than it looks. `outputSchema` is not part of the Anthropic Messages API
+tool definition — that carries `name`, `description`, and `input_schema` — so this is transport
+bytes on one `tools/list` per session, not model context. The number worth watching is the ~87 KB
+of *input* schemas, where `tiled_preview_edits` alone is 20,389 bytes, about a quarter of the
+total.
+
+Two facts do the work for all eight. `MapService.planEdits` `structuredClone`s the operation array
+its caller passes and puts it into the plan unchanged — it appends nothing — so a planner that
+constructs its own array *is* the entire operation surface. And each optional summary member is
+pushed from exactly one operation branch of `mapOperations.ts`: `transcodes` from
+`transcodeTileLayer`, `tileStamps` from `stampPattern`, `tileFloodFills` from `floodFill`,
+`tileCopies` from `copyRegion`, `layerUpdates` from `updateLayer`, and so on. A planner that emits
+none of those kinds cannot populate them.
+
+| Tool | Planner | Operations | Bytes |
+|---|---|---|---|
+| `tiled_preview_shape` | `planDrawShape` | one `setTiles` | 7,765 |
+| `tiled_preview_generate` | `planGenerate` | one `setTiles` | 7,765 |
+| `tiled_preview_scatter` | `planScatter` | one `setTiles` | 7,765 |
+| `tiled_preview_import_image` | `planImportImage` | one `setTiles` | 7,765 |
+| `tiled_preview_terrain` | `planTerrainPaint` | one `setTiles` | 7,765 |
+| `tiled_preview_validation_fixes` | `planValidationFixes` | 1..128 `setTiles` | 7,804 |
+| `tiled_preview_merge_map` | `planMergeMap` | 1..128 `setTiles` | 7,804 |
+| `tiled_preview_template` | `planInstantiateTemplate` | one `instantiateTemplate` | 6,649 |
+| `tiled_preview_prefab` | `planStampPrefab` | `setTiles`, `createObject`, `updateObject` | 20,204 |
+| `tiled_preview_edits` | `planEdits` | all 18 kinds | 73,837 |
+
+`tiled_preview_edits` keeps the generic union and should: its operations come straight from the
+caller, so every kind really is reachable. `planMergeMap` is the one planner that builds its plan
+inline rather than through `planEdits`, but it pushes only `setTiles` and calls the same
+`validateAndSummarizeOperations`.
+
+`summary.chunkedTileLayerIds` is the one member that depends on the map rather than the operation,
+and it is the easiest to get wrong. `finalizeChunkedTileLayerWrite` records any layer holding a
+`chunked` view — dirty or not — and the `setTiles` branch calls it. Chunked layers exist only on
+infinite maps. The guarantee comes from **each planner's own** `loadEditableContext` call omitting
+`allowInfinite`, which rejects with `UNSUPPORTED_MAP_PROFILE` before an operation is built; it does
+*not* come from the shared path, because `planEdits` itself passes `allowInfinite: true`.
+`planInstantiateTemplate` has no load of its own and needs none — `instantiateTemplate` never
+touches a tile layer, so it cannot reach the recording site on any map.
+
+Two more traps worth naming, both settled by reading the branch rather than a fixture: a zlib layer
+does *not* populate `transcodes`, because writes are source-preserving, so the layer keeps its
+encoding and nothing re-encodes; and `cellWrites` stays declared non-negative even where the
+`setTiles` branch guarantees ≥ 1, because a schema looser than the code cannot cause the
+`INTERNAL_ERROR` a tighter one could.
+
+Narrow another tool only behind end-to-end coverage through the MCP surface.
+`tests/previewShape.test.ts` and `tests/previewNarrowedOutputs.test.ts` are the pattern, including
+the negative cases — a test that calls `MapService` directly does not exercise output validation at
+all and will not catch the failure. Both assert the summary's key set *exactly*, which is what
+proves no optional member appeared; a `toMatchObject` would pass even when one did.
+
+### Deduplicating input schemas with `$ref` does not pay — measured
+
+The tool surface costs ~117 KB of model context per session: 87,327 bytes of input schemas, 29,014
+of descriptions, 1,117 of names. The obvious lever looks like deduplication — `projectPathSchema`
+is inlined 54 times across the surface, `revisionSchema` 50 times, and the `.meta({ id })`
+mechanism that already emits `#/definitions/TileRef` would collapse them.
+
+It was tried, measured, and reverted. Counting repeats *across the surface* says ~19,500 bytes are
+recoverable; the real figure is **362 bytes**. The error is that `definitions` is per-tool — each
+tool's `inputSchema` is an independent document, so there is no cross-tool sharing. What matters is
+repeats *within one tool*, and the common scalars appear about 1.3 times per tool:
+
+| schema | uses | tools | avg/tool | net |
+|---|---|---|---|---|
+| `projectPathSchema` | 54 | 43 | 1.3 | **−1,060** |
+| `uint32Schema` | 7 | 7 | 1.0 | **−287** |
+| `coordinateOrdinateSchema` | 61 | 5 | 12.2 | +627 |
+| `revisionSchema` | 50 | 26 | 1.9 | +774 |
+
+Extracting a schema used once in a tool costs a `definitions` entry *plus* a `$ref` where an inline
+constraint used to be — strictly worse. Only a schema concentrated in few tools wins, and even the
+profitable subset netted 362 bytes, 0.3% of the surface. Do not re-attempt this without a
+per-tool-repeat count; a surface-wide count will mislead by roughly 50×.
+
+Two mechanics worth keeping, since they are not obvious. `.meta()` does **not** propagate to
+derived schemas, so `safeIntegerSchema.min(1)` needs its own id to be extracted. And the emitted
+dialect is draft-07, where a `$ref` sibling is ignored — but Zod emits a narrowed derivative as
+`{"minimum":1,"allOf":[{"$ref":…}]}` rather than as a sibling, so constraints layered on an id'd
+base are preserved rather than silently widened.
+
+`tests/schemaRefIntegrity.test.ts` survives from that work and is worth keeping regardless: it
+fails on a `$ref` that resolves to nothing and on a `definitions` entry nothing references, over a
+live server. A dangling ref breaks at the client rather than here, and commit 50fecd0 had to repair
+exactly that by hand. Its third case pins the detectors against a known-broken schema, because two
+all-clear assertions and a detector that silently finds nothing look identical.
+
 ## 16. Configuration
 
 | Setting | Purpose | Default |

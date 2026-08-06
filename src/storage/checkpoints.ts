@@ -9,6 +9,7 @@ import {
   link,
   open,
   opendir,
+  readdir,
   rename,
   unlink,
   type FileHandle,
@@ -54,7 +55,12 @@ const CHECKPOINT_RETENTION_SEQUENCE_MAX_BYTES = 1_024;
 export const MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT = 2;
 export const ROLLING_CHECKPOINT_RETENTION_POLICY =
   "rolling-per-target-count-v1" as const;
-export const MIN_CHECKPOINT_BATCH_PRUNE_COUNT = 2;
+/**
+ * One, not two: the batch prune tool absorbed the former single-checkpoint
+ * prune tool, so a one-element batch is now the only way to prune one
+ * checkpoint. Enforced identically at plan and apply time.
+ */
+export const MIN_CHECKPOINT_BATCH_PRUNE_COUNT = 1;
 export const MAX_CHECKPOINT_BATCH_PRUNE_COUNT = 32;
 export const CHECKPOINT_BATCH_PRUNE_STORE_LOCK_WARNING =
   "Checkpoint batch pruning deleted one or more manifests, but release of the checkpoint-store lock could not be confirmed.";
@@ -551,6 +557,12 @@ export interface CheckpointListOptions {
   /** Maximum directory entries inspected, including ignored atomic-write temp files. */
   scanLimit?: number;
   status?: CheckpointManifest["status"];
+  /**
+   * Opaque resume cursor: the `nextStartAfter` value from the previous page.
+   * Entries are examined in a deterministic sorted order, so resuming never
+   * re-examines or skips an entry.
+   */
+  startAfter?: string;
 }
 
 export interface CorruptCheckpointEntry {
@@ -565,6 +577,9 @@ export interface CheckpointListResult {
   corruptEntries: CorruptCheckpointEntry[];
   scannedEntries: number;
   truncated: boolean;
+  hasMore: boolean;
+  /** Present exactly when hasMore: resume the listing past this cursor. */
+  nextStartAfter?: string;
 }
 
 export class CheckpointStore {
@@ -2505,70 +2520,68 @@ export class CheckpointStore {
       );
     }
 
+    const startAfter = options.startAfter;
+    if (
+      startAfter !== undefined &&
+      (startAfter.length === 0 || startAfter.length > 4_096)
+    ) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "startAfter must be the non-empty nextStartAfter cursor from a previous listing.",
+        { startAfterLength: startAfter.length },
+      );
+    }
+
     const checkpointsDirectory =
       await this.resolver.ensureInternalDirectory(".tiledmcp/checkpoints");
-    const directory = await opendir(checkpointsDirectory);
+    // Examination order is the sorted name sequence, so pages are
+    // deterministic and a resumed listing never re-examines or skips an
+    // entry, unlike raw opendir order. Interrupted atomic manifest writes can
+    // leave private temporary files behind; they are not checkpoint entries
+    // and are dropped before the cursor applies.
+    const names = (await readdir(checkpointsDirectory))
+      .filter((name) => !CHECKPOINT_TEMP_PATTERN.test(name))
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .filter((name) => startAfter === undefined || name > startAfter);
+
     const manifests: CheckpointManifest[] = [];
     const corruptEntries: CorruptCheckpointEntry[] = [];
     let scannedEntries = 0;
     let truncated = false;
-    try {
-      while (true) {
-        const entry = await directory.read();
-        if (!entry) {
-          break;
-        }
-        if (scannedEntries >= scanLimit) {
-          truncated = true;
-          break;
-        }
-        scannedEntries += 1;
-
-        // Interrupted atomic manifest writes can leave these private temporary
-        // files behind. They are not checkpoint entries and are safe to ignore.
-        if (CHECKPOINT_TEMP_PATTERN.test(entry.name)) {
-          continue;
-        }
-
-        const match = CHECKPOINT_MANIFEST_PATTERN.exec(entry.name);
-        if (!match) {
-          if (manifests.length + corruptEntries.length >= limit) {
-            truncated = true;
-            break;
-          }
-          corruptEntries.push({
-            fileName: entry.name,
-            code: "CHECKPOINT_CORRUPT",
-            message: "Unexpected entry in the checkpoint manifest directory.",
-          });
-          continue;
-        }
-
-        const id = match[1] as string;
-        try {
-          const manifest = await this.readManifest(checkpointsDirectory, id);
-          if (options.status !== undefined && manifest.status !== options.status) {
-            continue;
-          }
-          if (manifests.length + corruptEntries.length >= limit) {
-            truncated = true;
-            break;
-          }
-          manifests.push(manifest);
-        } catch (error) {
-          if (manifests.length + corruptEntries.length >= limit) {
-            truncated = true;
-            break;
-          }
-          corruptEntries.push(toCorruptEntry(entry.name, id, error));
-        }
+    let hasMore = false;
+    let lastExamined: string | undefined;
+    for (const name of names) {
+      if (
+        scannedEntries >= scanLimit ||
+        manifests.length + corruptEntries.length >= limit
+      ) {
+        truncated = true;
+        hasMore = true;
+        break;
       }
-    } finally {
-      await directory.close().catch((error: unknown) => {
-        if (!hasCode(error, "ERR_DIR_CLOSED")) {
-          throw error;
+      scannedEntries += 1;
+      lastExamined = name;
+
+      const match = CHECKPOINT_MANIFEST_PATTERN.exec(name);
+      if (!match) {
+        corruptEntries.push({
+          fileName: name,
+          code: "CHECKPOINT_CORRUPT",
+          message: "Unexpected entry in the checkpoint manifest directory.",
+        });
+        continue;
+      }
+
+      const id = match[1] as string;
+      try {
+        const manifest = await this.readManifest(checkpointsDirectory, id);
+        if (options.status !== undefined && manifest.status !== options.status) {
+          continue;
         }
-      });
+        manifests.push(manifest);
+      } catch (error) {
+        corruptEntries.push(toCorruptEntry(name, id, error));
+      }
     }
 
     manifests.sort(
@@ -2582,6 +2595,10 @@ export class CheckpointStore {
       corruptEntries,
       scannedEntries,
       truncated,
+      hasMore,
+      ...(hasMore && lastExamined !== undefined
+        ? { nextStartAfter: lastExamined }
+        : {}),
     };
   }
 

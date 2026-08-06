@@ -64,7 +64,12 @@ import {
 } from "../src/storage/checkpoints.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
-import { SERVER_NAME, SERVER_VERSION } from "../src/version.js";
+import {
+  SERVER_DESCRIPTION,
+  SERVER_NAME,
+  SERVER_TITLE,
+  SERVER_VERSION,
+} from "../src/version.js";
 
 const MAP_PATH = "maps/level.tmj";
 const TILESET_PATH = "tiles/terrain.tsj";
@@ -165,10 +170,7 @@ const CORE_TOOLS = [
   "tiled_list_property_types",
   "tiled_list_checkpoints",
   "tiled_create_checkpoint",
-  "tiled_preview_prepared_checkpoint_discard",
-  "tiled_preview_prepared_checkpoint_commit",
-  "tiled_preview_prepared_checkpoint_abandon",
-  "tiled_preview_checkpoint_prune",
+  "tiled_preview_prepared_checkpoint",
   "tiled_preview_checkpoint_prune_batch",
   "tiled_preview_checkpoint_restore",
   "tiled_get_map_summary",
@@ -179,8 +181,6 @@ const CORE_TOOLS = [
   "tiled_render_tiles",
   "tiled_render_preview",
   "tiled_render_diff",
-  "tiled_render_isometric",
-  "tiled_render_hexagonal",
   "tiled_list_objects",
   "tiled_get_object",
   "tiled_validate",
@@ -204,9 +204,7 @@ const CORE_TOOLS = [
   "tiled_preview_import_image",
   "tiled_preview_prefab",
   "tiled_preview_template",
-  "tiled_preview_write_tmx",
-  "tiled_preview_write_tsx",
-  "tiled_preview_write_tx",
+  "tiled_preview_write_xml",
   "tiled_select",
   "tiled_list_tile_names",
   "tiled_preview_tile_names",
@@ -342,10 +340,7 @@ describe("createTiledMcpServer", () => {
       });
     }
     for (const name of [
-      "tiled_preview_prepared_checkpoint_discard",
-      "tiled_preview_prepared_checkpoint_commit",
-      "tiled_preview_prepared_checkpoint_abandon",
-      "tiled_preview_checkpoint_prune",
+      "tiled_preview_prepared_checkpoint",
       "tiled_preview_checkpoint_prune_batch",
       "tiled_preview_checkpoint_restore",
       "tiled_preview_edits",
@@ -385,39 +380,17 @@ describe("createTiledMcpServer", () => {
       openWorldHint: false,
     });
     expect(
-      byName.get("tiled_preview_prepared_checkpoint_discard")
+      byName.get("tiled_preview_prepared_checkpoint")
         ?.inputSchema,
     ).toMatchObject({
       type: "object",
       properties: {
         checkpointId: { type: "string" },
-      },
-      required: ["checkpointId"],
-      additionalProperties: false,
-    });
-    for (const name of [
-      "tiled_preview_prepared_checkpoint_commit",
-      "tiled_preview_prepared_checkpoint_abandon",
-    ]) {
-      expect(
-        byName.get(name)?.inputSchema,
-      ).toMatchObject({
-        type: "object",
-        properties: {
-          checkpointId: { type: "string" },
+        resolution: {
+          enum: ["abandon", "commit", "discard"],
         },
-        required: ["checkpointId"],
-        additionalProperties: false,
-      });
-    }
-    expect(
-      byName.get("tiled_preview_checkpoint_prune")?.inputSchema,
-    ).toMatchObject({
-      type: "object",
-      properties: {
-        checkpointId: { type: "string" },
       },
-      required: ["checkpointId"],
+      required: ["checkpointId", "resolution"],
       additionalProperties: false,
     });
     expect(
@@ -429,7 +402,7 @@ describe("createTiledMcpServer", () => {
       properties: {
         checkpointIds: {
           type: "array",
-          minItems: 2,
+          minItems: 1,
           maxItems: 32,
           items: {
             type: "string",
@@ -1222,7 +1195,7 @@ describe("createTiledMcpServer", () => {
         },
         limits: {
           maxInlineImageBytes:
-            8 * 1_024 * 1_024,
+            7 * 1_024 * 1_024,
           maxRenderEdge: 2_048,
           maxRasterInputImages: 64,
           maxRasterInputAggregateBytes:
@@ -1405,19 +1378,19 @@ describe("createTiledMcpServer", () => {
           size: 128,
           ignoreVisibility: false,
           maxPngBytes:
-            8 * 1_024 * 1_024,
+            7 * 1_024 * 1_024,
         },
         {
           size: 1_400,
           ignoreVisibility: true,
           maxPngBytes:
-            8 * 1_024 * 1_024,
+            7 * 1_024 * 1_024,
         },
         {
           size: 2_048,
           ignoreVisibility: false,
           maxPngBytes:
-            8 * 1_024 * 1_024,
+            7 * 1_024 * 1_024,
         },
       ]);
       expect(
@@ -2426,6 +2399,8 @@ describe("createTiledMcpServer", () => {
   it("advertises and serves the bounded direct contract resources", async () => {
     expect(harness.client.getServerVersion()).toEqual({
       name: SERVER_NAME,
+      title: SERVER_TITLE,
+      description: SERVER_DESCRIPTION,
       version: SERVER_VERSION,
     });
     expect(harness.client.getServerCapabilities()).toMatchObject({
@@ -2439,7 +2414,7 @@ describe("createTiledMcpServer", () => {
         name: "guide",
         title: "TiledMCP safe editing guide",
         description:
-          "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
+          "The full per-tool reference for inspecting, previewing, approving, applying, and verifying safe Tiled map edits. It is large; read one section at a time via tiled://guide/{section} (the Contents block lists the slugs).",
         mimeType: GUIDE_RESOURCE_MIME_TYPE,
         size: GUIDE_RESOURCE_SIZE,
         annotations: {
@@ -2469,9 +2444,31 @@ describe("createTiledMcpServer", () => {
         _meta: APPLICATION_ERROR_RESOURCE_META,
       },
     ]);
-    expect(await harness.client.listResourceTemplates()).toEqual({
-      resourceTemplates: [],
+    expect(await harness.client.listResourceTemplates()).toMatchObject({
+      resourceTemplates: [
+        {
+          uriTemplate: "tiled://guide/{section}",
+          mimeType: GUIDE_RESOURCE_MIME_TYPE,
+        },
+      ],
     });
+
+    const sectionRead = await harness.client.readResource({
+      uri: "tiled://guide/conflict-and-failure-handling",
+    });
+    expect(sectionRead.contents).toHaveLength(1);
+    expect(sectionRead.contents[0]).toMatchObject({
+      uri: "tiled://guide/conflict-and-failure-handling",
+      mimeType: GUIDE_RESOURCE_MIME_TYPE,
+    });
+    expect(
+      (sectionRead.contents[0] as { text: string }).text,
+    ).toContain("## Conflict and failure handling");
+    await expect(
+      harness.client.readResource({
+        uri: "tiled://guide/not-a-section",
+      }),
+    ).rejects.toThrow(/Unknown guide section/u);
 
     const read = await harness.client.readResource({
       uri: GUIDE_RESOURCE_URI,
@@ -3224,8 +3221,8 @@ describe("createTiledMcpServer", () => {
         },
         pruneBatch: {
           scope:
-            "2-to-32-explicit-committed-checkpoints",
-          minCheckpointCount: 2,
+            "1-to-32-explicit-committed-checkpoints",
+          minCheckpointCount: 1,
           maxCheckpointCount: 32,
           workflow: "preview-then-apply",
           ordering:
@@ -3697,7 +3694,7 @@ describe("createTiledMcpServer", () => {
         maxSimpleSvgBytes: 256 * 1024,
         maxTilesetImageEdge: 8_192,
         maxTilesetDecodedPixels: 4_096 * 4_096,
-        maxTilesetSheetBytes: 8 * 1024 * 1024,
+        maxTilesetSheetBytes: 7 * 1024 * 1024,
         maxTilesetSheetEdge: 2_048,
         maxTilesetSheetPixels: 1_500_000,
         maxTilesetSheetPageSize: 256,
@@ -3706,7 +3703,7 @@ describe("createTiledMcpServer", () => {
         maxTileRenderLocalIds: 64,
         maxTileRenderColumns: 32,
         maxTileRenderScale: 4,
-        maxTileRenderBytes: 8 * 1024 * 1024,
+        maxTileRenderBytes: 7 * 1024 * 1024,
         maxTileRenderEdge: 2_048,
         maxTileRenderPixels: 1_500_000,
         maxTilesetMetadataLimit: 128,
@@ -3751,7 +3748,7 @@ describe("createTiledMcpServer", () => {
           2_097_152,
         maxCreateTileLayerCells: 100_000,
         maxLayerNameLength: 1_024,
-        maxNativePreviewBytes: 8 * 1024 * 1024,
+        maxNativePreviewBytes: 7 * 1024 * 1024,
         maxNativePreviewEdge: 2_048,
         maxNativePreviewPixels: 1_500_000,
         maxNativePreviewScale: 4,
@@ -4001,6 +3998,7 @@ describe("createTiledMcpServer", () => {
       revision: summary.revision,
       valid: true,
       diagnostics: [],
+      diagnosticsTruncated: false,
     });
   });
 
@@ -5193,9 +5191,11 @@ describe("createTiledMcpServer", () => {
   it("rejects unknown checkpoint prune preview keys through its strict schema", async () => {
     const response = asToolResponse(
       await harness.client.callTool({
-        name: "tiled_preview_checkpoint_prune",
+        name: "tiled_preview_checkpoint_prune_batch",
         arguments: {
-          checkpointId: "00000000-0000-4000-8000-000000000000",
+          checkpointIds: [
+            "00000000-0000-4000-8000-000000000000",
+          ],
           unexpected: true,
         },
       }),
@@ -5275,9 +5275,10 @@ describe("createTiledMcpServer", () => {
   it("rejects unknown prepared checkpoint discard preview keys through its strict schema", async () => {
     const response = asToolResponse(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_discard",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: "00000000-0000-4000-8000-000000000000",
+          resolution: "discard",
           unexpected: true,
         },
       }),
@@ -7776,198 +7777,6 @@ describe("createTiledMcpServer", () => {
     expect(layer?.data).toEqual([1, 2, 0, 0]);
   });
 
-  it("previews, applies and idempotently replays a committed checkpoint prune", async () => {
-    const absoluteMapPath = join(harness.root, MAP_PATH);
-    const before = await readFile(absoluteMapPath);
-    const proposed = Buffer.concat([
-      before,
-      Buffer.from(" "),
-    ]);
-    const committed = await harness.store.commitBytes(
-      MAP_PATH,
-      revisionOf(before),
-      proposed,
-      "server prune integration",
-    );
-    expect(committed.checkpointId).not.toBeNull();
-    const checkpointId = committed.checkpointId;
-    if (checkpointId === null) {
-      throw new Error(
-        "Expected the changing commit to create a checkpoint.",
-      );
-    }
-
-    const preview = resultOf<{
-      kind: string;
-      changeSetId: string;
-      planDigest: string;
-      targetPath: string;
-      expectedRevision: string;
-      checkpoint: {
-        id: string;
-        status: string;
-        path: string;
-        before: {
-          existed: boolean;
-          revision: string;
-          objectHash: string;
-          size: number;
-        };
-        afterRevision: string;
-      };
-      manifest: {
-        revision: string;
-        size: number;
-      };
-      operations: Array<Record<string, unknown>>;
-      summary: Record<string, unknown>;
-    }>(
-      await harness.client.callTool({
-        name: "tiled_preview_checkpoint_prune",
-        arguments: { checkpointId },
-      }),
-    );
-    expect(preview).toMatchObject({
-      kind: "checkpointPrune",
-      changeSetId: expect.stringMatching(
-        /^changeset:[0-9a-f]{64}$/u,
-      ),
-      planDigest: expect.stringMatching(
-        /^changeset:[0-9a-f]{64}$/u,
-      ),
-      targetPath: MAP_PATH,
-      expectedRevision: expect.stringMatching(
-        /^sha256:[0-9a-f]{64}$/u,
-      ),
-      checkpoint: {
-        id: checkpointId,
-        status: "committed",
-        path: MAP_PATH,
-        before: {
-          existed: true,
-          revision: revisionOf(before),
-          objectHash: revisionOf(before).slice(
-            "sha256:".length,
-          ),
-          size: before.byteLength,
-        },
-        afterRevision: revisionOf(proposed),
-      },
-      manifest: {
-        revision: expect.stringMatching(
-          /^sha256:[0-9a-f]{64}$/u,
-        ),
-        size: expect.any(Number),
-      },
-      operations: [
-        {
-          type: "pruneCheckpoint",
-          destructive: true,
-          checkpointId,
-          targetPath: MAP_PATH,
-          status: "committed",
-          manifestRevision:
-            preview.expectedRevision,
-          manifestBytes:
-            preview.manifest.size,
-          removesRecoveryPoint: true,
-          removesProjectAsset: false,
-          garbageCollection:
-            "fail-closed-after-manifest-prune",
-          warning: expect.stringContaining(
-            "permanently removes",
-          ),
-        },
-      ],
-      summary: {
-        operationCount: 1,
-        destructive: true,
-        checkpointId,
-        targetPath: MAP_PATH,
-        status: "committed",
-        manifestRevision:
-          preview.expectedRevision,
-        manifestBytes: preview.manifest.size,
-        removesRecoveryPoint: true,
-        removesProjectAsset: false,
-        garbageCollection:
-          "fail-closed-after-manifest-prune",
-        warning: expect.stringContaining(
-          "permanently removes",
-        ),
-      },
-    });
-    expect(preview.manifest.revision).toBe(
-      preview.expectedRevision,
-    );
-    expect(await readFile(absoluteMapPath)).toEqual(
-      proposed,
-    );
-
-    const firstApply =
-      await harness.client.callTool({
-        name: "tiled_apply_change_set",
-        arguments: {
-          changeSetId: preview.changeSetId,
-          expectedRevision:
-            preview.expectedRevision,
-        },
-      });
-    const applied = resultOf<{
-      kind: string;
-      changeSetId: string;
-      checkpoint: {
-        id: string;
-        path: string;
-        status: string;
-      };
-      manifestDeleted: boolean;
-      garbageCollection: {
-        status: string;
-        deletedObjects: number;
-        blockerCount: number;
-        blockers: unknown[];
-        blockersTruncated: boolean;
-      };
-    }>(firstApply);
-    expect(applied).toMatchObject({
-      kind: "checkpointPrune",
-      changeSetId: preview.changeSetId,
-      checkpoint: {
-        id: checkpointId,
-        path: MAP_PATH,
-        status: "committed",
-      },
-      manifestDeleted: true,
-      garbageCollection: {
-        status: "completed",
-        deletedObjects: 1,
-        blockerCount: 0,
-        blockers: [],
-        blockersTruncated: false,
-      },
-    });
-    expect(await readFile(absoluteMapPath)).toEqual(
-      proposed,
-    );
-    expect(
-      (
-        await harness.store.checkpoints.list()
-      ).manifests,
-    ).toEqual([]);
-
-    const secondApply =
-      await harness.client.callTool({
-        name: "tiled_apply_change_set",
-        arguments: {
-          changeSetId: preview.changeSetId,
-          expectedRevision:
-            preview.expectedRevision,
-        },
-      });
-    expect(secondApply).toEqual(firstApply);
-  });
-
   it("previews, applies and caches an explicit canonical committed-checkpoint prune batch", async () => {
     const absoluteMapPath = join(
       harness.root,
@@ -8415,9 +8224,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_discard",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: prepared.id,
+          resolution: "discard",
         },
       }),
     );
@@ -8632,9 +8442,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_commit",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: preparedCommit.id,
+          resolution: "commit",
         },
       }),
     );
@@ -8821,9 +8632,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_abandon",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: preparedAbandon.id,
+          resolution: "abandon",
         },
       }),
     );
@@ -9148,7 +8960,60 @@ describe("createTiledMcpServer", () => {
     );
     expect(initial).toMatchObject({
       total: 2,
+      offset: 0,
+      returned: 2,
+      hasMore: false,
+      truncated: false,
       objects: [{ id: RECTANGLE_OBJECT_ID }, { id: POINT_OBJECT_ID }],
+    });
+
+    const firstPage = resultOf<{
+      total: number;
+      offset: number;
+      returned: number;
+      hasMore: boolean;
+      nextOffset?: number;
+      objects: Array<{ id: number }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: {
+          mapPath: MAP_PATH,
+          layerId: OBJECT_LAYER_ID,
+          limit: 1,
+        },
+      }),
+    );
+    expect(firstPage).toMatchObject({
+      total: 2,
+      offset: 0,
+      returned: 1,
+      hasMore: true,
+      truncated: true,
+      nextOffset: 1,
+      objects: [{ id: RECTANGLE_OBJECT_ID }],
+    });
+    const secondPage = resultOf<{
+      offset: number;
+      returned: number;
+      hasMore: boolean;
+      objects: Array<{ id: number }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: {
+          mapPath: MAP_PATH,
+          layerId: OBJECT_LAYER_ID,
+          limit: 1,
+          offset: firstPage.nextOffset,
+        },
+      }),
+    );
+    expect(secondPage).toMatchObject({
+      offset: 1,
+      returned: 1,
+      hasMore: false,
+      objects: [{ id: POINT_OBJECT_ID }],
     });
 
     const preview = resultOf<{
@@ -9903,7 +9768,7 @@ describe("createTiledMcpServer", () => {
           points: replacementPolygonPoints,
         },
         message:
-          "Points can be updated only on polygon or polyline objects.",
+          `Object ${RECTANGLE_OBJECT_ID} in ${MAP_PATH} is a rectangle object; points apply only to polygon or polyline objects.`,
       },
       {
         objectId: 3,
@@ -9912,7 +9777,7 @@ describe("createTiledMcpServer", () => {
           width: 12,
         },
         message:
-          "Polygon and polyline objects do not have editable width or height.",
+          `Object 3 in ${MAP_PATH} is a polygon object; its size derives from its points, so width and height are not editable.`,
       },
       {
         objectId: 3,
@@ -9921,7 +9786,7 @@ describe("createTiledMcpServer", () => {
           text: "not a path field",
         },
         message:
-          "Text-specific fields can be updated only on text objects.",
+          `Object 3 in ${MAP_PATH} is a polygon object; text fields apply only to text objects. Drop the text fields, or confirm the object with tiled_get_object.`,
       },
     ]) {
       const mismatch = asToolResponse(
@@ -11184,7 +11049,7 @@ function expectExactRasterResultOutputSchema(
   expect(properties.byteLength).toMatchObject({
     type: "integer",
     exclusiveMinimum: 0,
-    maximum: 8 * 1_024 * 1_024,
+    maximum: 7 * 1_024 * 1_024,
   });
   expect(properties.sha256).toMatchObject({
     type: "string",

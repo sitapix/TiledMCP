@@ -6,6 +6,43 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
+/**
+ * Structural proof that `T` survives `JSON.stringify` without silent loss.
+ *
+ * `JsonValue` alone cannot express this. An `interface` never gets an implicit
+ * index signature, so a plain-data domain type like `FileDeleteSummary` is not
+ * assignable to `JsonObject` even when every field is JSON-representable. The
+ * historical workaround was a `as unknown as` double cast, which silences the
+ * mismatch by disabling checking altogether — including the checking that
+ * matters. These values are hashed into plan digests that guard the apply-time
+ * CAS, so a field that `JSON.stringify` rewrites (`Date`, `Map`, a class
+ * instance) or drops (a method) would change a digest's meaning with no
+ * diagnostic.
+ *
+ * This mapped type keeps the guarantee while accepting interfaces: it recurses
+ * structurally, resolving to the same shape for JSON-safe input and to `never`
+ * at the offending member otherwise.
+ *
+ * `undefined` is deliberately tolerated at object-member position only. Under
+ * `exactOptionalPropertyTypes` this codebase writes `| undefined` on forwarded
+ * optional fields, and `JSON.stringify` omitting such a key is the intended
+ * behaviour. It stays rejected inside arrays, where `undefined` is not dropped
+ * but silently rewritten to `null` — a real corruption of positional data.
+ */
+export type JsonCompatible<T> = T extends JsonPrimitive
+  ? T
+  : T extends readonly (infer Element)[]
+    ? readonly JsonCompatible<Element>[]
+    : T extends (...args: never[]) => unknown
+      ? never
+      : T extends object
+        ? {
+            [K in keyof T]:
+              | JsonCompatible<Exclude<T[K], undefined>>
+              | Extract<T[K], undefined>;
+          }
+        : never;
+
 export function parseJsonDocument(text: string, projectPath: string): JsonObject {
   const source = stripBom(text);
   validateJsonLexemes(source, projectPath);
@@ -37,8 +74,8 @@ export function cloneJson<T extends JsonValue>(value: T): T {
   return structuredClone(value);
 }
 
-export function stableJson(value: JsonValue): string {
-  return JSON.stringify(sortJson(value));
+export function stableJson<T>(value: JsonCompatible<T>): string {
+  return JSON.stringify(sortJson(value as JsonValue));
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {

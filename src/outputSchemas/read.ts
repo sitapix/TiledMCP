@@ -242,6 +242,15 @@ const checkpointListResultOutputSchema = z
     ).max(1_000),
     scannedEntries: nonnegativeIntegerOutputSchema,
     truncated: z.boolean(),
+    hasMore: z.boolean(),
+    nextStartAfter: z
+      .string()
+      .min(1)
+      .max(4_096)
+      .describe(
+        "Opaque cursor: pass back as startAfter to resume the listing; present only when hasMore",
+      )
+      .optional(),
   })
   .strict();
 
@@ -1092,7 +1101,15 @@ const objectListResultOutputSchema = z
     dependencyRevisions:
       dependencyRevisionsOutputSchema,
     total: nonnegativeIntegerOutputSchema,
+    offset: nonnegativeIntegerOutputSchema,
+    returned: nonnegativeIntegerOutputSchema,
+    hasMore: z.boolean(),
     truncated: z.boolean(),
+    nextOffset: nonnegativeIntegerOutputSchema
+      .describe(
+        "Pass back as offset to fetch the next page; present only when hasMore",
+      )
+      .optional(),
     objects: z
       .array(listedObjectOutputSchema)
       .max(10_000),
@@ -1286,6 +1303,11 @@ const validationResultOutputSchema = z
     diagnostics: z.array(
       diagnosticOutputSchema,
     ).max(1_000),
+    diagnosticsTruncated: z
+      .boolean()
+      .describe(
+        "True when validation stopped at the diagnostic cap and more problems exist than are listed",
+      ),
   })
   .strict();
 
@@ -2604,6 +2626,23 @@ const nativePreviewResultOutputSchema = z
 
 export const nativePreviewToolOutputSchema =
   toolOutputSchema(nativePreviewResultOutputSchema);
+
+/**
+ * `tiled_render_preview` absorbed the former `tiled_render_isometric` and
+ * `tiled_render_hexagonal` tools, which took byte-identical inputs and differed
+ * only in the projection they were declared for. It now dispatches on the map's
+ * own orientation, so the result is one of the three projection-specific
+ * shapes. They stay separate closed schemas rather than being flattened into
+ * one permissive object: each carries a distinct `renderProfile` literal and its
+ * own `projection` block, and a client can discriminate on either.
+ */
+export const renderPreviewToolOutputSchema = toolOutputSchema(
+  z.union([
+    nativePreviewResultOutputSchema,
+    renderIsometricResultOutputSchema,
+    renderHexagonalResultOutputSchema,
+  ]),
+);
 
 const rasterMapPixelSizeOutputSchema = z
   .object({

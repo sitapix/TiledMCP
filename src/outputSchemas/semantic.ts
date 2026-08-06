@@ -489,9 +489,17 @@ const tilesetDetailTileMetadataOutputSchema = <
 const tilesetDetailWangSetsOutputSchema = z
   .object({
     order: z.literal("source"),
+    startWangSetIndex: nonnegativeIntegerOutputSchema,
     total: nonnegativeIntegerOutputSchema,
     returned: nonnegativeIntegerOutputSchema,
+    hasEarlier: z.boolean(),
+    hasMore: z.boolean(),
     truncated: z.boolean(),
+    nextStartWangSetIndex: nonnegativeIntegerOutputSchema
+      .describe(
+        "Pass back as startWangSetIndex to fetch the next Wang-set page; present only when hasMore",
+      )
+      .optional(),
     items: z
       .array(wangSetSummaryOutputSchema)
       .max(MAX_TILESET_WANG_SET_SUMMARIES),

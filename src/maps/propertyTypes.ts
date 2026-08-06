@@ -102,7 +102,7 @@ export function propertyTypeEditPlanId(
     .update(
       PROPERTY_TYPE_EDIT_PLAN_HASH_DOMAIN,
     )
-    .update(stableJson(value as unknown as JsonValue))
+    .update(stableJson(value))
     .digest("hex")}`;
 }
 

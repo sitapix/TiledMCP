@@ -17,7 +17,8 @@ import { encodeRgbaPng, type SafeImageFormat } from "./safeImage.js";
 
 export const MAX_NATIVE_PREVIEW_EDGE = 2_048;
 export const MAX_NATIVE_PREVIEW_PIXELS = 1_500_000;
-export const MAX_NATIVE_PREVIEW_BYTES = 8 * 1024 * 1024;
+/** Held to the inline-image ceiling; see `MAX_RASTER_PNG_BYTES`. */
+export const MAX_NATIVE_PREVIEW_BYTES = 7 * 1024 * 1024;
 export const MAX_NATIVE_PREVIEW_SCALE = 4;
 export const DEFAULT_NATIVE_PREVIEW_SCALE = 2;
 export const MAX_NATIVE_PREVIEW_AGGREGATE_IMAGE_BYTES = 64 * 1024 * 1024;

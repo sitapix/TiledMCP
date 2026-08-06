@@ -469,7 +469,7 @@ describe("renderTilesetTiles", () => {
       maxColumns: 32,
       defaultScale: 2,
       maxScale: 4,
-      maxBytes: 8 * 1024 * 1024,
+      maxBytes: 7 * 1024 * 1024,
       maxEdge: 2_048,
       maxPixels: 1_500_000,
     });

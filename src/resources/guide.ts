@@ -1,13 +1,18 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  ResourceTemplate,
+  type McpServer,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { revisionOf } from "../storage/revision.js";
 import { SERVER_VERSION } from "../version.js";
 
 export const GUIDE_RESOURCE_URI = "tiled://guide";
+export const GUIDE_SECTION_TEMPLATE_URI =
+  "tiled://guide/{section}";
 export const GUIDE_RESOURCE_MIME_TYPE = "text/markdown";
 export const MAX_GUIDE_RESOURCE_BYTES = 128 * 1024;
 
-export const GUIDE_RESOURCE_TEXT = `# TiledMCP safe editing guide
+const GUIDE_SOURCE_TEXT = `# TiledMCP safe editing guide
 
 TiledMCP inspects and edits Tiled project files under one configured project
 root. Treat every path as a project-relative POSIX path. Absolute paths and
@@ -53,12 +58,12 @@ approve, apply cycle and the revision pinning described later in this guide.
    ordinary \`mapEdit\` change set. Read the plan and \`summary\`, apply it,
    then \`tiled_render_preview\` and compare against the plan image before going
    further.
-6. **Run the walls.** If \`tiled_preview_terrain\` is registered, paint Wang
-   corners so junctions pick the right tile automatically: corners address the
-   corner grid, \`x\` in \`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based
-   colour indexes. Otherwise place walls explicitly with
-   \`tiled_preview_shape\` (rectangle outline for a room, line for a run) or a
-   \`fillRegion\` operation.
+6. **Run the walls.** When the tileset defines a Wang set, paint corners with
+   \`tiled_preview_terrain\` so junctions pick the right tile automatically:
+   corners address the corner grid, \`x\` in \`[0, width]\` and \`y\` in
+   \`[0, height]\`, with 1-based colour indexes. Without a Wang set, place walls
+   explicitly with \`tiled_preview_shape\` (rectangle outline for a room, line
+   for a run) or a \`fillRegion\` operation.
 7. **Place the sprites.** \`createObject\` operations through
    \`tiled_preview_edits\`, \`tiled_preview_template\` for a saved template, or
    \`tiled_preview_prefab\` to stamp a region that already exists elsewhere.
@@ -91,7 +96,7 @@ approve, apply cycle and the revision pinning described later in this guide.
    \`registeredTools\`. The built-in \`tiled_render_preview\` is the portable
    map preview path.
 
-The M1 edit profile is intentionally narrow: finite orthogonal TMJ maps,
+The implemented edit profile is intentionally narrow: finite orthogonal TMJ maps,
 external atlas TSJ tilesets, and rectangle,
 point, ellipse, Tiled 1.12 capsule, bounded polygon/polyline, and bounded text
 objects.
@@ -227,7 +232,7 @@ application-level summary envelope.
 
 ## Handle application errors
 
-The current v1 application-error registry contains 103 codes. Its committed
+The current v1 application-error registry contains 106 codes. Its committed
 machine artifact is \`contracts/application-errors.v1.json\`, and the same JSON
 is available at the direct resource \`tiled://application-errors\`.
 \`tiled_get_capabilities.applicationErrorContract\` advertises that resource's
@@ -643,7 +648,7 @@ expanded with \`tiled_get_object\`.
 
 ## Render isometric maps
 
-\`tiled_render_isometric\` renders a bounded region of one finite
+\`tiled_render_preview\` renders a bounded region of one finite
 isometric TMJ map as a PNG using the exact Tiled 1.12.2
 IsometricRenderer placement math: the region paints as its own
 diamond, cells composite in the editor's diagonal scanline order, and
@@ -651,8 +656,7 @@ tile images anchor bottom-left like the official CellRenderer. The
 strict profile covers external atlas tilesets whose tile size matches
 the grid; image-collection tilesets, transparent-color keying,
 anti-diagonal flips, and image or group layers fail closed, and object
-layers are skipped with their ids disclosed. Orthogonal maps belong to
-\`tiled_render_preview\`.
+layers are skipped with their ids disclosed.
 
 Isometric maps are also editable through the standard map-edit path:
 cell storage and object pixel coordinates are orientation-independent,
@@ -668,7 +672,7 @@ bits decoded as rotate60/rotate120); edits and renders fail closed.
 
 ## Render staggered and hexagonal maps
 
-\`tiled_render_hexagonal\` renders a bounded region of one staggered
+\`tiled_render_preview\` renders a bounded region of one staggered
 or hexagonal map with the exact Tiled 1.12.2 HexagonalRenderer
 transform — staggered maps are the hexSideLength=0 degenerate case,
 matching the official class hierarchy — compositing cells in the
@@ -678,7 +682,7 @@ with disclosure.
 
 ## Write TMX natively
 
-\`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`
+\`tiled_preview_write_xml\` serializes one restricted-profile \`.tmj\`
 map to TMX bytes that match Tiled 1.12.2's own writer byte for byte —
 no CLI involved. The profile covers finite orthogonal maps, external
 tileset references, CSV tile layers, and top-level tile/object layers
@@ -701,7 +705,7 @@ the approved content hash.
 
 ## Write TSX natively
 
-\`tiled_preview_write_tsx\` serializes one restricted-profile
+\`tiled_preview_write_xml\` serializes one restricted-profile
 \`.tsj\` atlas tileset to TSX bytes matching Tiled 1.12.2's own
 writer, as a new sibling \`.tsx\` file. The declared grid must be
 derivable from the declared image size, margin, and spacing — the
@@ -709,8 +713,8 @@ official exporter recomputes it, so a disagreeing declaration fails
 closed rather than drifting — and per-tile metadata, wang sets,
 and unknown members fail closed (tileset-level scalar properties
 serialize before the image, byte-exact). Apply re-serializes
-under the pinned revision and hash-verifies, like
-\`tiled_preview_write_tmx\`.
+under the pinned revision and hash-verifies, exactly as the TMX
+path above does.
 
 ## Fix validation issues mechanically
 
@@ -724,7 +728,7 @@ but never auto-fixed.
 
 ## Write TX templates natively
 
-\`tiled_preview_write_tx\` serializes one restricted-profile \`.tj\`
+\`tiled_preview_write_xml\` serializes one restricted-profile \`.tj\`
 object template to TX bytes following Tiled's writeObjectTemplate: a
 bare \`<template>\` root and the base object without id, x, or y,
 through the same object writer verified byte-exactly against official
@@ -1148,8 +1152,8 @@ or silently repairs a stale counter.
 ## Preview, approve, then apply
 
 All edits are explicit operations. Supported tile operations are \`setTiles\`,
-\`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, \`floodFill\`, and
-\`copyRegion\`;
+\`fillRegion\`, \`replaceTiles\`, \`stampPattern\`, \`floodFill\`,
+\`copyRegion\`, and the exclusive \`transcodeTileLayer\`;
 supported object operations are \`createObject\`, \`updateObject\`, and
 \`deleteObjects\`; supported layer operations are \`updateLayer\`,
 \`deleteLayer\`, \`moveLayer\`, and \`duplicateLayer\`; supported map-level
@@ -1677,16 +1681,14 @@ or create a checkpoint. \`tiled_create_map\` instead prepares an
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
 entries without reading the stored document bytes.
 
-To permanently remove one committed recovery point, call
-\`tiled_preview_checkpoint_prune\` with its checkpoint ID. The preview pins
-the SHA-256 revision of the raw manifest bytes without reading the stored
-document blob. Present the destructive warning for approval, then pass the
-returned change-set ID and expected revision to \`tiled_apply_change_set\`.
-The prune tool accepts committed checkpoints only.
-
-To drain an explicit retention backlog, call
-\`tiled_preview_checkpoint_prune_batch\` with 2 through 32 distinct committed
-checkpoint UUIDs selected from a current listing. The tool never chooses
+To permanently remove committed recovery points -- whether one or a backlog --
+call \`tiled_preview_checkpoint_prune_batch\` with 1 through 32 distinct
+committed checkpoint UUIDs selected from a current listing. A single-element
+batch is how you prune one checkpoint; the preview pins the SHA-256 revision of
+each raw manifest's bytes without reading the stored document blob. Present the
+destructive warning for approval, then pass the returned change-set ID and
+expected revision to \`tiled_apply_change_set\`. The tool accepts committed
+checkpoints only. The tool never chooses
 retention victims from ordinals, timestamps, labels, or storage pressure.
 It sorts the selected IDs into canonical UUID order, exposes that execution
 order, pins every raw manifest revision, size, metadata record, and target
@@ -1714,7 +1716,7 @@ reports GC as not run. List and preview the remaining IDs again if the
 operator wants to continue.
 
 To discard one prepared checkpoint whose current target can be verified equal
-to its pre-write state, call \`tiled_preview_prepared_checkpoint_discard\` with
+to its pre-write state, call \`tiled_preview_prepared_checkpoint\` with \`resolution: "discard"\` and
 its checkpoint ID. An existing-file checkpoint is eligible only when the
 current regular target's exact raw revision and size equal its before state. A
 create checkpoint is eligible only while the target is strictly missing. The
@@ -1726,8 +1728,9 @@ targets, unsafe targets, and equal before/after revisions remain conflicts.
 This tool neither changes the project asset nor accepts force-abandon or
 operator-forced-commit parameters.
 
-Ambiguous prepared checkpoints use two separate, action-specific previews,
-never a generic force flag:
+Ambiguous prepared checkpoints are adjudicated through the single
+\`tiled_preview_prepared_checkpoint\` tool, whose \`resolution\` selects
+discard, commit, or abandon — never a generic force flag:
 
 - A missing create target and an existing exact-before target remain on the
   safe-discard path.
@@ -1740,7 +1743,7 @@ never a generic force flag:
 - Symlinks, non-regular files, path escapes, internal targets, oversized or
   unreadable files, and read races are rejected by both actions.
 
-Call \`tiled_preview_prepared_checkpoint_commit\` only to confirm the
+Call \`tiled_preview_prepared_checkpoint\` with \`resolution: "commit"\` only to confirm the
 create/exact-after case. It pins the complete manifest metadata, raw manifest
 revision and size, target revision and size, and conflict classification in
 an action-domain-separated expected revision. Applying it changes only the
@@ -1751,7 +1754,7 @@ still cannot restore it by deleting the target. Manifest rename is the commit
 point. A later sync or lock failure returns \`manifestCommitted:true\` with
 \`durability:"unconfirmed"\`; do not treat that as an unexecuted request.
 
-Call \`tiled_preview_prepared_checkpoint_abandon\` only when the operator has
+Call \`tiled_preview_prepared_checkpoint\` with \`resolution: "abandon"\` only when the operator has
 decided to preserve the current project asset and permanently remove the
 ambiguous recovery point. It pins the same complete evidence in a different
 hash domain. Applying it unlinks the prepared manifest, syncs the checkpoint
@@ -1778,9 +1781,9 @@ missing-reference, unsafe-byte-accounting, or incomplete scan blocks the entire
 sweep before its first deletion. An incomplete byte or entry inventory also
 fails the write-capacity proof. Initial manifest publication is
 create-if-absent and never replaces an existing recovery point. Quota pressure
-never deletes a valid manifest. Explicit deletion paths are an approved,
-raw-manifest-CAS prune of one committed checkpoint, an approved 2-through-32
-committed-checkpoint batch prune, and an approved,
+never deletes a valid manifest. Explicit deletion paths are an approved
+1-through-32 committed-checkpoint batch prune (a single-element batch is how
+one checkpoint is pruned), and an approved,
 raw-manifest-CAS prepared discard with exact-before target proof, plus an
 action-specific approved prepared abandon for an ambiguous conflict.
 
@@ -1797,9 +1800,9 @@ deletes at most the oldest one per commit.
 
 Every deletion path locks its checkpoint target before the store; batch prune
 locks all distinct targets before the store. It raw-CASes the selected
-manifest, unlinks it, and syncs the checkpoint directory. Single-item paths
-then run the fail-closed orphan sweep, while batch prune runs it once only
-after all manifests are synced. Automatic retention additionally verifies a
+manifest, unlinks it, and syncs the checkpoint directory. Prepared discard
+and abandon then run the fail-closed orphan sweep, while batch prune runs it
+once only after all manifests are synced. Automatic retention additionally verifies a
 complete inventory, every referenced object's hash and size, the sequence,
 the absence of a prepared checkpoint for that target, and that the current
 target matches the newest rolling after-revision before its first unlink. A
@@ -1842,9 +1845,15 @@ not supported.
 
 ## Conflict and failure handling
 
-- On \`REVISION_CONFLICT\`, stop. Re-read the map summary and dependencies,
-  reconsider the operations against the new state, and issue a fresh preview.
-  Never blindly replay a stale plan.
+- On \`REVISION_CONFLICT\` or \`DEPENDENCY_REVISION_CONFLICT\`, stop. Re-read
+  the map summary and dependencies, reconsider the operations against the new
+  state, and issue a fresh preview. Never blindly replay a stale plan.
+- On \`CHANGE_SET_NOT_FOUND\`, the plan expired (previews live 10 minutes) or
+  was already applied. Re-read, then preview again.
+- On \`CHANGE_SET_TAMPERED\` or \`CHANGE_SET_REPLAY_MISMATCH\`, the approved
+  plan no longer reproduces: its digest failed or replaying it against the
+  pinned state produced different content. Discard the changeSetId and run
+  the preview again from a fresh read.
 - On \`TILESET_IN_USE\`, keep the binding. Inspect the current usage and
   explicitly edit or remove every reported tile-cell/tile-object reference
   in separately approved changes before proposing removal again; this
@@ -1861,12 +1870,13 @@ not supported.
   within their limit and bytes alone are exhausted may you raise
   \`--checkpoint-bytes\` / \`TILEDMCP_CHECKPOINT_BYTES\` and restart. Raising
   the byte quota cannot repair an entry-limit or inventory-blocker condition.
-  An operator may explicitly preview and approve pruning one committed
-  checkpoint, select 2 through 32 committed IDs for one bounded batch prune,
+  An operator may select 1 through 32 committed IDs for one bounded batch
+  prune (a single-element batch prunes one checkpoint),
   or discard one prepared checkpoint whose current target still exactly
   matches its pre-write state. For one of the bounded ambiguous prepared
-  classifications, an operator may instead approve the dedicated commit or
-  abandon preview after reviewing all pinned evidence. Batch prune does not
+  classifications, an operator may instead approve the commit or abandon
+  resolution of \`tiled_preview_prepared_checkpoint\` after reviewing all
+  pinned evidence. Batch prune does not
   select retention victims
   automatically. The optional startup retention
   policy never runs to relieve quota pressure: a new recovery root must fit
@@ -2004,6 +2014,86 @@ transactions may be pending, and staged content is bounded at 64 MiB.
 Inspect \`transactionCapabilities\` for the frozen policy strings.
 `;
 
+interface GuideSection {
+  slug: string;
+  title: string;
+  text: string;
+}
+
+function slugifyGuideHeading(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+  if (slug.length === 0) {
+    throw new Error(
+      `Guide heading "${title}" produces an empty section slug.`,
+    );
+  }
+  return slug;
+}
+
+/**
+ * Split the authored guide into its `## ` sections so each is separately
+ * addressable at tiled://guide/{slug}. Parsing the authored text (rather than
+ * maintaining a parallel list) means the table of contents and the section
+ * resource can never drift from the headings.
+ */
+function parseGuideSections(source: string): GuideSection[] {
+  const sections: GuideSection[] = [];
+  const parts = source.split(/^(?=## )/gmu);
+  const intro = parts[0];
+  if (intro === undefined || !intro.startsWith("# ")) {
+    throw new Error("The guide must open with its # title before any ## section.");
+  }
+  sections.push({
+    slug: "introduction",
+    title: "Introduction",
+    text: intro.trimEnd(),
+  });
+  for (const part of parts.slice(1)) {
+    const newline = part.indexOf("\n");
+    const heading = (newline === -1 ? part : part.slice(0, newline))
+      .replace(/^## /u, "")
+      .trim();
+    const slug = slugifyGuideHeading(heading);
+    if (sections.some((section) => section.slug === slug)) {
+      throw new Error(`Guide section slug "${slug}" is not unique.`);
+    }
+    sections.push({
+      slug,
+      title: heading,
+      text: part.trimEnd(),
+    });
+  }
+  return sections;
+}
+
+export const GUIDE_SECTIONS: readonly GuideSection[] = Object.freeze(
+  parseGuideSections(GUIDE_SOURCE_TEXT),
+);
+
+const guideContentsBlock = [
+  "## Contents",
+  "",
+  "This guide is large. Each section is separately readable at",
+  "`tiled://guide/{section}`, so fetch the one you need instead of the whole",
+  "document. Sections:",
+  "",
+  ...GUIDE_SECTIONS.map(
+    (section) => `- \`${section.slug}\` -- ${section.title}`,
+  ),
+].join("\n");
+
+export const GUIDE_RESOURCE_TEXT = (() => {
+  const [intro, ...rest] = GUIDE_SOURCE_TEXT.split(/^(?=## )/gmu);
+  return [
+    `${(intro ?? "").trimEnd()}\n`,
+    `${guideContentsBlock}\n`,
+    ...rest,
+  ].join("\n");
+})();
+
 const guideBytes = Buffer.from(GUIDE_RESOURCE_TEXT, "utf8");
 
 export const GUIDE_RESOURCE_SIZE = guideBytes.byteLength;
@@ -2028,7 +2118,7 @@ export function registerGuideResource(server: McpServer): void {
     {
       title: "TiledMCP safe editing guide",
       description:
-        "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
+        "The full per-tool reference for inspecting, previewing, approving, applying, and verifying safe Tiled map edits. It is large; read one section at a time via tiled://guide/{section} (the Contents block lists the slugs).",
       mimeType: GUIDE_RESOURCE_MIME_TYPE,
       size: GUIDE_RESOURCE_SIZE,
       annotations: {
@@ -2047,5 +2137,41 @@ export function registerGuideResource(server: McpServer): void {
         },
       ],
     }),
+  );
+  server.registerResource(
+    "guide-section",
+    new ResourceTemplate(GUIDE_SECTION_TEMPLATE_URI, {
+      list: undefined,
+    }),
+    {
+      title: "One section of the TiledMCP safe editing guide",
+      description:
+        "A single ## section of tiled://guide, addressed by its slug from the guide's Contents block (for example tiled://guide/conflict-and-failure-handling).",
+      mimeType: GUIDE_RESOURCE_MIME_TYPE,
+    },
+    (uri, variables) => {
+      const requested = variables.section;
+      const slug = Array.isArray(requested) ? requested[0] : requested;
+      const section = GUIDE_SECTIONS.find(
+        (candidate) => candidate.slug === slug,
+      );
+      if (section === undefined) {
+        throw new Error(
+          `Unknown guide section "${String(slug)}". Valid sections: ${GUIDE_SECTIONS.map(
+            (candidate) => candidate.slug,
+          ).join(", ")}.`,
+        );
+      }
+      return {
+        contents: [
+          {
+            uri: uri.toString(),
+            mimeType: GUIDE_RESOURCE_MIME_TYPE,
+            text: section.text,
+            _meta: guideMeta,
+          },
+        ],
+      };
+    },
   );
 }

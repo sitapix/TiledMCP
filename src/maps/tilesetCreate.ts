@@ -4,7 +4,6 @@ import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
   type JsonObject,
-  type JsonValue,
 } from "../formats/json.js";
 import { hasAtMostCodePoints } from "./propertyEdits.js";
 
@@ -259,7 +258,7 @@ export function tilesetCreatePlanId(
   value: Omit<TilesetCreatePlan, "id">,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(TILESET_CREATE_PLAN_HASH_DOMAIN)

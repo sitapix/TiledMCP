@@ -223,7 +223,7 @@ export class ProjectPathResolver {
     if (projectPath === ".tiledmcp" || projectPath.startsWith(".tiledmcp/")) {
       throw new TiledMcpError(
         "RESERVED_PROJECT_PATH",
-        "The .tiledmcp directory is reserved for server safety state.",
+        `${projectPath} is inside .tiledmcp, which is reserved for server safety state and not addressable by tools. Pick a project asset path outside .tiledmcp (tiled_list_files shows them).`,
         { path: projectPath },
       );
     }
@@ -232,9 +232,13 @@ export class ProjectPathResolver {
   private assertInside(candidate: string, source: string): void {
     const fromRoot = relative(this.root, candidate);
     if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-      throw new TiledMcpError("PATH_OUTSIDE_ROOT", `Path escapes project root: ${source}`, {
-        path: source,
-      });
+      throw new TiledMcpError(
+        "PATH_OUTSIDE_ROOT",
+        `Path escapes the project sandbox: ${source}. Use a project-relative POSIX path with no leading slash and no ".." segments; tiled_list_files shows addressable paths.`,
+        {
+          path: source,
+        },
+      );
     }
   }
 

@@ -189,7 +189,7 @@ describe("tiled CLI file export", () => {
         async () => Buffer.from("drift", "utf8"),
       ),
     ).rejects.toMatchObject({
-      code: "INVALID_CHANGE_SET",
+      code: "CHANGE_SET_REPLAY_MISMATCH",
     });
     // A changed source fails closed before any CLI work.
     await writeFile(

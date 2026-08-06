@@ -1,5 +1,9 @@
 # TiledMCP
 
+[![npm](https://img.shields.io/npm/v/tiled-mcp-server)](https://www.npmjs.com/package/tiled-mcp-server)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node](https://img.shields.io/node/v/tiled-mcp-server)](https://nodejs.org)
+
 An MCP server for [Tiled](https://www.mapeditor.org) map projects. A model can read,
 edit, generate, render, and validate `.tmj` / `.tsj` assets on disk without opening the
 editor.
@@ -12,32 +16,33 @@ Two rules shape everything else:
 - **Undefined semantics fail closed.** Where Tiled 1.12.2's own behavior is ambiguous or
   unimplemented, the server errors instead of approximating.
 
-## Status
+## Quickstart
 
-Version 0.0.1. The interface is a draft and is not frozen.
+All you need is Node.js 20.19+. Tiled itself is **not** required — everything runs on a
+built-in JSON and PNG path (installing Tiled later just unlocks two extra tools).
 
-57 tools register: 54 core, plus 3 that appear only when the server detects Tiled or
-`tmxrasterizer` on PATH (`tiled_render_map`, `tiled_preview_export`,
-`tiled_preview_terrain`). Everything else runs on the built-in JSON and PNG path with no
-external binary. The suite is 1,457 passing tests across 108 files.
+**1. Pick a project folder.** Any directory holding your `.tmj` maps, `.tsj` tilesets,
+and tile images — or an empty one you want maps created in. The server treats it as a
+hard sandbox and never touches anything outside it.
 
-## Install
+**2. Connect your client.**
 
-Requires Node.js 20.19+ and pnpm 11.
+Claude Code:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm build
-node dist/index.js --project-dir /absolute/path/to/your/tiled-project
+claude mcp add tiled -- npx -y tiled-mcp-server --project-dir /absolute/path/to/your/tiled-project
 ```
+
+Claude Desktop or any client with JSON config:
 
 ```json
 {
   "mcpServers": {
     "tiled": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/absolute/path/to/TiledMCP/dist/index.js",
+        "-y",
+        "tiled-mcp-server",
         "--project-dir",
         "/absolute/path/to/your/tiled-project"
       ]
@@ -45,6 +50,36 @@ node dist/index.js --project-dir /absolute/path/to/your/tiled-project
   }
 }
 ```
+
+The first `npx` run downloads the package, so the first connection takes a moment;
+after that it starts from the cache. To poke at the tools by hand instead, use the
+MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector npx -y tiled-mcp-server --project-dir /absolute/path/to/your/tiled-project
+```
+
+**3. Try it.** Drop a tilesheet PNG into the project folder and ask your assistant to
+*"build a map from tiles/sheet.png — tiles are 16×16"*, or invoke the
+`create_map_from_tilesheet` prompt, which carries the whole sequence. The model renders
+the sheet with every tile labeled by its local ID, so it picks tiles by looking at them,
+not by guessing. Every edit comes back as a preview you approve before anything is
+written.
+
+Running from a clone instead (for development): `pnpm install --frozen-lockfile && pnpm build`,
+then use `node /absolute/path/to/TiledMCP/dist/index.js` as the command in place of
+`npx -y tiled-mcp-server`.
+
+## Status
+
+Version 0.0.1. The interface is a draft and is not frozen.
+
+52 tools register: 50 core, plus 2 that appear only when the server detects Tiled or
+`tmxrasterizer` on PATH (`tiled_render_map`, `tiled_preview_export`). Everything else,
+including `tiled_preview_terrain`, runs on the built-in JSON and PNG path with no
+external binary. The suite is 1,524 passing tests across 123 files.
+
+## Configuration
 
 Transport is stdio. stdout carries MCP protocol only; diagnostics go to stderr.
 `--project-dir` (or `TILED_PROJECT_DIR`) is required and defines a hard sandbox: paths
@@ -112,7 +147,7 @@ A handler result wraps as `{"result": <success payload>}`. Domain errors set
 `structuredContent.result.error.code` alone. Messages and `details` fields carry no
 stability guarantee.
 
-104 application codes ship in
+106 application codes ship in
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json) and at the
 `tiled://application-errors` resource. `INTERNAL_ERROR` is the fallback for unexpected
 handler failures. v1 identifiers keep their meaning, but new codes can appear: treat an
@@ -129,15 +164,16 @@ schema rejects before it reaches a handler returns text only, with no
 | URI | Type | Contents |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | capability discovery, sheet and preview inspection, change-set approval, commit, post-commit re-check |
-| `tiled://application-errors` | `application/json` | the 104-code v1 registry with wire location and compatibility rules |
+| `tiled://application-errors` | `application/json` | the 106-code v1 registry with wire location and compatibility rules |
 
-No resource templates register yet. Trust `resources/list` and
+One resource template registers: `tiled://guide/{section}` serves a single guide
+section by the slug listed in the guide's Contents block. Trust `resources/list` and
 `resources/templates/list` over this table.
 
 ## Prompts
 
 The tool list answers "what can this server do". It cannot answer "which eight of these
-fifty-seven calls, in what order". These carry the sequence:
+fifty-two calls, in what order". These carry the sequence:
 
 | Prompt | Start here when |
 |---|---|
@@ -181,7 +217,7 @@ pnpm verify   # typecheck, build, contract check, full test suite
 real `tools/list`, `resources/list`, `resources/templates/list`, and `resources/read`
 responses across the two capability profiles. It never probes PATH or launches Tiled.
 `pnpm contract:check` diffs the regenerated artifacts against what is committed and
-re-validates all 57 examples against their public input schemas. `pnpm test` runs that
+re-validates all 52 examples against their public input schemas. `pnpm test` runs that
 drift gate, builds `dist/`, then runs the suite including a real production stdio smoke
 test. `pnpm test:watch` skips the stdio test to avoid a stale build; run
 `pnpm test:stdio` to rebuild and re-run it alone.

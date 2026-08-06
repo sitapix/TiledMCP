@@ -99,10 +99,10 @@ describe("stable application error registry", () => {
   });
 
   it("is sorted, unique, scoped, and self-consistent", () => {
-    expect(TILED_MCP_ERROR_CODES).toHaveLength(127);
+    expect(TILED_MCP_ERROR_CODES).toHaveLength(128);
     expect(
       TILED_MCP_APPLICATION_ERROR_CODES,
-    ).toHaveLength(104);
+    ).toHaveLength(106);
     expect(
       TILED_MCP_CAPABILITY_ISSUE_CODES,
     ).toHaveLength(13);
@@ -159,6 +159,11 @@ describe("stable application error registry", () => {
       isTiledMcpApplicationErrorCode(
         "CHANGE_SET_TAMPERED",
       ),
+    ).toBe(true);
+    expect(
+      isTiledMcpApplicationErrorCode(
+        "INVALID_CHANGE_SET",
+      ),
     ).toBe(false);
     expect(
       isTiledMcpCapabilityIssueCode(
@@ -200,7 +205,7 @@ describe("stable application error registry", () => {
       ).toBe(true);
     }
     for (const code of [
-      "CHANGE_SET_TAMPERED",
+      "INVALID_CHANGE_SET",
       "UNKNOWN_ERROR_CODE",
       "",
     ]) {

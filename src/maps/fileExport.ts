@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 
 export const MAX_EXPORT_OUTPUT_BYTES =
@@ -67,7 +66,7 @@ export function fileExportPlanId(
 ): string {
   return `changeset:${createHash("sha256")
     .update(FILE_EXPORT_PLAN_HASH_DOMAIN)
-    .update(stableJson(value as unknown as JsonValue))
+    .update(stableJson(value))
     .digest("hex")}`;
 }
 

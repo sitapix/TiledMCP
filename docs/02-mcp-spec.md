@@ -239,7 +239,7 @@ protocol defaults.
 ## 7. Registered tools
 
 Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` and
-`docs/generated/mcp-reference.md`. Three tools register only when a local Tiled or
+`docs/generated/mcp-reference.md`. Two tools register only when a local Tiled or
 `tmxrasterizer` is detected; the rest need no external binary.
 
 **Discovery and inspection**
@@ -267,9 +267,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 
 | Tool | Purpose |
 |---|---|
-| `tiled_render_preview` | native orthogonal tile-layer preview with overlays |
-| `tiled_render_isometric` | native isometric render |
-| `tiled_render_hexagonal` | native staggered and hexagonal render |
+| `tiled_render_preview` | native render; dispatches on map orientation (orthogonal, isometric, staggered, hexagonal) |
 | `tiled_render_tileset_sheet` | paginated tileset sheet labeled with local ids |
 | `tiled_render_tiles` | enlarge and label an explicit sparse tile selection |
 | `tiled_render_diff` | pixel-level diff of two renders of the same region |
@@ -279,6 +277,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 
 | Tool | Purpose |
 |---|---|
+| `tiled_create_map` | direct creation of a new empty TMJ; the sole additive no-preview mutation |
 | `tiled_preview_edits` | the generic operation union over tiles, objects, layers, map root, tileset bindings |
 | `tiled_create_layer` | create one empty tile/object/image/group layer |
 | `tiled_create_tileset` | build a new external atlas TSJ from a project image |
@@ -304,15 +303,13 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 | `tiled_preview_import_image` | reference-image resample and palette map |
 | `tiled_preview_prefab` | stamp a source region, multi-layer, with objects |
 | `tiled_preview_template` | place a JSON `.tj` template instance |
-| `tiled_preview_terrain` | *optional*: Tiled's own `TileLayer.wangEdit()` matcher |
+| `tiled_preview_terrain` | Wang corner painting through the native matcher; no Tiled install required |
 
 **Native XML writing**
 
 | Tool | Purpose |
 |---|---|
-| `tiled_preview_write_tmx` | byte-exact `.tmx` from a restricted-profile `.tmj` |
-| `tiled_preview_write_tsx` | byte-exact `.tsx` from a `.tsj` atlas |
-| `tiled_preview_write_tx` | byte-exact `.tx` from a `.tj` template |
+| `tiled_preview_write_xml` | byte-exact `.tmx`/`.tsx`/`.tx`, writer chosen by source extension |
 | `tiled_preview_export` | *optional*: conversion through the official Tiled CLI |
 
 **Checkpoints, transactions, commit**
@@ -322,11 +319,8 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 | `tiled_list_checkpoints` | bounded checkpoint listing, corrupt manifests isolated |
 | `tiled_create_checkpoint` | explicit committed snapshot of current bytes |
 | `tiled_preview_checkpoint_restore` | restore one document to checkpoint bytes |
-| `tiled_preview_checkpoint_prune` | delete one committed checkpoint |
-| `tiled_preview_checkpoint_prune_batch` | delete an explicit set of committed checkpoints |
-| `tiled_preview_prepared_checkpoint_discard` | discard a provably-not-landed prepared checkpoint |
-| `tiled_preview_prepared_checkpoint_commit` | adjudicate an ambiguous prepared create |
-| `tiled_preview_prepared_checkpoint_abandon` | abandon an unresolvable prepared checkpoint |
+| `tiled_preview_checkpoint_prune_batch` | delete 1 to 32 explicit committed checkpoints |
+| `tiled_preview_prepared_checkpoint` | adjudicate a prepared checkpoint; `resolution` selects discard, commit, or abandon |
 | `tiled_preview_transaction` | compose approved change sets into one atomic transaction |
 | `tiled_apply_change_set` | commit any approved change set under its revision guard |
 
@@ -346,8 +340,9 @@ would use templates. No URI embeds an unescaped file path; asset templates would
 | `tiled://guide` | `text/markdown` | the calling playbook: discovery → summary → inspection → preview → approval → commit → verify |
 | `tiled://application-errors` | `application/json` | the v1 application-code registry with wire location, fallback, compatibility, and excluded surfaces |
 
-No resource templates are registered. Runtime truth is `resources/list` and
-`resources/templates/list`.
+One resource template is registered: `tiled://guide/{section}` serves a single `##`
+section of the guide, addressed by the slug in the guide's Contents block. Runtime
+truth is `resources/list` and `resources/templates/list`.
 
 Wire rules:
 
@@ -365,9 +360,11 @@ Prompts are message templates expanded by `prompts/get`. They are not server-sid
 workflow engine, or an authorization mechanism. A template may suggest an order of tool calls; it
 cannot call tools itself and cannot approve a change set on the user's behalf.
 
-None are registered yet. Candidates: guided level creation, collision-layer construction, terrain
-transitions, validate-then-fix, map description, visual review, and building from a reference
-image.
+Four are registered: `create_map_from_tilesheet` (tilesheet image, no map yet),
+`build_from_floor_plan` (turn a floor-plan image into a room), `set_up_tile_roles` (name
+tiles and record their roles), and `review_map` (guided visual review). Remaining
+candidates: guided level creation, collision-layer construction, terrain transitions,
+validate-then-fix, and map description.
 
 ## 10. Non-goals
 

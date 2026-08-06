@@ -33,15 +33,29 @@ Treat an unknown code as a generic failure rather than as success.
 
 No project asset changes until you call \`tiled_apply_change_set\`. Planning
 tools validate the whole edit and return an expiring \`changeSetId\`; the
-human-visible plan they return is the approval boundary. Exactly two tools
+human-visible plan they return is the approval boundary. Every planning
+tool's title begins with "Preview", including ones whose name does not
+(\`tiled_create_tileset\`, \`tiled_create_layer\`, \`tiled_update_tile\`,
+\`tiled_delete_file\`, ...). Exactly two tools
 write directly without this cycle: \`tiled_create_map\` and
 \`tiled_create_checkpoint\`.
+
+A change set expires 10 minutes after preview; the exact deadline is the
+plan's \`expiresAt\`. If approval takes longer, re-run the preview — an
+expired id fails with \`CHANGE_SET_NOT_FOUND\`.
 
 Every write is a compare-and-set. Read the target first (for example with
 \`tiled_get_map_summary\`), then pass its \`revision\` as
 \`expectedMapRevision\` and its complete \`dependencyRevisions\` record as
 \`expectedDependencyRevisions\`. Pass them unchanged and together, from the
 same read. A stale or partial pin fails closed rather than merging.
+
+On \`REVISION_CONFLICT\` or \`DEPENDENCY_REVISION_CONFLICT\`, the state moved
+under you: re-read, re-plan against what the read now says, and preview
+again. Never resubmit the old \`changeSetId\` -- it is bound to the pins it
+was built from. Applying a change set advances its documents' revisions, so
+other pending previews pinned to the same documents go stale; re-read
+between preview-apply pairs that touch the same files.
 
 Never construct or edit raw global IDs. A tile value is a \`TileRef\`
 (\`{"tileset": {"kind": "external", "assetId": "asset_..."}, "localId": 0}\`),
@@ -78,4 +92,6 @@ whole task, which is faster and safer than assembling one from the tool list:
   so later edits address tiles by meaning rather than by local id.
 - \`review_map\` -- read-only inspection of one map.
 
-Read the \`tiled://guide\` resource for per-workflow detail.`;
+For per-workflow detail, read one section of the guide at
+\`tiled://guide/{section}\` (its Contents block lists the slugs) rather than
+the whole ~115 KB \`tiled://guide\` resource.`;

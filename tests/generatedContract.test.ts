@@ -681,7 +681,7 @@ describe("generated MCP contract", () => {
       ["maxTileRenderLocalIds", 64],
       ["maxTileRenderColumns", 32],
       ["maxTileRenderScale", 4],
-      ["maxTileRenderBytes", 8 * 1024 * 1024],
+      ["maxTileRenderBytes", 7 * 1024 * 1024],
       ["maxTileRenderEdge", 2_048],
       ["maxTileRenderPixels", 1_500_000],
     ] as const) {
@@ -1197,10 +1197,13 @@ describe("generated MCP contract", () => {
     expect(objectIdsInputSchema.maxItems).toBe(64);
     expect(objectIdsInputSchema.uniqueItems).toBe(true);
 
+    // tiled_render_preview now returns a union of the orthogonal, isometric
+    // and hexagonal result shapes, so `mimeType` no longer identifies a single
+    // branch. `overlays` is unique to the orthogonal one this block asserts on.
     const nativePreviewSuccessSchema =
       findResultBranchWithProperty(
         nativePreviewTool.outputSchema,
-        "mimeType",
+        "overlays",
         `${nativePreviewLabel}.outputSchema`,
       );
     const highlightOutputSchema = schemaProperty(
@@ -1583,9 +1586,13 @@ describe("generated MCP contract", () => {
         }),
       }),
     );
-    expect(contract.resourceTemplateDefinitions).toEqual(
-      [],
-    );
+    expect(contract.resourceTemplateDefinitions).toEqual([
+      expect.objectContaining({
+        name: "guide-section",
+        uriTemplate: "tiled://guide/{section}",
+        mimeType: "text/markdown",
+      }),
+    ]);
     // Prompts are the task-shaped entry points into the tool surface. The
     // contract records them in advertised order -- the two build workflows
     // first, then the setup they depend on, then read-only review -- so a
@@ -1665,7 +1672,9 @@ describe("generated MCP contract", () => {
         "tiled://guide",
         APPLICATION_ERROR_RESOURCE_URI,
       ]);
-      expect(profile.resourceTemplateOrder).toEqual([]);
+      expect(profile.resourceTemplateOrder).toEqual([
+        "tiled://guide/{section}",
+      ]);
     }
 
     const artifacts =
@@ -1782,9 +1791,19 @@ function findResultBranchWithProperty(
     "result",
     label,
   );
+  // A tool whose success payload is itself a union (tiled_render_preview
+  // returns one of three projection-specific shapes) nests a second `anyOf`
+  // inside the success branch, so flatten one level before matching.
   const branches = asRecordArray(
     resultSchema.anyOf,
     `${label}.properties.result.anyOf`,
+  ).flatMap((branch) =>
+    Array.isArray(branch.anyOf)
+      ? asRecordArray(
+          branch.anyOf,
+          `${label}.properties.result.anyOf[].anyOf`,
+        )
+      : [branch],
   );
   const matches = branches.filter((branch) => {
     const properties = branch.properties;

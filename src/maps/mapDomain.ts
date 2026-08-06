@@ -463,6 +463,8 @@ export interface ListObjectsInput {
   mapPath: string;
   layerId?: number;
   limit?: number;
+  /** Document-order resume cursor: skip this many objects; defaults to 0. */
+  offset?: number;
 }
 
 export interface GetObjectInput {
@@ -497,6 +499,8 @@ export interface GetTilesetInput {
   embeddedIndex?: number;
   startTileId?: number;
   limit?: number;
+  /** Resume cursor into the wangsets[] page; defaults to 0. */
+  startWangSetIndex?: number;
 }
 
 export type TiledExportRunner = (options: {

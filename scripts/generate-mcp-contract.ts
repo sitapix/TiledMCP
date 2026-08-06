@@ -145,6 +145,19 @@ export async function generateMcpContractArtifacts(): Promise<GeneratedMcpContra
       compareText(left.uriTemplate, right.uriTemplate) ||
       compareText(left.name, right.name),
   );
+  // Each optional tool is gated on its own probe: tiled_render_map on the
+  // tmxrasterizer probe, tiled_preview_export on the tiled CLI probe.
+  const optionalToolAvailability: Record<string, string> = {
+    tiled_render_map: "tmxrasterizer-version-probe",
+    tiled_preview_export: "tiled-cli-version-probe",
+  };
+  for (const name of TILED_MCP_OPTIONAL_TOOL_NAMES) {
+    if (optionalToolAvailability[name] === undefined) {
+      throw new Error(
+        `Optional tool ${name} has no availability probe recorded in generate-mcp-contract.ts.`,
+      );
+    }
+  }
   const toolAvailability = Object.fromEntries([
     ...TILED_MCP_CORE_TOOL_NAMES.map(
       (name) => [name, "core"] as const,
@@ -153,7 +166,7 @@ export async function generateMcpContractArtifacts(): Promise<GeneratedMcpContra
       (name) =>
         [
           name,
-          "tmxrasterizer-version-probe",
+          optionalToolAvailability[name] as string,
         ] as const,
     ),
   ]);
@@ -672,9 +685,13 @@ function assertProfileInvariants(
     ],
     "resource content contract order",
   );
-  if (core.resourceTemplates.length !== 0) {
+  if (
+    core.resourceTemplates.length !== 1 ||
+    core.resourceTemplates[0]?.uriTemplate !==
+      "tiled://guide/{section}"
+  ) {
     throw new Error(
-      "Expected no resource templates.",
+      "Expected exactly the tiled://guide/{section} resource template.",
     );
   }
   if (!("prompts" in core.serverCapabilities)) {

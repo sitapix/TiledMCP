@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
@@ -363,7 +362,7 @@ function evidenceRevision(
   checkpoint: PreparedCheckpointAdjudicationExpectation,
 ): string {
   const canonical = stableJson(
-    checkpoint as unknown as JsonValue,
+    checkpoint,
   );
   return `sha256:${createHash("sha256")
     .update(domain)
@@ -384,7 +383,7 @@ function changeSetDigest(
       >,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(domain)
@@ -840,10 +839,10 @@ function assertMatchingSummary(
 ): void {
   if (
     stableJson(
-      actual as unknown as JsonValue,
+      actual,
     ) !==
     stableJson(
-      expected as unknown as JsonValue,
+      expected,
     )
   ) {
     invalidPlan(
