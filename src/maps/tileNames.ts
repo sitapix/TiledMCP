@@ -6,7 +6,6 @@ import {
   expectObject,
   stableJson,
   type JsonObject,
-  type JsonValue,
 } from "../formats/json.js";
 
 export const TILE_NAMES_FILE =
@@ -162,7 +161,7 @@ export function tileNameEditPlanId(
   return `changeset:${createHash("sha256")
     .update(TILE_NAME_EDIT_PLAN_HASH_DOMAIN)
     .update(
-      stableJson(value as unknown as JsonValue),
+      stableJson(value),
     )
     .digest("hex")}`;
 }

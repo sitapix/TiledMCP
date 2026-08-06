@@ -308,10 +308,7 @@ function memberValueFor(
         );
       }
       assertExactKeys(
-        offset as unknown as Record<
-          string,
-          unknown
-        >,
+        offset,
         ["x", "y"],
         "patch.tileOffset",
       );
@@ -368,10 +365,7 @@ function memberValueFor(
         );
       }
       assertExactKeys(
-        input as unknown as Record<
-          string,
-          unknown
-        >,
+        input,
         [
           "hFlip",
           "preferUntransformed",
@@ -419,10 +413,7 @@ function memberValueFor(
         );
       }
       assertExactKeys(
-        grid as unknown as Record<
-          string,
-          unknown
-        >,
+        grid,
         ["height", "orientation", "width"],
         "patch.grid",
       );
@@ -478,7 +469,7 @@ export function applyTilesetPropertyPatch(
     );
   }
   assertExactKeys(
-    patch as unknown as Record<string, unknown>,
+    patch,
     [...TILESET_PROPERTY_PATCH_FIELDS],
     "patch",
     // Every field is optional; only unknown keys are rejected here, and the
@@ -649,7 +640,7 @@ export function tilesetPropertyEditPlanId(
   value: Omit<TilesetPropertyEditPlan, "id">,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(
@@ -663,7 +654,7 @@ export function assertTilesetPropertyEditPlan(
   plan: TilesetPropertyEditPlan,
 ): void {
   assertExactKeys(
-    plan as unknown as Record<string, unknown>,
+    plan,
     [
       "assetId",
       "baseRevision",

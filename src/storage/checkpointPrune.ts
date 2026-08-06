@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 import { CHECKPOINT_ID_PATTERN } from "./checkpoints.js";
 import type {
@@ -115,10 +114,10 @@ export async function applyCheckpointPrune(
     checkpointPruneSummary(plan.checkpoint);
   if (
     stableJson(
-      plan.summary as unknown as JsonValue,
+      plan.summary,
     ) !==
     stableJson(
-      expectedSummary as unknown as JsonValue,
+      expectedSummary,
     )
   ) {
     throw new TiledMcpError(
@@ -176,7 +175,7 @@ function checkpointPrunePlanId(
   value: Omit<CheckpointPrunePlan, "id">,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(PRUNE_PLAN_HASH_DOMAIN)

@@ -1237,7 +1237,7 @@ export class MapService {
     const items = expectArray(
       tileMetadata.items as JsonValue,
       `${tilesetPath} projection.tileMetadata.items`,
-    ) as unknown as Record<string, unknown>[];
+    ) as JsonObject[];
     let aggregateBytes = 0;
     for (const item of items) {
       const image = item.image as
@@ -3619,10 +3619,10 @@ export class MapService {
     );
     if (
       stableJson(
-        applied.summary as unknown as JsonValue,
+        applied.summary,
       ) !==
       stableJson(
-        plan.summary as unknown as JsonValue,
+        plan.summary,
       )
     ) {
       throw new TiledMcpError(
@@ -4308,9 +4308,9 @@ export class MapService {
     );
     if (
       stableJson(
-        applied.summary as unknown as JsonValue,
+        applied.summary,
       ) !==
-      stableJson(plan.summary as unknown as JsonValue)
+      stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
@@ -4411,10 +4411,10 @@ export class MapService {
     }
     if (
       stableJson(
-        prepared.summary as unknown as JsonValue,
+        prepared.summary,
       ) !==
       stableJson(
-        plan.summary as unknown as JsonValue,
+        plan.summary,
       )
     ) {
       throw new TiledMcpError(
@@ -4826,9 +4826,9 @@ export class MapService {
     );
     if (
       stableJson(
-        applied.summary as unknown as JsonValue,
+        applied.summary,
       ) !==
-      stableJson(plan.summary as unknown as JsonValue)
+      stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
@@ -8168,9 +8168,9 @@ export class MapService {
       );
     if (
       stableJson(
-        prepared.summary as unknown as JsonValue,
+        prepared.summary,
       ) !==
-      stableJson(plan.summary as unknown as JsonValue)
+      stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
@@ -9284,9 +9284,9 @@ export class MapService {
       );
     if (
       stableJson(
-        prepared.summary as unknown as JsonValue,
+        prepared.summary,
       ) !==
-      stableJson(plan.summary as unknown as JsonValue)
+      stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
@@ -10084,10 +10084,10 @@ export class MapService {
     if (
       revisionOf(content) !== plan.baseRevision ||
       stableJson(
-        replayedSummary as unknown as JsonValue,
+        replayedSummary,
       ) !==
         stableJson(
-          plan.summary as unknown as JsonValue,
+          plan.summary,
         )
     ) {
       throw new TiledMcpError(
@@ -11539,8 +11539,8 @@ export class MapService {
         prospectiveTileset,
       );
       if (
-        stableJson(resolvedOperation as unknown as JsonValue) !==
-        stableJson(plannedOperation as unknown as JsonValue)
+        stableJson(resolvedOperation) !==
+        stableJson(plannedOperation)
       ) {
         throw new TiledMcpError(
           "INVALID_CHANGE_SET",
@@ -11590,10 +11590,10 @@ export class MapService {
         );
       if (
         stableJson(
-          resolvedOperation as unknown as JsonValue,
+          resolvedOperation,
         ) !==
         stableJson(
-          plannedOperation as unknown as JsonValue,
+          plannedOperation,
         )
       ) {
         throw new TiledMcpError(
@@ -11655,8 +11655,8 @@ export class MapService {
         prospectiveImage,
       );
       if (
-        stableJson(resolvedOperation as unknown as JsonValue) !==
-        stableJson(plannedOperation as unknown as JsonValue)
+        stableJson(resolvedOperation) !==
+        stableJson(plannedOperation)
       ) {
         throw new TiledMcpError(
           "INVALID_CHANGE_SET",
@@ -11694,8 +11694,8 @@ export class MapService {
       },
     );
     if (
-      stableJson(appliedSummary as unknown as JsonValue) !==
-      stableJson(plan.summary as unknown as JsonValue)
+      stableJson(appliedSummary) !==
+      stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",

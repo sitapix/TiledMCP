@@ -33,7 +33,6 @@ import { TiledMcpError, asTiledMcpError } from "./errors.js";
 import {
   TILED_MCP_FILESYSTEM_THREAT_MODEL_CONTRACT,
 } from "./filesystemThreatModelContract.js";
-import type { JsonValue } from "./formats/json.js";
 import {
   DEFAULT_TILE_RENDER_COLUMNS,
   DEFAULT_TILE_RENDER_SCALE,
@@ -1928,25 +1927,25 @@ function immutableCliCapabilitiesSnapshot(
 
 const registeredToolNamesOutputSchema = z.union([
   exactJsonValueOutputSchema(
-    [...TILED_MCP_CORE_TOOL_NAMES] as unknown as JsonValue,
+    [...TILED_MCP_CORE_TOOL_NAMES],
   ),
   exactJsonValueOutputSchema(
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       "tiled_render_map",
-    ] as unknown as JsonValue,
+    ],
   ),
   exactJsonValueOutputSchema(
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       "tiled_preview_export",
-    ] as unknown as JsonValue,
+    ],
   ),
   exactJsonValueOutputSchema(
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       ...TILED_MCP_OPTIONAL_TOOL_NAMES,
-    ] as unknown as JsonValue,
+    ],
   ),
 ]);
 
@@ -3427,7 +3426,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const capabilitiesToolOutputSchema =
     toolOutputSchema(
       exactJsonValueOutputSchema(
-        capabilitiesResult as unknown as JsonValue,
+        capabilitiesResult,
         (jsonPointer) => {
           if (
             jsonPointer ===

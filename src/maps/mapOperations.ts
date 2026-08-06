@@ -465,7 +465,7 @@ export function validateAndSummarizeOperations(
       operation.type === "removeTilesetFromMap"
     ) {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["tilesetAssetId", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -491,7 +491,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "updateMap") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["patch", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -515,7 +515,7 @@ export function validateAndSummarizeOperations(
     } else if (operation.type === "resizeMap") {
       const operationContext = `operations[${operationIndex}]`;
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["height", "offsetX", "offsetY", "type", "width"]),
         operationContext,
       );
@@ -527,7 +527,7 @@ export function validateAndSummarizeOperations(
         );
       }
       const input = readResizeMapInput(
-        operation as unknown as Record<string, unknown>,
+        operation,
         operationContext,
       );
       const oldWidth = expectInteger(map.width, `${mapPath}.width`);
@@ -665,7 +665,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "transcodeTileLayer") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["compression", "encoding", "layerId", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -858,7 +858,7 @@ export function validateAndSummarizeOperations(
       );
     } else if (operation.type === "floodFill") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set([
           "layerId",
           "tile",
@@ -1140,10 +1140,7 @@ export function validateAndSummarizeOperations(
       const operationContext =
         `operations[${operationIndex}]`;
       assertExactObjectKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         new Set(["destination", "source", "type"]),
         operationContext,
       );
@@ -1160,10 +1157,7 @@ export function validateAndSummarizeOperations(
         );
       }
       assertExactObjectKeys(
-        operation.source as unknown as Record<
-          string,
-          unknown
-        >,
+        operation.source,
         new Set([
           "height",
           "layerId",
@@ -1174,10 +1168,7 @@ export function validateAndSummarizeOperations(
         `${operationContext}.source`,
       );
       assertExactObjectKeys(
-        operation.destination as unknown as Record<
-          string,
-          unknown
-        >,
+        operation.destination,
         new Set(["layerId", "x", "y"]),
         `${operationContext}.destination`,
       );
@@ -1466,7 +1457,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "stampPattern") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set([
           "layerId",
           "pattern",
@@ -1956,7 +1947,7 @@ export function validateAndSummarizeOperations(
       });
     } else if (operation.type === "createObject") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["layerId", "object", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -1998,10 +1989,7 @@ export function validateAndSummarizeOperations(
       operation.type === "instantiateTemplate"
     ) {
       assertExactObjectKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         new Set([
           "expectedTemplateRevision",
           "layerId",
@@ -2078,7 +2066,7 @@ export function validateAndSummarizeOperations(
       objectMutations += 1;
     } else if (operation.type === "updateObject") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["objectId", "patch", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -2128,7 +2116,7 @@ export function validateAndSummarizeOperations(
       objectMutations += 1;
     } else if (operation.type === "deleteObjects") {
       assertExactObjectKeys(
-        operation as unknown as Record<string, unknown>,
+        operation,
         new Set(["objectIds", "type"]),
         `operations[${operationIndex}]`,
       );
@@ -5655,7 +5643,7 @@ function finalizeChunkedTileLayerWrite(
     layerId: layer.id,
     mapPath,
   });
-  layer.object.chunks = serialized.chunks as unknown as JsonValue;
+  layer.object.chunks = serialized.chunks;
   layer.object.width = serialized.width;
   layer.object.height = serialized.height;
   layer.object.startx = serialized.startX;

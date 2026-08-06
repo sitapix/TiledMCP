@@ -4152,7 +4152,7 @@ export function collectLayerSummaries(
 }
 
 export function planId(value: Omit<MapEditPlan, "id">): string {
-  const canonical = stableJson(value as unknown as JsonValue);
+  const canonical = stableJson(value);
   return `changeset:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
@@ -5879,7 +5879,7 @@ export function tileRefToGid(
     throw new TiledMcpError("INVALID_ARGUMENT", "tile must be a TileRef or null.");
   }
   const tileRecord =
-    tile as unknown as Record<string, unknown>;
+    tile;
   assertExactObjectKeys(
     tileRecord,
     new Set([
@@ -5907,7 +5907,7 @@ export function tileRefToGid(
     );
   }
   assertExactObjectKeys(
-    tile.tileset as unknown as Record<string, unknown>,
+    tile.tileset,
     new Set(["assetId", "kind"]),
     "tile.tileset",
   );
@@ -6083,8 +6083,8 @@ export function readLayerGid(layer: TileLayerView, x: number, y: number): number
 }
 
 
-export function assertExactObjectKeys(
-  value: Record<string, unknown>,
+export function assertExactObjectKeys<T extends object>(
+  value: T,
   allowed: ReadonlySet<string>,
   context: string,
 ): void {

@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { TiledMcpError } from "../errors.js";
 import {
   stableJson,
-  type JsonValue,
 } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
@@ -199,7 +198,7 @@ export function checkpointPruneBatchBaseRevision(
     .update(BATCH_BASE_REVISION_HASH_DOMAIN)
     .update(
       stableJson(
-        pins as unknown as JsonValue,
+        pins,
       ),
     )
     .digest("hex")}`;
@@ -311,7 +310,7 @@ function checkpointPruneBatchPlanId(
     .update(BATCH_PLAN_HASH_DOMAIN)
     .update(
       stableJson(
-        value as unknown as JsonValue,
+        value,
       ),
     )
     .digest("hex")}`;
@@ -410,10 +409,10 @@ function assertCheckpointPruneBatchPlan(
     );
     if (
       stableJson(
-        plan.summary as unknown as JsonValue,
+        plan.summary,
       ) !==
       stableJson(
-        expectedSummary as unknown as JsonValue,
+        expectedSummary,
       )
     ) {
       throw new Error(

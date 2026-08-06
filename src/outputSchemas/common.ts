@@ -5,7 +5,7 @@ import {
   MAX_PROPERTY_NAME_CODE_POINTS,
   MAX_PROPERTY_VALUE_CODE_POINTS,
 } from "../maps/propertyEdits.js";
-import type { JsonValue } from "../formats/json.js";
+import type { JsonCompatible, JsonValue } from "../formats/json.js";
 import {
   CHECKPOINT_ID_PATTERN,
   MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
@@ -1135,7 +1135,30 @@ export function toolOutputSchema<
  * replace environment-dependent subtrees with stable structural schemas while
  * retaining literal contracts for static capability values.
  */
-export function exactJsonValueOutputSchema(
+/**
+ * Derives a closed schema pinned to `value`'s exact shape.
+ *
+ * Generic over `JsonCompatible<T>` so plain-data interfaces (which lack the
+ * implicit index signature `JsonValue` requires) are accepted without a cast,
+ * while `Date`/`Map`/class instances are still rejected. The single cast below
+ * is the boundary where that proof is discharged; recursion runs on `JsonValue`.
+ */
+export function exactJsonValueOutputSchema<T>(
+  value: JsonCompatible<T>,
+  override?: (
+    jsonPointer: string,
+    value: JsonValue,
+  ) => z.ZodType | undefined,
+  jsonPointer = "",
+): z.ZodType {
+  return exactJsonValueOutputSchemaNode(
+    value as JsonValue,
+    override,
+    jsonPointer,
+  );
+}
+
+function exactJsonValueOutputSchemaNode(
   value: JsonValue,
   override?: (
     jsonPointer: string,
@@ -1168,7 +1191,7 @@ export function exactJsonValueOutputSchema(
     }
     const items = value.map(
       (item, index) =>
-        exactJsonValueOutputSchema(
+        exactJsonValueOutputSchemaNode(
           item,
           override,
           `${jsonPointer}/${index}`,
@@ -1183,8 +1206,14 @@ export function exactJsonValueOutputSchema(
   for (const [key, item] of Object.entries(
     value,
   )) {
+    // `JsonCompatible` admits `undefined` at member position because
+    // `JSON.stringify` omits such keys; the schema must omit them too rather
+    // than recurse into a value that is not a `JsonValue`.
+    if (item === undefined) {
+      continue;
+    }
     shape[key] =
-      exactJsonValueOutputSchema(
+      exactJsonValueOutputSchemaNode(
         item,
         override,
         `${jsonPointer}/${escapeJsonPointerToken(

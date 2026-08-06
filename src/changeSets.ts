@@ -7,7 +7,6 @@ import { TiledMcpError } from "./errors.js";
 import type { Revision } from "./storage/revision.js";
 import {
   stableJson,
-  type JsonValue,
 } from "./formats/json.js";
 import type {
   CheckpointPruneResult,
@@ -412,7 +411,7 @@ export function transactionPlanId(
   return `changeset:${createHash("sha256")
     .update(TRANSACTION_PLAN_HASH_DOMAIN)
     .update(
-      stableJson(value as unknown as JsonValue),
+      stableJson(value),
     )
     .digest("hex")}`;
 }
@@ -1588,7 +1587,7 @@ export class ChangeSetRegistry {
     )
       .update(
         stableJson(
-          targets as unknown as JsonValue,
+          targets,
         ),
       )
       .digest("hex")}`;
@@ -2896,7 +2895,7 @@ function assertMapEditPlanDigest(
     `changeset:${createHash("sha256")
       .update(
         stableJson(
-          unsignedPlan as unknown as JsonValue,
+          unsignedPlan,
         ),
       )
       .digest("hex")}`;
@@ -3203,10 +3202,7 @@ function summarizeOperation(
   ) {
     if (
       !hasExactKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         ["tilesetAssetId", "type"],
       ) ||
       typeof operation.tilesetAssetId !==
@@ -3326,10 +3322,7 @@ function summarizeOperation(
       updateSummaries.length !== 1 ||
       updateSummary === undefined ||
       !hasExactKeys(
-        updateSummary as unknown as Record<
-          string,
-          unknown
-        >,
+        updateSummary,
         [
           "operationIndex",
           "requestedFields",
@@ -3387,7 +3380,7 @@ function summarizeOperation(
 
   if (operation.type === "resizeMap") {
     const operationRecord =
-      operation as unknown as Record<string, unknown>;
+      operation;
     const allowedKeys = new Set([
       "height",
       "offsetX",
@@ -3767,20 +3760,14 @@ function summarizeOperation(
     const destination = operation.destination;
     const validOperation =
       hasExactKeys(
-        operation as unknown as Record<
-          string,
-          unknown
-        >,
+        operation,
         ["type", "source", "destination"],
       ) &&
       typeof source === "object" &&
       source !== null &&
       !Array.isArray(source) &&
       hasExactKeys(
-        source as unknown as Record<
-          string,
-          unknown
-        >,
+        source,
         [
           "layerId",
           "x",
@@ -3793,10 +3780,7 @@ function summarizeOperation(
       destination !== null &&
       !Array.isArray(destination) &&
       hasExactKeys(
-        destination as unknown as Record<
-          string,
-          unknown
-        >,
+        destination,
         ["layerId", "x", "y"],
       ) &&
       Number.isSafeInteger(source.layerId) &&
@@ -5056,9 +5040,14 @@ function previewFlipD(tile: TileRef): boolean {
     : false;
 }
 
-function hasExactKeys(
-  value: Record<string, unknown>,
-  expectedKeys: readonly string[],
+/**
+ * Generic over `T` so narrowed operation types are accepted without laundering
+ * them through `as unknown as Record<string, unknown>`; binding `expectedKeys`
+ * to `keyof T` makes a stale key list a compile error. See `assertExactKeys`.
+ */
+function hasExactKeys<T extends object>(
+  value: T,
+  expectedKeys: readonly (keyof T & string)[],
 ): boolean {
   const actual = Object.keys(value).sort();
   const expected = [...expectedKeys].sort();

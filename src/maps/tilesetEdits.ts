@@ -304,7 +304,7 @@ export function applyTileMetadataUpdates(
       continue;
     }
     assertExactKeys(
-      update as unknown as Record<string, unknown>,
+      update,
       ["patch", "tileId"],
       `updates[${updateIndex}]`,
     );
@@ -546,13 +546,13 @@ function validateCollectionStructuralUpdate(
   }
   if (update.createCollectionTile !== undefined) {
     assertExactKeys(
-      update as unknown as Record<string, unknown>,
+      update,
       ["createCollectionTile", "tileId"],
       context,
     );
     const create = update.createCollectionTile;
     assertExactKeys(
-      create as unknown as Record<string, unknown>,
+      create,
       ["image", "imageHeight", "imageWidth"],
       `${context}.createCollectionTile`,
     );
@@ -590,7 +590,7 @@ function validateCollectionStructuralUpdate(
     return;
   }
   assertExactKeys(
-    update as unknown as Record<string, unknown>,
+    update,
     ["removeCollectionTile", "tileId"],
     context,
   );
@@ -1145,7 +1145,7 @@ function validateTilePatch(
     );
   }
   assertExactKeys(
-    patch as unknown as Record<string, unknown>,
+    patch,
     [...PATCH_FIELDS].sort(),
     context,
     true,
@@ -1242,10 +1242,7 @@ function validateTileCollisionPatch(
   context: string,
 ): void {
   assertExactKeys(
-    collision as unknown as Record<
-      string,
-      unknown
-    >,
+    collision,
     ["shapes"],
     context,
   );
@@ -1310,7 +1307,7 @@ function validateTileCollisionShape(
   const hasPoints =
     kind === "polygon" || kind === "polyline";
   assertExactKeys(
-    shape as unknown as Record<string, unknown>,
+    shape,
     [
       "className",
       "name",
@@ -1318,11 +1315,15 @@ function validateTileCollisionShape(
       "shape",
       "x",
       "y",
+      // `as const` keeps the conditional spreads from widening the literal
+      // union to `string[]`, which would defeat the `keyof` check.
       ...(hasDimensions
-        ? ["height", "width"]
-        : []),
-      ...(hasPoints ? ["points"] : []),
-    ].sort(),
+        ? (["height", "width"] as const)
+        : ([] as const)),
+      ...(hasPoints
+        ? (["points"] as const)
+        : ([] as const)),
+    ],
     context,
     true,
   );
@@ -1397,10 +1398,7 @@ function validateTileCollisionShape(
       point,
     ] of shape.points.entries()) {
       assertExactKeys(
-        point as unknown as Record<
-          string,
-          unknown
-        >,
+        point,
         ["x", "y"],
         `${context}.points[${pointIndex}]`,
       );
@@ -1624,7 +1622,7 @@ function validateAnimationFrames(
   let totalDurationMs = 0;
   for (const [frameIndex, frame] of frames.entries()) {
     assertExactKeys(
-      frame as unknown as Record<string, unknown>,
+      frame,
       ["durationMs", "tileId"],
       `${context}[${frameIndex}]`,
     );
@@ -1725,7 +1723,7 @@ export function tilesetEditPlanId(
   value: Omit<TilesetEditPlan, "id">,
 ): string {
   const canonical = stableJson(
-    value as unknown as JsonValue,
+    value,
   );
   return `changeset:${createHash("sha256")
     .update(TILESET_EDIT_PLAN_HASH_DOMAIN)
@@ -1737,7 +1735,7 @@ export function assertTilesetEditPlan(
   plan: TilesetEditPlan,
 ): void {
   assertExactKeys(
-    plan as unknown as Record<string, unknown>,
+    plan,
     [
       "assetId",
       "baseRevision",
