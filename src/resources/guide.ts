@@ -1712,7 +1712,7 @@ reports GC as not run. List and preview the remaining IDs again if the
 operator wants to continue.
 
 To discard one prepared checkpoint whose current target can be verified equal
-to its pre-write state, call \`tiled_preview_prepared_checkpoint_discard\` with
+to its pre-write state, call \`tiled_preview_prepared_checkpoint\` with \`resolution: "discard"\` and
 its checkpoint ID. An existing-file checkpoint is eligible only when the
 current regular target's exact raw revision and size equal its before state. A
 create checkpoint is eligible only while the target is strictly missing. The
@@ -1738,7 +1738,7 @@ never a generic force flag:
 - Symlinks, non-regular files, path escapes, internal targets, oversized or
   unreadable files, and read races are rejected by both actions.
 
-Call \`tiled_preview_prepared_checkpoint_commit\` only to confirm the
+Call \`tiled_preview_prepared_checkpoint\` with \`resolution: "commit"\` only to confirm the
 create/exact-after case. It pins the complete manifest metadata, raw manifest
 revision and size, target revision and size, and conflict classification in
 an action-domain-separated expected revision. Applying it changes only the
@@ -1749,7 +1749,7 @@ still cannot restore it by deleting the target. Manifest rename is the commit
 point. A later sync or lock failure returns \`manifestCommitted:true\` with
 \`durability:"unconfirmed"\`; do not treat that as an unexecuted request.
 
-Call \`tiled_preview_prepared_checkpoint_abandon\` only when the operator has
+Call \`tiled_preview_prepared_checkpoint\` with \`resolution: "abandon"\` only when the operator has
 decided to preserve the current project asset and permanently remove the
 ambiguous recovery point. It pins the same complete evidence in a different
 hash domain. Applying it unlinks the prepared manifest, syncs the checkpoint

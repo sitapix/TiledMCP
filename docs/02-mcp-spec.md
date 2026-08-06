@@ -319,9 +319,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 | `tiled_create_checkpoint` | explicit committed snapshot of current bytes |
 | `tiled_preview_checkpoint_restore` | restore one document to checkpoint bytes |
 | `tiled_preview_checkpoint_prune_batch` | delete 1 to 32 explicit committed checkpoints |
-| `tiled_preview_prepared_checkpoint_discard` | discard a provably-not-landed prepared checkpoint |
-| `tiled_preview_prepared_checkpoint_commit` | adjudicate an ambiguous prepared create |
-| `tiled_preview_prepared_checkpoint_abandon` | abandon an unresolvable prepared checkpoint |
+| `tiled_preview_prepared_checkpoint` | adjudicate a prepared checkpoint; `resolution` selects discard, commit, or abandon |
 | `tiled_preview_transaction` | compose approved change sets into one atomic transaction |
 | `tiled_apply_change_set` | commit any approved change set under its revision guard |
 

@@ -526,7 +526,9 @@ describe("native preview object debug server contract", () => {
     // `tiled_render_preview`, which dispatches on the map's orientation.
     // 52: the three native XML writers folded into `tiled_preview_write_xml`,
     // which picks its writer from the source extension.
-    expect(registeredTools).toHaveLength(52);
+    // 50: the three prepared-checkpoint previews folded into
+    // `tiled_preview_prepared_checkpoint`, selected by `resolution`.
+    expect(registeredTools).toHaveLength(50);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

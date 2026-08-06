@@ -197,9 +197,7 @@ import {
   createLayerPreviewToolOutputSchema,
   createTilesetPreviewToolOutputSchema,
   deleteFilePreviewToolOutputSchema,
-  preparedCheckpointAbandonPreviewToolOutputSchema,
-  preparedCheckpointCommitPreviewToolOutputSchema,
-  preparedCheckpointDiscardPreviewToolOutputSchema,
+  preparedCheckpointPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
   previewShapeToolOutputSchema,
   previewTransactionToolOutputSchema,
@@ -1784,9 +1782,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_list_property_types",
     "tiled_list_checkpoints",
     "tiled_create_checkpoint",
-    "tiled_preview_prepared_checkpoint_discard",
-    "tiled_preview_prepared_checkpoint_commit",
-    "tiled_preview_prepared_checkpoint_abandon",
+    "tiled_preview_prepared_checkpoint",
     "tiled_preview_checkpoint_prune_batch",
     "tiled_preview_checkpoint_restore",
     "tiled_get_map_summary",
@@ -1972,30 +1968,11 @@ const CHECKPOINT_PRUNE_BATCH_PREVIEW: ToolAnnotations = {
   openWorldHint: false,
 };
 
-const PREPARED_CHECKPOINT_DISCARD_PREVIEW: ToolAnnotations =
+/** The three per-resolution previews carried identical hints; only titles differed. */
+const PREPARED_CHECKPOINT_PREVIEW: ToolAnnotations =
   {
     title:
-      "Preview discarding a prepared recovery checkpoint",
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: false,
-    openWorldHint: false,
-  };
-
-const PREPARED_CHECKPOINT_COMMIT_PREVIEW: ToolAnnotations =
-  {
-    title:
-      "Preview committing an ambiguous prepared recovery checkpoint",
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: false,
-    openWorldHint: false,
-  };
-
-const PREPARED_CHECKPOINT_ABANDON_PREVIEW: ToolAnnotations =
-  {
-    title:
-      "Preview abandoning an ambiguous prepared recovery checkpoint",
+      "Preview adjudicating a prepared recovery checkpoint",
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: false,
@@ -3689,103 +3666,54 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
-  toolRegistrars["tiled_preview_prepared_checkpoint_discard"] = () =>
+  toolRegistrars["tiled_preview_prepared_checkpoint"] = () =>
   register(
     server,
     registeredTools,
-    "tiled_preview_prepared_checkpoint_discard",
+    "tiled_preview_prepared_checkpoint",
     {
       title:
-        "Preview discarding a prepared recovery checkpoint",
+        "Preview adjudicating a prepared recovery checkpoint",
       description:
-        "Pins one prepared checkpoint manifest and proves that the current target still equals its pre-write state: an existing target must match the exact before revision and size, while a create target must still be missing. It returns a destructive discard proposal without deleting the manifest or changing the project asset. Conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected.",
+        "Adjudicates one prepared recovery checkpoint, choosing the proposal from `resolution`. discard pins the manifest and proves the current target still equals its pre-write state -- an existing target must match the exact before revision and size, a create target must still be missing -- then proposes removing the manifest without changing the project asset; conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected. commit applies to an ambiguous create checkpoint only, requires the target to exactly match the after revision, and proposes committing just the internal audit record; because its before state is target absence it still cannot be restored as deletion, it runs no garbage collection, and there is no generic force flag. abandon pins the full manifest, target observation, and one of four machine-classified ambiguous conflicts. Every resolution returns a proposal only; nothing changes until tiled_apply_change_set commits it.",
       inputSchema: z
         .object({
           checkpointId: z
             .string()
             .regex(CHECKPOINT_ID_PATTERN),
+          resolution: z.enum([
+            "abandon",
+            "commit",
+            "discard",
+          ]),
         })
         .strict(),
       outputSchema:
-        preparedCheckpointDiscardPreviewToolOutputSchema,
-      annotations:
-        PREPARED_CHECKPOINT_DISCARD_PREVIEW,
+        preparedCheckpointPreviewToolOutputSchema,
+      annotations: PREPARED_CHECKPOINT_PREVIEW,
     },
-    async ({ checkpointId }) =>
-      executeTool(async () =>
-        changeSets.put(
-          await planPreparedCheckpointDiscard(
-            store,
-            checkpointId,
-          ),
-        ),
-      ),
-  );
-
-  toolRegistrars["tiled_preview_prepared_checkpoint_commit"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_preview_prepared_checkpoint_commit",
-    {
-      title:
-        "Preview committing an ambiguous prepared recovery checkpoint",
-      description:
-        "For an ambiguous create checkpoint only, pins the full prepared manifest and current target evidence and requires the target to exactly match the after revision. It returns an explicit operator-decision proposal without changing either the manifest or project asset. Applying the proposal commits only the internal audit checkpoint record; because its before state is target absence, it still cannot be restored as deletion. It does not run garbage collection, and there is no generic force flag.",
-      inputSchema: z
-        .object({
-          checkpointId: z
-            .string()
-            .regex(CHECKPOINT_ID_PATTERN),
-        })
-        .strict(),
-      outputSchema:
-        preparedCheckpointCommitPreviewToolOutputSchema,
-      annotations:
-        PREPARED_CHECKPOINT_COMMIT_PREVIEW,
-    },
-    async ({ checkpointId }) =>
-      executeTool(async () =>
-        changeSets.put(
-          await planPreparedCheckpointCommit(
-            store,
-            checkpointId,
-          ),
-        ),
-      ),
-  );
-
-  toolRegistrars["tiled_preview_prepared_checkpoint_abandon"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_preview_prepared_checkpoint_abandon",
-    {
-      title:
-        "Preview abandoning an ambiguous prepared recovery checkpoint",
-      description:
-        "Pins the full manifest, target observation, and one of four machine-classified ambiguous prepared-checkpoint conflicts. It returns an explicit destructive operator-decision proposal without changing the project asset. Applying it permanently deletes only the recovery manifest and then runs fail-closed garbage collection; safe-discard states and machine-reconcilable existing-file exact-after states are rejected. A create exact-after conflict remains eligible because its provenance is ambiguous. There is no generic force flag.",
-      inputSchema: z
-        .object({
-          checkpointId: z
-            .string()
-            .regex(CHECKPOINT_ID_PATTERN),
-        })
-        .strict(),
-      outputSchema:
-        preparedCheckpointAbandonPreviewToolOutputSchema,
-      annotations:
-        PREPARED_CHECKPOINT_ABANDON_PREVIEW,
-    },
-    async ({ checkpointId }) =>
-      executeTool(async () =>
-        changeSets.put(
-          await planPreparedCheckpointAbandon(
-            store,
-            checkpointId,
-          ),
-        ),
-      ),
+    async ({ checkpointId, resolution }) =>
+      executeTool(async () => {
+        // Each resolution keeps its own planner, preconditions, and plan kind;
+        // only the tool surface merges. The three took an identical input and
+        // identical annotations, so the choice belongs in a field.
+        const plan =
+          resolution === "discard"
+            ? await planPreparedCheckpointDiscard(
+                store,
+                checkpointId,
+              )
+            : resolution === "commit"
+              ? await planPreparedCheckpointCommit(
+                  store,
+                  checkpointId,
+                )
+              : await planPreparedCheckpointAbandon(
+                  store,
+                  checkpointId,
+                );
+        return changeSets.put(plan);
+      }),
   );
 
   toolRegistrars["tiled_preview_checkpoint_prune_batch"] = () =>

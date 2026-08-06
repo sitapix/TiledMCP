@@ -156,13 +156,7 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
       "tiled_create_layer",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_discard",
-    );
-    expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_commit",
-    );
-    expect(tools.tools.map(({ name }) => name)).toContain(
-      "tiled_preview_prepared_checkpoint_abandon",
+      "tiled_preview_prepared_checkpoint",
     );
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_preview_checkpoint_prune_batch",

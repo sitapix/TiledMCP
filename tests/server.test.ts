@@ -170,9 +170,7 @@ const CORE_TOOLS = [
   "tiled_list_property_types",
   "tiled_list_checkpoints",
   "tiled_create_checkpoint",
-  "tiled_preview_prepared_checkpoint_discard",
-  "tiled_preview_prepared_checkpoint_commit",
-  "tiled_preview_prepared_checkpoint_abandon",
+  "tiled_preview_prepared_checkpoint",
   "tiled_preview_checkpoint_prune_batch",
   "tiled_preview_checkpoint_restore",
   "tiled_get_map_summary",
@@ -342,9 +340,7 @@ describe("createTiledMcpServer", () => {
       });
     }
     for (const name of [
-      "tiled_preview_prepared_checkpoint_discard",
-      "tiled_preview_prepared_checkpoint_commit",
-      "tiled_preview_prepared_checkpoint_abandon",
+      "tiled_preview_prepared_checkpoint",
       "tiled_preview_checkpoint_prune_batch",
       "tiled_preview_checkpoint_restore",
       "tiled_preview_edits",
@@ -384,31 +380,19 @@ describe("createTiledMcpServer", () => {
       openWorldHint: false,
     });
     expect(
-      byName.get("tiled_preview_prepared_checkpoint_discard")
+      byName.get("tiled_preview_prepared_checkpoint")
         ?.inputSchema,
     ).toMatchObject({
       type: "object",
       properties: {
         checkpointId: { type: "string" },
+        resolution: {
+          enum: ["abandon", "commit", "discard"],
+        },
       },
-      required: ["checkpointId"],
+      required: ["checkpointId", "resolution"],
       additionalProperties: false,
     });
-    for (const name of [
-      "tiled_preview_prepared_checkpoint_commit",
-      "tiled_preview_prepared_checkpoint_abandon",
-    ]) {
-      expect(
-        byName.get(name)?.inputSchema,
-      ).toMatchObject({
-        type: "object",
-        properties: {
-          checkpointId: { type: "string" },
-        },
-        required: ["checkpointId"],
-        additionalProperties: false,
-      });
-    }
     expect(
       byName.get(
         "tiled_preview_checkpoint_prune_batch",
@@ -5268,9 +5252,10 @@ describe("createTiledMcpServer", () => {
   it("rejects unknown prepared checkpoint discard preview keys through its strict schema", async () => {
     const response = asToolResponse(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_discard",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: "00000000-0000-4000-8000-000000000000",
+          resolution: "discard",
           unexpected: true,
         },
       }),
@@ -8216,9 +8201,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_discard",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: prepared.id,
+          resolution: "discard",
         },
       }),
     );
@@ -8433,9 +8419,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_commit",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: preparedCommit.id,
+          resolution: "commit",
         },
       }),
     );
@@ -8622,9 +8609,10 @@ describe("createTiledMcpServer", () => {
       summary: Record<string, unknown>;
     }>(
       await harness.client.callTool({
-        name: "tiled_preview_prepared_checkpoint_abandon",
+        name: "tiled_preview_prepared_checkpoint",
         arguments: {
           checkpointId: preparedAbandon.id,
+          resolution: "abandon",
         },
       }),
     );

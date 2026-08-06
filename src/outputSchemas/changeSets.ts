@@ -2973,6 +2973,22 @@ export const preparedCheckpointAbandonPreviewToolOutputSchema =
     preparedCheckpointAbandonPreviewOutputSchema,
   );
 
+/**
+ * `tiled_preview_prepared_checkpoint` absorbed the three per-resolution tools,
+ * which took an identical `checkpointId` and identical annotations and differed
+ * only in which adjudication they proposed. The result is one of the three
+ * proposal shapes, kept as separate closed schemas so each keeps its own `kind`
+ * discriminator and its own evidence block.
+ */
+export const preparedCheckpointPreviewToolOutputSchema =
+  toolOutputSchema(
+    z.union([
+      preparedCheckpointDiscardPreviewOutputSchema,
+      preparedCheckpointCommitPreviewOutputSchema,
+      preparedCheckpointAbandonPreviewOutputSchema,
+    ]),
+  );
+
 export const addTilesetPreviewToolOutputSchema =
   toolOutputSchema(
     addTilesetMapEditPreviewOutputSchema,

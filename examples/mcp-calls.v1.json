@@ -72,28 +72,13 @@
       }
     },
     {
-      "name": "tiled_preview_prepared_checkpoint_discard",
+      "name": "tiled_preview_prepared_checkpoint",
       "profile": "core",
       "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
+        "checkpointId": "00000000-0000-4000-8000-000000000000",
+        "resolution": "discard"
       },
-      "purpose": "仅在当前目标仍精确等于写前状态时，预览丢弃一个 prepared checkpoint，不立即删除。"
-    },
-    {
-      "name": "tiled_preview_prepared_checkpoint_commit",
-      "profile": "core",
-      "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
-      },
-      "purpose": "对目标精确匹配 after revision、但来源无法自动证明的 create checkpoint，预览显式确认其为 committed；只改变内部 manifest。"
-    },
-    {
-      "name": "tiled_preview_prepared_checkpoint_abandon",
-      "profile": "core",
-      "arguments": {
-        "checkpointId": "00000000-0000-4000-8000-000000000000"
-      },
-      "purpose": "对机器分类为含混冲突的 prepared checkpoint，预览永久放弃恢复点；项目文件保持不变。"
+      "purpose": "预览裁定一个 prepared checkpoint；resolution 选择 discard / commit / abandon，此处证明目标仍等于写入前状态并提议移除 manifest。"
     },
     {
       "name": "tiled_preview_checkpoint_prune_batch",
