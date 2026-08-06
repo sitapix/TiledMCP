@@ -260,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:f0f763a63a19f20919fb8f85a8f3b8c931500e1db6ba1eb4d8dcc39a5685caec",
+    "revision": "sha256:df3a5af37ba9f8628d6d0d9bc8557590c954ab78e490bd2771d0861a62ee6464",
     "serverVersion": "0.0.1",
-    "size": 111308
+    "size": 112441
   },
   "annotations": {
     "audience": [
@@ -274,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 111308,
+  "size": 112441,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -282,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 111308 UTF-8 bytes, revision `sha256:f0f763a63a19f20919fb8f85a8f3b8c931500e1db6ba1eb4d8dcc39a5685caec`.
+Content contract: `text`, 112441 UTF-8 bytes, revision `sha256:df3a5af37ba9f8628d6d0d9bc8557590c954ab78e490bd2771d0861a62ee6464`.
 
 Resource templates: none.
 
@@ -31076,6 +31076,36 @@ Input schema:
               "patch": {
                 "additionalProperties": false,
                 "properties": {
+                  "atlas": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "margin": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "spacing": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "tileHeight": {
+                        "maximum": 1000000000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "tileWidth": {
+                        "maximum": 1000000000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "tileWidth",
+                      "tileHeight"
+                    ],
+                    "type": "object"
+                  },
                   "bold": {
                     "type": "boolean"
                   },
@@ -98094,7 +98124,7 @@ Output schema:
 
 Availability: `core`
 
-Validates tileset-level presentation and metadata members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, and scalar custom properties — then returns an expiring tilesetPropertyEdit change set without modifying project assets. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.
+Validates tileset-level members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, scalar custom properties, and atlas (re-cutting the tile grid over the same image) — then returns an expiring tilesetPropertyEdit change set without modifying project assets. atlas takes tileWidth/tileHeight plus optional margin/spacing and recomputes columns and tilecount with Tiled's own formula from the image read at plan time, never from the declared imagewidth. Because tilecount sets the GID span every referencing map decodes against, a cut that changes it is refused unless the pinned map still resolves under the new count and no other project asset references the tileset; a cut that leaves the count alone is unrestricted. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.
 
 Annotations:
 
@@ -98671,11 +98701,12 @@ Output schema:
                         "fillMode",
                         "transformations",
                         "grid",
+                        "atlas",
                         "properties"
                       ],
                       "type": "string"
                     },
-                    "maxItems": 9,
+                    "maxItems": 10,
                     "type": "array"
                   },
                   "destructive": {
@@ -98703,11 +98734,12 @@ Output schema:
                         "fillMode",
                         "transformations",
                         "grid",
+                        "atlas",
                         "properties"
                       ],
                       "type": "string"
                     },
-                    "maxItems": 9,
+                    "maxItems": 10,
                     "minItems": 1,
                     "type": "array"
                   },
@@ -98758,11 +98790,12 @@ Output schema:
                       "fillMode",
                       "transformations",
                       "grid",
+                      "atlas",
                       "properties"
                     ],
                     "type": "string"
                   },
-                  "maxItems": 9,
+                  "maxItems": 10,
                   "type": "array"
                 },
                 "propertiesRemoved": {
@@ -98786,11 +98819,12 @@ Output schema:
                       "fillMode",
                       "transformations",
                       "grid",
+                      "atlas",
                       "properties"
                     ],
                     "type": "string"
                   },
-                  "maxItems": 9,
+                  "maxItems": 10,
                   "minItems": 1,
                   "type": "array"
                 },

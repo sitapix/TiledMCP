@@ -17,7 +17,7 @@ const TILESET_PROPERTY_EDIT_PLAN_HASH_DOMAIN =
   "tiledmcp/tileset-property-edit-plan/v1\0";
 
 export const UPDATE_TILESET_WARNING =
-  "This rewrites only tileset-level presentation and metadata members inside one external tileset. It never changes tile geometry, the atlas image, tile count, GID layout, or referencing maps, but pending map change sets pinned to the old tileset revision will conflict after apply.";
+  "This rewrites tileset-level members inside one external tileset. It never changes the atlas image or referencing maps, but pending map change sets pinned to the old tileset revision will conflict after apply. Without an `atlas` field it also leaves tile geometry, tile count and GID layout untouched; with one it re-cuts the grid over the same image, which changes tilecount and therefore the GID span every referencing map reads -- allowed only once the service has proven the pinned map still resolves and no other project asset references this tileset.";
 
 export const MAX_TILESET_NAME_CODE_POINTS = 1_024;
 export const MAX_TILESET_CLASS_NAME_CODE_POINTS = 1_024;
@@ -84,10 +84,15 @@ export interface TilesetGridInput {
  * default value explicitly -- the distinction is visible in the file and the
  * editor, so it has to be expressible.
  *
- * Geometry (`tilewidth`, `tileheight`, `spacing`, `margin`, `columns`,
- * `tilecount`, `image`) is deliberately absent: changing any of those re-slices
- * the atlas or moves the GID span, which would silently invalidate every
- * referencing map. Those belong to tileset creation, not to a metadata patch.
+ * `image` is deliberately absent: pointing a tileset at different art is
+ * `tiled_replace_tileset_in_map`'s job, one map at a time and with that map's
+ * GIDs surveyed.
+ *
+ * `atlas` is the one geometry field, and it is guarded rather than free.
+ * Re-cutting the grid changes `tilecount`, which moves the GID span every
+ * referencing map depends on -- so the service proves the pinned map survives
+ * the new tile count and that no other project asset references the tileset
+ * before it will write one.
  */
 export interface TilesetPropertyPatch {
   name?: string | undefined;
@@ -110,7 +115,27 @@ export interface TilesetPropertyPatch {
     | null
     | undefined;
   grid?: TilesetGridInput | null | undefined;
+  /**
+   * Re-cuts an atlas tileset's grid over its existing image.
+   *
+   * `columns` and `tileCount` are not caller input: the service reads the
+   * image, computes them with Tiled's own formula and injects them before this
+   * runs, the same way `createCollectionTile` has its pixel size injected.
+   * Declared image dimensions are never trusted.
+   */
+  atlas?: AtlasResliceInput | undefined;
   properties?: PropertiesPatch | undefined;
+}
+
+export interface AtlasResliceInput {
+  tileWidth: number;
+  tileHeight: number;
+  margin?: number;
+  spacing?: number;
+  /** Injected by the service from the real image. */
+  columns?: number;
+  /** Injected by the service from the real image. */
+  tileCount?: number;
 }
 
 export const TILESET_PROPERTY_PATCH_FIELDS = [
@@ -122,6 +147,7 @@ export const TILESET_PROPERTY_PATCH_FIELDS = [
   "fillMode",
   "transformations",
   "grid",
+  "atlas",
   "properties",
 ] as const;
 type TilesetPropertyPatchField =
@@ -131,7 +157,7 @@ type TilesetPropertyPatchField =
 const MEMBER_KEY_BY_FIELD: Record<
   Exclude<
     TilesetPropertyPatchField,
-    "properties"
+    "properties" | "atlas"
   >,
   string
 > = {
@@ -245,7 +271,7 @@ function assertMember<T extends string>(
 function memberValueFor(
   field: Exclude<
     TilesetPropertyPatchField,
-    "properties"
+    "properties" | "atlas"
   >,
   patch: TilesetPropertyPatch,
 ): JsonValue | null {
@@ -501,7 +527,52 @@ export function applyTilesetPropertyPatch(
       }
       continue;
     }
-    const memberKey = MEMBER_KEY_BY_FIELD[field];
+    if (field === "atlas") {
+      // One field, six members: re-cutting the grid rewrites the tile size,
+      // margin and spacing the caller asked for, plus the `columns` and
+      // `tilecount` those imply. Tiled derives the latter two from the image,
+      // so writing them independently would let the file disagree with itself.
+      const atlas = patch.atlas as AtlasResliceInput;
+      if (
+        atlas.columns === undefined ||
+        atlas.tileCount === undefined
+      ) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "The atlas re-slice reached the writer without its resolved grid; columns and tileCount are computed from the image, never supplied.",
+        );
+      }
+      const margin = atlas.margin ?? 0;
+      const spacing = atlas.spacing ?? 0;
+      const members: Array<[string, JsonValue]> = [
+        ["tilewidth", atlas.tileWidth],
+        ["tileheight", atlas.tileHeight],
+        ["margin", margin],
+        ["spacing", spacing],
+        ["columns", atlas.columns],
+        ["tilecount", atlas.tileCount],
+      ];
+      let changed = false;
+      for (const [key, value] of members) {
+        if (document[key] === value) {
+          continue;
+        }
+        document[key] = value;
+        memberPatches.push({ path: [], key });
+        changed = true;
+      }
+      if (changed) {
+        changedFields.push("atlas");
+      }
+      continue;
+    }
+    const memberKey =
+      MEMBER_KEY_BY_FIELD[
+        field as Exclude<
+          TilesetPropertyPatchField,
+          "properties" | "atlas"
+        >
+      ];
     const nextValue = memberValueFor(
       field,
       patch,

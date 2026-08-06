@@ -110,6 +110,7 @@ import {
 import {
   type TilesetPropertyEditPlan,
   type TilesetPropertyEditSummary,
+  type AtlasResliceInput,
   type TilesetPropertyPatch,
   applyTilesetPropertyPatch,
   assertTilesetPropertyEditPlan,
@@ -4425,6 +4426,143 @@ export class MapService {
    * clone, and returns both the summary and the patched bytes. Planning
    * discards the bytes; apply discards nothing.
    */
+  /**
+   * Reads the atlas image, computes the grid the requested cut produces, and
+   * proves the result is safe before letting it be written.
+   *
+   * The tile count is the dangerous part. It sets the tileset's GID span, and
+   * every map that references the tileset reads that span to decode its cells
+   * -- but this plan can only see one map. So a cut that changes the count is
+   * allowed only when the pinned map still resolves under the new one *and*
+   * no other project asset references the tileset at all. That mirrors the
+   * removeCollectionTile rule, and for the same reason: a shrinking span must
+   * not strand references this plan cannot see.
+   */
+  private async resolveAtlasReslice(
+    context: EditableContext,
+    binding: TilesetBinding,
+    document: JsonObject,
+    atlas: AtlasResliceInput,
+  ): Promise<void> {
+    if (binding.collection === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "An image-collection tileset has no atlas grid to re-cut; its tiles carry their own images.",
+        { path: binding.path },
+      );
+    }
+    const image = document["image"];
+    if (typeof image !== "string") {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Only a tileset with a root atlas image can be re-cut.",
+        { path: binding.path },
+      );
+    }
+
+    // Never trust the declared imagewidth/imageheight: read the file.
+    const imagePath =
+      await this.resolver.resolveReference(
+        binding.path,
+        image,
+      );
+    const snapshot = await readImageFileSnapshot(
+      this.resolver,
+      imagePath,
+      MAX_TILESET_IMAGE_BYTES,
+    );
+    const metadata = await inspectSafeImage({
+      bytes: snapshot.bytes,
+      path: snapshot.path,
+      limits: {
+        maxInputBytes: MAX_TILESET_IMAGE_BYTES,
+        maxInputPixels: MAX_TILESET_INPUT_PIXELS,
+        maxInputEdge: MAX_TILESET_INPUT_EDGE,
+      },
+    });
+    const grid = computeAtlasGrid({
+      imageWidth: metadata.width,
+      imageHeight: metadata.height,
+      tileWidth: atlas.tileWidth,
+      tileHeight: atlas.tileHeight,
+      margin: atlas.margin ?? 0,
+      spacing: atlas.spacing ?? 0,
+    });
+    atlas.columns = grid.columns;
+    atlas.tileCount = grid.tileCount;
+
+    if (grid.tileCount === binding.tileCount) {
+      // Same count: the GID span is unchanged, so no other map can be
+      // disturbed and only this tileset's own geometry moves.
+      return;
+    }
+
+    // The pinned map must still decode. A cell referring to a local id the
+    // new cut does not produce would read as corrupt.
+    let highestReferencedLocalId: number | null =
+      null;
+    inspectTilesetUsage(
+      context.loaded.document,
+      context.bindings,
+      binding.assetId,
+      context.loaded.path,
+      undefined,
+      (matchedLocalId) => {
+        highestReferencedLocalId =
+          highestReferencedLocalId === null
+            ? matchedLocalId
+            : Math.max(
+                highestReferencedLocalId,
+                matchedLocalId,
+              );
+      },
+    );
+    const highest: number | null =
+      highestReferencedLocalId;
+    if (
+      highest !== null &&
+      highest >= grid.tileCount
+    ) {
+      throw new TiledMcpError(
+        "TILESET_IN_USE",
+        `${context.loaded.path} still references local id ${highest}, but this cut yields only ${grid.tileCount} tiles.`,
+        {
+          path: binding.path,
+          mapPath: context.loaded.path,
+          highestReferencedLocalId: highest,
+          tileCount: grid.tileCount,
+        },
+      );
+    }
+
+    // Any other referrer reads the same span and is not pinned by this plan.
+    // The scan raises FILE_IN_USE, which is right for a delete and unhelpful
+    // here, so restate it in terms of the cut that is actually being refused.
+    try {
+      await this.scanDeleteReferences(
+        binding.path,
+        "tileset",
+        context.loaded.path,
+      );
+    } catch (error) {
+      const inUse = asTiledMcpError(error);
+      if (inUse?.code !== "FILE_IN_USE") {
+        throw error;
+      }
+      throw new TiledMcpError(
+        "TILESET_IN_USE",
+        `Re-cutting ${binding.path} changes its tile count from ${binding.tileCount} to ${grid.tileCount}, which moves the GID span. Other project assets reference this tileset and this change set pins none of them, so the cut is refused rather than silently invalidating them.`,
+        {
+          ...inUse.details,
+          path: binding.path,
+          mapPath: context.loaded.path,
+          fromTileCount: binding.tileCount,
+          toTileCount: grid.tileCount,
+        },
+      );
+    }
+  }
+
   private async prepareTilesetPropertyEdit(
     mapPath: string,
     tilesetAssetId: string,
@@ -4469,12 +4607,21 @@ export class MapService {
     const loaded =
       await this.loadBoundTilesetForEdit(binding);
     const edited = cloneJson(loaded.document);
+    const resolvedPatch = structuredClone(
+      patch,
+    ) as TilesetPropertyPatch;
+    if (resolvedPatch.atlas !== undefined) {
+      await this.resolveAtlasReslice(
+        context,
+        binding,
+        loaded.document,
+        resolvedPatch.atlas,
+      );
+    }
     const applied =
       applyTilesetPropertyPatch(
         edited,
-        structuredClone(
-          patch,
-        ) as TilesetPropertyPatch,
+        resolvedPatch,
         binding.path,
       );
     if (!applied.summary.wouldChange) {

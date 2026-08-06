@@ -1259,6 +1259,33 @@ const objectPatchSchema = z
       textObjectHorizontalAlignmentSchema.optional(),
     verticalAlignment:
       textObjectVerticalAlignmentSchema.optional(),
+    atlas: z
+      .object({
+        tileWidth: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        tileHeight: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        margin: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_TILESET_GRID_EDGE)
+          .optional(),
+        spacing: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_TILESET_GRID_EDGE)
+          .optional(),
+      })
+      .strict()
+      .optional(),
     properties:
       tilePropertiesPatchSchema.optional(),
   })
@@ -5341,7 +5368,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview tileset-level property updates",
       description:
-        "Validates tileset-level presentation and metadata members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, and scalar custom properties — then returns an expiring tilesetPropertyEdit change set without modifying project assets. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.",
+        "Validates tileset-level members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, scalar custom properties, and atlas (re-cutting the tile grid over the same image) — then returns an expiring tilesetPropertyEdit change set without modifying project assets. atlas takes tileWidth/tileHeight plus optional margin/spacing and recomputes columns and tilecount with Tiled's own formula from the image read at plan time, never from the declared imagewidth. Because tilecount sets the GID span every referencing map decodes against, a cut that changes it is refused unless the pinned map still resolves under the new count and no other project asset references the tileset; a cut that leaves the count alone is unrestricted. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,

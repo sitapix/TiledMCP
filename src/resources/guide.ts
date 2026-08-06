@@ -455,6 +455,30 @@ the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
 object-layer, font, tile-image, antialiased curve styling, and collision
 rendering.
 
+## Re-cut an atlas whose grid changed
+
+\`tiled_update_tileset\` accepts an \`atlas\` field -- \`tileWidth\`,
+\`tileHeight\`, optional \`margin\` and \`spacing\` -- that re-cuts the grid over
+the tileset's existing image. Use it when the art was re-exported at a
+different tile size. \`columns\` and \`tilecount\` are recomputed with Tiled's
+own formula from the image read at plan time; the declared \`imagewidth\` is
+never trusted, so a stale one cannot produce a wrong grid.
+
+\`tilecount\` is the member that matters. It sets the GID span every
+referencing map decodes its cells against, and a tileset edit pins only one
+map. So a cut that changes the count is refused unless both hold:
+
+- the pinned map still resolves -- no cell refers to a local id the new cut
+  does not produce, and
+- no other project asset references the tileset, because this change set pins
+  none of them and a moved span would silently invalidate them.
+
+A cut that leaves the count alone moves no span and is unrestricted, even with
+other referrers present.
+
+Pair it with \`tiled_replace_tileset_in_map\` when the art moved to a new file
+rather than changing shape in place.
+
 ## Swap the art a map is drawn with
 
 \`tiled_replace_tileset_in_map\` repoints one bound external tileset at a
