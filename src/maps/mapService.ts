@@ -3854,6 +3854,11 @@ export class MapService {
     }
 
     const context = await this.loadEditableContext(mapPath, {
+      // Binding a tileset appends to `tilesets[]` and allocates a GID range.
+      // Neither depends on the projection, and `planEdits` already edits
+      // isometric maps -- refusing to attach a tileset to one left it
+      // readable and paintable but impossible to give new art to.
+      allowIsometric: true,
       expectedMapRevision: input.expectedMapRevision,
       expectedDependencyRevisions:
         input.expectedDependencyRevisions,
@@ -11230,6 +11235,10 @@ export class MapService {
       "expectedImageRevision",
     );
     const context = await this.loadEditableContext(input.mapPath, {
+      // Same reasoning: a new layer is an entry in `layers[]`, and a tile
+      // layer is allocated at the map's own dimensions filled with GID zero.
+      // Nothing there reads the projection.
+      allowIsometric: true,
       expectedMapRevision: input.expectedMapRevision,
       expectedDependencyRevisions:
         input.expectedDependencyRevisions,
