@@ -3256,6 +3256,13 @@ export class MapService {
 
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
+      // Listing objects is orientation-independent: object coordinates are
+      // pixels whatever the map projection. Without this the read inherited
+      // the edit path's orthogonal-only guard and rejected isometric maps,
+      // contradicting the guard's own message that isometric is readable
+      // everywhere. Staggered and hexagonal stay rejected, which is the
+      // documented scope for those two.
+      allowIsometric: true,
     });
     const locations =
       input.layerId === undefined
@@ -3597,6 +3604,9 @@ export class MapService {
     assertPositiveInteger(input.objectId, "objectId");
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
+      // Same reasoning as listObjects: reading one object by id does not
+      // depend on the map's projection.
+      allowIsometric: true,
     });
     const location = findObjectLocation(
       buildObjectEditIndex(
