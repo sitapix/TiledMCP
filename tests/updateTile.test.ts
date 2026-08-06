@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { makeStore } from "./support/project.js";
 import {
+  TILED_CLI_ENV,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
+import {
   mkdir,
   mkdtemp,
   readFile,
@@ -1139,7 +1143,7 @@ describe("updateTile", () => {
     );
     try {
       await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
+        TILED_CLI_PATH,
         [
           "--export-tileset",
           "json",
@@ -1147,12 +1151,7 @@ describe("updateTile", () => {
           exported,
         ],
         {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
+          env: { ...TILED_CLI_ENV },
           timeout: 30_000,
           maxBuffer: 1024 * 1024,
         },

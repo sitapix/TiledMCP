@@ -3,6 +3,10 @@ import {
   spawnSync,
 } from "node:child_process";
 import {
+  TILED_CLI_ENV,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
+import {
   copyFile,
   mkdir,
   mkdtemp,
@@ -33,7 +37,7 @@ const EXPECTED_TILED_BANNER = "Tiled 1.12.2";
 const REQUIRED_GATE_ENV =
   "TILEDMCP_REQUIRE_TILED_1_12_2";
 const TILED_EXECUTABLE =
-  process.env.TILED_CLI_PATH ?? "tiled";
+  TILED_CLI_PATH;
 const RASTERIZER_EXECUTABLE =
   process.env.TILED_RASTERIZER_PATH ??
   "tmxrasterizer";
@@ -45,12 +49,7 @@ const PNG_SIGNATURE = Buffer.from([
   0x0d, 0x0a, 0x1a, 0x0a,
 ]);
 
-const integrationEnvironment: NodeJS.ProcessEnv = {
-  ...process.env,
-  LANG: "C",
-  LC_ALL: "C",
-  QT_QPA_PLATFORM: "offscreen",
-};
+const integrationEnvironment: NodeJS.ProcessEnv = { ...TILED_CLI_ENV };
 
 type IntegrationPreflight =
   | { ready: true }

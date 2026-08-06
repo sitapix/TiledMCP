@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { wireProject } from "./support/project.js";
 import {
+  TILED_CLI_ENV,
   hasTiledCli,
   TILED_CLI_PATH,
 } from "./support/tiledCli.js";
@@ -432,12 +433,7 @@ describe("compressed tile data read-only support", () => {
         outputPath,
       ],
       {
-        env: {
-          ...process.env,
-          LANG: "C",
-          LC_ALL: "C",
-          QT_QPA_PLATFORM: "offscreen",
-        },
+        env: { ...TILED_CLI_ENV },
         timeout: 30_000,
         maxBuffer: 1024 * 1024,
       },
