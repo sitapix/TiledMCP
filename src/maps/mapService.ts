@@ -1014,6 +1014,7 @@ export class MapService {
         input.embeddedIndex,
         input.startTileId,
         input.limit,
+        input.startWangSetIndex,
       );
     }
     if (input.tilesetAssetId === undefined) {
@@ -1058,6 +1059,7 @@ export class MapService {
         tileCount: binding.tileCount,
         startTileId: input.startTileId ?? 0,
         limit: input.limit ?? DEFAULT_TILESET_METADATA_LIMIT,
+        startWangSetIndex: input.startWangSetIndex ?? 0,
         collection: {
           localIds: binding.localIds,
           idSpan: binding.gidSpan,
@@ -1085,6 +1087,7 @@ export class MapService {
         tileCount: binding.tileCount,
         startTileId: input.startTileId ?? 0,
         limit: input.limit ?? DEFAULT_TILESET_METADATA_LIMIT,
+        startWangSetIndex: input.startWangSetIndex ?? 0,
       });
     }
 
@@ -1130,6 +1133,7 @@ export class MapService {
     embeddedIndex: number,
     startTileId?: number,
     limit?: number,
+    startWangSetIndex?: number,
   ): Promise<Record<string, unknown>> {
     assertSafeInteger(embeddedIndex, "embeddedIndex");
     const context = await this.loadEditableContext(mapPath, {
@@ -1184,6 +1188,7 @@ export class MapService {
       tileCount: embedded.tileCount,
       startTileId: startTileId ?? 0,
       limit: limit ?? DEFAULT_TILESET_METADATA_LIMIT,
+      startWangSetIndex: startWangSetIndex ?? 0,
       embeddedSourceIndex: embedded.sourceIndex,
     });
 
@@ -1483,7 +1488,7 @@ export class MapService {
     if (typeof document.image !== "string") {
       throw new TiledMcpError(
         "UNSUPPORTED_TILESET",
-        "Tileset sheets require a root atlas image.",
+        `${binding.path} declares no root atlas image, so no sheet grid can be rendered from it. Inspect it with tiled_get_tileset to see how its tiles are defined.`,
         { path: binding.path },
       );
     }
@@ -3306,6 +3311,14 @@ export class MapService {
         `limit must be between 1 and ${MAX_OBJECT_LIST_LIMIT}.`,
       );
     }
+    const offset = input.offset ?? 0;
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "offset must be a nonnegative integer.",
+        { offset },
+      );
+    }
 
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
@@ -3328,13 +3341,26 @@ export class MapService {
             ),
             context.loaded.path,
           );
+    if (offset > 0 && offset >= locations.length) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `offset must be between 0 and ${locations.length - 1}; the selection holds ${locations.length} objects.`,
+        { offset, total: locations.length },
+      );
+    }
+    const page = locations.slice(offset, offset + limit);
+    const hasMore = offset + page.length < locations.length;
     return {
       mapPath: context.loaded.path,
       revision: context.loaded.revision,
       dependencyRevisions: context.dependencyRevisions,
       total: locations.length,
-      truncated: locations.length > limit,
-      objects: locations.slice(0, limit).map(summarizeObjectLocation),
+      offset,
+      returned: page.length,
+      hasMore,
+      truncated: offset > 0 || hasMore,
+      ...(hasMore ? { nextOffset: offset + page.length } : {}),
+      objects: page.map(summarizeObjectLocation),
     };
   }
 
@@ -3626,8 +3652,8 @@ export class MapService {
       )
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The world edit summary does not match its operations.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the world edits against the pinned state produced a different summary than the approved plan. Preview the edits again.",
       );
     }
     const edited = cloneJson(
@@ -4313,8 +4339,8 @@ export class MapService {
       stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The tileset edit summary does not match its updates.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the tileset updates against the pinned state produced a different summary than the approved plan. Preview the updates again.",
       );
     }
     return patchJsonDocumentSource(
@@ -4418,8 +4444,8 @@ export class MapService {
       )
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The tileset property edit summary does not match its patch.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the tileset property patch against the pinned state produced a different summary than the approved plan. Preview the patch again.",
       );
     }
     const result = await this.store.commitBytes(
@@ -4831,8 +4857,8 @@ export class MapService {
       stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The wang edit summary does not match its operations.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the wang edits against the pinned state produced a different summary than the approved plan. Preview the operations again.",
       );
     }
     return patchJsonDocumentSource(
@@ -5746,8 +5772,8 @@ export class MapService {
     );
     if (revisionOf(content) !== plan.baseRevision) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "Replaying the tile-name edits produced different content than the approved plan; preview again.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the tile-name edits produced different content than the approved plan. Preview the edits again.",
       );
     }
     // Commit through the store so the registry gets the same lock, atomic
@@ -8173,8 +8199,8 @@ export class MapService {
       stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The property type edit summary does not match its operations.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the property type edits against the pinned state produced a different summary than the approved plan. Preview the operations again.",
       );
     }
     const result = await this.store.commitBytes(
@@ -9289,8 +9315,8 @@ export class MapService {
       stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The embedded tileset edit summary does not match its updates.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the embedded tileset updates against the pinned state produced a different summary than the approved plan. Preview the updates again.",
       );
     }
     const result = await this.store.commitBytes(
@@ -9808,8 +9834,8 @@ export class MapService {
           );
     if (revisionOf(content) !== plan.baseRevision) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "Re-running the export produced different bytes than the approved plan; preview the export again.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Re-running the export produced different bytes than the approved plan. Preview the export again.",
         {
           path: plan.targetPath,
           expectedRevision: plan.baseRevision,
@@ -10091,8 +10117,8 @@ export class MapService {
         )
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The tileset create summary does not match its replayed content.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the tileset creation produced different content than the approved plan. Preview the creation again.",
       );
     }
     return { document, content };
@@ -10276,8 +10302,8 @@ export class MapService {
           : null) !== pair.target.expectedRevision
       ) {
         throw new TiledMcpError(
-          "INVALID_CHANGE_SET",
-          "A prepared transaction target no longer matches its approved path or revision pin.",
+          "CHANGE_SET_REPLAY_MISMATCH",
+          "A prepared transaction target no longer matches its approved path or revision pin. Preview the member change sets and the transaction again.",
           { index, path: pair.target.path },
         );
       }
@@ -10768,6 +10794,7 @@ export class MapService {
         tileCount: binding.tileCount,
         startTileId: 0,
         limit: 1,
+        startWangSetIndex: 0,
       });
     } else {
       summarizeTilesetDocument({
@@ -10778,6 +10805,7 @@ export class MapService {
         tileCount: binding.tileCount,
         startTileId: 0,
         limit: 1,
+        startWangSetIndex: 0,
         collection,
       });
     }
@@ -11451,8 +11479,8 @@ export class MapService {
         );
       if (resolved !== operation.templatePath) {
         throw new TiledMcpError(
-          "INVALID_CHANGE_SET",
-          "The template instance's relative reference no longer resolves to its pinned template path.",
+          "CHANGE_SET_REPLAY_MISMATCH",
+          "The template instance's relative reference no longer resolves to its pinned template path. Re-read the template and preview the placement again.",
           {
             source: operation.source,
             resolved,
@@ -11543,8 +11571,8 @@ export class MapService {
         stableJson(plannedOperation)
       ) {
         throw new TiledMcpError(
-          "INVALID_CHANGE_SET",
-          "The planned tileset reference no longer matches its canonical path, revision, tile count or assigned firstgid.",
+          "CHANGE_SET_REPLAY_MISMATCH",
+          "The planned tileset reference no longer matches its canonical path, revision, tile count or assigned firstgid. Re-read the tileset and preview again.",
           {
             path: plannedOperation.tilesetPath,
             assetId: plannedOperation.assetId,
@@ -11597,8 +11625,8 @@ export class MapService {
         )
       ) {
         throw new TiledMcpError(
-          "INVALID_CHANGE_SET",
-          "The planned tileset replacement no longer matches the map's current bindings or tile usage.",
+          "CHANGE_SET_REPLAY_MISMATCH",
+          "The planned tileset replacement no longer matches the map's current bindings or tile usage. Re-read the map and preview the replacement again.",
           {
             path: plannedOperation.tilesetPath,
             assetId: plannedOperation.assetId,
@@ -11659,8 +11687,8 @@ export class MapService {
         stableJson(plannedOperation)
       ) {
         throw new TiledMcpError(
-          "INVALID_CHANGE_SET",
-          "The planned layer no longer matches its canonical id, placement, image source or dimensions.",
+          "CHANGE_SET_REPLAY_MISMATCH",
+          "The planned layer no longer matches its canonical id, placement, image source or dimensions. Re-read the map and preview the layer again.",
           {
             path: plan.mapPath,
             layerId: plannedOperation.layerId,
@@ -11698,8 +11726,8 @@ export class MapService {
       stableJson(plan.summary)
     ) {
       throw new TiledMcpError(
-        "INVALID_CHANGE_SET",
-        "The change set summary does not match its operations.",
+        "CHANGE_SET_REPLAY_MISMATCH",
+        "Replaying the operations against the pinned state produced a different summary than the approved plan. Preview the edits again.",
       );
     }
     await this.assertDependenciesUnchanged(context.bindings);
@@ -11881,6 +11909,7 @@ export class MapService {
     revision: string;
     valid: boolean;
     diagnostics: Diagnostic[];
+    diagnosticsTruncated: boolean;
   }> {
     const loaded = await this.store.read(mapPath);
     const diagnostics: Diagnostic[] = [];
@@ -11990,7 +12019,9 @@ export class MapService {
       }
     }
 
-    if (diagnostics.length >= MAX_DIAGNOSTICS) {
+    const diagnosticsTruncated =
+      diagnostics.length >= MAX_DIAGNOSTICS;
+    if (diagnosticsTruncated) {
       diagnostics.splice(MAX_DIAGNOSTICS - 1);
       diagnostics.push({
         code: "DIAGNOSTIC_LIMIT_REACHED",
@@ -12004,6 +12035,7 @@ export class MapService {
       revision: loaded.revision,
       valid: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),
       diagnostics,
+      diagnosticsTruncated,
     };
   }
 
@@ -12065,11 +12097,11 @@ export class MapService {
       throw new TiledMcpError(
         "UNSUPPORTED_MAP_PROFILE",
         orientation === "isometric"
-          ? "This tool supports only orthogonal maps; isometric maps are readable everywhere and editable through the standard map-edit path."
+          ? `${loaded.path} is isometric; this tool supports orthogonal maps only. Isometric maps stay readable everywhere and editable through tiled_preview_edits plus tiled_apply_change_set.`
           : orientation === "staggered" ||
               orientation === "hexagonal"
-            ? "This tool supports only orthogonal maps; staggered and hexagonal maps are readable through the summary, region, and usage tools."
-            : "MVP semantic tools support only orthogonal maps.",
+            ? `${loaded.path} is ${orientation}; this tool supports orthogonal maps only. Staggered and hexagonal maps are read-only, via tiled_get_map_summary, tiled_get_region, and tiled_analyze_usage.`
+            : `${loaded.path} is ${orientation}; this tool supports orthogonal maps only.`,
         { path: loaded.path, orientation },
       );
     }
@@ -12812,6 +12844,7 @@ export class MapService {
       tileCount,
       startTileId: 0,
       limit: 1,
+      startWangSetIndex: 0,
     });
     const assetId =
       identity === undefined

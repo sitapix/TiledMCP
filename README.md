@@ -16,10 +16,10 @@ Two rules shape everything else:
 
 Version 0.0.1. The interface is a draft and is not frozen.
 
-57 tools register: 54 core, plus 3 that appear only when the server detects Tiled or
-`tmxrasterizer` on PATH (`tiled_render_map`, `tiled_preview_export`,
-`tiled_preview_terrain`). Everything else runs on the built-in JSON and PNG path with no
-external binary. The suite is 1,457 passing tests across 108 files.
+52 tools register: 50 core, plus 2 that appear only when the server detects Tiled or
+`tmxrasterizer` on PATH (`tiled_render_map`, `tiled_preview_export`). Everything else,
+including `tiled_preview_terrain`, runs on the built-in JSON and PNG path with no
+external binary. The suite is 1,524 passing tests across 123 files.
 
 ## Install
 
@@ -112,7 +112,7 @@ A handler result wraps as `{"result": <success payload>}`. Domain errors set
 `structuredContent.result.error.code` alone. Messages and `details` fields carry no
 stability guarantee.
 
-104 application codes ship in
+106 application codes ship in
 [`contracts/application-errors.v1.json`](contracts/application-errors.v1.json) and at the
 `tiled://application-errors` resource. `INTERNAL_ERROR` is the fallback for unexpected
 handler failures. v1 identifiers keep their meaning, but new codes can appear: treat an
@@ -129,15 +129,16 @@ schema rejects before it reaches a handler returns text only, with no
 | URI | Type | Contents |
 |---|---|---|
 | `tiled://guide` | `text/markdown` | capability discovery, sheet and preview inspection, change-set approval, commit, post-commit re-check |
-| `tiled://application-errors` | `application/json` | the 104-code v1 registry with wire location and compatibility rules |
+| `tiled://application-errors` | `application/json` | the 106-code v1 registry with wire location and compatibility rules |
 
-No resource templates register yet. Trust `resources/list` and
+One resource template registers: `tiled://guide/{section}` serves a single guide
+section by the slug listed in the guide's Contents block. Trust `resources/list` and
 `resources/templates/list` over this table.
 
 ## Prompts
 
 The tool list answers "what can this server do". It cannot answer "which eight of these
-fifty-seven calls, in what order". These carry the sequence:
+fifty-two calls, in what order". These carry the sequence:
 
 | Prompt | Start here when |
 |---|---|
@@ -181,7 +182,7 @@ pnpm verify   # typecheck, build, contract check, full test suite
 real `tools/list`, `resources/list`, `resources/templates/list`, and `resources/read`
 responses across the two capability profiles. It never probes PATH or launches Tiled.
 `pnpm contract:check` diffs the regenerated artifacts against what is committed and
-re-validates all 57 examples against their public input schemas. `pnpm test` runs that
+re-validates all 52 examples against their public input schemas. `pnpm test` runs that
 drift gate, builds `dist/`, then runs the suite including a real production stdio smoke
 test. `pnpm test:watch` skips the stdio test to avoid a stale build; run
 `pnpm test:stdio` to rebuild and re-run it alone.

@@ -471,7 +471,7 @@ export async function renderCollectionTiles(
   if (maximumColumns < 1) {
     throw new TiledMcpError(
       "IMAGE_DIMENSIONS_EXCEEDED",
-      "A single scaled collection tile and its local ID label do not fit the tile render budget.",
+      `The largest collection tile (${maxTileWidth}x${maxTileHeight}) at scale ${scale}, plus its local-ID label, exceeds the ${MAX_TILE_RENDER_EDGE}px render edge budget. Lower scale and retry.`,
       {
         maxTileWidth,
         maxTileHeight,
@@ -992,7 +992,7 @@ function computeTilesLayout(
   if (maximumColumns < 1) {
     throw new TiledMcpError(
       "IMAGE_DIMENSIONS_EXCEEDED",
-      "A single scaled tile and its local ID label do not fit the tile render budget.",
+      `A single ${input.tileWidth}x${input.tileHeight} tile at scale ${scale}, plus its local-ID label, exceeds the ${MAX_TILE_RENDER_EDGE}px render edge budget. Lower scale and retry.`,
       {
         tileWidth: input.tileWidth,
         tileHeight: input.tileHeight,

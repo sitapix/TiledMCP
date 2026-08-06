@@ -16,6 +16,7 @@ import type {
 } from "./adapters/tiledCli.js";
 import {
   ChangeSetRegistry,
+  DEFAULT_CHANGE_SET_TTL_MS,
   DEFAULT_MAX_PENDING_CELL_WRITES,
   DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS,
   MAX_PENDING_TRANSACTIONS,
@@ -418,6 +419,10 @@ const projectPathSchema = z
   .min(1)
   .max(4096)
   .describe("Canonical project-relative POSIX path; absolute paths and .. are forbidden");
+const TILESET_ASSET_ID_DESCRIPTION =
+  "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list";
+const LAYER_ID_DESCRIPTION =
+  "Layer id from tiled_get_map_summary's layer tree";
 const revisionSchema = z
   .string()
   .regex(/^sha256:[0-9a-f]{64}$/u)
@@ -662,7 +667,12 @@ const tileFindClauseSchema = z.union([
 ]);
 const tileFindQuerySchema = z
   .object({
-    mode: z.enum(["all", "any"]).default("all"),
+    mode: z
+      .enum(["all", "any"])
+      .default("all")
+      .describe(
+        "all = a tile must satisfy every clause (AND, the default); any = one satisfied clause suffices (OR)",
+      ),
     clauses: z
       .array(tileFindClauseSchema)
       .min(1)
@@ -678,7 +688,10 @@ const dependencyRevisionsSchema = z
         message: "At most 4096 dependency revisions may be supplied",
       });
     }
-  });
+  })
+  .describe(
+    "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
+  );
 
 const usageAnalysisInputSchema = z
   .object({
@@ -688,6 +701,9 @@ const usageAnalysisInputSchema = z
       .int()
       .min(1)
       .max(MAX_USAGE_TOP_TILE_LIMIT)
+      .describe(
+        `Maximum most-used tiles reported (defaults to ${DEFAULT_USAGE_TOP_TILE_LIMIT} when omitted)`,
+      )
       .optional(),
     expectedMapRevision: revisionSchema.optional(),
     expectedDependencyRevisions:
@@ -827,7 +843,7 @@ const namedTileRefSchema = z
 const setTilesSchema = z
   .object({
     type: z.literal("setTiles"),
-    layerId: z.number().int(),
+    layerId: z.number().int().describe(LAYER_ID_DESCRIPTION),
     cells: z
       .array(
         z
@@ -841,19 +857,21 @@ const setTilesSchema = z
       .min(1)
       .max(100_000),
   })
-  .strict();
+  .strict()
+  .describe("Write explicit cells: each entry sets one x,y to a TileRef or null to erase");
 
 const fillRegionSchema = z
   .object({
     type: z.literal("fillRegion"),
-    layerId: z.number().int(),
+    layerId: z.number().int().describe(LAYER_ID_DESCRIPTION),
     x: z.number().int(),
     y: z.number().int(),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
     tile: tileRefSchema.nullable(),
   })
-  .strict();
+  .strict()
+  .describe("Fill a rectangular region with one tile (or null to erase it)");
 
 const stampPatternSchema = z
   .object({
@@ -898,7 +916,8 @@ const stampPatternSchema = z
         }
       }),
   })
-  .strict();
+  .strict()
+  .describe("Tile a rectangular pattern repeatedly across a region");
 
 const floodFillSchema = z
   .object({
@@ -912,7 +931,8 @@ const floodFillSchema = z
     y: safeIntegerSchema,
     tile: tileRefSchema.nullable(),
   })
-  .strict();
+  .strict()
+  .describe("Flood-fill four-way from a seed cell, bounded by the layer or an explicit region");
 
 const copyRegionSourceSchema = z
   .object({
@@ -954,7 +974,8 @@ const copyRegionSchema = z
     source: copyRegionSourceSchema,
     destination: copyRegionDestinationSchema,
   })
-  .strict();
+  .strict()
+  .describe("Copy a rectangular region to another position on the same map");
 
 const replaceTilesRegionSchema = z
   .object({
@@ -982,7 +1003,8 @@ const replaceTilesSchema = z
       .max(MAX_REPLACE_TILE_MAPPINGS),
     region: replaceTilesRegionSchema.optional(),
   })
-  .strict();
+  .strict()
+  .describe("Replace every occurrence of given tiles with others, optionally within a region");
 
 const objectCommonShape = {
   x: objectCoordinateSchema,
@@ -1107,7 +1129,8 @@ const createObjectSchema = z
       tileObjectSchema,
     ]),
   })
-  .strict();
+  .strict()
+  .describe("Create one object on an object layer; the object member is shape-discriminated");
 
 const tilePropertyNameSchema = z
   .string()
@@ -1301,7 +1324,8 @@ const updateObjectSchema = z
     objectId: positiveIdSchema,
     patch: objectPatchSchema,
   })
-  .strict();
+  .strict()
+  .describe("Patch fields of one existing object addressed by id");
 
 const deleteObjectsSchema = z
   .object({
@@ -1324,7 +1348,8 @@ const deleteObjectsSchema = z
         }
       }),
   })
-  .strict();
+  .strict()
+  .describe("Delete objects by id from their object layers");
 
 const mapPatchSchema = z
   .object({
@@ -1343,7 +1368,8 @@ const updateMapSchema = z
     type: z.literal("updateMap"),
     patch: mapPatchSchema,
   })
-  .strict();
+  .strict()
+  .describe("Patch root map members (renderOrder, background, class, ...)");
 
 const resizeMapSchema = z
   .object({
@@ -1371,7 +1397,8 @@ const resizeMapSchema = z
       .max(MAX_RESIZE_OFFSET_MAGNITUDE)
       .optional(),
   })
-  .strict();
+  .strict()
+  .describe("Resize the map canvas; must be the only operation in its change set");
 
 const worldCoordinateSchema = z
   .number()
@@ -1387,13 +1414,14 @@ const worldSizeSchema = z
 const transcodeTileLayerSchema = z
   .object({
     type: z.literal("transcodeTileLayer"),
-    layerId: z.number().int().min(1),
+    layerId: z.number().int().min(1).describe(LAYER_ID_DESCRIPTION),
     encoding: z.enum(["csv", "base64"]),
     compression: z
       .enum(["", "gzip", "zlib", "zstd"])
       .optional(),
   })
-  .strict();
+  .strict()
+  .describe("Rewrite one tile layer between csv and base64(+compression) storage, GIDs unchanged; must be the only operation in its change set");
 
 const layerPatchSchema = z
   .object({
@@ -1420,7 +1448,8 @@ const updateLayerSchema = z
     layerId: positiveIdSchema,
     patch: layerPatchSchema,
   })
-  .strict();
+  .strict()
+  .describe("Patch one layer's own members (name, visibility, opacity, offsets, ...)");
 
 const deleteLayerSchema = z
   .object({
@@ -1428,7 +1457,8 @@ const deleteLayerSchema = z
     layerId: positiveIdSchema,
     deleteDescendants: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .describe("Delete one layer (and, for a group, its subtree)");
 
 const moveLayerSchema = z
   .object({
@@ -1437,7 +1467,8 @@ const moveLayerSchema = z
     parentGroupId: positiveIdSchema.optional(),
     index: z.number().int().min(0).max(10_000),
   })
-  .strict();
+  .strict()
+  .describe("Move a layer to a new parent group and/or sibling index");
 
 const duplicateLayerDestinationSchema = z.discriminatedUnion(
   "kind",
@@ -1487,16 +1518,19 @@ const duplicateLayerSchema = z
       duplicateLayerDestinationSchema.optional(),
     name: z.string().max(MAX_LAYER_NAME_LENGTH).optional(),
   })
-  .strict();
+  .strict()
+  .describe("Duplicate one layer; destination selects the insertion point");
 
 const removeTilesetFromMapSchema = z
   .object({
     type: z.literal("removeTilesetFromMap"),
     tilesetAssetId: z
       .string()
-      .regex(/^asset_[0-9a-f]{24}$/u),
+      .regex(/^asset_[0-9a-f]{24}$/u)
+      .describe(TILESET_ASSET_ID_DESCRIPTION),
   })
-  .strict();
+  .strict()
+  .describe("Unbind one tileset from the map after proving nothing references it; must be the only operation in its change set");
 
 const tileAnimationFrameSchema = z
   .object({
@@ -3014,6 +3048,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         nativePreviewCapabilities: {
           renderProfile:
             "finite-orthogonal-static-atlas-tilelayers-v1",
+          supportedOrientations: [
+            "orthogonal",
+            "isometric",
+            "staggered",
+            "hexagonal",
+          ],
           supportedFormats: ["png", "jpeg", "webp", "simple-svg"],
           defaultScale: DEFAULT_NATIVE_PREVIEW_SCALE,
           layerSelection: ["visible", "explicit"],
@@ -3137,6 +3177,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           effectiveOptionsReturned: true,
         },
         limits: {
+          changeSetTtlMs: DEFAULT_CHANGE_SET_TTL_MS,
           maxDocumentBytes: 64 * 1024 * 1024,
           maxAggregateTilesetDependencyBytes: 64 * 1024 * 1024,
           maxCreateMapDimension:
@@ -3394,6 +3435,19 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             "write-tool-paths-only-reads-and-previews-resolve-lock-free",
         },
         cli: cliCapabilities,
+        toolAvailability: {
+          tiled_render_map: {
+            requires: "tmxrasterizer-version-probe",
+            absentWhen: "tmxrasterizer-not-detected",
+            fallback: "tiled_render_preview",
+          },
+          tiled_preview_export: {
+            requires: "tiled-cli-version-probe",
+            absentWhen: "tiled-cli-not-detected",
+            fallback:
+              "tiled_preview_write_xml-for-tmx-tsx-tx-targets-only",
+          },
+        },
         registeredTools: advertisedToolNames,
       };
   const capabilitiesToolOutputSchema =
@@ -3487,7 +3541,19 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       title: "List Tiled project files",
       description:
         "Lists map, tileset, template, world and project assets under the configured project root.",
-      inputSchema: z.object({ limit: z.number().int().min(1).max(10_000).default(10_000) }).strict(),
+      inputSchema: z
+        .object({
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(10_000)
+            .default(10_000)
+            .describe(
+              "Hard ceiling, not pagination: a project holding more assets than this fails with RESULT_LIMIT_EXCEEDED rather than returning a truncated list",
+            ),
+        })
+        .strict(),
       outputSchema: listFilesToolOutputSchema,
       annotations: READ_ONLY,
     },
@@ -3557,23 +3623,53 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "List recovery checkpoints",
       description:
-        "Lists bounded checkpoint manifests and separately reports corrupt entries. This tool never restores or deletes files.",
+        "Lists bounded checkpoint manifests in a deterministic order and separately reports corrupt entries; page through large stores by passing the previous response's nextStartAfter as startAfter. Each entry's status (prepared or committed) selects which sibling tool can act on it: tiled_preview_checkpoint_restore and tiled_preview_checkpoint_prune_batch accept committed checkpoints only, while tiled_preview_prepared_checkpoint resolves prepared ones. This tool never restores or deletes files.",
       inputSchema: z
         .object({
-          status: z.enum(["prepared", "committed"]).optional(),
-          limit: z.number().int().min(1).max(1_000).default(100),
-          scanLimit: z.number().int().min(1).max(10_000).default(1_000),
+          status: z
+            .enum(["prepared", "committed"])
+            .describe("Return only checkpoints in this state; omit for both")
+            .optional(),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(1_000)
+            .default(100)
+            .describe(
+              "Maximum manifests returned (default 100); truncation is reported, so raise this when truncated is true",
+            ),
+          scanLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(10_000)
+            .default(1_000)
+            .describe(
+              "Maximum directory entries examined before stopping (default 1000)",
+            ),
+          startAfter: z
+            .string()
+            .min(1)
+            .max(4_096)
+            .describe(
+              "Opaque resume cursor: pass the previous response's nextStartAfter to fetch the next page",
+            )
+            .optional(),
         })
         .strict(),
       outputSchema:
         checkpointListToolOutputSchema,
       annotations: READ_ONLY,
     },
-    async ({ status, limit, scanLimit }) =>
+    async ({ status, limit, scanLimit, startAfter }) =>
       executeTool(() =>
         store.checkpoints.list({
           limit,
           scanLimit,
+          ...(startAfter === undefined
+            ? {}
+            : { startAfter }),
           ...(status === undefined ? {} : { status }),
         }),
       ),
@@ -3676,7 +3772,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       title:
         "Preview adjudicating a prepared recovery checkpoint",
       description:
-        "Adjudicates one prepared recovery checkpoint, choosing the proposal from `resolution`. discard pins the manifest and proves the current target still equals its pre-write state -- an existing target must match the exact before revision and size, a create target must still be missing -- then proposes removing the manifest without changing the project asset; conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected. commit applies to an ambiguous create checkpoint only, requires the target to exactly match the after revision, and proposes committing just the internal audit record; because its before state is target absence it still cannot be restored as deletion, it runs no garbage collection, and there is no generic force flag. abandon pins the full manifest, target observation, and one of four machine-classified ambiguous conflicts. Every resolution returns a proposal only; nothing changes until tiled_apply_change_set commits it.",
+        "A prepared checkpoint is a recovery point whose write crashed between preparation and commit; tiled_list_checkpoints reports it with status prepared, and only this tool can resolve it (restore and prune accept committed checkpoints only). Adjudicates one prepared recovery checkpoint, choosing the proposal from `resolution`. discard pins the manifest and proves the current target still equals its pre-write state -- an existing target must match the exact before revision and size, a create target must still be missing -- then proposes removing the manifest without changing the project asset; conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected. commit applies to an ambiguous create checkpoint only, requires the target to exactly match the after revision, and proposes committing just the internal audit record; because its before state is target absence it still cannot be restored as deletion, it runs no garbage collection, and there is no generic force flag. abandon pins the full manifest, target observation, and one of four machine-classified ambiguous conflicts. Every resolution returns a proposal only; nothing changes until tiled_apply_change_set commits it.",
       inputSchema: z
         .object({
           checkpointId: z
@@ -3818,7 +3914,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Read referenced tileset details",
       description:
-        "Returns a bounded semantic summary of one tileset referenced by a map — an external TSJ selected by tilesetAssetId, or an embedded (inline) atlas tileset selected by its original tilesets[] index via embeddedIndex (exactly one selector is required; embedded content is pinned by the map revision itself). Includes sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets, per-tile sub-rectangles, and embedded image-collection tilesets fail closed.",
+        "Returns a bounded semantic summary of one tileset referenced by a map — an external TSJ selected by tilesetAssetId, or an embedded (inline) atlas tileset selected by its original tilesets[] index via embeddedIndex (exactly one selector is required; embedded content is pinned by the map revision itself). Includes sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Tile metadata pages with startTileId/limit and Wang sets page with startWangSetIndex; each envelope reports hasMore and its next cursor. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets, per-tile sub-rectangles, and embedded image-collection tilesets fail closed.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -3826,6 +3922,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .string()
             .min(1)
             .max(128)
+            .describe(TILESET_ASSET_ID_DESCRIPTION)
             .optional(),
           embeddedIndex: z
             .number()
@@ -3838,13 +3935,28 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .int()
             .min(0)
             .max(0x0fffffff)
-            .default(0),
+            .default(0)
+            .describe(
+              "Resume cursor: first local tile id to return; pass the previous page's nextStartTileId",
+            ),
           limit: z
             .number()
             .int()
             .min(1)
             .max(MAX_TILESET_METADATA_LIMIT)
-            .default(DEFAULT_TILESET_METADATA_LIMIT),
+            .default(DEFAULT_TILESET_METADATA_LIMIT)
+            .describe(
+              `Maximum tile-metadata entries per page (default ${DEFAULT_TILESET_METADATA_LIMIT})`,
+            ),
+          startWangSetIndex: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_TILESET_WANG_SETS)
+            .default(0)
+            .describe(
+              "Resume cursor into wangsets[]: pass the previous response's wangSets.nextStartWangSetIndex",
+            ),
         })
         .strict(),
       outputSchema:
@@ -3857,6 +3969,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       embeddedIndex,
       startTileId,
       limit,
+      startWangSetIndex,
     }) =>
       executeTool(() =>
         maps.getTileset({
@@ -3869,6 +3982,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             : { embeddedIndex }),
           startTileId,
           limit,
+          startWangSetIndex,
         }),
       ),
   );
@@ -3885,20 +3999,26 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          tilesetAssetId: z.string().min(1).max(128),
+          tilesetAssetId: z.string().min(1).max(128).describe(TILESET_ASSET_ID_DESCRIPTION),
           query: tileFindQuerySchema,
           startTileId: z
             .number()
             .int()
             .min(0)
             .max(0x0fffffff)
-            .default(0),
+            .default(0)
+            .describe(
+              "Resume cursor: first local tile id to consider; pass the previous page's nextStartTileId",
+            ),
           limit: z
             .number()
             .int()
             .min(1)
             .max(MAX_TILE_FIND_LIMIT)
-            .default(DEFAULT_TILE_FIND_LIMIT),
+            .default(DEFAULT_TILE_FIND_LIMIT)
+            .describe(
+              `Maximum matches per page (default ${DEFAULT_TILE_FIND_LIMIT})`,
+            ),
           expectedMapRevision: revisionSchema.optional(),
           expectedTilesetRevision: revisionSchema.optional(),
         })
@@ -3944,7 +4064,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int(),
+          layerId: z.number().int().describe(LAYER_ID_DESCRIPTION),
           x: z.number().int(),
           y: z.number().int(),
           width: z.number().int().positive(),
@@ -3969,32 +4089,42 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          tilesetAssetId: z.string().min(1).max(128),
+          tilesetAssetId: z.string().min(1).max(128).describe(TILESET_ASSET_ID_DESCRIPTION),
           page: z
             .number()
             .int()
             .min(0)
             .default(0)
-            .describe("Zero-based tileset sheet page index"),
+            .describe(
+              "Zero-based tileset sheet page index (default 0); the output's truncated field tells you whether a later page exists",
+            ),
           pageSize: z
             .number()
             .int()
             .min(1)
             .max(MAX_TILESET_SHEET_PAGE_SIZE)
-            .default(DEFAULT_TILESET_SHEET_PAGE_SIZE),
+            .default(DEFAULT_TILESET_SHEET_PAGE_SIZE)
+            .describe(
+              `Tiles per page (default ${DEFAULT_TILESET_SHEET_PAGE_SIZE})`,
+            ),
           columns: z
             .number()
             .int()
             .min(1)
             .max(MAX_TILESET_SHEET_COLUMNS)
-            .describe("Maximum number of tile columns on a sheet page")
+            .describe(
+              `Maximum tile columns per row; defaults to ${DEFAULT_TILE_RENDER_COLUMNS} when omitted`,
+            )
             .optional(),
           scale: z
             .number()
             .int()
             .min(1)
             .max(MAX_TILESET_SHEET_SCALE)
-            .default(DEFAULT_TILESET_SHEET_SCALE),
+            .default(DEFAULT_TILESET_SHEET_SCALE)
+            .describe(
+              `Integer pixel magnification (default ${DEFAULT_TILESET_SHEET_SCALE})`,
+            ),
         })
         .strict(),
       outputSchema:
@@ -4031,7 +4161,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          tilesetAssetId: z.string().min(1).max(128),
+          tilesetAssetId: z.string().min(1).max(128).describe(TILESET_ASSET_ID_DESCRIPTION),
           localIds: z
             .array(
               z
@@ -4073,7 +4203,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .int()
             .min(1)
             .max(MAX_TILE_RENDER_SCALE)
-            .default(DEFAULT_TILE_RENDER_SCALE),
+            .default(DEFAULT_TILE_RENDER_SCALE)
+            .describe(
+              `Integer pixel magnification (default ${DEFAULT_TILE_RENDER_SCALE})`,
+            ),
           expectedMapRevision:
             revisionSchema.optional(),
           expectedTilesetRevision:
@@ -4130,7 +4263,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Render a native tile-layer map preview",
       description:
-        "Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.",
+        "Renders a bounded TMJ region as a PNG without invoking TmxRasterizer — the default way to look at a map. It dispatches on the map's own orientation (orthogonal, isometric, staggered, or hexagonal); non-orthogonal maps require an explicit region and reject overlays, and infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs or image layers — for those, or a full Tiled-fidelity composite, use tiled_render_map when registered. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. To see what an applied edit changed, use tiled_render_diff.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -4174,7 +4307,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .int()
             .min(1)
             .max(MAX_NATIVE_PREVIEW_SCALE)
-            .default(DEFAULT_NATIVE_PREVIEW_SCALE),
+            .default(DEFAULT_NATIVE_PREVIEW_SCALE)
+            .describe(
+              `Integer pixel magnification (default ${DEFAULT_NATIVE_PREVIEW_SCALE})`,
+            ),
           overlays: z
             .object({
               grid: z.boolean().optional(),
@@ -4344,6 +4480,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .int()
             .min(1)
             .max(MAX_NATIVE_PREVIEW_SCALE)
+            .describe(
+              `Integer pixel magnification (defaults to ${DEFAULT_NATIVE_PREVIEW_SCALE} when omitted)`,
+            )
             .optional(),
         })
         .strict(),
@@ -4382,22 +4521,44 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "List map objects",
       description:
-        "Returns a bounded list of objects from all object layers or one selected object layer.",
+        "Returns a bounded page of objects, in document order, from all object layers or one selected object layer. Page with offset/limit; the output reports total, hasMore, and nextOffset.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: positiveIdSchema.optional(),
-          limit: z.number().int().min(1).max(10_000).default(1_000),
+          layerId: positiveIdSchema
+            .describe(
+              "Restrict to one object layer (id from tiled_get_map_summary's layer tree); omit for all object layers",
+            )
+            .optional(),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(10_000)
+            .default(1_000)
+            .describe(
+              "Maximum objects per page (default 1000); the output reports total, hasMore, and nextOffset",
+            ),
+          offset: z
+            .number()
+            .int()
+            .min(0)
+            .max(1_000_000)
+            .default(0)
+            .describe(
+              "Document-order resume cursor: pass the previous response's nextOffset",
+            ),
         })
         .strict(),
       outputSchema: objectListToolOutputSchema,
       annotations: READ_ONLY,
     },
-    async ({ mapPath, layerId, limit }) =>
+    async ({ mapPath, layerId, limit, offset }) =>
       executeTool(() =>
         maps.listObjects({
           mapPath,
           limit,
+          offset,
           ...(layerId === undefined ? {} : { layerId }),
         }),
       ),
@@ -4438,7 +4599,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Validate a Tiled map",
       description:
-        "Performs structural and MVP-profile validation without modifying the map, tilesets, or images.",
+        "Performs structural and edit-profile validation without modifying the map, tilesets, or images. Diagnostics cap at 1000; diagnosticsTruncated reports when more problems exist than are listed.",
       inputSchema: z.object({ mapPath: projectPathSchema }).strict(),
       outputSchema:
         validationToolOutputSchema,
@@ -4479,7 +4640,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           passable: z.discriminatedUnion(
             "mode",
             [
@@ -4667,7 +4828,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview creating an external TSJ tileset",
       description:
-        "Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception.",
+        "Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception. The new TSJ starts unreferenced: bind it to a map with tiled_add_tileset_to_map before painting with it.",
       inputSchema: z
         .object({
           tilesetPath: projectPathSchema,
@@ -4905,7 +5066,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               mapPath: projectPathSchema,
               tilesetAssetId: z
                 .string()
-                .regex(/^asset_[0-9a-f]{24}$/u),
+                .regex(/^asset_[0-9a-f]{24}$/u)
+                .describe(TILESET_ASSET_ID_DESCRIPTION),
               tilesetPath: projectPathSchema,
               expectedMapRevision: revisionSchema,
               expectedDependencyRevisions:
@@ -4951,13 +5113,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview per-tile metadata updates",
       description:
-        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.",
+        "Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Tileset-level members (name, tileOffset, transformations, the atlas grid, ...) belong to tiled_update_tileset instead. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
           tilesetAssetId: z
             .string()
             .regex(/^asset_[0-9a-f]{24}$/u)
+            .describe(TILESET_ASSET_ID_DESCRIPTION)
             .optional(),
           embeddedIndex: z
             .number()
@@ -5078,14 +5241,15 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview Wang terrain edits",
       description:
-        "Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed.",
+        "Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed. This defines the terrain in the tileset and never touches a map; to paint an existing Wang set onto a map's cells, use tiled_preview_terrain.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
           tilesetAssetId: z
             .string()
             .min(1)
-            .max(128),
+            .max(128)
+            .describe(TILESET_ASSET_ID_DESCRIPTION),
           expectedMapRevision: revisionSchema,
           expectedTilesetRevision: revisionSchema,
           operations: z
@@ -5225,7 +5389,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           mapPath: projectPathSchema,
           tilesetAssetId: z
             .string()
-            .regex(/^asset_[0-9a-f]{24}$/u),
+            .regex(/^asset_[0-9a-f]{24}$/u)
+            .describe(TILESET_ASSET_ID_DESCRIPTION),
           expectedMapRevision: revisionSchema,
           expectedTilesetRevision: revisionSchema,
           patch: tilesetPropertyPatchSchema,
@@ -5408,7 +5573,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
                     `Object property writes may contain at most ${MAX_OBJECT_PROPERTY_PATCH_BYTES_PER_CHANGE_SET} canonical JSON UTF-8 bytes per change set`,
                 });
               }
-            }),
+            })
+            .describe(
+              "Ordered edit operations applied as one atomic change set; each entry's type selects the operation (see the per-operation schema descriptions)",
+            ),
         })
         .strict(),
       outputSchema:
@@ -5444,7 +5612,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           draw: z.discriminatedUnion("shape", [
             z
               .object({
@@ -5546,7 +5714,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           region: z
             .object({
               x: z.number().int().min(0),
@@ -5710,7 +5878,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           region: z
             .object({
               x: z.number().int().min(0),
@@ -5813,7 +5981,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           imagePath: projectPathSchema,
           region: z
             .object({
@@ -5899,7 +6067,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview stamping a prefab region",
       description:
-        "Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.",
+        "Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Use this for a bounded rectangle of one source layer; to bring in a whole map's tile layers matched by name use tiled_preview_merge_map, and to copy a rectangle within one map use the copyRegion operation of tiled_preview_edits. Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -6021,7 +6189,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           templatePath: projectPathSchema,
           x: z
             .number()
@@ -6077,7 +6245,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview a native XML write",
       description:
-        "Serializes one restricted-profile project document to Tiled 1.12.2's own XML bytes, byte for byte, choosing the writer from the source extension: .tmj -> TMX, .tsj -> TSX, .tj -> TX. Any other extension fails closed. TMX covers finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands; embedded tilesets, image and group layers, custom properties, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. TSX requires the declared grid to be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, custom properties, and unknown members also fail closed. TX follows Tiled's writeObjectTemplate exactly. References and GIDs carry verbatim in every case, so the target must be a new file in the source document's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
+        "Serializes one restricted-profile project document to Tiled 1.12.2's own XML bytes, byte for byte, choosing the writer from the source extension: .tmj -> TMX, .tsj -> TSX, .tj -> TX. Any other extension fails closed. TMX covers finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands. Scalar custom properties (string/int/float/bool/color/file/object) serialize with official writeProperties bytes; class-typed properties serialize only when projectFilePath supplies the .tiled-project definitions, and fail closed without it. Embedded tilesets, image and group layers, enum annotations, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. TSX requires the declared grid to be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, and unknown members also fail closed. TX follows Tiled's writeObjectTemplate exactly. References and GIDs carry verbatim in every case, so the target must be a new file in the source document's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved — for any other target format use tiled_preview_export, which requires a local Tiled CLI.",
       inputSchema: z
         .object({
           sourcePath: projectPathSchema,
@@ -6203,11 +6371,11 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Select cells by predicate",
       description:
-        "Evaluates one stateless selection predicate over a bounded tile-layer region — a tile set matched by tileset+localId (flip bits ignored), empty cells, or non-empty cells — and returns the selection as plain data: exact cell count, tight bounding box, and a bounded coordinate sample (at most 2,048 cells, with truncation disclosed). No selection id or server-side selection state exists; feed the result into region- or cell-based tools explicitly. Works on orthogonal, isometric, staggered, and hexagonal maps. Read-only.",
+        "Evaluates one stateless selection predicate over a bounded tile-layer region — a tile set matched by tileset+localId (flip bits ignored), empty cells, non-empty cells, a magic-wand flood from a seed cell, a polygon interior, or a compose combination of those — and returns the selection as plain data: exact cell count, tight bounding box, and a bounded coordinate sample (sampleLimit defaults to 2,048, caps at 10,000, truncation disclosed via cellsTruncated). No selection id or server-side selection state exists; feed the result into region- or cell-based tools explicitly. Works on orthogonal, isometric, staggered, and hexagonal maps. Read-only.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
-          layerId: z.number().int().positive(),
+          layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
           region: z
             .object({
               x: z.number().int().min(0),
@@ -6255,6 +6423,9 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             .int()
             .min(1)
             .max(10_000)
+            .describe(
+              "Maximum matching cells included in the coordinate sample (defaults to 2048 when omitted); cellCount is always the exact total",
+            )
             .optional(),
         })
         .strict(),
@@ -6764,11 +6935,18 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Apply an approved change set",
       description:
-        "Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
+        "Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.",
       inputSchema: z
         .object({
-          changeSetId: z.string().regex(/^changeset:[0-9a-f]{64}$/u),
-          expectedRevision: revisionSchema,
+          changeSetId: z
+            .string()
+            .regex(/^changeset:[0-9a-f]{64}$/u)
+            .describe(
+              "The changeSetId a preview tool returned; previews expire 10 minutes after planning",
+            ),
+          expectedRevision: revisionSchema.describe(
+            "The exact expectedRevision the preview you are applying returned. Do not substitute a revision from a read: for tileset creates, deletes, and transactions no read can produce it",
+          ),
         })
         .strict(),
       outputSchema: toolOutputSchema(
@@ -6821,7 +6999,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       {
         title: "Render a Tiled map preview",
         description:
-          "Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.",
+          "Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata. This is the full-fidelity composite through Tiled's own renderer — image layers, text glyphs, opacity, and every orientation — for whole-map views; for bounded regions, overlays, or when no Tiled install is present, use tiled_render_preview instead.",
         inputSchema: z
           .object({
             mapPath: projectPathSchema,
@@ -6830,8 +7008,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               .int()
               .positive()
               .max(MAX_RASTER_RENDER_EDGE)
+              .describe(
+                `Longest output edge in pixels; defaults to ${DEFAULT_RASTER_RENDER_EDGE} when omitted`,
+              )
               .optional(),
-            ignoreVisibility: z.boolean().optional(),
+            ignoreVisibility: z
+              .boolean()
+              .describe(
+                "Render hidden layers too; defaults to false",
+              )
+              .optional(),
           })
           .strict(),
         outputSchema:
@@ -6981,15 +7167,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         title:
           "Preview terrain painting via Tiled's Wang matcher",
         description:
-          "Paints Wang terrain corners through Tiled's own TileLayer.wangEdit() matcher, run headlessly by a server-authored static script against the pinned map (the CLI writes only a staging copy; parameters are embedded as an inert JSON literal, so no user input reaches script code). The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — apply needs no CLI replay, untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed.",
+          "Paints Wang terrain corners with the built-in corner matcher — a core tool needing no Tiled install. Where Tiled's own WangFiller would pick probability-weighted at random among equally matching tiles, this deterministically picks the lowest local tile id; a corner pattern no tile satisfies fails closed naming the cell. The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed. This writes map cells using a Wang set that already exists in the tileset; to create or extend that set first, use tiled_update_wangsets.",
         inputSchema: z
           .object({
             mapPath: projectPathSchema,
-            layerId: z.number().int().positive(),
+            layerId: z.number().int().positive().describe(LAYER_ID_DESCRIPTION),
             tilesetAssetId: z
               .string()
               .min(1)
-              .max(128),
+              .max(128)
+              .describe(TILESET_ASSET_ID_DESCRIPTION),
             wangSetIndex: z
               .number()
               .int()

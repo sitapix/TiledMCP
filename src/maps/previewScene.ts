@@ -457,7 +457,7 @@ function resolveRegion(
   ) {
     throw new TiledMcpError(
       "REGION_OUT_OF_BOUNDS",
-      "The preview region falls outside the finite map bounds.",
+      `Region ${region.x},${region.y} ${region.width}x${region.height} falls outside the map bounds 0,0 ${mapWidth}x${mapHeight}. Clamp the region to those bounds.`,
       {
         region,
         mapBounds: { x: 0, y: 0, width: mapWidth, height: mapHeight },

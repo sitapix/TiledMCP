@@ -654,7 +654,7 @@ export class DocumentStore {
           if (actualRevision !== expectedRevision) {
             throw new TiledMcpError(
               "REVISION_CONFLICT",
-              `${target} changed since the edit was planned.`,
+              `${target} changed since the edit was planned. Re-read it and re-run the preview before applying.`,
               {
                 path: target,
                 expectedRevision,
@@ -1729,7 +1729,7 @@ export class DocumentStore {
     if (!before) {
       throw new TiledMcpError(
         "REVERT_WOULD_DELETE",
-        "This checkpoint represents creation of a new file; deletion is not supported by the MVP.",
+        `Checkpoint ${manifest.id} recorded the creation of ${manifest.path}, so restoring it would delete that file, which checkpoint restore never does. Use tiled_delete_file if removing the file is intended.`,
         { checkpointId, path: manifest.path },
       );
     }
@@ -1884,7 +1884,7 @@ export class DocumentStore {
         if (!before) {
           throw new TiledMcpError(
             "REVERT_WOULD_DELETE",
-            "This checkpoint represents creation of a new file; deletion is not supported by the MVP.",
+            `Checkpoint ${manifest.id} recorded the creation of ${manifest.path}, so restoring it would delete that file, which checkpoint restore never does. Use tiled_delete_file if removing the file is intended.`,
             {
               checkpointId: expectedCheckpoint.id,
               path: manifest.path,
@@ -2014,7 +2014,7 @@ export class DocumentStore {
     if (!before) {
       throw new TiledMcpError(
         "REVERT_WOULD_DELETE",
-        "This checkpoint represents creation of a new file; deletion is not supported by the MVP.",
+        `Checkpoint ${manifest.id} recorded the creation of ${manifest.path}, so restoring it would delete that file, which checkpoint restore never does. Use tiled_delete_file if removing the file is intended.`,
         {
           checkpointId: expectedCheckpoint.id,
           path: manifest.path,
@@ -4179,7 +4179,7 @@ function checkpointRestoreExpectation(
   if (!manifest.before.existed) {
     throw new TiledMcpError(
       "REVERT_WOULD_DELETE",
-      "This checkpoint represents creation of a new file; deletion is not supported by the MVP.",
+      `Checkpoint ${manifest.id} recorded the creation of ${manifest.path}, so restoring it would delete that file, which checkpoint restore never does. Use tiled_delete_file if removing the file is intended.`,
       { checkpointId: manifest.id, path: manifest.path },
     );
   }

@@ -2414,7 +2414,7 @@ describe("createTiledMcpServer", () => {
         name: "guide",
         title: "TiledMCP safe editing guide",
         description:
-          "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
+          "The full per-tool reference for inspecting, previewing, approving, applying, and verifying safe Tiled map edits. It is large; read one section at a time via tiled://guide/{section} (the Contents block lists the slugs).",
         mimeType: GUIDE_RESOURCE_MIME_TYPE,
         size: GUIDE_RESOURCE_SIZE,
         annotations: {
@@ -2444,9 +2444,31 @@ describe("createTiledMcpServer", () => {
         _meta: APPLICATION_ERROR_RESOURCE_META,
       },
     ]);
-    expect(await harness.client.listResourceTemplates()).toEqual({
-      resourceTemplates: [],
+    expect(await harness.client.listResourceTemplates()).toMatchObject({
+      resourceTemplates: [
+        {
+          uriTemplate: "tiled://guide/{section}",
+          mimeType: GUIDE_RESOURCE_MIME_TYPE,
+        },
+      ],
     });
+
+    const sectionRead = await harness.client.readResource({
+      uri: "tiled://guide/conflict-and-failure-handling",
+    });
+    expect(sectionRead.contents).toHaveLength(1);
+    expect(sectionRead.contents[0]).toMatchObject({
+      uri: "tiled://guide/conflict-and-failure-handling",
+      mimeType: GUIDE_RESOURCE_MIME_TYPE,
+    });
+    expect(
+      (sectionRead.contents[0] as { text: string }).text,
+    ).toContain("## Conflict and failure handling");
+    await expect(
+      harness.client.readResource({
+        uri: "tiled://guide/not-a-section",
+      }),
+    ).rejects.toThrow(/Unknown guide section/u);
 
     const read = await harness.client.readResource({
       uri: GUIDE_RESOURCE_URI,
@@ -3976,6 +3998,7 @@ describe("createTiledMcpServer", () => {
       revision: summary.revision,
       valid: true,
       diagnostics: [],
+      diagnosticsTruncated: false,
     });
   });
 
@@ -8937,7 +8960,60 @@ describe("createTiledMcpServer", () => {
     );
     expect(initial).toMatchObject({
       total: 2,
+      offset: 0,
+      returned: 2,
+      hasMore: false,
+      truncated: false,
       objects: [{ id: RECTANGLE_OBJECT_ID }, { id: POINT_OBJECT_ID }],
+    });
+
+    const firstPage = resultOf<{
+      total: number;
+      offset: number;
+      returned: number;
+      hasMore: boolean;
+      nextOffset?: number;
+      objects: Array<{ id: number }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: {
+          mapPath: MAP_PATH,
+          layerId: OBJECT_LAYER_ID,
+          limit: 1,
+        },
+      }),
+    );
+    expect(firstPage).toMatchObject({
+      total: 2,
+      offset: 0,
+      returned: 1,
+      hasMore: true,
+      truncated: true,
+      nextOffset: 1,
+      objects: [{ id: RECTANGLE_OBJECT_ID }],
+    });
+    const secondPage = resultOf<{
+      offset: number;
+      returned: number;
+      hasMore: boolean;
+      objects: Array<{ id: number }>;
+    }>(
+      await harness.client.callTool({
+        name: "tiled_list_objects",
+        arguments: {
+          mapPath: MAP_PATH,
+          layerId: OBJECT_LAYER_ID,
+          limit: 1,
+          offset: firstPage.nextOffset,
+        },
+      }),
+    );
+    expect(secondPage).toMatchObject({
+      offset: 1,
+      returned: 1,
+      hasMore: false,
+      objects: [{ id: POINT_OBJECT_ID }],
     });
 
     const preview = resultOf<{
@@ -9692,7 +9768,7 @@ describe("createTiledMcpServer", () => {
           points: replacementPolygonPoints,
         },
         message:
-          "Points can be updated only on polygon or polyline objects.",
+          `Object ${RECTANGLE_OBJECT_ID} in ${MAP_PATH} is a rectangle object; points apply only to polygon or polyline objects.`,
       },
       {
         objectId: 3,
@@ -9701,7 +9777,7 @@ describe("createTiledMcpServer", () => {
           width: 12,
         },
         message:
-          "Polygon and polyline objects do not have editable width or height.",
+          `Object 3 in ${MAP_PATH} is a polygon object; its size derives from its points, so width and height are not editable.`,
       },
       {
         objectId: 3,
@@ -9710,7 +9786,7 @@ describe("createTiledMcpServer", () => {
           text: "not a path field",
         },
         message:
-          "Text-specific fields can be updated only on text objects.",
+          `Object 3 in ${MAP_PATH} is a polygon object; text fields apply only to text objects. Drop the text fields, or confirm the object with tiled_get_object.`,
       },
     ]) {
       const mismatch = asToolResponse(

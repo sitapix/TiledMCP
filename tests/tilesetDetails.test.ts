@@ -40,6 +40,7 @@ function summarize(document: JsonObject = baseTileset()) {
     tileCount: 4,
     startTileId: 0,
     limit: 64,
+    startWangSetIndex: 0,
   });
 }
 
@@ -615,6 +616,7 @@ describe("tileset detail safety limits", () => {
       tileCount: 128,
       startTileId: 0,
       limit: 128,
+      startWangSetIndex: 0,
     });
     const result = {
       map: {
@@ -788,6 +790,7 @@ describe("wang set semantic expansion", () => {
       tileCount: 128,
       startTileId: 0,
       limit: 64,
+      startWangSetIndex: 0,
     });
     expect(result).toMatchObject({
       wangSets: {
@@ -804,6 +807,85 @@ describe("wang set semantic expansion", () => {
       },
       truncated: true,
     });
+  });
+
+  it("pages Wang sets through startWangSetIndex with a resume cursor", () => {
+    const document = baseTileset();
+    document.wangsets = Array.from({ length: 34 }, (_, index) => ({
+      name: `Set ${index}`,
+      type: "mixed",
+      colors: [wangColor()],
+      wangtiles: [],
+    }));
+
+    const firstPage = summarizeTilesetDocument({
+      document,
+      path: TILESET_PATH,
+      imagePath: IMAGE_PATH,
+      name: "Terrain",
+      nameTruncated: false,
+      tileCount: 4,
+      startTileId: 0,
+      limit: 64,
+      startWangSetIndex: 0,
+    });
+    expect(firstPage).toMatchObject({
+      wangSets: {
+        startWangSetIndex: 0,
+        total: 34,
+        returned: 32,
+        hasEarlier: false,
+        hasMore: true,
+        truncated: true,
+        nextStartWangSetIndex: 32,
+      },
+      truncated: true,
+    });
+
+    const secondPage = summarizeTilesetDocument({
+      document,
+      path: TILESET_PATH,
+      imagePath: IMAGE_PATH,
+      name: "Terrain",
+      nameTruncated: false,
+      tileCount: 4,
+      startTileId: 0,
+      limit: 64,
+      startWangSetIndex: 32,
+    });
+    expect(secondPage).toMatchObject({
+      wangSets: {
+        startWangSetIndex: 32,
+        total: 34,
+        returned: 2,
+        hasEarlier: true,
+        hasMore: false,
+        truncated: true,
+        items: [
+          { sourceIndex: 32, name: "Set 32" },
+          { sourceIndex: 33, name: "Set 33" },
+        ],
+      },
+    });
+    expect(secondPage).not.toMatchObject({
+      wangSets: { nextStartWangSetIndex: expect.anything() },
+    });
+
+    expect(() =>
+      summarizeTilesetDocument({
+        document,
+        path: TILESET_PATH,
+        imagePath: IMAGE_PATH,
+        name: "Terrain",
+        nameTruncated: false,
+        tileCount: 4,
+        startTileId: 0,
+        limit: 64,
+        startWangSetIndex: 34,
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_ARGUMENT" }),
+    );
   });
 
   it("fails closed on legacy, malformed, and out-of-range wang data", () => {

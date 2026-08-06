@@ -46,7 +46,7 @@ describe("tool surface coverage", () => {
       // Hand-maintained -- the contract generator does not emit it -- so
       // nothing previously noticed when a tool shipped undocumented.
       // README.md is deliberately excluded: it is an orientation document, and
-      // requiring it to name all 57 tools forced it to duplicate
+      // requiring it to name all 52 tools forced it to duplicate
       // docs/generated/mcp-reference.md instead of explaining the design.
       const text = await readFile(
         resolve(REPOSITORY_ROOT, relativePath),

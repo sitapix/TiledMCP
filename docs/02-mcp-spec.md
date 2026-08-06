@@ -239,7 +239,7 @@ protocol defaults.
 ## 7. Registered tools
 
 Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` and
-`docs/generated/mcp-reference.md`. Three tools register only when a local Tiled or
+`docs/generated/mcp-reference.md`. Two tools register only when a local Tiled or
 `tmxrasterizer` is detected; the rest need no external binary.
 
 **Discovery and inspection**
@@ -277,6 +277,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 
 | Tool | Purpose |
 |---|---|
+| `tiled_create_map` | direct creation of a new empty TMJ; the sole additive no-preview mutation |
 | `tiled_preview_edits` | the generic operation union over tiles, objects, layers, map root, tileset bindings |
 | `tiled_create_layer` | create one empty tile/object/image/group layer |
 | `tiled_create_tileset` | build a new external atlas TSJ from a project image |
@@ -302,7 +303,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 | `tiled_preview_import_image` | reference-image resample and palette map |
 | `tiled_preview_prefab` | stamp a source region, multi-layer, with objects |
 | `tiled_preview_template` | place a JSON `.tj` template instance |
-| `tiled_preview_terrain` | *optional*: Tiled's own `TileLayer.wangEdit()` matcher |
+| `tiled_preview_terrain` | Wang corner painting through the native matcher; no Tiled install required |
 
 **Native XML writing**
 
@@ -339,8 +340,9 @@ would use templates. No URI embeds an unescaped file path; asset templates would
 | `tiled://guide` | `text/markdown` | the calling playbook: discovery → summary → inspection → preview → approval → commit → verify |
 | `tiled://application-errors` | `application/json` | the v1 application-code registry with wire location, fallback, compatibility, and excluded surfaces |
 
-No resource templates are registered. Runtime truth is `resources/list` and
-`resources/templates/list`.
+One resource template is registered: `tiled://guide/{section}` serves a single `##`
+section of the guide, addressed by the slug in the guide's Contents block. Runtime
+truth is `resources/list` and `resources/templates/list`.
 
 Wire rules:
 
@@ -358,9 +360,11 @@ Prompts are message templates expanded by `prompts/get`. They are not server-sid
 workflow engine, or an authorization mechanism. A template may suggest an order of tool calls; it
 cannot call tools itself and cannot approve a change set on the user's behalf.
 
-None are registered yet. Candidates: guided level creation, collision-layer construction, terrain
-transitions, validate-then-fix, map description, visual review, and building from a reference
-image.
+Four are registered: `create_map_from_tilesheet` (tilesheet image, no map yet),
+`build_from_floor_plan` (turn a floor-plan image into a room), `set_up_tile_roles` (name
+tiles and record their roles), and `review_map` (guided visual review). Remaining
+candidates: guided level creation, collision-layer construction, terrain transitions,
+validate-then-fix, and map description.
 
 ## 10. Non-goals
 

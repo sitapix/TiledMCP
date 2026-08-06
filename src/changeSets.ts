@@ -122,7 +122,7 @@ import {
   MIN_POLYLINE_OBJECT_POINTS,
 } from "./maps/mapService.js";
 
-const DEFAULT_TTL_MS = 10 * 60 * 1000;
+export const DEFAULT_CHANGE_SET_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 256;
 export const DEFAULT_MAX_PENDING_CELL_WRITES = 200_000;
 export const DEFAULT_MAX_PENDING_OBJECT_SHAPE_POINTS = 65_536;
@@ -1308,7 +1308,7 @@ export class ChangeSetRegistry {
   private readonly entries = new Map<string, ChangeSetEntry>();
 
   constructor(
-    private readonly ttlMs = DEFAULT_TTL_MS,
+    private readonly ttlMs = DEFAULT_CHANGE_SET_TTL_MS,
     private readonly maxEntries = DEFAULT_MAX_ENTRIES,
     private readonly maxPendingCellWrites = DEFAULT_MAX_PENDING_CELL_WRITES,
     private readonly maxPendingObjectShapePoints =
@@ -1342,8 +1342,12 @@ export class ChangeSetRegistry {
     ) {
       throw new TiledMcpError(
         "CHANGE_SET_LIMIT_EXCEEDED",
-        "Pending change sets exceed the in-memory cell budget. Apply one or wait for expiry.",
-        { limit: this.maxPendingCellWrites },
+        `Pending previews already reserve most of the ${this.maxPendingCellWrites}-cell-write budget shared by unapplied change sets. Apply or let an outstanding change set expire (previews expire after ${Math.round(this.ttlMs / 60_000)} minutes), then preview again.`,
+        {
+          limit: this.maxPendingCellWrites,
+          pendingCellWrites,
+          requestedCellWrites,
+        },
       );
     }
     const pendingObjectShapePoints = [...this.entries.values()].reduce(
@@ -1363,7 +1367,7 @@ export class ChangeSetRegistry {
     ) {
       throw new TiledMcpError(
         "CHANGE_SET_LIMIT_EXCEEDED",
-        "Pending change sets exceed the in-memory object shape-point budget. Apply one or wait for expiry.",
+        `Pending previews already reserve most of the ${this.maxPendingObjectShapePoints}-object-shape-point budget shared by unapplied change sets. Apply or let an outstanding change set expire (previews expire after ${Math.round(this.ttlMs / 60_000)} minutes), then preview again.`,
         {
           limit: this.maxPendingObjectShapePoints,
           pendingObjectShapePoints,
@@ -1388,7 +1392,7 @@ export class ChangeSetRegistry {
     ) {
       throw new TiledMcpError(
         "CHANGE_SET_LIMIT_EXCEEDED",
-        "Pending change sets exceed the in-memory text-object payload budget. Apply one or wait for expiry.",
+        `Pending previews already reserve most of the ${this.maxPendingTextObjectPayloadBytes}-byte text-object payload budget shared by unapplied change sets. Apply or let an outstanding change set expire (previews expire after ${Math.round(this.ttlMs / 60_000)} minutes), then preview again.`,
         {
           limit:
             this.maxPendingTextObjectPayloadBytes,
@@ -1659,14 +1663,14 @@ export class ChangeSetRegistry {
     if (!entry) {
       throw new TiledMcpError(
         "CHANGE_SET_NOT_FOUND",
-        "The change set is missing or expired. Preview the edits again.",
+        `Change set ${changeSetId} is unknown or expired (previews expire after ${Math.round(this.ttlMs / 60_000)} minutes). Re-run the preview tool that produced it, then apply the new changeSetId promptly.`,
         { changeSetId },
       );
     }
     if (entry.plan.baseRevision !== expectedRevision) {
       throw new TiledMcpError(
         "REVISION_CONFLICT",
-        "expectedRevision does not match the approved change set.",
+        `expectedRevision ${expectedRevision} does not match the revision this change set was planned against (${entry.plan.baseRevision}). Re-read the document, re-run the preview, and apply with the revision that preview returns.`,
         {
           changeSetId,
           expectedRevision,

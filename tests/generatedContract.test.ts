@@ -1586,9 +1586,13 @@ describe("generated MCP contract", () => {
         }),
       }),
     );
-    expect(contract.resourceTemplateDefinitions).toEqual(
-      [],
-    );
+    expect(contract.resourceTemplateDefinitions).toEqual([
+      expect.objectContaining({
+        name: "guide-section",
+        uriTemplate: "tiled://guide/{section}",
+        mimeType: "text/markdown",
+      }),
+    ]);
     // Prompts are the task-shaped entry points into the tool surface. The
     // contract records them in advertised order -- the two build workflows
     // first, then the setup they depend on, then read-only review -- so a
@@ -1668,7 +1672,9 @@ describe("generated MCP contract", () => {
         "tiled://guide",
         APPLICATION_ERROR_RESOURCE_URI,
       ]);
-      expect(profile.resourceTemplateOrder).toEqual([]);
+      expect(profile.resourceTemplateOrder).toEqual([
+        "tiled://guide/{section}",
+      ]);
     }
 
     const artifacts =

@@ -30,15 +30,29 @@ Treat an unknown code as a generic failure rather than as success.
 
 No project asset changes until you call `tiled_apply_change_set`. Planning
 tools validate the whole edit and return an expiring `changeSetId`; the
-human-visible plan they return is the approval boundary. Exactly two tools
+human-visible plan they return is the approval boundary. Every planning
+tool's title begins with "Preview", including ones whose name does not
+(`tiled_create_tileset`, `tiled_create_layer`, `tiled_update_tile`,
+`tiled_delete_file`, ...). Exactly two tools
 write directly without this cycle: `tiled_create_map` and
 `tiled_create_checkpoint`.
+
+A change set expires 10 minutes after preview; the exact deadline is the
+plan's `expiresAt`. If approval takes longer, re-run the preview — an
+expired id fails with `CHANGE_SET_NOT_FOUND`.
 
 Every write is a compare-and-set. Read the target first (for example with
 `tiled_get_map_summary`), then pass its `revision` as
 `expectedMapRevision` and its complete `dependencyRevisions` record as
 `expectedDependencyRevisions`. Pass them unchanged and together, from the
 same read. A stale or partial pin fails closed rather than merging.
+
+On `REVISION_CONFLICT` or `DEPENDENCY_REVISION_CONFLICT`, the state moved
+under you: re-read, re-plan against what the read now says, and preview
+again. Never resubmit the old `changeSetId` -- it is bound to the pins it
+was built from. Applying a change set advances its documents' revisions, so
+other pending previews pinned to the same documents go stale; re-read
+between preview-apply pairs that touch the same files.
 
 Never construct or edit raw global IDs. A tile value is a `TileRef`
 (`{"tileset": {"kind": "external", "assetId": "asset_..."}, "localId": 0}`),
@@ -75,7 +89,9 @@ whole task, which is faster and safer than assembling one from the tool list:
   so later edits address tiles by meaning rather than by local id.
 - `review_map` -- read-only inspection of one map.
 
-Read the `tiled://guide` resource for per-workflow detail.
+For per-workflow detail, read one section of the guide at
+`tiled://guide/{section}` (its Contents block lists the slugs) rather than
+the whole ~115 KB `tiled://guide` resource.
 
 The machine-readable source of truth is `contracts/mcp-contract.v1.json`. Regenerate both files with `pnpm contract:generate`.
 
@@ -88,7 +104,7 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Stable TiledMCP error codes
 
-The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
+The application-error registry is committed at `contracts/application-errors.v1.json` and served from `tiled://application-errors`. Its current revision is `sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c`. Existing identifiers and meanings are stable; newer server versions may add identifiers, so clients must refresh discovery and handle unknown codes.
 
 ```json
 {
@@ -99,6 +115,8 @@ The application-error registry is committed at `contracts/application-errors.v1.
     "CHANGE_SET_LIMIT_EXCEEDED",
     "CHANGE_SET_NOT_FOUND",
     "CHANGE_SET_OWNED",
+    "CHANGE_SET_REPLAY_MISMATCH",
+    "CHANGE_SET_TAMPERED",
     "CHECKPOINT_CHANGED",
     "CHECKPOINT_CORRUPT",
     "CHECKPOINT_NOT_COMMITTED",
@@ -233,9 +251,9 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 {
   "_meta": {
     "registryVersion": 1,
-    "revision": "sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239",
+    "revision": "sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c",
     "serverVersion": "0.0.1",
-    "size": 3952
+    "size": 4013
   },
   "annotations": {
     "audience": [
@@ -247,7 +265,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "description": "The versioned identifiers that may appear at structuredContent.result.error.code, plus compatibility and excluded-surface rules.",
   "mimeType": "application/json",
   "name": "application-errors",
-  "size": 3952,
+  "size": 4013,
   "title": "TiledMCP stable application error registry",
   "uri": "tiled://application-errors"
 }
@@ -255,14 +273,14 @@ The versioned identifiers that may appear at structuredContent.result.error.code
 
 ### `tiled://guide`
 
-A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.
+The full per-tool reference for inspecting, previewing, approving, applying, and verifying safe Tiled map edits. It is large; read one section at a time via tiled://guide/{section} (the Contents block lists the slugs).
 
 ```json
 {
   "_meta": {
-    "revision": "sha256:a53514409ae19ee831c758e203e48309ce5c8d8d3c599eda7b89fbb7bfb6036f",
+    "revision": "sha256:b05a5b6ff5f36c1ca3e2e6f4cc7f830d33f2623f2952f6c73190377089cf4873",
     "serverVersion": "0.0.1",
-    "size": 113956
+    "size": 117441
   },
   "annotations": {
     "audience": [
@@ -271,20 +289,18 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
     ],
     "priority": 1
   },
-  "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
+  "description": "The full per-tool reference for inspecting, previewing, approving, applying, and verifying safe Tiled map edits. It is large; read one section at a time via tiled://guide/{section} (the Contents block lists the slugs).",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 113956,
+  "size": 117441,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
 ```
 
-Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
+Content contract: `text`, 4013 UTF-8 bytes, revision `sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c`.
 
-Content contract: `text`, 113956 UTF-8 bytes, revision `sha256:a53514409ae19ee831c758e203e48309ce5c8d8d3c599eda7b89fbb7bfb6036f`.
-
-Resource templates: none.
+Content contract: `text`, 117441 UTF-8 bytes, revision `sha256:b05a5b6ff5f36c1ca3e2e6f4cc7f830d33f2623f2952f6c73190377089cf4873`.
 
 Prompts: none.
 
@@ -342,6 +358,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -713,6 +730,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -904,6 +923,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -923,6 +943,7 @@ Input schema:
       "type": "string"
     },
     "topTileLimit": {
+      "description": "Maximum most-used tiles reported (defaults to 64 when omitted)",
       "maximum": 128,
       "minimum": 1,
       "type": "integer"
@@ -1613,6 +1634,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -1761,7 +1784,7 @@ Output schema:
 
 Availability: `core`
 
-Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, single committed-checkpoint prune, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
+Applies one previously previewed map edit, tileset edit, tileset creation, file deletion, atomic multi-file transaction, checkpoint restore, current-before-verified prepared-checkpoint discard, explicit prepared-checkpoint commit or abandon adjudication, or explicit committed-checkpoint prune batch after checking its approved SHA-256 revision and all plan-specific evidence and dependency pins. Applying a document edit also persists project-internal asset-identity safety metadata.
 
 Annotations:
 
@@ -1795,11 +1818,12 @@ Input schema:
   "additionalProperties": false,
   "properties": {
     "changeSetId": {
+      "description": "The changeSetId a preview tool returned; previews expire 10 minutes after planning",
       "pattern": "^changeset:[0-9a-f]{64}$",
       "type": "string"
     },
     "expectedRevision": {
-      "description": "SHA-256 revision returned by a read or preview",
+      "description": "The exact expectedRevision the preview you are applying returned. Do not substitute a revision from a read: for tileset creates, deletes, and transactions no read can produce it",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
     }
@@ -4617,6 +4641,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -4897,6 +4923,7 @@ Input schema:
       "type": "object"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -5148,6 +5175,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -5648,6 +5677,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -5962,6 +5993,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -6155,6 +6188,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -6830,6 +6864,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -7494,6 +7530,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -7642,7 +7680,7 @@ Output schema:
 
 Availability: `core`
 
-Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception.
+Plans one new external atlas TSJ from an existing project image, computing columns and tilecount with the Tiled 1.12.2 margin/spacing grid formula, and returns an expiring change set without modifying project assets. The approved expectedRevision is the SHA-256 of the exact prospective TSJ bytes; apply refuses to overwrite any existing destination. tiled_create_map remains the sole direct creation exception. The new TSJ starts unreferenced: bind it to a map with tiled_add_tileset_to_map before painting with it.
 
 Annotations:
 
@@ -8119,6 +8157,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -8579,6 +8619,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -8785,6 +8827,7 @@ Input schema:
     },
     "limit": {
       "default": 64,
+      "description": "Maximum matches per page (default 64)",
       "maximum": 128,
       "minimum": 1,
       "type": "integer"
@@ -8996,6 +9039,7 @@ Input schema:
         },
         "mode": {
           "default": "all",
+          "description": "all = a tile must satisfy every clause (AND, the default); any = one satisfied clause suffices (OR)",
           "enum": [
             "all",
             "any"
@@ -9010,11 +9054,13 @@ Input schema:
     },
     "startTileId": {
       "default": 0,
+      "description": "Resume cursor: first local tile id to consider; pass the previous page's nextStartTileId",
       "maximum": 268435455,
       "minimum": 0,
       "type": "integer"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -9601,6 +9647,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -9864,7 +9912,7 @@ Output schema:
                   "type": "string"
                 },
                 "revision": {
-                  "const": "sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239",
+                  "const": "sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c",
                   "type": "string"
                 },
                 "sdkInputErrors": {
@@ -9872,7 +9920,7 @@ Output schema:
                   "type": "string"
                 },
                 "size": {
-                  "const": 3952,
+                  "const": 4013,
                   "type": "number"
                 },
                 "wireLocation": {
@@ -11813,6 +11861,10 @@ Output schema:
             "limits": {
               "additionalProperties": false,
               "properties": {
+                "changeSetTtlMs": {
+                  "const": 600000,
+                  "type": "number"
+                },
                 "maxAddTilesetGidScans": {
                   "const": 1000000,
                   "type": "number"
@@ -12243,6 +12295,7 @@ Output schema:
                 }
               },
               "required": [
+                "changeSetTtlMs",
                 "maxDocumentBytes",
                 "maxAggregateTilesetDependencyBytes",
                 "maxCreateMapDimension",
@@ -13124,10 +13177,32 @@ Output schema:
                     }
                   ],
                   "type": "array"
+                },
+                "supportedOrientations": {
+                  "items": [
+                    {
+                      "const": "orthogonal",
+                      "type": "string"
+                    },
+                    {
+                      "const": "isometric",
+                      "type": "string"
+                    },
+                    {
+                      "const": "staggered",
+                      "type": "string"
+                    },
+                    {
+                      "const": "hexagonal",
+                      "type": "string"
+                    }
+                  ],
+                  "type": "array"
                 }
               },
               "required": [
                 "renderProfile",
+                "supportedOrientations",
                 "supportedFormats",
                 "defaultScale",
                 "layerSelection",
@@ -15978,6 +16053,62 @@ Output schema:
               ],
               "type": "object"
             },
+            "toolAvailability": {
+              "additionalProperties": false,
+              "properties": {
+                "tiled_preview_export": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "absentWhen": {
+                      "const": "tiled-cli-not-detected",
+                      "type": "string"
+                    },
+                    "fallback": {
+                      "const": "tiled_preview_write_xml-for-tmx-tsx-tx-targets-only",
+                      "type": "string"
+                    },
+                    "requires": {
+                      "const": "tiled-cli-version-probe",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requires",
+                    "absentWhen",
+                    "fallback"
+                  ],
+                  "type": "object"
+                },
+                "tiled_render_map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "absentWhen": {
+                      "const": "tmxrasterizer-not-detected",
+                      "type": "string"
+                    },
+                    "fallback": {
+                      "const": "tiled_render_preview",
+                      "type": "string"
+                    },
+                    "requires": {
+                      "const": "tmxrasterizer-version-probe",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "requires",
+                    "absentWhen",
+                    "fallback"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "tiled_render_map",
+                "tiled_preview_export"
+              ],
+              "type": "object"
+            },
             "transactionCapabilities": {
               "additionalProperties": false,
               "properties": {
@@ -16270,6 +16401,7 @@ Output schema:
             "applicationErrorContract",
             "assetIdentityContract",
             "cli",
+            "toolAvailability",
             "registeredTools"
           ],
           "type": "object"
@@ -16287,6 +16419,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -17237,6 +17371,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -19669,6 +19805,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -19860,6 +19998,7 @@ Input schema:
       "type": "integer"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "maximum": 9007199254740991,
       "minimum": -9007199254740991,
       "type": "integer"
@@ -20302,6 +20441,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -20450,7 +20591,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded semantic summary of one tileset referenced by a map — an external TSJ selected by tilesetAssetId, or an embedded (inline) atlas tileset selected by its original tilesets[] index via embeddedIndex (exactly one selector is required; embedded content is pinned by the map revision itself). Includes sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets, per-tile sub-rectangles, and embedded image-collection tilesets fail closed.
+Returns a bounded semantic summary of one tileset referenced by a map — an external TSJ selected by tilesetAssetId, or an embedded (inline) atlas tileset selected by its original tilesets[] index via embeddedIndex (exactly one selector is required; embedded content is pinned by the map revision itself). Includes sparse tile metadata with per-tile custom-property values (scalars, enums, object references, and bounded raw nested class/list values; only oversized entries carry an explicit valueOmitted marker), animation, exact collision shape geometry (gid/template objects and oversized paths carry omission markers), and expanded Wang sets (full color projections plus a bounded wangtile sample; wangid slots run clockwise from the top edge). Tile metadata pages with startTileId/limit and Wang sets page with startWangSetIndex; each envelope reports hasMore and its next cursor. Image-collection tilesets project a collection block instead of atlas geometry, with each returned page tile's image verified and revision-pinned; collection Wang sets, per-tile sub-rectangles, and embedded image-collection tilesets fail closed.
 
 Annotations:
 
@@ -20492,6 +20633,7 @@ Input schema:
     },
     "limit": {
       "default": 64,
+      "description": "Maximum tile-metadata entries per page (default 64)",
       "maximum": 128,
       "minimum": 1,
       "type": "integer"
@@ -20504,11 +20646,20 @@ Input schema:
     },
     "startTileId": {
       "default": 0,
+      "description": "Resume cursor: first local tile id to return; pass the previous page's nextStartTileId",
       "maximum": 268435455,
       "minimum": 0,
       "type": "integer"
     },
+    "startWangSetIndex": {
+      "default": 0,
+      "description": "Resume cursor into wangsets[]: pass the previous response's wangSets.nextStartWangSetIndex",
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -21567,6 +21718,12 @@ Output schema:
                 "wangSets": {
                   "additionalProperties": false,
                   "properties": {
+                    "hasEarlier": {
+                      "type": "boolean"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
                     "items": {
                       "items": {
                         "additionalProperties": false,
@@ -22036,11 +22193,22 @@ Output schema:
                       "maxItems": 32,
                       "type": "array"
                     },
+                    "nextStartWangSetIndex": {
+                      "description": "Pass back as startWangSetIndex to fetch the next Wang-set page; present only when hasMore",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "order": {
                       "const": "source",
                       "type": "string"
                     },
                     "returned": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "startWangSetIndex": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -22056,8 +22224,11 @@ Output schema:
                   },
                   "required": [
                     "order",
+                    "startWangSetIndex",
                     "total",
                     "returned",
+                    "hasEarlier",
+                    "hasMore",
                     "truncated",
                     "items"
                   ],
@@ -23046,6 +23217,12 @@ Output schema:
                 "wangSets": {
                   "additionalProperties": false,
                   "properties": {
+                    "hasEarlier": {
+                      "type": "boolean"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
                     "items": {
                       "items": {
                         "additionalProperties": false,
@@ -23515,11 +23692,22 @@ Output schema:
                       "maxItems": 32,
                       "type": "array"
                     },
+                    "nextStartWangSetIndex": {
+                      "description": "Pass back as startWangSetIndex to fetch the next Wang-set page; present only when hasMore",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "order": {
                       "const": "source",
                       "type": "string"
                     },
                     "returned": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "startWangSetIndex": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -23535,8 +23723,11 @@ Output schema:
                   },
                   "required": [
                     "order",
+                    "startWangSetIndex",
                     "total",
                     "returned",
+                    "hasEarlier",
+                    "hasMore",
                     "truncated",
                     "items"
                   ],
@@ -24543,6 +24734,12 @@ Output schema:
                 "wangSets": {
                   "additionalProperties": false,
                   "properties": {
+                    "hasEarlier": {
+                      "type": "boolean"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
                     "items": {
                       "items": {
                         "additionalProperties": false,
@@ -25012,11 +25209,22 @@ Output schema:
                       "maxItems": 32,
                       "type": "array"
                     },
+                    "nextStartWangSetIndex": {
+                      "description": "Pass back as startWangSetIndex to fetch the next Wang-set page; present only when hasMore",
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "order": {
                       "const": "source",
                       "type": "string"
                     },
                     "returned": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "startWangSetIndex": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
@@ -25032,8 +25240,11 @@ Output schema:
                   },
                   "required": [
                     "order",
+                    "startWangSetIndex",
                     "total",
                     "returned",
+                    "hasEarlier",
+                    "hasMore",
                     "truncated",
                     "items"
                   ],
@@ -25068,6 +25279,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -25216,7 +25429,7 @@ Output schema:
 
 Availability: `core`
 
-Lists bounded checkpoint manifests and separately reports corrupt entries. This tool never restores or deletes files.
+Lists bounded checkpoint manifests in a deterministic order and separately reports corrupt entries; page through large stores by passing the previous response's nextStartAfter as startAfter. Each entry's status (prepared or committed) selects which sibling tool can act on it: tiled_preview_checkpoint_restore and tiled_preview_checkpoint_prune_batch accept committed checkpoints only, while tiled_preview_prepared_checkpoint resolves prepared ones. This tool never restores or deletes files.
 
 Annotations:
 
@@ -25252,17 +25465,26 @@ Input schema:
   "properties": {
     "limit": {
       "default": 100,
+      "description": "Maximum manifests returned (default 100); truncation is reported, so raise this when truncated is true",
       "maximum": 1000,
       "minimum": 1,
       "type": "integer"
     },
     "scanLimit": {
       "default": 1000,
+      "description": "Maximum directory entries examined before stopping (default 1000)",
       "maximum": 10000,
       "minimum": 1,
       "type": "integer"
     },
+    "startAfter": {
+      "description": "Opaque resume cursor: pass the previous response's nextStartAfter to fetch the next page",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
     "status": {
+      "description": "Return only checkpoints in this state; omit for both",
       "enum": [
         "prepared",
         "committed"
@@ -25347,6 +25569,9 @@ Output schema:
               },
               "maxItems": 1000,
               "type": "array"
+            },
+            "hasMore": {
+              "type": "boolean"
             },
             "manifests": {
               "items": {
@@ -25579,6 +25804,12 @@ Output schema:
               "maxItems": 1000,
               "type": "array"
             },
+            "nextStartAfter": {
+              "description": "Opaque cursor: pass back as startAfter to resume the listing; present only when hasMore",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
             "scannedEntries": {
               "maximum": 9007199254740991,
               "minimum": 0,
@@ -25592,7 +25823,8 @@ Output schema:
             "manifests",
             "corruptEntries",
             "scannedEntries",
-            "truncated"
+            "truncated",
+            "hasMore"
           ],
           "type": "object"
         },
@@ -25609,6 +25841,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -25791,6 +26025,7 @@ Input schema:
   "properties": {
     "limit": {
       "default": 10000,
+      "description": "Hard ceiling, not pagination: a project holding more assets than this fails with RESULT_LIMIT_EXCEEDED rather than returning a truncated list",
       "maximum": 10000,
       "minimum": 1,
       "type": "integer"
@@ -25883,6 +26118,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -26031,7 +26268,7 @@ Output schema:
 
 Availability: `core`
 
-Returns a bounded list of objects from all object layers or one selected object layer.
+Returns a bounded page of objects, in document order, from all object layers or one selected object layer. Page with offset/limit; the output reports total, hasMore, and nextOffset.
 
 Annotations:
 
@@ -26066,12 +26303,14 @@ Input schema:
   "additionalProperties": false,
   "properties": {
     "layerId": {
+      "description": "Restrict to one object layer (id from tiled_get_map_summary's layer tree); omit for all object layers",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
     },
     "limit": {
       "default": 1000,
+      "description": "Maximum objects per page (default 1000); the output reports total, hasMore, and nextOffset",
       "maximum": 10000,
       "minimum": 1,
       "type": "integer"
@@ -26081,6 +26320,13 @@ Input schema:
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
+    },
+    "offset": {
+      "default": 0,
+      "description": "Document-order resume cursor: pass the previous response's nextOffset",
+      "maximum": 1000000,
+      "minimum": 0,
+      "type": "integer"
     }
   },
   "required": [
@@ -26146,9 +26392,18 @@ Output schema:
               },
               "type": "object"
             },
+            "hasMore": {
+              "type": "boolean"
+            },
             "mapPath": {
               "minLength": 1,
               "type": "string"
+            },
+            "nextOffset": {
+              "description": "Pass back as offset to fetch the next page; present only when hasMore",
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
             },
             "objects": {
               "items": {
@@ -26241,6 +26496,16 @@ Output schema:
               "maxItems": 10000,
               "type": "array"
             },
+            "offset": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "returned": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
             "revision": {
               "pattern": "^sha256:[0-9a-f]{64}$",
               "type": "string"
@@ -26259,6 +26524,9 @@ Output schema:
             "revision",
             "dependencyRevisions",
             "total",
+            "offset",
+            "returned",
+            "hasMore",
             "truncated",
             "objects"
           ],
@@ -26277,6 +26545,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -26620,6 +26890,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -26927,6 +27199,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -27480,6 +27754,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -28266,6 +28542,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -28766,6 +29044,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -29363,6 +29643,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -29382,10 +29663,12 @@ Input schema:
       "type": "string"
     },
     "operations": {
+      "description": "Ordered edit operations applied as one atomic change set; each entry's type selects the operation (see the per-operation schema descriptions)",
       "items": {
         "oneOf": [
           {
             "additionalProperties": false,
+            "description": "Patch root map members (renderOrder, background, class, ...)",
             "properties": {
               "patch": {
                 "additionalProperties": false,
@@ -29429,6 +29712,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Resize the map canvas; must be the only operation in its change set",
             "properties": {
               "height": {
                 "maximum": 100000,
@@ -29464,6 +29748,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Rewrite one tile layer between csv and base64(+compression) storage, GIDs unchanged; must be the only operation in its change set",
             "properties": {
               "compression": {
                 "enum": [
@@ -29482,6 +29767,7 @@ Input schema:
                 "type": "string"
               },
               "layerId": {
+                "description": "Layer id from tiled_get_map_summary's layer tree",
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
@@ -29500,8 +29786,10 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Unbind one tileset from the map after proving nothing references it; must be the only operation in its change set",
             "properties": {
               "tilesetAssetId": {
+                "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
                 "pattern": "^asset_[0-9a-f]{24}$",
                 "type": "string"
               },
@@ -29518,6 +29806,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Write explicit cells: each entry sets one x,y to a TileRef or null to erase",
             "properties": {
               "cells": {
                 "items": {
@@ -29556,6 +29845,7 @@ Input schema:
                 "type": "array"
               },
               "layerId": {
+                "description": "Layer id from tiled_get_map_summary's layer tree",
                 "maximum": 9007199254740991,
                 "minimum": -9007199254740991,
                 "type": "integer"
@@ -29574,6 +29864,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Fill a rectangular region with one tile (or null to erase it)",
             "properties": {
               "height": {
                 "exclusiveMinimum": 0,
@@ -29581,6 +29872,7 @@ Input schema:
                 "type": "integer"
               },
               "layerId": {
+                "description": "Layer id from tiled_get_map_summary's layer tree",
                 "maximum": 9007199254740991,
                 "minimum": -9007199254740991,
                 "type": "integer"
@@ -29628,6 +29920,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Tile a rectangular pattern repeatedly across a region",
             "properties": {
               "layerId": {
                 "exclusiveMinimum": 0,
@@ -29680,6 +29973,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Flood-fill four-way from a seed cell, bounded by the layer or an explicit region",
             "properties": {
               "layerId": {
                 "exclusiveMinimum": 0,
@@ -29722,6 +30016,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Copy a rectangular region to another position on the same map",
             "properties": {
               "destination": {
                 "additionalProperties": false,
@@ -29801,6 +30096,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Replace every occurrence of given tiles with others, optionally within a region",
             "properties": {
               "layerId": {
                 "exclusiveMinimum": 0,
@@ -29881,6 +30177,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Create one object on an object layer; the object member is shape-discriminated",
             "properties": {
               "layerId": {
                 "exclusiveMinimum": 0,
@@ -30435,6 +30732,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Patch fields of one existing object addressed by id",
             "properties": {
               "objectId": {
                 "exclusiveMinimum": 0,
@@ -30624,6 +30922,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Delete objects by id from their object layers",
             "properties": {
               "objectIds": {
                 "items": {
@@ -30648,6 +30947,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Patch one layer's own members (name, visibility, opacity, offsets, ...)",
             "properties": {
               "layerId": {
                 "exclusiveMinimum": 0,
@@ -30742,6 +31042,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Delete one layer (and, for a group, its subtree)",
             "properties": {
               "deleteDescendants": {
                 "type": "boolean"
@@ -30764,6 +31065,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Move a layer to a new parent group and/or sibling index",
             "properties": {
               "index": {
                 "maximum": 10000,
@@ -30794,6 +31096,7 @@ Input schema:
           },
           {
             "additionalProperties": false,
+            "description": "Duplicate one layer; destination selects the insertion point",
             "properties": {
               "destination": {
                 "oneOf": [
@@ -36314,6 +36617,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -36460,7 +36765,7 @@ Output schema:
 
 ### `tiled_preview_export`
 
-Availability: `tmxrasterizer-version-probe`
+Availability: `tiled-cli-version-probe`
 
 Runs the local Tiled CLI's own --export-map/--export-tileset conversion from one project .tmj/.tsj source into a server-owned staging file and returns an expiring fileExport change set carrying the approved output's content hash. The format comes from the probed export-format whitelist (explicit or via the target extension); the target must be a new project file (exports never overwrite), the source is revision-pinned, and apply re-runs the export and fails closed unless the output bytes exactly match the approved hash.
 
@@ -36751,6 +37056,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -37064,6 +37371,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -37160,6 +37468,7 @@ Input schema:
       ]
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -37600,6 +37909,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -37907,6 +38218,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -37926,6 +38238,7 @@ Input schema:
       "type": "string"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -38353,6 +38666,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -38546,6 +38861,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -38937,6 +39253,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -39085,7 +39403,7 @@ Output schema:
 
 Availability: `core`
 
-Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.
+Stamps one source-map region as a prefab: tiles from one source tile layer — carried as tileset+localId references, so a target map missing the tileset fails closed — and optionally objects anchored inside the region's pixel bounds from one source object layer, materialized at planning time into ordinary setTiles and createObject operations against the target map (the plan itself is the frozen prefab; nothing re-reads the source at apply, and an optional expectedSourceRevision asserts the source up front). Use this for a bounded rectangle of one source layer; to bring in a whole map's tile layers matched by name use tiled_preview_merge_map, and to copy a rectangle within one map use the copyRegion operation of tiled_preview_edits. Empty source cells are skipped unless copyEmpty stamps the rectangle verbatim as erasure; extraTileLayers stamps additional source-to-target tile-layer pairs over the same region in one plan, and flipHorizontal mirrors the tile stamp with official TileLayer::flip bit semantics (tile layers only — combining it with objects fails closed). Objects outside the supported draft profile — custom properties, template instances, unknown members — fail closed rather than being silently dropped, as do cross-map object stamps between maps with differing tile sizes.
 
 Annotations:
 
@@ -39148,6 +39466,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -40789,6 +41108,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -40937,7 +41258,7 @@ Output schema:
 
 Availability: `core`
 
-Adjudicates one prepared recovery checkpoint, choosing the proposal from `resolution`. discard pins the manifest and proves the current target still equals its pre-write state -- an existing target must match the exact before revision and size, a create target must still be missing -- then proposes removing the manifest without changing the project asset; conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected. commit applies to an ambiguous create checkpoint only, requires the target to exactly match the after revision, and proposes committing just the internal audit record; because its before state is target absence it still cannot be restored as deletion, it runs no garbage collection, and there is no generic force flag. abandon pins the full manifest, target observation, and one of four machine-classified ambiguous conflicts. Every resolution returns a proposal only; nothing changes until tiled_apply_change_set commits it.
+A prepared checkpoint is a recovery point whose write crashed between preparation and commit; tiled_list_checkpoints reports it with status prepared, and only this tool can resolve it (restore and prune accept committed checkpoints only). Adjudicates one prepared recovery checkpoint, choosing the proposal from `resolution`. discard pins the manifest and proves the current target still equals its pre-write state -- an existing target must match the exact before revision and size, a create target must still be missing -- then proposes removing the manifest without changing the project asset; conflicting, exact-after, ambiguous, committed, unsafe, or unrelated states are rejected. commit applies to an ambiguous create checkpoint only, requires the target to exactly match the after revision, and proposes committing just the internal audit record; because its before state is target absence it still cannot be restored as deletion, it runs no garbage collection, and there is no generic force flag. abandon pins the full manifest, target observation, and one of four machine-classified ambiguous conflicts. Every resolution returns a proposal only; nothing changes until tiled_apply_change_set commits it.
 
 Annotations:
 
@@ -42348,6 +42669,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -43031,6 +43354,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -43375,6 +43700,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -43388,6 +43714,7 @@ Input schema:
       "type": "string"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -43795,6 +44122,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -44229,6 +44558,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -44242,6 +44572,7 @@ Input schema:
       "type": "string"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -44617,6 +44948,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -44809,6 +45142,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -44827,6 +45161,7 @@ Input schema:
       "type": "string"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -45111,6 +45446,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -45259,7 +45596,7 @@ Output schema:
 
 Availability: `core`
 
-Paints Wang terrain corners through Tiled's own TileLayer.wangEdit() matcher, run headlessly by a server-authored static script against the pinned map (the CLI writes only a staging copy; parameters are embedded as an inert JSON literal, so no user input reaches script code). The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — apply needs no CLI replay, untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed.
+Paints Wang terrain corners with the built-in corner matcher — a core tool needing no Tiled install. Where Tiled's own WangFiller would pick probability-weighted at random among equally matching tiles, this deterministically picks the lowest local tile id; a corner pattern no tile satisfies fails closed naming the cell. The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed. This writes map cells using a Wang set that already exists in the tileset; to create or extend that set first, use tiled_update_wangsets.
 
 Annotations:
 
@@ -45347,6 +45684,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -45360,6 +45698,7 @@ Input schema:
       "type": "string"
     },
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -45371,6 +45710,7 @@ Input schema:
       "type": "string"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -45736,6 +46076,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -46227,6 +46569,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -46675,6 +47019,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -46865,6 +47211,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -47234,6 +47581,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -47953,6 +48302,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -48101,7 +48452,7 @@ Output schema:
 
 Availability: `core`
 
-Serializes one restricted-profile project document to Tiled 1.12.2's own XML bytes, byte for byte, choosing the writer from the source extension: .tmj -> TMX, .tsj -> TSX, .tj -> TX. Any other extension fails closed. TMX covers finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands; embedded tilesets, image and group layers, custom properties, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. TSX requires the declared grid to be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, custom properties, and unknown members also fail closed. TX follows Tiled's writeObjectTemplate exactly. References and GIDs carry verbatim in every case, so the target must be a new file in the source document's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.
+Serializes one restricted-profile project document to Tiled 1.12.2's own XML bytes, byte for byte, choosing the writer from the source extension: .tmj -> TMX, .tsj -> TSX, .tj -> TX. Any other extension fails closed. TMX covers finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands. Scalar custom properties (string/int/float/bool/color/file/object) serialize with official writeProperties bytes; class-typed properties serialize only when projectFilePath supplies the .tiled-project definitions, and fail closed without it. Embedded tilesets, image and group layers, enum annotations, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. TSX requires the declared grid to be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, and unknown members also fail closed. TX follows Tiled's writeObjectTemplate exactly. References and GIDs carry verbatim in every case, so the target must be a new file in the source document's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved — for any other target format use tiled_preview_export, which requires a local Tiled CLI.
 
 Annotations:
 
@@ -48393,6 +48744,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -48651,6 +49004,7 @@ Input schema:
       "type": "object"
     },
     "scale": {
+      "description": "Integer pixel magnification (defaults to 2 when omitted)",
       "maximum": 4,
       "minimum": 1,
       "type": "integer"
@@ -48906,6 +49260,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -49054,7 +49410,7 @@ Output schema:
 
 Availability: `tmxrasterizer-version-probe`
 
-Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata.
+Runs the local TmxRasterizer with bounded options and returns an inline PNG plus traceable artifact, renderer, option, map, and external-TSJ metadata. This is the full-fidelity composite through Tiled's own renderer — image layers, text glyphs, opacity, and every orientation — for whole-map views; for bounded regions, overlays, or when no Tiled install is present, use tiled_render_preview instead.
 
 Annotations:
 
@@ -49089,6 +49445,7 @@ Input schema:
   "additionalProperties": false,
   "properties": {
     "ignoreVisibility": {
+      "description": "Render hidden layers too; defaults to false",
       "type": "boolean"
     },
     "mapPath": {
@@ -49098,6 +49455,7 @@ Input schema:
       "type": "string"
     },
     "size": {
+      "description": "Longest output edge in pixels; defaults to 1400 when omitted",
       "exclusiveMinimum": 0,
       "maximum": 2048,
       "type": "integer"
@@ -49295,6 +49653,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -49443,7 +49803,7 @@ Output schema:
 
 Availability: `core`
 
-Renders a bounded orthogonal TMJ region without invoking TmxRasterizer; infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported.
+Renders a bounded TMJ region as a PNG without invoking TmxRasterizer — the default way to look at a map. It dispatches on the map's own orientation (orthogonal, isometric, staggered, or hexagonal); non-orthogonal maps require an explicit region and reject overlays, and infinite chunked maps require an explicit absolute-coordinate region (negatives allowed, cells outside chunks are empty). The native v1 profile supports static external and embedded (inline) atlas tile layers — embedded images resolve relative to the map file and their source entry carries {embedded: {sourceIndex}} pinned by the map revision; tile objects backed by embedded tilesets fail closed — plus fixed-style absolute tile-rectangle highlights and explicit basic-object geometry debugging. The v2 object debug profile supports rectangles, points, ellipses, Tiled 1.12 capsules, polygons, polylines, and text boxes; it ignores object and layer visibility/opacity and does not render text glyphs or image layers — for those, or a full Tiled-fidelity composite, use tiled_render_map when registered. Every highlight must intersect the effective tileRegion; partial overlap is clipped and reported. To see what an applied edit changed, use tiled_render_diff.
 
 Annotations:
 
@@ -49616,6 +49976,7 @@ Input schema:
     },
     "scale": {
       "default": 2,
+      "description": "Integer pixel magnification (default 2)",
       "maximum": 4,
       "minimum": 1,
       "type": "integer"
@@ -51381,6 +51742,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -51606,11 +51969,13 @@ Input schema:
     },
     "scale": {
       "default": 2,
+      "description": "Integer pixel magnification (default 2)",
       "maximum": 4,
       "minimum": 1,
       "type": "integer"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -52303,6 +52668,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -52489,7 +52856,7 @@ Input schema:
   "additionalProperties": false,
   "properties": {
     "columns": {
-      "description": "Maximum number of tile columns on a sheet page",
+      "description": "Maximum tile columns per row; defaults to 8 when omitted",
       "maximum": 32,
       "minimum": 1,
       "type": "integer"
@@ -52502,24 +52869,27 @@ Input schema:
     },
     "page": {
       "default": 0,
-      "description": "Zero-based tileset sheet page index",
+      "description": "Zero-based tileset sheet page index (default 0); the output's truncated field tells you whether a later page exists",
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
     "pageSize": {
       "default": 64,
+      "description": "Tiles per page (default 64)",
       "maximum": 256,
       "minimum": 1,
       "type": "integer"
     },
     "scale": {
       "default": 2,
+      "description": "Integer pixel magnification (default 2)",
       "maximum": 4,
       "minimum": 1,
       "type": "integer"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -53189,6 +53559,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -53382,6 +53754,7 @@ Input schema:
         "pattern": "^sha256:[0-9a-f]{64}$",
         "type": "string"
       },
+      "description": "The complete dependencyRevisions record from the same read that produced expectedMapRevision (assetId -> sha256 revision); pass the two together, unchanged. A stale or partial record fails closed",
       "propertyNames": {
         "maxLength": 128,
         "minLength": 1,
@@ -53406,6 +53779,7 @@ Input schema:
       "type": "string"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "pattern": "^asset_[0-9a-f]{24}$",
       "type": "string"
     },
@@ -53858,6 +54232,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -54006,7 +54382,7 @@ Output schema:
 
 Availability: `core`
 
-Evaluates one stateless selection predicate over a bounded tile-layer region — a tile set matched by tileset+localId (flip bits ignored), empty cells, or non-empty cells — and returns the selection as plain data: exact cell count, tight bounding box, and a bounded coordinate sample (at most 2,048 cells, with truncation disclosed). No selection id or server-side selection state exists; feed the result into region- or cell-based tools explicitly. Works on orthogonal, isometric, staggered, and hexagonal maps. Read-only.
+Evaluates one stateless selection predicate over a bounded tile-layer region — a tile set matched by tileset+localId (flip bits ignored), empty cells, non-empty cells, a magic-wand flood from a seed cell, a polygon interior, or a compose combination of those — and returns the selection as plain data: exact cell count, tight bounding box, and a bounded coordinate sample (sampleLimit defaults to 2,048, caps at 10,000, truncation disclosed via cellsTruncated). No selection id or server-side selection state exists; feed the result into region- or cell-based tools explicitly. Works on orthogonal, isometric, staggered, and hexagonal maps. Read-only.
 
 Annotations:
 
@@ -54139,6 +54515,7 @@ Input schema:
   },
   "properties": {
     "layerId": {
+      "description": "Layer id from tiled_get_map_summary's layer tree",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
       "type": "integer"
@@ -54469,6 +54846,7 @@ Input schema:
       "type": "object"
     },
     "sampleLimit": {
+      "description": "Maximum matching cells included in the coordinate sample (defaults to 2048 when omitted); cellCount is always the exact total",
       "maximum": 10000,
       "minimum": 1,
       "type": "integer"
@@ -54713,6 +55091,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -54861,7 +55241,7 @@ Output schema:
 
 Availability: `core`
 
-Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.
+Validates bounded probability, class, animation, scalar custom-property, and collision-shape updates for tiles of one currently referenced external TSJ (atlas or image-collection), then returns an expiring tileset change set without modifying project assets. Tileset-level members (name, tileOffset, transformations, the atlas grid, ...) belong to tiled_update_tileset instead. Collision replaces the whole objectgroup objects array with basic shapes (null removes it); tile geometry, atlas images, and referencing maps are never touched. Image-collection tilesets additionally accept structural updates, each exclusive to its change set: createCollectionTile adds a new sparse tile entry from a verified project image (the planner reads the image and pins its actual pixel size; tilecount and the maximum tile size follow), and removeCollectionTile (destructive) deletes an existing entry after proving the current map holds no reference to it and no other project asset references the tileset — a shrinking GID span must not strand references. Removing the last entry fails closed. An embedded (inline) map tileset is addressed by its original tilesets[] index via embeddedIndex instead (exactly one selector; expectedTilesetRevision must then be omitted — the map revision is the only pin) and returns an embeddedTilesetEdit change set that patches the map itself; structural collection updates are impossible there because embedded tilesets are atlas-only.
 
 Annotations:
 
@@ -55183,6 +55563,7 @@ Input schema:
       "type": "string"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "pattern": "^asset_[0-9a-f]{24}$",
       "type": "string"
     },
@@ -56402,6 +56783,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -57018,6 +57401,7 @@ Input schema:
       "type": "object"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "pattern": "^asset_[0-9a-f]{24}$",
       "type": "string"
     }
@@ -57300,6 +57684,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -57448,7 +57834,7 @@ Output schema:
 
 Availability: `core`
 
-Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed.
+Validates sequential Wang edits on one currently referenced external atlas TSJ — addWangSet appends a new set (name, corner/edge/mixed type, optional colors up to Tiled's 254-color limit), addWangColor appends one 1-based color to an existing set, and setWangTiles applies Tiled setWangId semantics per assignment (an all-zero 8-slot wangId removes the tile's entry, an identical one is a no-op, anything else upserts; slots run clockwise from the top edge and reference 1-based color indexes valid at that point in the sequence). The touched wangtiles member is rewritten in Tiled's canonical ascending-tileId save order. Returns an expiring wangEdit change set without modifying project assets; image-collection tilesets and pre-1.5 edgecolors/cornercolors sets fail closed. This defines the terrain in the tileset and never touches a map; to paint an existing Wang set onto a map's cells, use tiled_preview_terrain.
 
 Annotations:
 
@@ -57727,6 +58113,7 @@ Input schema:
       "type": "array"
     },
     "tilesetAssetId": {
+      "description": "Opaque tileset asset id (asset_<hex>) from tiled_get_map_summary's tilesets list",
       "maxLength": 128,
       "minLength": 1,
       "type": "string"
@@ -58127,6 +58514,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",
@@ -58275,7 +58664,7 @@ Output schema:
 
 Availability: `core`
 
-Performs structural and MVP-profile validation without modifying the map, tilesets, or images.
+Performs structural and edit-profile validation without modifying the map, tilesets, or images. Diagnostics cap at 1000; diagnosticsTruncated reports when more problems exist than are listed.
 
 Annotations:
 
@@ -58402,6 +58791,10 @@ Output schema:
               "maxItems": 1000,
               "type": "array"
             },
+            "diagnosticsTruncated": {
+              "description": "True when validation stopped at the diagnostic cap and more problems exist than are listed",
+              "type": "boolean"
+            },
             "path": {
               "minLength": 1,
               "type": "string"
@@ -58418,7 +58811,8 @@ Output schema:
             "path",
             "revision",
             "valid",
-            "diagnostics"
+            "diagnostics",
+            "diagnosticsTruncated"
           ],
           "type": "object"
         },
@@ -58435,6 +58829,8 @@ Output schema:
                     "CHANGE_SET_LIMIT_EXCEEDED",
                     "CHANGE_SET_NOT_FOUND",
                     "CHANGE_SET_OWNED",
+                    "CHANGE_SET_REPLAY_MISMATCH",
+                    "CHANGE_SET_TAMPERED",
                     "CHECKPOINT_CHANGED",
                     "CHECKPOINT_CORRUPT",
                     "CHECKPOINT_NOT_COMMITTED",

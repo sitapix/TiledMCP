@@ -326,7 +326,7 @@ describe("tiled_create_tileset planning and apply", () => {
         resigned,
       ),
     ).rejects.toMatchObject({
-      code: "INVALID_CHANGE_SET",
+      code: "CHANGE_SET_REPLAY_MISMATCH",
     });
 
     await expect(
