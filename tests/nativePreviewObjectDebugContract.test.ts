@@ -512,7 +512,10 @@ describe("native preview object debug server contract", () => {
     // 56 since `tiled_replace_tileset_in_map`: repointing a bound tileset
     // could not be expressed by removing and re-adding, because removal
     // refuses any tileset a cell still references.
-    expect(registeredTools).toHaveLength(56);
+    // 57 since `tiled_preview_merge_map`: stitching a map in needs GID
+    // translation between two independent tileset orderings, which no
+    // existing operation performs.
+    expect(registeredTools).toHaveLength(57);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

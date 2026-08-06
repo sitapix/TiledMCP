@@ -192,6 +192,7 @@ const CORE_TOOLS = [
   "tiled_delete_file",
   "tiled_add_tileset_to_map",
   "tiled_replace_tileset_in_map",
+  "tiled_preview_merge_map",
   "tiled_update_tile",
   "tiled_update_tileset",
   "tiled_update_wangsets",

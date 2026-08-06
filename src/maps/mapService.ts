@@ -149,7 +149,9 @@ import {
 } from "./generate.js";
 import {
   type OrthogonalTransform,
+  assertUnsignedGid,
   decodeGid,
+  GID_ID_MASK,
 } from "./gid.js";
 import {
   mergeTemplateInstance,
@@ -300,6 +302,7 @@ import {
   MAX_DIAGNOSTICS,
   MAX_OBJECT_LIST_LIMIT,
   MAX_REGION_CELLS,
+  MAX_CELL_WRITES,
   MAX_TILESET_COUNT,
   MAX_TOTAL_DEPENDENCY_BYTES,
   MAX_USAGE_TOP_TILE_LIMIT,
@@ -318,6 +321,7 @@ import type {
   LayerTraversalBudget,
   ListObjectsInput,
   PlanAddTilesetToMapInput,
+  PlanMergeMapInput,
   PlanReplaceTilesetInMapInput,
   PlanCreateLayerInput,
   ProspectiveImageBinding,
@@ -416,6 +420,7 @@ export {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CELL_WRITES,
+  MAX_MERGE_OFFSET,
   MAX_CREATE_MAP_DIMENSION,
   MAX_CREATE_MAP_TILE_EDGE,
   MAX_CREATE_TILE_LAYER_CELLS,
@@ -10774,6 +10779,442 @@ export class MapService {
     return {
       document: tileset.document,
       source: tileset.source,
+    };
+  }
+
+  /**
+   * Stamps another map's tile layers into this one, matching layers by name.
+   *
+   * The plan it returns is ordinary `setTiles` operations carrying resolved
+   * `TileRef`s, which is the point: the source map is read once, at plan time,
+   * and nothing downstream needs it again. Apply validates these exactly as it
+   * would hand-written cells, so merging inherits every bound, every GID check
+   * and the whole source-preserving write path without a new operation kind.
+   *
+   * Two maps rarely order their tilesets alike, so GIDs are translated rather
+   * than copied: each source cell is decoded against the source's own
+   * `firstgid` table and re-expressed as a `TileRef` into the destination's
+   * binding for the same tileset file. Copying raw GIDs between maps is the
+   * classic way to silently repaint one, and it is why this cannot be a plain
+   * region copy.
+   *
+   * Empty source cells are skipped rather than written as clears: a merge
+   * overlays, so the destination shows through wherever the source has
+   * nothing. Erasing is `setTiles` with an explicit null.
+   */
+  async planMergeMap(
+    input: PlanMergeMapInput,
+  ): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    assertOptionalRevision(
+      input.expectedSourceMapRevision,
+      "expectedSourceMapRevision",
+    );
+    const offsetX = input.offsetX ?? 0;
+    const offsetY = input.offsetY ?? 0;
+    assertSafeInteger(offsetX, "offsetX");
+    assertSafeInteger(offsetY, "offsetY");
+
+    const context = await this.loadEditableContext(
+      input.mapPath,
+      {
+        allowIsometric: true,
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      },
+    );
+    assertDependencyRevisions(
+      input.expectedDependencyRevisions,
+      context.dependencyRevisions,
+    );
+
+    const sourcePath = this.resolver.normalize(
+      input.sourceMapPath,
+    );
+    if (sourcePath === context.loaded.path) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        "A map cannot be merged into itself.",
+        { path: sourcePath },
+      );
+    }
+    const sourceSnapshot =
+      await this.store.readSnapshot(sourcePath);
+    if (
+      input.expectedSourceMapRevision !==
+        undefined &&
+      sourceSnapshot.revision !==
+        input.expectedSourceMapRevision
+    ) {
+      throw new TiledMcpError(
+        "DEPENDENCY_REVISION_CONFLICT",
+        `${sourcePath} changed since it was read.`,
+        {
+          path: sourcePath,
+          expectedRevision:
+            input.expectedSourceMapRevision,
+          actualRevision: sourceSnapshot.revision,
+        },
+      );
+    }
+    const source =
+      this.store.parseSnapshot(sourceSnapshot);
+    const sourceDocument = source.document;
+
+    const orientation = expectString(
+      sourceDocument.orientation,
+      `${sourcePath}.orientation`,
+    );
+    if (orientation !== context.orientation) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_MAP_PROFILE",
+        `${sourcePath} is ${orientation} but ${context.loaded.path} is ${context.orientation}; merging maps of different orientations would place every cell wrongly.`,
+        {
+          sourceOrientation: orientation,
+          targetOrientation: context.orientation,
+        },
+      );
+    }
+    for (const member of [
+      "tilewidth",
+      "tileheight",
+    ] as const) {
+      const sourceValue = expectInteger(
+        sourceDocument[member],
+        `${sourcePath}.${member}`,
+      );
+      const targetValue = expectInteger(
+        context.loaded.document[member],
+        `${context.loaded.path}.${member}`,
+      );
+      if (sourceValue !== targetValue) {
+        throw new TiledMcpError(
+          "UNSUPPORTED_MAP_PROFILE",
+          `${sourcePath} has ${member} ${sourceValue} but ${context.loaded.path} has ${targetValue}; the grids do not line up.`,
+          { member, sourceValue, targetValue },
+        );
+      }
+    }
+    if (sourceDocument.infinite === true) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_MAP_PROFILE",
+        "An infinite map cannot be used as a merge source; its layers have no fixed bounds to place.",
+        { path: sourcePath },
+      );
+    }
+
+    // Map each source tileset slot onto the destination binding for the same
+    // file. A tileset the destination does not already reference fails closed
+    // rather than being added silently -- attaching one is its own operation,
+    // with its own GID-range decisions.
+    const sourceEntries = expectArray(
+      sourceDocument.tilesets,
+      `${sourcePath}.tilesets`,
+    );
+    const slots: Array<{
+      firstGid: number;
+      binding: TilesetBinding;
+    }> = [];
+    for (const [
+      index,
+      rawEntry,
+    ] of sourceEntries.entries()) {
+      const entry = expectObject(
+        rawEntry,
+        `${sourcePath}.tilesets[${index}]`,
+      );
+      const reference = entry.source;
+      if (typeof reference !== "string") {
+        throw new TiledMcpError(
+          "UNSUPPORTED_FORMAT",
+          `${sourcePath}.tilesets[${index}] is an embedded tileset; only external tileset references can be merged.`,
+          { path: sourcePath, sourceIndex: index },
+        );
+      }
+      const resolved =
+        await this.resolver.resolveReference(
+          sourcePath,
+          reference,
+        );
+      const binding = context.bindings.find(
+        (candidate) =>
+          candidate.path === resolved,
+      );
+      if (binding === undefined) {
+        throw new TiledMcpError(
+          "TILESET_NOT_FOUND",
+          `${context.loaded.path} does not reference ${resolved}, which ${sourcePath} uses. Attach it with tiled_add_tileset_to_map before merging.`,
+          {
+            mapPath: context.loaded.path,
+            sourceMapPath: sourcePath,
+            tilesetPath: resolved,
+          },
+        );
+      }
+      slots.push({
+        firstGid: expectInteger(
+          entry.firstgid,
+          `${sourcePath}.tilesets[${index}].firstgid`,
+        ),
+        binding,
+      });
+    }
+    slots.sort((a, b) => b.firstGid - a.firstGid);
+
+    const targetLayers = collectLayerSummaries(
+      expectArray(
+        context.loaded.document.layers,
+        `${context.loaded.path}.layers`,
+      ),
+      `${context.loaded.path}.layers`,
+      context.loaded.document.infinite === true,
+      0,
+      { count: 0 },
+    );
+    const targetTileLayerIdByName = new Map<
+      string,
+      number
+    >();
+    const walkTargets = (
+      layers: Array<Record<string, unknown>>,
+    ): void => {
+      for (const layer of layers) {
+        if (layer["type"] === "tilelayer") {
+          const name = layer["name"];
+          if (
+            typeof name === "string" &&
+            !targetTileLayerIdByName.has(name)
+          ) {
+            targetTileLayerIdByName.set(
+              name,
+              layer["id"] as number,
+            );
+          }
+        }
+        const nested = layer["layers"];
+        if (Array.isArray(nested)) {
+          walkTargets(
+            nested as Array<
+              Record<string, unknown>
+            >,
+          );
+        }
+      }
+    };
+    walkTargets(
+      targetLayers as Array<
+        Record<string, unknown>
+      >,
+    );
+
+    const operations: MapEditOperation[] = [];
+    let mergedCellCount = 0;
+    const visitSource = (
+      layers: JsonValue[],
+      layerContext: string,
+    ): void => {
+      for (const [
+        index,
+        rawLayer,
+      ] of layers.entries()) {
+        const layer = expectObject(
+          rawLayer,
+          `${layerContext}[${index}]`,
+        );
+        const type = expectString(
+          layer.type,
+          `${layerContext}[${index}].type`,
+        );
+        if (type === "group") {
+          visitSource(
+            expectArray(
+              layer.layers,
+              `${layerContext}[${index}].layers`,
+            ),
+            `${layerContext}[${index}].layers`,
+          );
+          continue;
+        }
+        if (type !== "tilelayer") {
+          continue;
+        }
+        const name = expectString(
+          layer.name,
+          `${layerContext}[${index}].name`,
+        );
+        const targetLayerId =
+          targetTileLayerIdByName.get(name);
+        if (targetLayerId === undefined) {
+          throw new TiledMcpError(
+            "LAYER_NOT_FOUND",
+            `${context.loaded.path} has no tile layer named ${JSON.stringify(name)} to merge ${sourcePath}'s into. Create it with tiled_create_layer first; merging never invents layers, so the result cannot depend on the order layers happen to be created in.`,
+            {
+              mapPath: context.loaded.path,
+              sourceMapPath: sourcePath,
+              layerName: name,
+            },
+          );
+        }
+        if ("chunks" in layer) {
+          throw new TiledMcpError(
+            "UNSUPPORTED_MAP_PROFILE",
+            `${layerContext}[${index}] is chunked; an infinite source layer has no fixed bounds to place.`,
+          );
+        }
+        const width = expectInteger(
+          layer.width,
+          `${layerContext}[${index}].width`,
+        );
+        const height = expectInteger(
+          layer.height,
+          `${layerContext}[${index}].height`,
+        );
+        const data = expectArray(
+          layer.data,
+          `${layerContext}[${index}].data`,
+        );
+        const cells: Array<{
+          x: number;
+          y: number;
+          tile: TileRef | null;
+        }> = [];
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const raw = data[y * width + x];
+            const gid = expectInteger(
+              raw,
+              `${layerContext}[${index}].data[${y * width + x}]`,
+            );
+            if (gid === 0) {
+              continue;
+            }
+            assertUnsignedGid(gid);
+            const baseGid =
+              (gid & GID_ID_MASK) >>> 0;
+            const slot = slots.find(
+              (candidate) =>
+                candidate.firstGid <= baseGid,
+            );
+            if (slot === undefined) {
+              throw new TiledMcpError(
+                "GID_OUT_OF_RANGE",
+                `${layerContext}[${index}] holds GID ${baseGid}, which no tileset in ${sourcePath} covers.`,
+                { gid: baseGid, path: sourcePath },
+              );
+            }
+            const localId =
+              baseGid - slot.firstGid;
+            if (
+              localId >= slot.binding.tileCount
+            ) {
+              throw new TiledMcpError(
+                "GID_OUT_OF_RANGE",
+                `${layerContext}[${index}] holds GID ${baseGid}, which is past the end of ${slot.binding.path}.`,
+                {
+                  gid: baseGid,
+                  localId,
+                  tileCount: slot.binding.tileCount,
+                },
+              );
+            }
+            const decoded = decodeGid(
+              gid,
+              context.orientation,
+            );
+            cells.push({
+              x: x + offsetX,
+              y: y + offsetY,
+              tile: {
+                tileset: {
+                  kind: "external",
+                  assetId: slot.binding.assetId,
+                },
+                localId,
+                transform: decoded.transform,
+              },
+            });
+          }
+        }
+        if (cells.length === 0) {
+          continue;
+        }
+        mergedCellCount += cells.length;
+        operations.push({
+          type: "setTiles",
+          layerId: targetLayerId,
+          cells,
+        });
+      }
+    };
+    visitSource(
+      expectArray(
+        sourceDocument.layers,
+        `${sourcePath}.layers`,
+      ),
+      `${sourcePath}.layers`,
+    );
+
+    if (operations.length === 0) {
+      throw new TiledMcpError(
+        "INVALID_ARGUMENT",
+        `${sourcePath} has no non-empty tile layer to merge, so the change set would be a no-op.`,
+        { path: sourcePath },
+      );
+    }
+    if (mergedCellCount > MAX_CELL_WRITES) {
+      throw new TiledMcpError(
+        "RESULT_LIMIT_EXCEEDED",
+        `Merging ${sourcePath} writes ${mergedCellCount} cells, over the ${MAX_CELL_WRITES} limit for one change set. Merge fewer layers, or a smaller source.`,
+        {
+          limit: MAX_CELL_WRITES,
+          actual: mergedCellCount,
+        },
+      );
+    }
+
+    const previewDocument = cloneJson(
+      context.loaded.document,
+    );
+    const summary =
+      validateAndSummarizeOperations(
+        previewDocument,
+        context.orientation,
+        context.bindings,
+        operations,
+        context.loaded.path,
+        { sourceBytes: context.loaded.size },
+      );
+    const unsignedPlan: Omit<
+      MapEditPlan,
+      "id"
+    > = {
+      kind: "mapEdit",
+      version: 1,
+      mapPath: context.loaded.path,
+      baseRevision: context.loaded.revision,
+      dependencyRevisions:
+        context.dependencyRevisions,
+      operations,
+      summary,
+    };
+    await this.assertDependenciesUnchanged(
+      context.bindings,
+    );
+    await assertRevisionUnchanged(
+      this.store,
+      context.loaded.path,
+      context.loaded.revision,
+      "REVISION_CONFLICT",
+      "the merge change set was being prepared",
+    );
+    return {
+      ...unsignedPlan,
+      id: planId(unsignedPlan),
     };
   }
 

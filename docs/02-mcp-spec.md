@@ -284,6 +284,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 | `tiled_create_tileset` | build a new external atlas TSJ from a project image |
 | `tiled_add_tileset_to_map` | bind an existing external TSJ to a map |
 | `tiled_replace_tileset_in_map` | repoint a bound tileset at a different TSJ, keeping every GID |
+| `tiled_preview_merge_map` | stamp another map's tile layers in, translating GIDs |
 | `tiled_update_tile` | per-tile probability, class, animation, properties, collision |
 | `tiled_update_tileset` | tileset-level name, offset, alignment, render size, properties |
 | `tiled_update_wangsets` | Wang set creation, colors, tile assignment |

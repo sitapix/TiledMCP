@@ -455,6 +455,38 @@ the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
 object-layer, font, tile-image, antialiased curve styling, and collision
 rendering.
 
+## Stitch one map into another
+
+\`tiled_preview_merge_map\` stamps another map's tile layers into this one,
+matching layers by name, at an optional \`offsetX\`/\`offsetY\` in tiles. Build a
+room once and merge it into a world map at several positions, or assemble a
+large map from chunks.
+
+GIDs are translated, not copied. Two maps rarely order their tilesets alike, so
+the same picture usually has a different GID in each; the planner decodes every
+source cell against the *source's* own \`firstgid\` table and re-expresses it
+against this map's binding for the same tileset file. Copying raw GIDs between
+maps is the classic way to silently repaint one, which is why this is not a
+region copy.
+
+Empty source cells are skipped, so the destination shows through wherever the
+source has nothing. To erase, use \`setTiles\` with an explicit \`null\`.
+
+It fails closed when:
+
+- the two grids differ in orientation or tile size,
+- the source uses a tileset this map does not already reference -- attach it
+  with \`tiled_add_tileset_to_map\` first,
+- a source tile layer has no same-named tile layer here -- create it with
+  \`tiled_create_layer\` first, so the result never depends on the order layers
+  happened to be created in,
+- the source is infinite, or the merge would write more cells than one change
+  set allows.
+
+The change set it returns is ordinary \`setTiles\` operations carrying resolved
+tile references, so the preview reads like any other edit and the source map is
+never touched.
+
 ## Re-cut an atlas whose grid changed
 
 \`tiled_update_tileset\` accepts an \`atlas\` field -- \`tileWidth\`,

@@ -448,6 +448,21 @@
       "purpose": "把已绑定的图块集原地指向另一个 TSJ：firstgid 不动，地图中每个 GID 原样保留，用于把占位美术换成最终美术。"
     },
     {
+      "name": "tiled_preview_merge_map",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "sourceMapPath": "maps/room.tmj",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "offsetX": 8,
+        "offsetY": 4
+      },
+      "purpose": "把另一张地图的图块层按名字贴进当前地图：GID 按各自的 firstgid 表翻译而非照抄，源图的空格子跳过。"
+    },
+    {
       "name": "tiled_update_tile",
       "profile": "core",
       "arguments": {

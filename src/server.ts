@@ -94,6 +94,7 @@ import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CELL_WRITES,
+  MAX_MERGE_OFFSET,
   MAX_CREATE_MAP_DIMENSION,
   MAX_CREATE_MAP_TILE_EDGE,
   MAX_CREATE_TILE_LAYER_CELLS,
@@ -1809,6 +1810,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_delete_file",
     "tiled_add_tileset_to_map",
     "tiled_replace_tileset_in_map",
+    "tiled_preview_merge_map",
     "tiled_update_tile",
     "tiled_update_tileset",
     "tiled_update_wangsets",
@@ -5037,6 +5039,71 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         return changeSets.put(plan);
       }),
   );
+
+  toolRegistrars["tiled_preview_merge_map"] = () =>
+    register(
+      server,
+      registeredTools,
+      "tiled_preview_merge_map",
+      {
+        title: "Preview merging another map in",
+        description:
+          "Stamps the tile layers of another project-local map into this one at an optional tile offset, matching layers by name, and returns an expiring map change set without modifying either map. GIDs are translated, not copied: each source cell is decoded against the source map's own firstgid table and re-expressed against this map's binding for the same tileset file, so two maps that order their tilesets differently still merge correctly. Empty source cells are skipped, so the destination shows through wherever the source has nothing. Fails closed when the two grids differ in orientation or tile size, when the source uses a tileset this map does not already reference (attach it with tiled_add_tileset_to_map first), when a source tile layer has no same-named tile layer here (create it with tiled_create_layer first), or when the source is infinite.",
+        inputSchema: z
+          .object({
+            mapPath: projectPathSchema,
+            sourceMapPath: projectPathSchema,
+            expectedMapRevision: revisionSchema,
+            expectedDependencyRevisions:
+              dependencyRevisionsSchema,
+            expectedSourceMapRevision:
+              revisionSchema.optional(),
+            offsetX: z
+              .number()
+              .int()
+              .min(-MAX_MERGE_OFFSET)
+              .max(MAX_MERGE_OFFSET)
+              .optional(),
+            offsetY: z
+              .number()
+              .int()
+              .min(-MAX_MERGE_OFFSET)
+              .max(MAX_MERGE_OFFSET)
+              .optional(),
+          })
+          .strict(),
+        outputSchema: previewEditsToolOutputSchema,
+        annotations: PREVIEW_ONLY,
+      },
+      async ({
+        mapPath,
+        sourceMapPath,
+        expectedMapRevision,
+        expectedDependencyRevisions,
+        expectedSourceMapRevision,
+        offsetX,
+        offsetY,
+      }) =>
+        executeTool(async () => {
+          const plan = await maps.planMergeMap({
+            mapPath,
+            sourceMapPath,
+            expectedMapRevision,
+            expectedDependencyRevisions,
+            ...(expectedSourceMapRevision ===
+            undefined
+              ? {}
+              : { expectedSourceMapRevision }),
+            ...(offsetX === undefined
+              ? {}
+              : { offsetX }),
+            ...(offsetY === undefined
+              ? {}
+              : { offsetY }),
+          });
+          return changeSets.put(plan);
+        }),
+    );
 
   toolRegistrars["tiled_replace_tileset_in_map"] =
     () =>

@@ -41,6 +41,8 @@ import {
 
 export const MAX_PLAN_OPERATIONS = 128;
 export const MAX_CELL_WRITES = 100_000;
+/** Tiles a merge may shift its source by on either axis. */
+export const MAX_MERGE_OFFSET = 1_000_000;
 export const MAX_REGION_CELLS = 20_000;
 export const MAX_LAYER_COUNT = 10_000;
 export const MAX_LAYER_DEPTH = 64;
@@ -536,6 +538,19 @@ export interface AnalyzeUsageInput {
   topTileLimit?: number;
   expectedMapRevision?: string;
   expectedDependencyRevisions?: Record<string, string>;
+}
+
+export interface PlanMergeMapInput {
+  /** The map being merged into. */
+  mapPath: string;
+  /** The map whose tile layers are copied in. Never modified. */
+  sourceMapPath: string;
+  expectedMapRevision: string;
+  expectedDependencyRevisions: Record<string, string>;
+  expectedSourceMapRevision?: string;
+  /** Where the source's origin lands in the destination, in tiles. */
+  offsetX?: number;
+  offsetY?: number;
 }
 
 export interface PlanReplaceTilesetInMapInput {
