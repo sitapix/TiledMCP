@@ -4021,3 +4021,34 @@ export const previewEditsToolOutputSchema =
   toolOutputSchema(
     genericMapEditPreviewOutputSchema,
   );
+
+/**
+ * `tiled_preview_shape` narrowed to the one operation it can emit.
+ *
+ * `MapService.planDrawShape` calls `planEdits` with a hardcoded single-element
+ * `[{ type: "setTiles", ... }]`, and `planEdits` puts a `structuredClone` of
+ * that array straight into the plan, so no other operation kind -- and no
+ * second element -- is reachable. Declaring the full 18-kind union here would
+ * advertise 17 operations the tool cannot produce.
+ *
+ * `summary` deliberately stays on the generic union. Its optional members
+ * (`transcodes`, `chunkedTileLayerIds`, ...) depend on the target layer's
+ * encoding and on whether the map is infinite, and an over-tight schema here
+ * would not fail loudly: `register()` swallows an output mismatch into
+ * `INTERNAL_ERROR`. Narrowing it needs coverage of those cases first.
+ *
+ * `tests/previewShape.test.ts` exercises this over the MCP surface.
+ */
+export const previewShapeToolOutputSchema =
+  toolOutputSchema(
+    z
+      .object({
+        ...mapEditPreviewCommonShape,
+        operations: z.tuple([
+          setTilesOperationPreviewOutputSchema,
+        ]),
+        summary:
+          genericMapEditSummaryOutputSchema,
+      })
+      .strict(),
+  );
