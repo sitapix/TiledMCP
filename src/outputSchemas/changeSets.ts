@@ -1104,6 +1104,41 @@ const deleteObjectsOperationPreviewOutputSchema = z
   })
   .strict();
 
+const replaceTilesetOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("replaceTilesetInMap"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      firstGid: positiveIntegerOutputSchema,
+      from: z
+        .object({
+          tilesetPath: projectPathOutputSchema,
+          assetId: assetIdOutputSchema,
+          tileCount: positiveIntegerOutputSchema,
+          gidSpan: positiveIntegerOutputSchema,
+        })
+        .strict(),
+      to: z
+        .object({
+          tilesetPath: projectPathOutputSchema,
+          source: z.string().min(1),
+          assetId: assetIdOutputSchema,
+          tilesetRevision: revisionOutputSchema,
+          tileCount: positiveIntegerOutputSchema,
+          gidSpan: positiveIntegerOutputSchema,
+        })
+        .strict(),
+      /** `null` when nothing in the map refers to the tileset. */
+      highestReferencedLocalId:
+        nonnegativeIntegerOutputSchema.nullable(),
+      referencedCellCount:
+        nonnegativeIntegerOutputSchema,
+      referencedObjectCount:
+        nonnegativeIntegerOutputSchema,
+    })
+    .strict();
+
 const addTilesetOperationPreviewOutputSchema = z
   .object({
     type: z.literal("addTilesetToMap"),
@@ -1974,6 +2009,67 @@ const addTilesetMapEditPreviewOutputSchema = z
       addTilesetOperationPreviewOutputSchema,
     ]),
     summary: addTilesetSummaryOutputSchema,
+  })
+  .strict();
+
+const replacedTilesetSummaryOutputSchema = z
+  .object({
+    firstGid: positiveIntegerOutputSchema,
+    from: z
+      .object({
+        tilesetPath: projectPathOutputSchema,
+        source: z.string().min(1),
+        assetId: assetIdOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        gidSpan: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    to: z
+      .object({
+        tilesetPath: projectPathOutputSchema,
+        source: z.string().min(1),
+        assetId: assetIdOutputSchema,
+        tilesetRevision: revisionOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        gidSpan: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    highestReferencedLocalId:
+      nonnegativeIntegerOutputSchema.nullable(),
+    referencedCellCount:
+      nonnegativeIntegerOutputSchema,
+    referencedObjectCount:
+      nonnegativeIntegerOutputSchema,
+  })
+  .strict();
+
+const replaceTilesetSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    // No cell is written: the swap moves one `source` member and leaves every
+    // GID exactly where it was.
+    cellWrites: z.literal(0),
+    affectedLayerIds: z.tuple([]),
+    affectedTileLayerIds: z.tuple([]),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+    replacedTilesets: z.tuple([
+      replacedTilesetSummaryOutputSchema,
+    ]),
+  })
+  .strict();
+
+const replaceTilesetMapEditPreviewOutputSchema = z
+  .object({
+    ...mapEditPreviewCommonShape,
+    prospectiveDependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    operations: z.tuple([
+      replaceTilesetOperationPreviewOutputSchema,
+    ]),
+    summary: replaceTilesetSummaryOutputSchema,
   })
   .strict();
 
@@ -2880,6 +2976,11 @@ export const preparedCheckpointAbandonPreviewToolOutputSchema =
 export const addTilesetPreviewToolOutputSchema =
   toolOutputSchema(
     addTilesetMapEditPreviewOutputSchema,
+  );
+
+export const replaceTilesetPreviewToolOutputSchema =
+  toolOutputSchema(
+    replaceTilesetMapEditPreviewOutputSchema,
   );
 
 const tilePatchFieldOutputSchema = z.enum([

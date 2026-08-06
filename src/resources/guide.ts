@@ -455,6 +455,37 @@ the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
 object-layer, font, tile-image, antialiased curve styling, and collision
 rendering.
 
+## Swap the art a map is drawn with
+
+\`tiled_replace_tileset_in_map\` repoints one bound external tileset at a
+different TSJ and keeps its \`firstgid\`. Every GID keeps its value and its
+slot, so no cell is rewritten -- each one simply now shows the tile at the same
+local id in the replacement. That is what makes retargeting greybox art to
+final art a one-operation change rather than a repaint.
+
+Remove-and-re-add cannot stand in for it: \`removeTilesetFromMap\` refuses any
+tileset a cell still references, so the only route without this tool is to
+clear every referring cell first.
+
+1. \`tiled_get_map_summary\` -- keep the map \`revision\`, the complete
+   \`dependencyRevisions\`, and the \`assetId\` of the tileset to repoint.
+2. \`tiled_replace_tileset_in_map\` with that \`tilesetAssetId\` and the
+   replacement's \`tilesetPath\`.
+3. Read the preview before approving. It reports
+   \`highestReferencedLocalId\` and the cell and object reference counts, which
+   is what tells you how much of the map the swap actually reinterprets.
+4. \`tiled_apply_change_set\`.
+
+It fails closed when a local id still in use does not exist in the replacement,
+and when the replacement's GID span would overlap the tileset bound after it.
+A smaller replacement is allowed only while nothing refers to the tiles it
+drops.
+
+What it does **not** check is whether the two tilesets are laid out alike. Two
+tilesets with matching tile counts and unrelated orderings will swap cleanly
+and silently remap the whole map. Render both with
+\`tiled_render_tileset_sheet\` and compare before approving.
+
 ## Attach an existing tileset safely
 
 \`tiled_add_tileset_to_map\` prepares a proposal for attaching one existing

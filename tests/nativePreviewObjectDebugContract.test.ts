@@ -509,7 +509,10 @@ describe("native preview object debug server contract", () => {
     // A literal, so growing the core surface stays a conscious edit.
     // 55 since terrain painting became core: corners match natively, so
     // `tiled_preview_terrain` no longer needs a local Tiled CLI.
-    expect(registeredTools).toHaveLength(55);
+    // 56 since `tiled_replace_tileset_in_map`: repointing a bound tileset
+    // could not be expressed by removing and re-adding, because removal
+    // refuses any tileset a cell still references.
+    expect(registeredTools).toHaveLength(56);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

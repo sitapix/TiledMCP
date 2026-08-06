@@ -191,6 +191,7 @@ import {
 } from "./outputSchemas/common.js";
 import {
   addTilesetPreviewToolOutputSchema,
+  replaceTilesetPreviewToolOutputSchema,
   checkpointPruneBatchPreviewToolOutputSchema,
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
@@ -1780,6 +1781,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_create_tileset",
     "tiled_delete_file",
     "tiled_add_tileset_to_map",
+    "tiled_replace_tileset_in_map",
     "tiled_update_tile",
     "tiled_update_tileset",
     "tiled_update_wangsets",
@@ -5008,6 +5010,60 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         return changeSets.put(plan);
       }),
   );
+
+  toolRegistrars["tiled_replace_tileset_in_map"] =
+    () =>
+      register(
+        server,
+        registeredTools,
+        "tiled_replace_tileset_in_map",
+        {
+          title:
+            "Preview repointing a tileset reference",
+          description:
+            "Repoints one currently bound external tileset at a different project-local atlas TSJ, keeping its firstgid, and returns an expiring map change set without modifying project assets. Use this to change the art a finished map is drawn with: every GID keeps its value and its slot, so no cell is rewritten and each one now shows the tile at the same local id in the replacement. Removing and re-adding cannot do this — removal refuses any tileset a cell still references. Fails closed when a local id still in use does not exist in the replacement, and when the replacement's GID span would overlap the tileset bound after it; a smaller replacement is allowed only while nothing refers to the tiles it drops. The two tilesets are not compared for visual similarity, so a replacement laid out differently silently remaps every cell — read both before approving.",
+          inputSchema: z
+            .object({
+              mapPath: projectPathSchema,
+              tilesetAssetId: z
+                .string()
+                .regex(/^asset_[0-9a-f]{24}$/u),
+              tilesetPath: projectPathSchema,
+              expectedMapRevision: revisionSchema,
+              expectedDependencyRevisions:
+                dependencyRevisionsSchema,
+              expectedTilesetRevision:
+                revisionSchema.optional(),
+            })
+            .strict(),
+          outputSchema:
+            replaceTilesetPreviewToolOutputSchema,
+          annotations: PREVIEW_ONLY,
+        },
+        async ({
+          mapPath,
+          tilesetAssetId,
+          tilesetPath,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+          expectedTilesetRevision,
+        }) =>
+          executeTool(async () => {
+            const plan =
+              await maps.planReplaceTilesetInMap({
+                mapPath,
+                tilesetAssetId,
+                tilesetPath,
+                expectedMapRevision,
+                expectedDependencyRevisions,
+                ...(expectedTilesetRevision ===
+                undefined
+                  ? {}
+                  : { expectedTilesetRevision }),
+              });
+            return changeSets.put(plan);
+          }),
+      );
 
   toolRegistrars["tiled_update_tile"] = () =>
   register(

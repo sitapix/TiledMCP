@@ -433,6 +433,21 @@
       "purpose": "pin 住已有依赖和候选 TSJ 后预览新增外部 tileset binding。"
     },
     {
+      "name": "tiled_replace_tileset_in_map",
+      "profile": "core",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "tilesetPath": "tiles/final.tsj",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedDependencyRevisions": {
+          "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "expectedTilesetRevision": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "purpose": "把已绑定的图块集原地指向另一个 TSJ：firstgid 不动，地图中每个 GID 原样保留，用于把占位美术换成最终美术。"
+    },
+    {
       "name": "tiled_update_tile",
       "profile": "core",
       "arguments": {
