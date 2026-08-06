@@ -1036,6 +1036,24 @@ orthogonal TMJ. It supports \`tilelayer\`, \`objectgroup\`,
    pin, then obtain client approval and call \`tiled_apply_change_set\`.
 5. Re-read the map summary before using the new numeric layer ID.
 
+### Tracing over a reference image
+
+Dropping an image in and building on top of it is an \`imagelayer\` plus tile
+layers above it. Two things about that workflow are worth knowing before you
+start rather than after:
+
+- \`tiled_get_map_summary\` reports an image layer's \`image.path\` (plus
+  \`repeatX\`/\`repeatY\` and its \`x\`/\`y\` offset), so you can find out what an
+  existing layer references. There is no revision on it: image-layer images
+  are not part of the map's dependency set, so nothing is pinned to report.
+- \`tiled_render_preview\` **does not draw image layers.** It is a tile-layer
+  renderer. It does not hide this -- the result carries \`partial: true\` and an
+  \`omittedLayers\` entry with \`reason: "unsupported-layer-type"\` -- but a
+  preview that looks empty is usually this, not a failed edit. To actually see
+  the reference, use \`tiled_render_map\`, which drives Tiled's own
+  TmxRasterizer and composites image layers. That tool is registered only when
+  a local Tiled install is detected, so check \`tiled_get_capabilities\` first.
+
 Tile layers inherit the finite map dimensions and start filled with GID zero.
 The server advances the existing \`nextlayerid\`; it never fills an ID gap
 or silently repairs a stale counter.

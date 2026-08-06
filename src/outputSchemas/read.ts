@@ -365,10 +365,28 @@ const mapLayerOutputSchema: z.ZodType = z.lazy(
       z
         .object({
           ...mapLayerCommonShape,
-          type: z.enum([
-            "objectgroup",
-            "imagelayer",
-          ]),
+          type: z.literal("objectgroup"),
+        })
+        .strict(),
+      z
+        .object({
+          ...mapLayerCommonShape,
+          type: z.literal("imagelayer"),
+          /**
+           * The referenced image, absent only when the layer declares none.
+           * Path without a revision: image-layer images are not part of the
+           * map's dependency set, so there is nothing pinned to report.
+           */
+          image: z
+            .object({
+              path: projectPathOutputSchema,
+            })
+            .strict()
+            .optional(),
+          repeatX: z.literal(true).optional(),
+          repeatY: z.literal(true).optional(),
+          x: integerOutputSchema,
+          y: integerOutputSchema,
         })
         .strict(),
     ]),

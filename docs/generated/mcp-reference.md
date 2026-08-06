@@ -260,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:589274ecc9468aeae00fe6bad953be6d7da0747b636b43353bfe84b0f14899d0",
+    "revision": "sha256:152a1c299849b61d92a53eb43f122ce95019999eca0f68663a195cedef9a71cc",
     "serverVersion": "0.0.1",
-    "size": 108705
+    "size": 109748
   },
   "annotations": {
     "audience": [
@@ -274,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 108705,
+  "size": 109748,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -282,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 108705 UTF-8 bytes, revision `sha256:589274ecc9468aeae00fe6bad953be6d7da0747b636b43353bfe84b0f14899d0`.
+Content contract: `text`, 109748 UTF-8 bytes, revision `sha256:152a1c299849b61d92a53eb43f122ce95019999eca0f68663a195cedef9a71cc`.
 
 Resource templates: none.
 
@@ -16705,10 +16705,7 @@ Output schema:
               "type": "number"
             },
             "type": {
-              "enum": [
-                "objectgroup",
-                "imagelayer"
-              ],
+              "const": "objectgroup",
               "type": "string"
             },
             "visible": {
@@ -16721,6 +16718,74 @@ Output schema:
             "visible",
             "opacity",
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "image": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "nameTruncated": {
+              "const": true,
+              "type": "boolean"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "repeatX": {
+              "const": true,
+              "type": "boolean"
+            },
+            "repeatY": {
+              "const": true,
+              "type": "boolean"
+            },
+            "type": {
+              "const": "imagelayer",
+              "type": "string"
+            },
+            "visible": {
+              "type": "boolean"
+            },
+            "x": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "visible",
+            "opacity",
+            "type",
+            "x",
+            "y"
           ],
           "type": "object"
         }

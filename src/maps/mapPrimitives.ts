@@ -3860,6 +3860,36 @@ export function collectLayerSummaries(
         `${context}[${index}].y`,
       );
     }
+    if (layerType === "imagelayer") {
+      // The image an image layer points at is the whole reason it exists --
+      // it is the reference someone traces over. Reporting the layer without
+      // it left a caller able to see that a "Reference" layer was there but
+      // not what it referenced, and no other read exposed it either.
+      //
+      // Path only, deliberately. A revision would have to be hashed from the
+      // file, and image-layer images are not part of the map's dependency
+      // set, so pinning one here would put fresh I/O on every summary read
+      // and imply a guarantee the rest of the pipeline does not make.
+      // `repeatX`/`repeatY` travel with it because they change what the
+      // reference looks like when it is drawn.
+      if (typeof layer.image === "string") {
+        summary.image = { path: layer.image };
+      }
+      if (layer.repeatx === true) {
+        summary.repeatX = true;
+      }
+      if (layer.repeaty === true) {
+        summary.repeatY = true;
+      }
+      summary.x = expectInteger(
+        layer.x ?? 0,
+        `${context}[${index}].x`,
+      );
+      summary.y = expectInteger(
+        layer.y ?? 0,
+        `${context}[${index}].y`,
+      );
+    }
     if (layerType === "group") {
       summary.layers = collectLayerSummaries(
         expectArray(
