@@ -601,7 +601,7 @@ dependency revisions 记录结果。公开的 dependency map 只包含外部 TSJ
 
 不同失败/诊断表面不能共用一个枚举：
 
-| 表面 | 客户端处理 | 属于 101-code application registry |
+| 表面 | 客户端处理 | 属于 v1 application registry |
 |---|---|---|
 | MCP SDK input error | handler 尚未运行；读取 SDK-owned text-only error，不期待 `structuredContent` | 否 |
 | Tool application error | 确认 `isError: true`，读取 `structuredContent.result.error.code` | 是 |

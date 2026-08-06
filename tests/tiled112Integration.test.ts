@@ -11,6 +11,8 @@ import {
   stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
+import { MapService } from "../src/maps/mapService.js";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -23,9 +25,7 @@ import {
   it,
 } from "vitest";
 
-import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -226,9 +226,9 @@ describe.skipIf(skipOptionalGate)(
           serviceDirectory,
         );
       const service = new MapService(
-        resolver,
-        new DocumentStore(resolver),
-      );
+      resolver,
+      makeStore(resolver),
+    );
       await service.createMap({
         mapPath: "created.tmj",
         width: 4,

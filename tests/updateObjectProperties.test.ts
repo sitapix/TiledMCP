@@ -1,4 +1,9 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -29,8 +34,6 @@ import type {
   MapEditOperation,
   MapEditPlan,
 } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -814,7 +817,7 @@ describe("map object property editing", () => {
     ).toHaveLength(128);
   });
 
-  it("round-trips edited object properties through the Tiled CLI", async () => {
+  it.skipIf(!hasTiledCli)("round-trips edited object properties through the Tiled CLI", async () => {
     const harness = await createHarness(roots);
 
     const edit = await plan(harness.service, [
@@ -846,32 +849,25 @@ describe("map object property editing", () => {
       "maps",
       "roundtrip.tmj",
     );
-    try {
-      await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
-        [
-          "--export-map",
-          "json",
-          join(harness.root, MAP_PATH),
-          outputPath,
-        ],
-        {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
-          timeout: 30_000,
-          maxBuffer: 1024 * 1024,
+    await execFileAsync(
+      TILED_CLI_PATH,
+      [
+        "--export-map",
+        "json",
+        join(harness.root, MAP_PATH),
+        outputPath,
+      ],
+      {
+        env: {
+          ...process.env,
+          LANG: "C",
+          LC_ALL: "C",
+          QT_QPA_PLATFORM: "offscreen",
         },
-      );
-    } catch (error) {
-      if (hasErrorCode(error, "ENOENT")) {
-        return;
-      }
-      throw error;
-    }
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     const exported = JSON.parse(
       await readFile(outputPath, "utf8"),
@@ -999,12 +995,11 @@ async function createHarness(
     "utf8",
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 
@@ -1166,17 +1161,5 @@ async function writeJson(
   await writeFile(
     path,
     serializeJsonDocument(document),
-  );
-}
-
-function hasErrorCode(
-  error: unknown,
-  code: string,
-): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
   );
 }

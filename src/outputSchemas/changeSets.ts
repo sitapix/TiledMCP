@@ -31,6 +31,7 @@ import {
   MAX_TILE_PROPERTY_SETS_PER_TILE,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
 } from "../maps/tilesetEdits.js";
+import { TILESET_PROPERTY_PATCH_FIELDS } from "../maps/tilesetProperties.js";
 import { MAX_TILESET_WANG_COLORS_PER_SET } from "../maps/tilesetDetails.js";
 import {
   MAX_WANG_ASSIGNMENTS_PER_OPERATION,
@@ -3598,6 +3599,82 @@ const wangEditPreviewOutputSchema = z
 export const wangEditPreviewToolOutputSchema =
   toolOutputSchema(wangEditPreviewOutputSchema);
 
+const tilesetPropertyFieldOutputSchema = z.enum([
+  ...TILESET_PROPERTY_PATCH_FIELDS,
+]);
+
+const tilesetPropertyEditSummaryOutputSchema = z
+  .object({
+    requestedFields: z
+      .array(tilesetPropertyFieldOutputSchema)
+      .min(1)
+      .max(TILESET_PROPERTY_PATCH_FIELDS.length),
+    changedFields: z
+      .array(tilesetPropertyFieldOutputSchema)
+      .max(TILESET_PROPERTY_PATCH_FIELDS.length),
+    propertiesSet:
+      nonnegativeIntegerOutputSchema.optional(),
+    propertiesRemoved:
+      nonnegativeIntegerOutputSchema.optional(),
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const tilesetPropertyEditOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("updateTileset"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      requestedFields: z
+        .array(tilesetPropertyFieldOutputSchema)
+        .min(1)
+        .max(
+          TILESET_PROPERTY_PATCH_FIELDS.length,
+        ),
+      changedFields: z
+        .array(tilesetPropertyFieldOutputSchema)
+        .max(
+          TILESET_PROPERTY_PATCH_FIELDS.length,
+        ),
+      propertiesSet:
+        nonnegativeIntegerOutputSchema.optional(),
+      propertiesRemoved:
+        nonnegativeIntegerOutputSchema.optional(),
+      wouldChange: z.boolean(),
+    })
+    .strict();
+
+const tilesetPropertyEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("tilesetPropertyEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    mapPath: projectPathOutputSchema,
+    tilesetPath: projectPathOutputSchema,
+    assetId: assetIdOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    mapRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        tilesetPropertyEditOperationPreviewOutputSchema,
+      )
+      .length(1),
+    summary:
+      tilesetPropertyEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const tilesetPropertyEditPreviewToolOutputSchema =
+  toolOutputSchema(
+    tilesetPropertyEditPreviewOutputSchema,
+  );
+
 const fileExportSummaryOutputSchema = z
   .object({
     sourcePath: projectPathOutputSchema,
@@ -3842,4 +3919,37 @@ export const createLayerPreviewToolOutputSchema =
 export const previewEditsToolOutputSchema =
   toolOutputSchema(
     genericMapEditPreviewOutputSchema,
+  );
+
+/**
+ * The advertised projection of a map-edit preview.
+ *
+ * Every tool that returns a map-edit change set is still *validated* against
+ * the exhaustive schema above -- `register()` in `server.ts` parses each
+ * response with the closed union and degrades a mismatch to `INTERNAL_ERROR`.
+ * This is only what those tools *declare*.
+ *
+ * The distinction pays for itself: enumerating all twenty operation variants
+ * with their nested object, shape and text schemas costs ~73 KB, nine tools
+ * return exactly that value, and MCP has no way to share one definition
+ * between tool definitions. A client gains nothing from the enumeration that
+ * it cannot read off the plan it was handed, so the plan is declared
+ * structurally -- `operations` stays present, ordered and bounded, and each
+ * entry still announces its `type`.
+ */
+const advertisedMapEditPreviewOutputSchema = z
+  .object({
+    ...mapEditPreviewCommonShape,
+    operations: z
+      .array(
+        z.looseObject({ type: z.string() }),
+      )
+      .min(1)
+      .max(128),
+  })
+  .strict();
+
+export const advertisedMapEditPreviewToolOutputSchema =
+  toolOutputSchema(
+    advertisedMapEditPreviewOutputSchema,
   );

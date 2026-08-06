@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
 import {
   mkdir,
   mkdtemp,
@@ -18,8 +19,6 @@ import {
   type JsonObject,
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -796,12 +795,11 @@ async function createHarness(
     "utf8",
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 

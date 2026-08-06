@@ -1,5 +1,9 @@
-import { existsSync } from "node:fs";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
 import { promisify } from "node:util";
 import {
   mkdir,
@@ -26,11 +30,11 @@ import {
   serializeTsxTileset,
   serializeTxTemplate,
 } from "../src/maps/tmxWrite.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/level.tmj";
-const REAL_TILED = "/usr/bin/tiled";
+// Resolved from TILED_CLI_PATH/PATH rather than a hardcoded Linux path,
+// which made these permanently skip on macOS regardless of the install.
+const REAL_TILED = TILED_CLI_PATH;
 
 /**
  * Golden bytes produced by `tiled --export-map tmx` from Tiled 1.12.2
@@ -430,13 +434,8 @@ b</property>
           ],
         }),
       );
-      const resolver =
-        await ProjectPathResolver.create(root);
-      const store = new DocumentStore(resolver);
-      const service = new MapService(
-        resolver,
-        store,
-      );
+      const { service } =
+        await wireProject(root);
       const summary = (await service.getSummary(
         MAP_PATH,
       )) as { revision: string };
@@ -716,7 +715,7 @@ describe("native TMX write via change sets", () => {
     });
   });
 
-  it.runIf(existsSync(REAL_TILED))(
+  it.skipIf(!hasTiledCli)(
     "matches the real Tiled CLI export byte for byte",
     { timeout: 60_000 },
     async () => {
@@ -881,7 +880,7 @@ describe("native TSX serialization and write", () => {
     ).toBe(GOLDEN_TSX);
   });
 
-  it.runIf(existsSync(REAL_TILED))(
+  it.skipIf(!hasTiledCli)(
     "matches the real Tiled CLI tileset export byte for byte",
     { timeout: 60_000 },
     async () => {
@@ -1024,13 +1023,8 @@ describe("native TX template serialization and write", () => {
       join(root, "templates/crate.tj"),
       serializeJsonDocument(template()),
     );
-    const resolver =
-      await ProjectPathResolver.create(root);
-    const store = new DocumentStore(resolver);
-    const service = new MapService(
-      resolver,
-      store,
-    );
+    const { store, service } =
+      await wireProject(root);
     const revision = (
       await store.read("templates/crate.tj")
     ).revision;
@@ -1116,10 +1110,8 @@ async function createHarness(
     join(root, MAP_PATH),
     serializeJsonDocument(goldenMap()),
   );
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  const service = new MapService(resolver, store);
+  const { service } =
+    await wireProject(root);
   const summary = (await service.getSummary(
     MAP_PATH,
   )) as { revision: string };

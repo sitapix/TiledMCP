@@ -1,4 +1,9 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -29,8 +34,6 @@ import type {
   TileRef,
   UpdateLayerOperation,
 } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -845,7 +848,7 @@ describe("updateLayer", () => {
     );
   });
 
-  it("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
+  it.skipIf(!hasTiledCli)("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
     const harness = await createHarness(roots);
     const edit = await plan(harness.service, [
       {
@@ -869,32 +872,25 @@ describe("updateLayer", () => {
       "maps",
       "roundtrip.tmj",
     );
-    try {
-      await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
-        [
-          "--export-map",
-          "json",
-          inputPath,
-          outputPath,
-        ],
-        {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
-          timeout: 30_000,
-          maxBuffer: 1024 * 1024,
+    await execFileAsync(
+      TILED_CLI_PATH,
+      [
+        "--export-map",
+        "json",
+        inputPath,
+        outputPath,
+      ],
+      {
+        env: {
+          ...process.env,
+          LANG: "C",
+          LC_ALL: "C",
+          QT_QPA_PLATFORM: "offscreen",
         },
-      );
-    } catch (error) {
-      if (hasErrorCode(error, "ENOENT")) {
-        return;
-      }
-      throw error;
-    }
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     const exported = JSON.parse(
       await readFile(outputPath, "utf8"),
@@ -946,12 +942,11 @@ async function createHarness(
     "utf8",
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 
@@ -1181,17 +1176,5 @@ function sourceValueAt(
   return body.slice(
     node.offset,
     node.offset + node.length,
-  );
-}
-
-function hasErrorCode(
-  value: unknown,
-  code: string,
-): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    (value as { code?: unknown }).code === code
   );
 }

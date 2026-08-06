@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { makeStore, wireProject } from "./support/project.js";
 import {
   mkdir,
   mkdtemp,
@@ -74,9 +75,7 @@ describe("prepared checkpoint discard planning and application", () => {
       ),
     );
     await mkdir(join(root, "maps"));
-    resolver =
-      await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ resolver, store } = await wireProject(root));
   });
 
   afterEach(async () => {
@@ -1071,12 +1070,7 @@ describe("prepared checkpoint discard planning and application", () => {
       objectPath(root, orphanHash),
       orphan,
     );
-    const constrained = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      { maxEntries: 1 },
-    );
+    const constrained = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: { maxEntries: 1 } });
     const plan =
       await planPreparedCheckpointDiscard(
         constrained,
@@ -1127,11 +1121,7 @@ describe("prepared checkpoint discard planning and application", () => {
 
   it("returns a successful discard with a fixed warning when the post-unlink observer fails", async () => {
     const observedIds: string[] = [];
-    const faultingStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faultingStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterManifestDeletedBeforeGarbageCollection({
             checkpointId,
@@ -1142,8 +1132,7 @@ describe("prepared checkpoint discard planning and application", () => {
             );
           },
         },
-      },
-    );
+      } });
     const prepared =
       await prepareExistingCheckpoint(
         faultingStore,
@@ -1209,11 +1198,7 @@ describe("prepared checkpoint discard planning and application", () => {
         ".tiledmcp/locks",
       );
     let changedLockCount = 0;
-    const releaseFaultStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const releaseFaultStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           async afterManifestDeletedBeforeGarbageCollection() {
             const lockNames = (
@@ -1244,8 +1229,7 @@ describe("prepared checkpoint discard planning and application", () => {
             }
           },
         },
-      },
-    );
+      } });
     const prepared =
       await prepareExistingCheckpoint(
         releaseFaultStore,

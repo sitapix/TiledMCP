@@ -6,6 +6,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import {
@@ -53,7 +54,7 @@ describe("DocumentStore rolling checkpoint retention", () => {
   });
 
   it("preserves the existing wire shape when retention is disabled", async () => {
-    const store = new DocumentStore(resolver);
+    const store = makeStore(resolver);
     const initial = documentBytes(0);
     const target = join(
       root,
@@ -647,12 +648,7 @@ describe("DocumentStore rolling checkpoint retention", () => {
   function retentionStore(
     retainCommittedPerTarget: number,
   ): DocumentStore {
-    return new DocumentStore(
-      resolver,
-      undefined,
-      undefined,
-      { retainCommittedPerTarget },
-    );
+    return makeStore(resolver, { checkpointOptions: { retainCommittedPerTarget } });
   }
 });
 

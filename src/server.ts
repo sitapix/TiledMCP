@@ -191,6 +191,7 @@ import {
 } from "./outputSchemas/common.js";
 import {
   addTilesetPreviewToolOutputSchema,
+  advertisedMapEditPreviewToolOutputSchema,
   checkpointPruneBatchPreviewToolOutputSchema,
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
@@ -204,6 +205,7 @@ import {
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
+  tilesetPropertyEditPreviewToolOutputSchema,
   fileExportPreviewToolOutputSchema,
   propertyTypeEditPreviewToolOutputSchema,
   tileNameEditPreviewToolOutputSchema,
@@ -215,6 +217,21 @@ import {
   MAX_CREATE_TILESET_SPACING,
   MAX_CREATE_TILESET_TILE_EDGE,
 } from "./maps/tilesetCreate.js";
+import {
+  MAX_COORDINATE_CONVERSIONS,
+  MAX_COORDINATE_MAGNITUDE,
+} from "./maps/coordinates.js";
+import {
+  MAX_TILESET_CLASS_NAME_CODE_POINTS,
+  MAX_TILESET_GRID_EDGE,
+  MAX_TILESET_NAME_CODE_POINTS,
+  MAX_TILESET_OFFSET,
+  TILESET_FILL_MODES,
+  TILESET_GRID_ORIENTATIONS,
+  TILESET_OBJECT_ALIGNMENTS,
+  TILESET_RENDER_SIZES,
+  type TilesetPropertyPatch,
+} from "./maps/tilesetProperties.js";
 import { MAX_WORLD_EDIT_OPERATIONS } from "./maps/worldRead.js";
 import {
   MAX_DELETE_REFERENCE_SCAN_ASSETS,
@@ -282,6 +299,7 @@ import {
   tilesetDetailToolOutputSchema,
   usageAnalysisToolOutputSchema,
   connectivityToolOutputSchema,
+  coordinateToolOutputSchema,
 } from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
@@ -297,6 +315,7 @@ import {
   GUIDE_RESOURCE_URI,
   registerGuideResource,
 } from "./resources/guide.js";
+import { TILED_MCP_SERVER_INSTRUCTIONS } from "./resources/instructions.js";
 import {
   DEFAULT_RASTER_RENDER_EDGE,
   MAX_RASTER_INPUT_AGGREGATE_BYTES,
@@ -309,28 +328,23 @@ import {
   RASTER_RENDER_PROFILE,
   RASTER_SNAPSHOT_CONSISTENCY,
 } from "./rasterContract.js";
+import { applyChangeSetPlan } from "./planKinds.js";
 import {
-  applyCheckpointPruneBatch,
   CHECKPOINT_PRUNE_BATCH_GARBAGE_COLLECTION,
   MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
   planCheckpointPruneBatch,
 } from "./storage/checkpointBatchPrune.js";
 import {
-  applyCheckpointPrune,
   planCheckpointPrune,
 } from "./storage/checkpointPrune.js";
 import {
-  applyCheckpointRestore,
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
 import {
-  applyPreparedCheckpointDiscard,
   planPreparedCheckpointDiscard,
 } from "./storage/preparedCheckpointDiscard.js";
 import {
-  applyPreparedCheckpointAbandon,
-  applyPreparedCheckpointCommit,
   planPreparedCheckpointAbandon,
   planPreparedCheckpointCommit,
 } from "./storage/preparedCheckpointAdjudication.js";
@@ -414,6 +428,20 @@ const safeIntegerSchema = z
   .min(Number.MIN_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
 const positiveSafeIntegerSchema = safeIntegerSchema.min(1);
+const coordinateSpaceSchema = z
+  .enum(["tile", "screen", "pixel"])
+  .describe(
+    "tile = whole/fractional cell indices; screen = rendered pixel position; pixel = the space object x/y live in",
+  );
+/**
+ * Ordinates are fractional on purpose -- a screen point mid-tile is the normal
+ * input -- so this bounds magnitude rather than requiring integers.
+ */
+const coordinateOrdinateSchema = z
+  .number()
+  .finite()
+  .min(-MAX_COORDINATE_MAGNITUDE)
+  .max(MAX_COORDINATE_MAGNITUDE);
 const nativePreviewHighlightRectInputSchema = z
   .object({
     x: z
@@ -1552,6 +1580,93 @@ const tileMetadataPatchSchema = z
     },
   );
 
+/**
+ * Tileset-level members. Everything but `name` and `properties` is nullable,
+ * because removing the member and setting it to Tiled's default value are
+ * distinguishable in the file and so must be distinguishable here.
+ */
+const tilesetPropertyPatchSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(MAX_TILESET_NAME_CODE_POINTS)
+      .optional(),
+    className: z
+      .string()
+      .min(1)
+      .max(MAX_TILESET_CLASS_NAME_CODE_POINTS)
+      .nullable()
+      .optional(),
+    tileOffset: z
+      .object({
+        x: z
+          .number()
+          .int()
+          .min(-MAX_TILESET_OFFSET)
+          .max(MAX_TILESET_OFFSET),
+        y: z
+          .number()
+          .int()
+          .min(-MAX_TILESET_OFFSET)
+          .max(MAX_TILESET_OFFSET),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    objectAlignment: z
+      .enum([...TILESET_OBJECT_ALIGNMENTS])
+      .nullable()
+      .optional(),
+    tileRenderSize: z
+      .enum([...TILESET_RENDER_SIZES])
+      .nullable()
+      .optional(),
+    fillMode: z
+      .enum([...TILESET_FILL_MODES])
+      .nullable()
+      .optional(),
+    transformations: z
+      .object({
+        hFlip: z.boolean(),
+        vFlip: z.boolean(),
+        rotate: z.boolean(),
+        preferUntransformed: z.boolean(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    grid: z
+      .object({
+        orientation: z.enum([
+          ...TILESET_GRID_ORIENTATIONS,
+        ]),
+        width: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        height: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    properties:
+      tilePropertiesPatchSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (patch) => Object.keys(patch).length > 0,
+    {
+      message:
+        "Tileset patch must contain at least one field",
+    },
+  );
+
 const tileMetadataUpdateSchema = z.union([
   z
     .object({
@@ -1639,11 +1754,13 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_validate",
     "tiled_analyze_usage",
     "tiled_check_connectivity",
+    "tiled_convert_coordinates",
     "tiled_create_map",
     "tiled_create_tileset",
     "tiled_delete_file",
     "tiled_add_tileset_to_map",
     "tiled_update_tile",
+    "tiled_update_tileset",
     "tiled_update_wangsets",
     "tiled_create_layer",
     "tiled_preview_edits",
@@ -1671,6 +1788,11 @@ export const TILED_MCP_OPTIONAL_TOOL_NAMES =
     "tiled_preview_export",
     "tiled_preview_terrain",
   ] as const);
+/** Every tool name this server may advertise, core or CLI-gated. */
+export type AdvertisedToolName =
+  | (typeof TILED_MCP_CORE_TOOL_NAMES)[number]
+  | (typeof TILED_MCP_OPTIONAL_TOOL_NAMES)[number];
+
 const capabilityIssueOutputSchema = z
   .object({
     code: z.enum(
@@ -1879,7 +2001,11 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const renderMutex = new KeyedMutex();
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {} },
+      instructions:
+        TILED_MCP_SERVER_INSTRUCTIONS,
+    },
   );
   const registeredTools: string[] = [];
 
@@ -3299,6 +3425,21 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
     );
 
+  /**
+   * Registrars keyed by tool name.
+   *
+   * Registration is driven by `advertisedToolNames` below, so the advertised
+   * order IS the registration order by construction. The frozen name list and
+   * the registration sequence can no longer drift apart, which previously was
+   * only caught by a runtime comparison after every tool had been registered.
+   * Optional tools define a registrar only when their CLI probe succeeded --
+   * exactly the condition under which they are advertised.
+   */
+  const toolRegistrars: Partial<
+    Record<AdvertisedToolName, () => void>
+  > = {};
+
+  toolRegistrars["tiled_get_capabilities"] = () =>
   register(
     server,
     registeredTools,
@@ -3316,6 +3457,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       toolResult(capabilitiesResult),
   );
 
+  toolRegistrars["tiled_list_files"] = () =>
   register(
     server,
     registeredTools,
@@ -3331,6 +3473,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ limit }) => executeTool(() => resolver.listAssets(limit)),
   );
 
+  toolRegistrars["tiled_list_world_maps"] = () =>
   register(
     server,
     registeredTools,
@@ -3361,6 +3504,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   );
 
 
+  toolRegistrars["tiled_list_property_types"] = () =>
   register(
     server,
     registeredTools,
@@ -3384,6 +3528,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_list_checkpoints"] = () =>
   register(
     server,
     registeredTools,
@@ -3413,6 +3558,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_create_checkpoint"] = () =>
   register(
     server,
     registeredTools,
@@ -3500,6 +3646,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_discard"] = () =>
   register(
     server,
     registeredTools,
@@ -3532,6 +3679,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_commit"] = () =>
   register(
     server,
     registeredTools,
@@ -3564,6 +3712,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_abandon"] = () =>
   register(
     server,
     registeredTools,
@@ -3596,6 +3745,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_prune"] = () =>
   register(
     server,
     registeredTools,
@@ -3626,6 +3776,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_prune_batch"] = () =>
   register(
     server,
     registeredTools,
@@ -3669,6 +3820,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_restore"] = () =>
   register(
     server,
     registeredTools,
@@ -3701,6 +3853,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_map_summary"] = () =>
   register(
     server,
     registeredTools,
@@ -3716,6 +3869,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ mapPath }) => executeTool(() => maps.getSummary(mapPath)),
   );
 
+  toolRegistrars["tiled_get_tileset"] = () =>
   register(
     server,
     registeredTools,
@@ -3778,6 +3932,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_find_tiles"] = () =>
   register(
     server,
     registeredTools,
@@ -3836,6 +3991,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_region"] = () =>
   register(
     server,
     registeredTools,
@@ -3860,6 +4016,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async (input) => executeTool(() => maps.getRegion(input)),
   );
 
+  toolRegistrars["tiled_render_tileset_sheet"] = () =>
   register(
     server,
     registeredTools,
@@ -3921,6 +4078,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_tiles"] = () =>
   register(
     server,
     registeredTools,
@@ -4023,6 +4181,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_render_preview"] = () =>
   register(
     server,
     registeredTools,
@@ -4158,6 +4317,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_diff"] = () =>
   register(
     server,
     registeredTools,
@@ -4233,6 +4393,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_isometric"] = () =>
   register(
     server,
     registeredTools,
@@ -4306,6 +4467,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_render_hexagonal"] = () =>
   register(
     server,
     registeredTools,
@@ -4379,6 +4541,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_list_objects"] = () =>
   register(
     server,
     registeredTools,
@@ -4407,6 +4570,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_object"] = () =>
   register(
     server,
     registeredTools,
@@ -4433,6 +4597,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_validate"] = () =>
   register(
     server,
     registeredTools,
@@ -4449,6 +4614,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ mapPath }) => executeTool(() => maps.validate(mapPath)),
   );
 
+  toolRegistrars["tiled_analyze_usage"] = () =>
   register(
     server,
     registeredTools,
@@ -4468,6 +4634,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_check_connectivity"] = () =>
   register(
     server,
     registeredTools,
@@ -4549,6 +4716,55 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_convert_coordinates"] = () =>
+  register(
+    server,
+    registeredTools,
+    "tiled_convert_coordinates",
+    {
+      title: "Convert between tile, screen and pixel coordinates",
+      description:
+        "Read-only batch of the official Tiled 1.12.2 renderer transforms between the three coordinate spaces (tile, screen, pixel) for orthogonal, isometric, staggered and hexagonal maps. Use this instead of deriving placement by hand: the spaces coincide only for orthogonal maps, isometric pixel coordinates are expressed in tile-height units on both axes, and the isometric screen origin is offset by the map height. Each conversion reports the raw transform output plus, when converting into tile space, the whole cell that contains it. The result also declares whether tile space is discrete (hexagonal and staggered snap to the nearest of four hexagon centres, so there is no sub-cell remainder) or continuous, and whether pixel space differs from screen space. Reads only the map header, so it still answers when tilesets are missing or broken.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          conversions: z
+            .array(
+              z
+                .object({
+                  from: coordinateSpaceSchema,
+                  to: coordinateSpaceSchema,
+                  x: coordinateOrdinateSchema,
+                  y: coordinateOrdinateSchema,
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(MAX_COORDINATE_CONVERSIONS),
+        })
+        .strict(),
+      outputSchema: coordinateToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ mapPath, conversions }) =>
+      executeTool(() =>
+        maps.convertCoordinates({
+          mapPath,
+          conversions: conversions.map(
+            (conversion) => ({
+              from: conversion.from,
+              to: conversion.to,
+              point: {
+                x: conversion.x,
+                y: conversion.y,
+              },
+            }),
+          ),
+        }),
+      ),
+  );
+
+  toolRegistrars["tiled_create_map"] = () =>
   register(
     server,
     registeredTools,
@@ -4610,6 +4826,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_create_tileset"] = () =>
   register(
     server,
     registeredTools,
@@ -4691,6 +4908,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_delete_file"] = () =>
   register(
     server,
     registeredTools,
@@ -4717,6 +4935,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_add_tileset_to_map"] = () =>
   register(
     server,
     registeredTools,
@@ -4772,6 +4991,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_update_tile"] = () =>
   register(
     server,
     registeredTools,
@@ -4898,6 +5118,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     })
     .strict();
 
+  toolRegistrars["tiled_update_wangsets"] = () =>
   register(
     server,
     registeredTools,
@@ -5038,6 +5259,51 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_update_tileset"] = () =>
+  register(
+    server,
+    registeredTools,
+    "tiled_update_tileset",
+    {
+      title: "Preview tileset-level property updates",
+      description:
+        "Validates tileset-level presentation and metadata members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, and scalar custom properties — then returns an expiring tilesetPropertyEdit change set without modifying project assets. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          tilesetAssetId: z
+            .string()
+            .regex(/^asset_[0-9a-f]{24}$/u),
+          expectedMapRevision: revisionSchema,
+          expectedTilesetRevision: revisionSchema,
+          patch: tilesetPropertyPatchSchema,
+        })
+        .strict(),
+      outputSchema:
+        tilesetPropertyEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      tilesetAssetId,
+      expectedMapRevision,
+      expectedTilesetRevision,
+      patch,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planTilesetPropertyEdit({
+            mapPath,
+            tilesetAssetId,
+            expectedMapRevision,
+            expectedTilesetRevision,
+            patch: patch as TilesetPropertyPatch,
+          });
+        return changeSets.put(plan);
+      }),
+  );
+
+  toolRegistrars["tiled_create_layer"] = () =>
   register(
     server,
     registeredTools,
@@ -5083,6 +5349,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_edits"] = () =>
   register(
     server,
     registeredTools,
@@ -5194,6 +5461,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         .strict(),
       outputSchema:
         previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5213,6 +5482,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_shape"] = () =>
   register(
     server,
     registeredTools,
@@ -5283,6 +5553,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5313,6 +5585,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_generate"] = () =>
   register(
     server,
     registeredTools,
@@ -5432,6 +5705,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5476,6 +5751,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_scatter"] = () =>
   register(
     server,
     registeredTools,
@@ -5533,6 +5809,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5578,6 +5856,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_import_image"] = () =>
   register(
     server,
     registeredTools,
@@ -5627,6 +5906,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5668,6 +5949,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_prefab"] = () =>
   register(
     server,
     registeredTools,
@@ -5751,6 +6033,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5784,6 +6068,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_template"] = () =>
   register(
     server,
     registeredTools,
@@ -5816,6 +6101,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5844,6 +6131,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tmx"] = () =>
   register(
     server,
     registeredTools,
@@ -5882,6 +6170,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tsx"] = () =>
   register(
     server,
     registeredTools,
@@ -5921,6 +6210,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tx"] = () =>
   register(
     server,
     registeredTools,
@@ -6015,6 +6305,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       .strict(),
   ] as const;
 
+  toolRegistrars["tiled_select"] = () =>
   register(
     server,
     registeredTools,
@@ -6151,6 +6442,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_list_tile_names"] = () =>
   register(
     server,
     registeredTools,
@@ -6168,6 +6460,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       executeTool(() => maps.listTileNames()),
   );
 
+  toolRegistrars["tiled_preview_tile_names"] = () =>
   register(
     server,
     registeredTools,
@@ -6238,6 +6531,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_validation_fixes"] = () =>
   register(
     server,
     registeredTools,
@@ -6256,6 +6550,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
+      advertisedOutputSchema:
+        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6274,6 +6570,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_property_types"] = () =>
   register(
     server,
     registeredTools,
@@ -6424,6 +6721,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_world_edits"] = () =>
   register(
     server,
     registeredTools,
@@ -6500,6 +6798,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_transaction"] = () =>
   register(
     server,
     registeredTools,
@@ -6569,6 +6868,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     return outcome.result;
   };
 
+  toolRegistrars["tiled_apply_change_set"] = () =>
   register(
     server,
     registeredTools,
@@ -6600,95 +6900,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           changeSetId,
           expectedRevision,
           (plan) =>
-            plan.kind === "checkpointRestore"
-              ? applyCheckpointRestore(store, plan)
-              : plan.kind ===
-                  "preparedCheckpointDiscard"
-                ? applyPreparedCheckpointDiscard(
-                    store,
-                    plan,
-                  )
-                : plan.kind ===
-                    "preparedCheckpointCommit"
-                  ? applyPreparedCheckpointCommit(
-                      store,
-                      plan,
-                    )
-                  : plan.kind ===
-                      "preparedCheckpointAbandon"
-                    ? applyPreparedCheckpointAbandon(
-                        store,
-                        plan,
-                      )
-                    : plan.kind ===
-                        "checkpointPrune"
-                      ? applyCheckpointPrune(
-                          store,
-                          plan,
-                        )
-                      : plan.kind ===
-                          "checkpointPruneBatch"
-                        ? applyCheckpointPruneBatch(
-                            store,
-                            plan,
-                          )
-                        : plan.kind ===
-                            "tilesetEdit"
-                          ? maps.applyTilesetEdit(
-                              plan,
-                            )
-                          : plan.kind ===
-                              "tilesetCreate"
-                            ? maps.applyTilesetCreate(
-                                plan,
-                              )
-                            : plan.kind ===
-                                "fileDelete"
-                              ? maps.applyDeleteFile(
-                                  plan,
-                                )
-                              : plan.kind ===
-                                  "transaction"
-                                ? applyTransactionChangeSet(
-                                    plan,
-                                  )
-                                : plan.kind ===
-                                    "worldEdit"
-                                  ? maps.applyWorldEdits(
-                                      plan,
-                                    )
-                                  : plan.kind ===
-                                      "wangEdit"
-                                    ? maps.applyWangsetEdit(
-                                        plan,
-                                      )
-                                    : plan.kind ===
-                                        "fileExport"
-                                      ? maps.applyExportFile(
-                                          plan,
-                                          (options) =>
-                                            cli.exportAsset(
-                                              options,
-                                            ),
-                                        )
-                                      : plan.kind ===
-                                          "embeddedTilesetEdit"
-                                        ? maps.applyEmbeddedTilesetEdit(
-                                            plan,
-                                          )
-                                        : plan.kind ===
-                                            "propertyTypeEdit"
-                                          ? maps.applyPropertyTypeEdit(
-                                              plan,
-                                            )
-                                          : plan.kind ===
-                                              "tileNameEdit"
-                                            ? maps.applyTileNameEdit(
-                                                plan,
-                                              )
-                                            : maps.applyEdits(
-                                                plan,
-                                              ),
+            applyChangeSetPlan(plan, {
+              store,
+              maps,
+              exportAsset: (options) =>
+                cli.exportAsset(options),
+              applyTransaction:
+                applyTransactionChangeSet,
+            }),
         ),
       ),
   );
@@ -6706,6 +6925,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         "Available TmxRasterizer capability is missing its probed version.",
       );
     }
+    toolRegistrars[TILED_MCP_OPTIONAL_TOOL_NAMES[0]] = () =>
     register(
       server,
       registeredTools,
@@ -6802,6 +7022,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   }
 
   if (cliCapabilities.tiled.available) {
+    toolRegistrars["tiled_preview_export"] = () =>
     register(
       server,
       registeredTools,
@@ -6859,6 +7080,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         }),
     );
 
+    toolRegistrars["tiled_preview_terrain"] = () =>
     register(
       server,
       registeredTools,
@@ -6912,6 +7134,8 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           .strict(),
         outputSchema:
           previewEditsToolOutputSchema,
+        advertisedOutputSchema:
+          advertisedMapEditPreviewToolOutputSchema,
         annotations: PREVIEW_ONLY,
       },
       async ({
@@ -6940,6 +7164,16 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           return changeSets.put(plan);
         }),
     );
+  }
+
+  for (const name of advertisedToolNames) {
+    const registrar = toolRegistrars[name];
+    if (registrar === undefined) {
+      throw new Error(
+        `No registrar is defined for advertised tool ${name}.`,
+      );
+    }
+    registrar();
   }
 
   if (
@@ -7004,6 +7238,21 @@ function register<
     description: string;
     inputSchema: InputSchema;
     outputSchema: OutputSchema;
+    /**
+     * What the tool *declares* to clients, when that should differ from what
+     * it is *checked* against. `outputSchema` stays the exhaustive closed
+     * schema and remains the only thing this function validates against, so
+     * the correctness guarantee is unchanged; this is a strictly looser
+     * projection of the same value.
+     *
+     * It exists because the closed 18-kind `ChangeSetPlan` union costs about
+     * 73 KB per tool and nine tools return it, which is ~609 KB of identical
+     * JSON Schema on the wire. MCP has no way to share a definition across
+     * tool definitions, and the SDK converts with Zod's `reused: "inline"`
+     * hardcoded, so `$defs` factoring is not reachable either. Declaring the
+     * plan structurally is.
+     */
+    advertisedOutputSchema?: z.ZodType;
     annotations: ToolAnnotations;
   },
   callback: (
@@ -7036,7 +7285,16 @@ function register<
       return internalToolError();
     }
   }) as unknown as ToolCallback<InputSchema>;
-  server.registerTool(name, config, sdkCallback);
+  const {
+    advertisedOutputSchema,
+    ...advertised
+  } = config;
+  void advertisedOutputSchema;
+  server.registerTool(
+    name,
+    advertised,
+    sdkCallback,
+  );
   registeredTools.push(name);
 }
 

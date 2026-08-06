@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { makeStore } from "./support/project.js";
 import {
   mkdir,
   mkdtemp,
@@ -23,7 +24,6 @@ import type {
   TilesetEditPlan,
 } from "../src/maps/tilesetEdits.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -1241,7 +1241,7 @@ async function createHarness(
     root,
     service: new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     ),
   };
 }

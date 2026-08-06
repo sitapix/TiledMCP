@@ -5,6 +5,7 @@ import {
   rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import {
   dirname,
   join,
@@ -44,7 +45,6 @@ import {
 } from "../src/errors.js";
 import { MapService } from "../src/maps/mapService.js";
 import { applicationErrorResultOutputSchema } from "../src/outputSchemas/common.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
   APPLICATION_ERROR_RESOURCE_META,
   APPLICATION_ERROR_RESOURCE_REVISION,
@@ -55,7 +55,6 @@ import {
   TILED_MCP_OPTIONAL_TOOL_NAMES,
   createTiledMcpServerFromCapabilitySnapshot,
 } from "../src/server.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
 
 const REPOSITORY_ROOT = resolve(
@@ -719,10 +718,9 @@ async function createHarness(
   const root = await mkdtemp(
     join(tmpdir(), "tiledmcp-errors-"),
   );
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  const maps = new MapService(resolver, store);
+  const { resolver, store, service } =
+    await wireProject(root);
+  const maps = service;
   const cli = new TiledCliAdapter({
     tiledCliPath: "contract-tiled",
     rasterizerPath: "contract-tmxrasterizer",

@@ -5,6 +5,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -22,8 +23,6 @@ import {
   MapService,
   MAX_USAGE_SCAN_VALUES,
 } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/usage.tmj";
 const UNUSED_TILESET_PATH = "tiles/unused.tsj";
@@ -490,12 +489,11 @@ async function createHarness(
     Buffer.from("used placeholder", "utf8"),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 

@@ -1,0 +1,64 @@
+/**
+ * The MCP `instructions` field, returned once during initialization.
+ *
+ * This is the only text every client sees before it starts calling tools, so
+ * it carries the rules that make the difference between a safe first call and
+ * a rejected one: the path model, the two-phase write protocol, revision
+ * pinning, and where the authoritative result lives. Everything that is
+ * per-workflow rather than server-wide belongs in the `tiled://guide`
+ * resource instead -- this text is deliberately short enough to keep in
+ * context for a whole session.
+ */
+export const TILED_MCP_SERVER_INSTRUCTIONS = `TiledMCP inspects and edits Tiled map assets (TMJ/TSJ/TMX/TSX/TX) under one
+configured project root.
+
+## Paths and discovery
+
+Every path input is a project-relative POSIX path. Absolute paths and \`..\`
+traversal are rejected. Call \`tiled_get_capabilities\` first: the registered
+tool set varies with the local Tiled CLI, and it also declares renderer limits,
+edit profiles, and the application-error contract.
+
+## Reading results
+
+\`structuredContent.result\` is the authoritative machine-readable value. The
+text block beside it is a bounded one-line summary (at most 1024 bytes) that
+deliberately omits fields; never parse it to recover them.
+
+On failure, branch only on \`structuredContent.result.error.code\`. The
+\`message\` and \`details\` values are for people and have no stable shape.
+Treat an unknown code as a generic failure rather than as success.
+
+## Writing: preview, approve, apply
+
+No project asset changes until you call \`tiled_apply_change_set\`. Planning
+tools validate the whole edit and return an expiring \`changeSetId\`; the
+human-visible plan they return is the approval boundary. Exactly two tools
+write directly without this cycle: \`tiled_create_map\` and
+\`tiled_create_checkpoint\`.
+
+Every write is a compare-and-set. Read the target first (for example with
+\`tiled_get_map_summary\`), then pass its \`revision\` as
+\`expectedMapRevision\` and its complete \`dependencyRevisions\` record as
+\`expectedDependencyRevisions\`. Pass them unchanged and together, from the
+same read. A stale or partial pin fails closed rather than merging.
+
+Never construct or edit raw global IDs. A tile value is a \`TileRef\`
+(\`{"tileset": {"kind": "external", "assetId": "asset_..."}, "localId": 0}\`),
+and \`null\` clears a cell. Preserve transform fields returned by a read unless
+the edit is meant to change them.
+
+## Working effectively
+
+Undefined or unsupported semantics fail closed with a specific code instead of
+being approximated -- an error usually means the input was underspecified, not
+that the operation is impossible.
+
+Use \`tiled_convert_coordinates\` rather than deriving isometric, staggered, or
+hexagonal placement by hand; the projection math is the most common source of
+silently wrong edits.
+
+Render to check your work: \`tiled_render_preview\` for the current state and
+\`tiled_render_diff\` to confirm an applied change did what you intended.
+
+Read the \`tiled://guide\` resource for per-workflow detail.`;

@@ -1,14 +1,12 @@
 import {
-  mkdir,
-  mkdtemp,
   readFile,
   rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createProject, makeStore } from "./support/project.js";
 
 import {
   findNodeAtLocation,
@@ -190,7 +188,7 @@ describe("MapService", () => {
       await ProjectPathResolver.create(harness.root);
     const restarted = new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     );
     await restarted.initializeAssetRegistry();
     const after = await restarted.getSummary(MAP_PATH);
@@ -304,7 +302,7 @@ describe("MapService", () => {
       await ProjectPathResolver.create(harness.root);
     const retried = new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     );
     const after = await retried.getSummary(MAP_PATH);
     expect(
@@ -4245,18 +4243,17 @@ async function createServiceWithReadHook(
 }
 
 async function createHarness(): Promise<Harness> {
-  const root = await mkdtemp(join(tmpdir(), "tiledmcp-map-service-"));
-  await mkdir(join(root, "maps"));
-  await mkdir(join(root, "tiles"));
-  await writeJson(join(root, MAP_PATH), baseMap());
-  await writeJson(join(root, TILESET_PATH), baseTileset());
-  await writeFile(
-    join(root, "tiles", "terrain.png"),
-    Buffer.from("placeholder image bytes", "utf8"),
-  );
-  const resolver = await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  return { root, store, service: new MapService(resolver, store) };
+  return createProject({
+    prefix: "tiledmcp-map-service",
+    files: {
+      [MAP_PATH]: baseMap(),
+      [TILESET_PATH]: baseTileset(),
+      "tiles/terrain.png": Buffer.from(
+        "placeholder image bytes",
+        "utf8",
+      ),
+    },
+  });
 }
 
 async function persistAssetIdentities(

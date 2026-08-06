@@ -5,15 +5,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
+import { MapService } from "../src/maps/mapService.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { serializeJsonDocument } from "../src/formats/json.js";
-import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/level.tmj";
 
@@ -123,7 +123,7 @@ describe("animated tile preview rendering", () => {
       await ProjectPathResolver.create(root);
     const service = new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     );
 
     const rendered = await service.renderPreview({

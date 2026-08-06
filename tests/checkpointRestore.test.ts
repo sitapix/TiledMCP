@@ -8,6 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore, wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import {
@@ -51,8 +52,7 @@ describe("checkpoint restore planning and application", () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "tiledmcp-checkpoint-restore-"));
     await mkdir(join(root, "maps"));
-    const resolver = await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ store } = await wireProject(root));
   });
 
   afterEach(async () => {
@@ -566,10 +566,7 @@ describe("checkpoint restore planning and application", () => {
   });
 
   it("enforces the DocumentStore byte limit on otherwise valid restore bytes", async () => {
-    const limitedStore = new DocumentStore(
-      await ProjectPathResolver.create(root),
-      64,
-    );
+    const limitedStore = makeStore(await ProjectPathResolver.create(root), { maxDocumentBytes: 64 });
     const oversizedBefore = Buffer.from(
       `${JSON.stringify({ padding: "x".repeat(80) })}\n`,
       "utf8",

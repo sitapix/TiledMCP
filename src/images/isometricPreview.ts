@@ -1,4 +1,8 @@
 import { TiledMcpError } from "../errors.js";
+import {
+  hexagonalTileToScreen,
+  type HexagonalGeometry,
+} from "../maps/coordinates.js";
 import { decodeGid } from "../maps/gid.js";
 import { type NativePreviewAtlas } from "./mapPreview.js";
 
@@ -265,64 +269,30 @@ export function renderIsometricTiles(input: {
   return { rgba: canvas, width, height };
 }
 
-export interface HexagonalRenderParams {
-  tileWidth: number;
-  tileHeight: number;
-  /** 0 for staggered maps (the degenerate hexagonal case). */
-  hexSideLength: number;
-  staggerAxis: "x" | "y";
-  staggerIndex: "odd" | "even";
-}
+export type HexagonalRenderParams =
+  HexagonalGeometry;
 
 /**
  * Computes one cell's top-left screen pixel with the exact Tiled
  * 1.12.2 HexagonalRenderer::tileToScreenCoords math (staggered maps
  * are the hexSideLength=0 degenerate case, matching the official
- * class hierarchy). Integer arithmetic throughout, including Qt's
- * truncating division for the side offsets.
+ * class hierarchy).
+ *
+ * This used to carry its own copy of the arithmetic, which drifted from the
+ * original in one place: it stepped rows and columns by the map's *declared*
+ * tile size where Tiled uses the derived `RenderParams` size. The two agree
+ * unless `tileSize - sideLength` is odd, so hexagonal maps matched and only
+ * odd-dimension staggered maps drifted -- cumulatively, one pixel per row. The
+ * transform now lives in one place and is shared with
+ * `tiled_convert_coordinates`, so a cell's rendered position and its reported
+ * position cannot disagree again.
  */
 export function hexTileToScreen(
   params: HexagonalRenderParams,
   x: number,
   y: number,
 ): { x: number; y: number } {
-  const staggerX = params.staggerAxis === "x";
-  const staggerEven =
-    params.staggerIndex === "even";
-  const sideLengthX = staggerX
-    ? params.hexSideLength
-    : 0;
-  const sideLengthY = staggerX
-    ? 0
-    : params.hexSideLength;
-  const sideOffsetX = Math.floor(
-    (params.tileWidth - sideLengthX) / 2,
-  );
-  const sideOffsetY = Math.floor(
-    (params.tileHeight - sideLengthY) / 2,
-  );
-  const columnWidth = sideOffsetX + sideLengthX;
-  const rowHeight = sideOffsetY + sideLengthY;
-  const doStaggerX =
-    staggerX &&
-    ((x & 1) ^ (staggerEven ? 1 : 0)) === 1;
-  const doStaggerY =
-    !staggerX &&
-    ((y & 1) ^ (staggerEven ? 1 : 0)) === 1;
-  if (staggerX) {
-    return {
-      x: x * columnWidth,
-      y:
-        y * (params.tileHeight + sideLengthY) +
-        (doStaggerX ? rowHeight : 0),
-    };
-  }
-  return {
-    x:
-      x * (params.tileWidth + sideLengthX) +
-      (doStaggerY ? columnWidth : 0),
-    y: y * rowHeight,
-  };
+  return hexagonalTileToScreen(params, x, y);
 }
 
 /**

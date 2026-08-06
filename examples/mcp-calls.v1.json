@@ -356,6 +356,34 @@
       }
     },
     {
+      "name": "tiled_convert_coordinates",
+      "profile": "core",
+      "purpose": "Resolve a rendered screen position to the tile cell under it, and the same cell back to its screen origin.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "conversions": [
+          {
+            "from": "screen",
+            "to": "tile",
+            "x": 352,
+            "y": 16
+          },
+          {
+            "from": "tile",
+            "to": "screen",
+            "x": 5,
+            "y": 3
+          },
+          {
+            "from": "tile",
+            "to": "pixel",
+            "x": 5,
+            "y": 3
+          }
+        ]
+      }
+    },
+    {
       "name": "tiled_create_map",
       "profile": "core",
       "arguments": {
@@ -445,6 +473,26 @@
         ]
       },
       "purpose": "pin \u4f4f map \u4e0e TSJ revision \u540e\u9884\u89c8\u5355 tile \u7684 probability/class/\u52a8\u753b\u5143\u6570\u636e\u66f4\u65b0\u3002"
+    },
+    {
+      "name": "tiled_update_tileset",
+      "profile": "core",
+      "purpose": "Give the tileset a class and a draw offset, and drop the fill mode back to Tiled's default by removing the member.",
+      "arguments": {
+        "mapPath": "maps/example.tmj",
+        "tilesetAssetId": "asset_0123456789abcdef01234567",
+        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "patch": {
+          "className": "Terrain",
+          "objectAlignment": "bottomleft",
+          "tileOffset": {
+            "x": 0,
+            "y": -8
+          },
+          "fillMode": null
+        }
+      }
     },
     {
       "name": "tiled_update_wangsets",

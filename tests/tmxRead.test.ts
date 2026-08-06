@@ -5,14 +5,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { serializeJsonDocument } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const TMX_PATH = "maps/level.tmx";
 
@@ -294,11 +293,10 @@ async function createHarness(
     Buffer.from("placeholder image bytes", "utf8"),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }

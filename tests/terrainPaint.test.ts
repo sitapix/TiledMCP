@@ -1,4 +1,7 @@
-import { existsSync } from "node:fs";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -7,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
@@ -19,12 +23,12 @@ import {
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { TERRAIN_OK_MARKER } from "../src/maps/terrainPaint.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/level.tmj";
 const TILESET_PATH = "tiles/terrain.tsj";
-const REAL_TILED = "/usr/bin/tiled";
+// Resolved from TILED_CLI_PATH/PATH rather than a hardcoded Linux path,
+// which made these permanently skip on macOS regardless of the install.
+const REAL_TILED = TILED_CLI_PATH;
 
 interface Harness {
   root: string;
@@ -264,7 +268,7 @@ describe("terrain painting via Tiled wangEdit", () => {
     });
   });
 
-  it.skipIf(!existsSync(REAL_TILED))(
+  it.skipIf(!hasTiledCli)(
     "paints through the real Tiled CLI end to end",
     async () => {
       const harness = await createHarness(roots, {
@@ -432,10 +436,8 @@ async function createHarness(
     ),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  const service = new MapService(resolver, store);
+  const { service } =
+    await wireProject(root);
   const summary = (await service.getSummary(
     MAP_PATH,
   )) as {

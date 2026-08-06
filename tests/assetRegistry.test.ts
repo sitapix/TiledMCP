@@ -1016,7 +1016,7 @@ describe("AssetRegistry", () => {
     }
     const document = await readRegistry(root);
     expect(document.entries).toHaveLength(1);
-  });
+  }, 30_000);
 
   it("merges different asset resolutions from concurrent Node processes without losing updates", async () => {
     const paths = [

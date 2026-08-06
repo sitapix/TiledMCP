@@ -1,4 +1,9 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -21,7 +26,6 @@ import {
   tilesetCreatePlanId,
   type TilesetCreatePlan,
 } from "../src/maps/tilesetCreate.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { revisionOf } from "../src/storage/revision.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 
@@ -346,7 +350,7 @@ describe("tiled_create_tileset planning and apply", () => {
     });
   });
 
-  it("round-trips the created tileset through the Tiled CLI", async () => {
+  it.skipIf(!hasTiledCli)("round-trips the created tileset through the Tiled CLI", async () => {
     const harness = await createHarness(roots);
 
     const plan =
@@ -367,32 +371,25 @@ describe("tiled_create_tileset planning and apply", () => {
       "tiles",
       "roundtrip.tsj",
     );
-    try {
-      await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
-        [
-          "--export-tileset",
-          "json",
-          join(harness.root, TILESET_PATH),
-          outputPath,
-        ],
-        {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
-          timeout: 30_000,
-          maxBuffer: 1024 * 1024,
+    await execFileAsync(
+      TILED_CLI_PATH,
+      [
+        "--export-tileset",
+        "json",
+        join(harness.root, TILESET_PATH),
+        outputPath,
+      ],
+      {
+        env: {
+          ...process.env,
+          LANG: "C",
+          LC_ALL: "C",
+          QT_QPA_PLATFORM: "offscreen",
         },
-      );
-    } catch (error) {
-      if (hasErrorCode(error, "ENOENT")) {
-        return;
-      }
-      throw error;
-    }
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     const exported = JSON.parse(
       await readFile(outputPath, "utf8"),
@@ -429,13 +426,12 @@ async function createHarness(
     ),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { store, service } =
+    await wireProject(root);
   return {
     root,
     store,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 
@@ -458,16 +454,4 @@ async function buildAtlasPng(
   })
     .png()
     .toBuffer();
-}
-
-function hasErrorCode(
-  error: unknown,
-  code: string,
-): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
-  );
 }
