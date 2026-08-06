@@ -178,6 +178,25 @@ rasterization of checked-in fixtures, and confirms Tiled re-exports what
 `tiled_create_map` produced. Plain `pnpm test` never makes the optional Tiled CLI a
 runtime dependency of the core direct-JSON path.
 
+### Evaluations
+
+`evals/` holds question-and-answer suites for measuring whether a model can actually
+drive this server, each answered against a committed fixture:
+
+| Suite | Fixture | Covers |
+|---|---|---|
+| `evals/floor-plan.xml` | `fixtures/floorplan/` | orthogonal map, image import, tile classes and roles, one Wang set |
+| `evals/iso-town.xml` | `fixtures/isotown/` | isometric map, group-nested tile layers, GID flip flags, animated tile, every object shape |
+
+Answers are ground truth computed from the fixture bytes, not estimates. Each suite has
+a test that recomputes every answer and fails if the two disagree — an evaluation whose
+answers have drifted reports a correct model as wrong, which is worse than having none.
+`tests/isoTownEval.test.ts` additionally reads its fixture back through the real service,
+so the questions cannot outlive the reads they depend on.
+
+Regenerate a fixture with `pnpm tsx scripts/generate-floorplan-fixture.ts` or
+`pnpm tsx scripts/generate-isotown-fixture.ts`.
+
 ## Limits
 
 - **Byte preservation.** Tile edits rewrite only the affected layer's `data`; object

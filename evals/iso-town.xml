@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Evaluation questions for the TiledMCP isometric-town fixture.
+
+  Where `floor-plan.xml` exercises one orthogonal map end to end, these cover
+  the shapes that make a Tiled map awkward to read. Every question is answered
+  against the committed `fixtures/isotown/` project:
+
+    maps/town.tmj   8x6 isometric map. A group layer "Terrain" (id 1) wraps
+                    two tile layers, "Ground" (id 2) and "Overlay" (id 3);
+                    an object layer "Markers" (id 4) holds one of every shape.
+                    Exactly one Overlay cell carries the diagonal flip flag.
+    maps/town.tsj   6-tile atlas; every tile has a class and a `walkable`
+                    boolean property, and exactly one tile is animated.
+
+  Each needs several calls: the layer tree has to be walked before a layer can
+  be read, and answering by class or property means reading the tileset and
+  joining it against the cells. None mutate anything, and every answer is a
+  single string that stays stable as long as the fixture does.
+
+  Ground truth was computed directly from the fixture bytes, not estimated.
+  Regenerate with `pnpm tsx scripts/generate-isotown-fixture.ts`.
+-->
+<evaluation>
+  <qa_pair>
+    <question>Open the TiledMCP isometric-town fixture. In maps/town.tmj, the "Ground" tile layer sits inside a group layer. How many of its cells hold a tile whose class is "Water"?</question>
+    <answer>4</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, exactly one cell of the "Overlay" tile layer in maps/town.tmj holds a tile carrying the diagonal flip flag. Give that cell's coordinates as x,y with no spaces.</question>
+    <answer>7,4</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, exactly one tile in maps/town.tsj defines an animation. What is its local tile id?</question>
+    <answer>5</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, how many objects does the "Markers" object layer of maps/town.tmj contain?</question>
+    <answer>6</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, the "Markers" object layer of maps/town.tmj holds exactly one polygon object. What is its class?</question>
+    <answer>Patrol</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, count the distinct tile classes appearing among the non-empty cells of the "Ground" layer in maps/town.tmj. How many are there?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, the map maps/town.tmj has a group layer named "Terrain". How many tile layers does it contain?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, what is the name of the layer whose id is 3 in maps/town.tmj?</question>
+    <answer>Overlay</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, every tile in maps/town.tsj carries a boolean custom property named "walkable". How many tiles have it set to false?</question>
+    <answer>4</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP isometric-town fixture, how many cells of the "Overlay" tile layer in maps/town.tmj are non-empty?</question>
+    <answer>6</answer>
+  </qa_pair>
+</evaluation>
