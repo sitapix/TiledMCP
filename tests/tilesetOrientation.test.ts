@@ -177,6 +177,78 @@ describe("tileset reads across map orientations", () => {
     });
   }
 
+  /**
+   * The plan and apply halves load the map separately, so a fix to only the
+   * planner would leave the edit failing at the moment it tried to commit.
+   */
+  it("edits a tileset referenced by an isometric map", async () => {
+    await withProject(
+      {
+        ...(await project()),
+        prefix: "tiledmcp-tileset-orientation",
+      },
+      async (harness) => {
+        const service =
+          harness.service as unknown as Service & {
+            planUpdateTile(
+              input: unknown,
+            ): Promise<unknown>;
+            applyTilesetEdit(
+              plan: unknown,
+            ): Promise<unknown>;
+          };
+        const summary =
+          (await service.getSummary(
+            MAP_PATH,
+          )) as {
+            revision: string;
+            tilesets: Array<{
+              assetId: string;
+              revision: string;
+            }>;
+          };
+        const tileset = summary.tilesets[0]!;
+
+        const plan =
+          await service.planUpdateTile({
+            mapPath: MAP_PATH,
+            tilesetAssetId: tileset.assetId,
+            expectedMapRevision: summary.revision,
+            expectedTilesetRevision:
+              tileset.revision,
+            updates: [
+              {
+                tileId: 0,
+                patch: { className: "Renamed" },
+              },
+            ],
+          });
+        expect(plan).toBeDefined();
+
+        await service.applyTilesetEdit(plan);
+
+        // The edit must actually have landed, not merely been permitted.
+        const reread = (await service.getSummary(
+          MAP_PATH,
+        )) as {
+          tilesets: Array<{ assetId: string }>;
+        };
+        const renamed = (await service.findTiles({
+          mapPath: MAP_PATH,
+          tilesetAssetId:
+            reread.tilesets[0]!.assetId,
+          query: {
+            mode: "all",
+            clauses: [
+              { kind: "class", equals: "Renamed" },
+            ],
+          },
+        })) as { items: unknown[] };
+        expect(renamed.items.length).toBe(1);
+      },
+    );
+  });
+
   it("reads an embedded tileset on a non-orthogonal map", async () => {
     await withProject(
       {

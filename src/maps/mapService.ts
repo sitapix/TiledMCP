@@ -488,6 +488,25 @@ const TILESET_READ_ORIENTATIONS = {
   allowStaggeredHexagonal: true,
 } as const;
 
+/**
+ * The same guards, for edits whose target is an *external* tileset.
+ *
+ * `planUpdateTile` and `planWangsetEdits` (and the apply halves that re-derive
+ * them) write the `.tsj`, never the map: the map is loaded only to resolve the
+ * binding and pin revisions. `prepareTilesetPropertyEdit` already passed these
+ * flags for exactly that reason, which left the surrounding operations
+ * arbitrarily inconsistent -- on an isometric map you could edit a tileset's
+ * own properties but not a tile's class or a Wang set.
+ *
+ * Deliberately not applied to `prepareEmbeddedTilesetEdit`: an embedded
+ * tileset lives inside the map document, so editing one rewrites the map, and
+ * that is a different question from this one.
+ */
+const EXTERNAL_TILESET_EDIT_ORIENTATIONS = {
+  allowIsometric: true,
+  allowStaggeredHexagonal: true,
+} as const;
+
 export class MapService {
   private readonly assetRegistry: AssetRegistry;
 
@@ -3915,6 +3934,7 @@ export class MapService {
       input.mapPath,
       {
         allowCollectionTilesets: true,
+        ...EXTERNAL_TILESET_EDIT_ORIENTATIONS,
         expectedMapRevision:
           input.expectedMapRevision,
       },
@@ -4109,6 +4129,7 @@ export class MapService {
       plan.mapPath,
       {
         allowCollectionTilesets: true,
+        ...EXTERNAL_TILESET_EDIT_ORIENTATIONS,
         expectedMapRevision: plan.mapRevision,
         persistIdentity: true,
       },
@@ -4379,6 +4400,7 @@ export class MapService {
       input.mapPath,
       {
         allowCollectionTilesets: true,
+        ...EXTERNAL_TILESET_EDIT_ORIENTATIONS,
         expectedMapRevision:
           input.expectedMapRevision,
       },
@@ -4482,6 +4504,7 @@ export class MapService {
       plan.mapPath,
       {
         allowCollectionTilesets: true,
+        ...EXTERNAL_TILESET_EDIT_ORIENTATIONS,
         expectedMapRevision: plan.mapRevision,
         persistIdentity: true,
       },
