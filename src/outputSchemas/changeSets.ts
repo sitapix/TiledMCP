@@ -1260,27 +1260,6 @@ const restoreCheckpointOperationPreviewOutputSchema = z
   })
   .strict();
 
-const pruneCheckpointOperationPreviewOutputSchema = z
-  .object({
-    type: z.literal("pruneCheckpoint"),
-    destructive: z.literal(true),
-    warning: z.string(),
-    checkpointId: checkpointIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    status: z.literal("committed"),
-    manifestRevision: revisionOutputSchema,
-    manifestBytes:
-      positiveIntegerOutputSchema.max(
-        Number.MAX_SAFE_INTEGER,
-      ),
-    removesRecoveryPoint: z.literal(true),
-    removesProjectAsset: z.literal(false),
-    garbageCollection: z.literal(
-      "fail-closed-after-manifest-prune",
-    ),
-  })
-  .strict();
-
 const pruneCheckpointBatchOperationPreviewOutputSchema =
   z
     .object({
@@ -2186,71 +2165,6 @@ const checkpointPruneBeforeOutputSchema = z.union([
     }),
 ]);
 
-const checkpointPruneSummaryOutputSchema = z
-  .object({
-    operationCount: z.literal(1),
-    destructive: z.literal(true),
-    checkpointId: checkpointIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    status: z.literal("committed"),
-    manifestRevision: revisionOutputSchema,
-    manifestBytes:
-      positiveIntegerOutputSchema.max(
-        Number.MAX_SAFE_INTEGER,
-      ),
-    removesRecoveryPoint: z.literal(true),
-    removesProjectAsset: z.literal(false),
-    garbageCollection: z.literal(
-      "fail-closed-after-manifest-prune",
-    ),
-    warning: z.string(),
-  })
-  .strict();
-
-const checkpointPrunePreviewOutputSchema = z
-  .object({
-    kind: z.literal("checkpointPrune"),
-    changeSetId: changeSetIdOutputSchema,
-    planDigest: changeSetIdOutputSchema,
-    targetPath: projectPathOutputSchema,
-    expectedRevision: revisionOutputSchema,
-    checkpoint: z
-      .object({
-        id: checkpointIdOutputSchema,
-        status: z.literal("committed"),
-        label: z
-          .string()
-          .max(1_024)
-          .optional(),
-        createdAt:
-          checkpointTimestampOutputSchema,
-        path: projectPathOutputSchema,
-        before:
-          checkpointPruneBeforeOutputSchema,
-        afterRevision: revisionOutputSchema,
-      })
-      .strict(),
-    manifest: z
-      .object({
-        revision: revisionOutputSchema,
-        size: positiveIntegerOutputSchema.max(
-          Number.MAX_SAFE_INTEGER,
-        ),
-      })
-      .strict(),
-    operations: z.tuple([
-      pruneCheckpointOperationPreviewOutputSchema,
-    ]),
-    summary:
-      checkpointPruneSummaryOutputSchema,
-    snapshotConsistency: z.literal(
-      "non-atomic-read-set",
-    ),
-    createdAt: isoTimestampOutputSchema,
-    expiresAt: isoTimestampOutputSchema,
-  })
-  .strict();
-
 const checkpointPruneBatchSummaryOutputSchema =
   z
     .object({
@@ -2948,10 +2862,6 @@ export const checkpointRestorePreviewToolOutputSchema =
     checkpointRestorePreviewOutputSchema,
   );
 
-export const checkpointPrunePreviewToolOutputSchema =
-  toolOutputSchema(
-    checkpointPrunePreviewOutputSchema,
-  );
 
 export const checkpointPruneBatchPreviewToolOutputSchema =
   toolOutputSchema(

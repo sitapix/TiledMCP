@@ -9,7 +9,6 @@ import {
   stableJson,
 } from "./formats/json.js";
 import type {
-  CheckpointPruneResult,
   CommitResult,
   FileDeleteStoreResult,
   PreparedCheckpointAbandonResult,
@@ -23,12 +22,6 @@ import {
   type CheckpointPruneBatchResult,
   type CheckpointPruneBatchSummary,
 } from "./storage/checkpointBatchPrune.js";
-import {
-  checkpointPruneOperationPreview,
-  type CheckpointPruneOperationPreview,
-  type CheckpointPrunePlan,
-  type CheckpointPruneSummary,
-} from "./storage/checkpointPrune.js";
 import {
   checkpointRestoreOperationPreview,
   type CheckpointRestoreOperationPreview,
@@ -172,7 +165,6 @@ export type ChangeSetPlan =
   | TileNameEditPlan
   | TransactionPlan
   | CheckpointRestorePlan
-  | CheckpointPrunePlan
   | CheckpointPruneBatchPlan
   | PreparedCheckpointCommitPlan
   | PreparedCheckpointAbandonPlan
@@ -187,7 +179,6 @@ export type ChangeSetOperationResult =
       changeSetId: string;
     })
   | TransactionApplyOutcome
-  | CheckpointPruneResult
   | CheckpointPruneBatchResult
   | PreparedCheckpointCommitResult
   | PreparedCheckpointAbandonResult
@@ -202,9 +193,6 @@ export type ChangeSetApplyResult =
       changeSetId: string;
     })
   | (TransactionApplyOutcome & {
-      changeSetId: string;
-    })
-  | (CheckpointPruneResult & {
       changeSetId: string;
     })
   | (CheckpointPruneBatchResult & {
@@ -625,33 +613,6 @@ export interface CheckpointRestoreChangeSetPreview
   summary: CheckpointRestoreSummary;
 }
 
-export interface CheckpointPruneChangeSetPreview
-  extends ChangeSetPreviewCommon {
-  kind: "checkpointPrune";
-  targetPath: string;
-  checkpoint: {
-    id: string;
-    status: "committed";
-    label?: string;
-    createdAt: string;
-    path: string;
-    before:
-      | { existed: false }
-      | {
-          existed: true;
-          revision: string;
-          objectHash: string;
-          size: number;
-        };
-    afterRevision: string;
-  };
-  manifest: {
-    revision: string;
-    size: number;
-  };
-  summary: CheckpointPruneSummary;
-}
-
 export interface CheckpointPruneBatchChangeSetPreview
   extends ChangeSetPreviewCommon {
   kind: "checkpointPruneBatch";
@@ -805,7 +766,6 @@ export type ChangeSetPreview =
   | TileNameEditChangeSetPreview
   | TransactionChangeSetPreview
   | CheckpointRestoreChangeSetPreview
-  | CheckpointPruneChangeSetPreview
   | CheckpointPruneBatchChangeSetPreview
   | PreparedCheckpointCommitChangeSetPreview
   | PreparedCheckpointAbandonChangeSetPreview
@@ -1339,7 +1299,6 @@ type OperationPreview =
       expectedRevision: string | null;
     }
   | CheckpointRestoreOperationPreview
-  | CheckpointPruneOperationPreview
   | CheckpointPruneBatchOperationPreview
   | PreparedCheckpointCommitOperationPreview
   | PreparedCheckpointAbandonOperationPreview
@@ -2295,49 +2254,6 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         PREPARED_CHECKPOINT_DISCARD_ELIGIBILITY,
       operations: [
         preparedCheckpointDiscardOperationPreview(
-          plan,
-        ),
-      ],
-      summary: structuredClone(plan.summary),
-      snapshotConsistency:
-        "non-atomic-read-set",
-      createdAt: entry.createdAt,
-      expiresAt: new Date(
-        entry.expiresAt,
-      ).toISOString(),
-    };
-  }
-  if (entry.plan.kind === "checkpointPrune") {
-    const plan = entry.plan;
-    return {
-      kind: plan.kind,
-      changeSetId: entry.id,
-      planDigest: plan.id,
-      targetPath: plan.checkpoint.path,
-      expectedRevision: plan.baseRevision,
-      checkpoint: {
-        id: plan.checkpoint.id,
-        status: plan.checkpoint.status,
-        ...(plan.checkpoint.label === undefined
-          ? {}
-          : {
-              label: plan.checkpoint.label,
-            }),
-        createdAt: plan.checkpoint.createdAt,
-        path: plan.checkpoint.path,
-        before: structuredClone(
-          plan.checkpoint.before,
-        ),
-        afterRevision:
-          plan.checkpoint.afterRevision,
-      },
-      manifest: {
-        revision:
-          plan.checkpoint.manifestRevision,
-        size: plan.checkpoint.manifestSize,
-      },
-      operations: [
-        checkpointPruneOperationPreview(
           plan,
         ),
       ],

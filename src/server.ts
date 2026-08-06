@@ -333,8 +333,6 @@ import {
   planCheckpointPruneBatch,
 } from "./storage/checkpointBatchPrune.js";
 import {
-} from "./storage/checkpointPrune.js";
-import {
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
 import {
