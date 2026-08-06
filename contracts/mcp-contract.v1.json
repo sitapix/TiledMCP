@@ -219,7 +219,7 @@
       "_meta": {
         "registryVersion": 1,
         "revision": "sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c",
-        "serverVersion": "0.0.1",
+        "serverVersion": "0.0.2",
         "size": 4013
       },
       "byteLength": 4013,
@@ -231,7 +231,7 @@
     {
       "_meta": {
         "revision": "sha256:b05a5b6ff5f36c1ca3e2e6f4cc7f830d33f2623f2952f6c73190377089cf4873",
-        "serverVersion": "0.0.1",
+        "serverVersion": "0.0.2",
         "size": 117441
       },
       "byteLength": 117441,
@@ -246,7 +246,7 @@
       "_meta": {
         "registryVersion": 1,
         "revision": "sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c",
-        "serverVersion": "0.0.1",
+        "serverVersion": "0.0.2",
         "size": 4013
       },
       "annotations": {
@@ -266,7 +266,7 @@
     {
       "_meta": {
         "revision": "sha256:b05a5b6ff5f36c1ca3e2e6f4cc7f830d33f2623f2952f6c73190377089cf4873",
-        "serverVersion": "0.0.1",
+        "serverVersion": "0.0.2",
         "size": 117441
       },
       "annotations": {
@@ -308,7 +308,7 @@
     "description": "Inspects and edits Tiled map assets (TMJ/TSJ/TMX/TSX/TX) under one project root. Every mutation is planned as an expiring change set and applied only on explicit approval.",
     "name": "tiled-mcp",
     "title": "Tiled Map Editor",
-    "version": "0.0.1"
+    "version": "0.0.2"
   },
   "serverInstructions": "TiledMCP inspects and edits Tiled map assets (TMJ/TSJ/TMX/TSX/TX) under one\nconfigured project root.\n\n## Paths and discovery\n\nEvery path input is a project-relative POSIX path. Absolute paths and `..`\ntraversal are rejected. Call `tiled_get_capabilities` first: the registered\ntool set varies with the local Tiled CLI, and it also declares renderer limits,\nedit profiles, and the application-error contract.\n\n## Reading results\n\n`structuredContent.result` is the authoritative machine-readable value. The\ntext block beside it is a bounded one-line summary (at most 1024 bytes) that\ndeliberately omits fields; never parse it to recover them.\n\nOn failure, branch only on `structuredContent.result.error.code`. The\n`message` and `details` values are for people and have no stable shape.\nTreat an unknown code as a generic failure rather than as success.\n\n## Writing: preview, approve, apply\n\nNo project asset changes until you call `tiled_apply_change_set`. Planning\ntools validate the whole edit and return an expiring `changeSetId`; the\nhuman-visible plan they return is the approval boundary. Every planning\ntool's title begins with \"Preview\", including ones whose name does not\n(`tiled_create_tileset`, `tiled_create_layer`, `tiled_update_tile`,\n`tiled_delete_file`, ...). Exactly two tools\nwrite directly without this cycle: `tiled_create_map` and\n`tiled_create_checkpoint`.\n\nA change set expires 10 minutes after preview; the exact deadline is the\nplan's `expiresAt`. If approval takes longer, re-run the preview — an\nexpired id fails with `CHANGE_SET_NOT_FOUND`.\n\nEvery write is a compare-and-set. Read the target first (for example with\n`tiled_get_map_summary`), then pass its `revision` as\n`expectedMapRevision` and its complete `dependencyRevisions` record as\n`expectedDependencyRevisions`. Pass them unchanged and together, from the\nsame read. A stale or partial pin fails closed rather than merging.\n\nOn `REVISION_CONFLICT` or `DEPENDENCY_REVISION_CONFLICT`, the state moved\nunder you: re-read, re-plan against what the read now says, and preview\nagain. Never resubmit the old `changeSetId` -- it is bound to the pins it\nwas built from. Applying a change set advances its documents' revisions, so\nother pending previews pinned to the same documents go stale; re-read\nbetween preview-apply pairs that touch the same files.\n\nNever construct or edit raw global IDs. A tile value is a `TileRef`\n(`{\"tileset\": {\"kind\": \"external\", \"assetId\": \"asset_...\"}, \"localId\": 0}`),\nand `null` clears a cell. Preserve transform fields returned by a read unless\nthe edit is meant to change them.\n\n## Working effectively\n\nUndefined or unsupported semantics fail closed with a specific code instead of\nbeing approximated -- an error usually means the input was underspecified, not\nthat the operation is impossible.\n\nUse `tiled_convert_coordinates` rather than deriving isometric, staggered, or\nhexagonal placement by hand; the projection math is the most common source of\nsilently wrong edits.\n\nRender to check your work: `tiled_render_preview` for the current state and\n`tiled_render_diff` to confirm an applied change did what you intended.\n\n## Start from a prompt, not from the tool list\n\nThis server registers MCP prompts that carry the exact call sequence for a\nwhole task, which is faster and safer than assembling one from the tool list:\n\n- `create_map_from_tilesheet` -- start here when all you have is a tilesheet\n  image and no map yet: cut the sheet into a tileset, create the map, attach\n  the tileset, add a layer, identify tiles by rendering the sheet with its\n  local IDs, then paint and verify. The other three assume a map already\n  exists.\n- `build_from_floor_plan` -- turn a floor-plan image into a finished map:\n  inspect the tiles, build a colour-to-tile palette, import the plan as floors,\n  run the walls, place the sprites, verify by rendering.\n- `set_up_tile_roles` -- record which tiles are floors, walls, doors and props\n  so later edits address tiles by meaning rather than by local id.\n- `review_map` -- read-only inspection of one map.\n\nFor per-workflow detail, read one section of the guide at\n`tiled://guide/{section}` (its Contents block lists the slugs) rather than\nthe whole ~115 KB `tiled://guide` resource.",
   "toolAvailability": {

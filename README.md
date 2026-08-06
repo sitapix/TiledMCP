@@ -27,13 +27,14 @@ hard sandbox and never touches anything outside it.
 
 **2. Connect your client.**
 
-Claude Code:
+Claude Code — no path needed; the server sandboxes itself to the project you have open
+(via [MCP roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots)):
 
 ```bash
-claude mcp add tiled -- npx -y tiled-mcp-server --project-dir /absolute/path/to/your/tiled-project
+claude mcp add tiled -- npx -y tiled-mcp-server
 ```
 
-Claude Desktop or any client with JSON config:
+Claude Desktop or any client without a working directory — pass the project explicitly:
 
 ```json
 {
@@ -73,13 +74,18 @@ Version 0.0.1. The interface is a draft and is not frozen.
 52 tools register: 50 core, plus 2 that appear only when the server detects Tiled or
 `tmxrasterizer` on PATH (`tiled_render_map`, `tiled_preview_export`). Everything else,
 including `tiled_preview_terrain`, runs on the built-in JSON and PNG path with no
-external binary. The suite is 1,524 passing tests across 123 files.
+external binary. The suite is 1,528 passing tests across 124 files.
 
 ## Configuration
 
 Transport is stdio. stdout carries MCP protocol only; diagnostics go to stderr.
-`--project-dir` (or `TILED_PROJECT_DIR`) is required and defines a hard sandbox: paths
-outside it and symlinks get rejected.
+
+The project sandbox resolves in order: `--project-dir`, then `TILED_PROJECT_DIR`, then
+the client's first MCP root (Claude Code advertises your working directory). If none of
+the three yields a directory, startup fails closed — the server never guesses a root.
+Whatever supplies it, the sandbox is hard: paths outside it and symlinks get rejected,
+and the root is fixed for the life of the session (later `roots/list_changed`
+notifications do not move it).
 
 | Flag | Environment variable | Default |
 |---|---|---|

@@ -2030,27 +2030,19 @@ export interface CreatedTiledMcpServer {
 export async function createTiledMcpServer(
   dependencies: TiledMcpServerDependencies,
 ): Promise<CreatedTiledMcpServer> {
-  await dependencies.maps.initializeAssetRegistry();
-  const cliCapabilities =
-    await dependencies.cli.probeCapabilities();
-  return await createTiledMcpServerFromCapabilitySnapshot(
+  return await wireTiledMcpServer(
+    createTiledMcpServerShell(),
     dependencies,
-    cliCapabilities,
   );
 }
 
-export async function createTiledMcpServerFromCapabilitySnapshot(
-  dependencies: TiledMcpServerDependencies,
-  cliCapabilitiesInput: TiledCliCapabilities,
-): Promise<CreatedTiledMcpServer> {
-  await dependencies.maps.initializeAssetRegistry();
-  const cliCapabilities =
-    immutableCliCapabilitiesSnapshot(
-      cliCapabilitiesInput,
-    );
-  const { resolver, store, maps, cli } = dependencies;
-  const changeSets = new ChangeSetRegistry();
-  const renderMutex = new KeyedMutex();
+/**
+ * The dependency-free half of server construction: everything that can be
+ * registered before a project root is known. The roots-deferred boot connects
+ * this shell, answers `initialize`, asks the client for its roots, and only
+ * then wires the project-bound tools.
+ */
+export function createTiledMcpServerShell(): McpServer {
   const server = new McpServer(
     {
       name: SERVER_NAME,
@@ -2064,11 +2056,66 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         TILED_MCP_SERVER_INSTRUCTIONS,
     },
   );
-  const registeredTools: string[] = [];
 
   registerGuideResource(server);
   registerApplicationErrorResource(server);
   registerTiledMcpPrompts(server);
+
+  // Arm the tools/list and tools/call handlers now. The SDK installs them
+  // (and registers the tools capability) on the first registerTool call, and
+  // refuses capability registration once a transport is connected -- so a
+  // roots-deferred boot, which registers its real tools only after the
+  // client's roots arrive, would otherwise throw on its first registration.
+  server
+    .registerTool(
+      "__tiled_mcp_boot__",
+      { description: "internal boot placeholder; never advertised" },
+      () => ({ content: [] }),
+    )
+    .remove();
+
+  return server;
+}
+
+export async function wireTiledMcpServer(
+  server: McpServer,
+  dependencies: TiledMcpServerDependencies,
+): Promise<CreatedTiledMcpServer> {
+  await dependencies.maps.initializeAssetRegistry();
+  const cliCapabilities =
+    await dependencies.cli.probeCapabilities();
+  return await wireTiledMcpServerFromCapabilitySnapshot(
+    server,
+    dependencies,
+    cliCapabilities,
+  );
+}
+
+export async function createTiledMcpServerFromCapabilitySnapshot(
+  dependencies: TiledMcpServerDependencies,
+  cliCapabilitiesInput: TiledCliCapabilities,
+): Promise<CreatedTiledMcpServer> {
+  return await wireTiledMcpServerFromCapabilitySnapshot(
+    createTiledMcpServerShell(),
+    dependencies,
+    cliCapabilitiesInput,
+  );
+}
+
+export async function wireTiledMcpServerFromCapabilitySnapshot(
+  server: McpServer,
+  dependencies: TiledMcpServerDependencies,
+  cliCapabilitiesInput: TiledCliCapabilities,
+): Promise<CreatedTiledMcpServer> {
+  await dependencies.maps.initializeAssetRegistry();
+  const cliCapabilities =
+    immutableCliCapabilitiesSnapshot(
+      cliCapabilitiesInput,
+    );
+  const { resolver, store, maps, cli } = dependencies;
+  const changeSets = new ChangeSetRegistry();
+  const renderMutex = new KeyedMutex();
+  const registeredTools: string[] = [];
 
   const advertisedToolNames = [
     ...TILED_MCP_CORE_TOOL_NAMES,

@@ -2,7 +2,7 @@
 
 # TiledMCP generated MCP reference
 
-Server: `tiled-mcp` `0.0.1`
+Server: `tiled-mcp` `0.0.2`
 
 Protocol baseline: `2025-11-25`
 
@@ -252,7 +252,7 @@ The versioned identifiers that may appear at structuredContent.result.error.code
   "_meta": {
     "registryVersion": 1,
     "revision": "sha256:cad493fb51e07b0886c44ff2de763aeb9a43020f398f40733b4876d2b4ae286c",
-    "serverVersion": "0.0.1",
+    "serverVersion": "0.0.2",
     "size": 4013
   },
   "annotations": {
@@ -279,7 +279,7 @@ The full per-tool reference for inspecting, previewing, approving, applying, and
 {
   "_meta": {
     "revision": "sha256:b05a5b6ff5f36c1ca3e2e6f4cc7f830d33f2623f2952f6c73190377089cf4873",
-    "serverVersion": "0.0.1",
+    "serverVersion": "0.0.2",
     "size": 117441
   },
   "annotations": {
