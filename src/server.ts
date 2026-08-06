@@ -7289,10 +7289,14 @@ function register<
     advertisedOutputSchema,
     ...advertised
   } = config;
-  void advertisedOutputSchema;
   server.registerTool(
     name,
-    advertised,
+    advertisedOutputSchema === undefined
+      ? advertised
+      : {
+          ...advertised,
+          outputSchema: advertisedOutputSchema,
+        },
     sdkCallback,
   );
   registeredTools.push(name);

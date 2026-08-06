@@ -8,9 +8,9 @@ Exact wire schemas live in [`contracts/mcp-contract.v1.json`](../contracts/mcp-c
 [the generated reference](generated/mcp-reference.md), all rebuilt from real MCP discovery and
 drift-gated by `pnpm contract:check`. Where this document and a generated artifact disagree, the
 artifact is right. Design background is in [01-tiled-research.md](01-tiled-research.md),
-implementation reasoning in [03-architecture.md](03-architecture.md), the frozen trust boundary
-in [04-security.md](04-security.md), and safe call sequences in
-[examples/safe-workflows.md](examples/safe-workflows.md).
+implementation reasoning in [03-architecture.md](03-architecture.md), and the frozen trust
+boundary in [04-security.md](04-security.md). Safe call sequences live in the `tiled://guide`
+resource, which ships with the server.
 
 ## 1. Protocol baseline
 

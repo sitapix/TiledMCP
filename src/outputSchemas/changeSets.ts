@@ -3946,6 +3946,7 @@ const advertisedMapEditPreviewOutputSchema = z
       )
       .min(1)
       .max(128),
+    summary: genericMapEditSummaryOutputSchema,
   })
   .strict();
 

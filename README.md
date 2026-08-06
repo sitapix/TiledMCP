@@ -102,7 +102,7 @@ Tiles are addressed as `{"tileset":{"kind":"external","assetId":"…"},"localId"
 callers never touch raw GIDs. A preview refuses to issue if the map or any pinned
 dependency has moved.
 
-Worked examples live in [docs/examples/safe-workflows.md](docs/examples/safe-workflows.md).
+The `tiled://guide` resource walks the same loop with worked call sequences.
 
 ## Errors
 
@@ -144,7 +144,6 @@ No resource templates register yet. Trust `resources/list` and
 | [docs/04-security.md](docs/04-security.md) | frozen v1 filesystem threat model and deployment requirements |
 | [docs/05-cross-file-wal-design.md](docs/05-cross-file-wal-design.md) | cross-file WAL transaction design and decisions |
 | [docs/06-infinite-edit-design.md](docs/06-infinite-edit-design.md) | infinite-map chunk semantics and normalization decisions |
-| [docs/07-devlog.md](docs/07-devlog.md) | change-by-change history; counts in it are snapshots, not current state |
 | [docs/generated/mcp-reference.md](docs/generated/mcp-reference.md) | generated schemas, annotations, and call reference for every tool |
 | [contracts/mcp-contract.v1.json](contracts/mcp-contract.v1.json) | machine contract for both capability profiles, generated from real discovery |
 | [examples/mcp-calls.v1.json](examples/mcp-calls.v1.json) | one schema-validated call example per registered tool |
