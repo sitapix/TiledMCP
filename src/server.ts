@@ -1780,13 +1780,13 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
+    "tiled_preview_terrain",
     "tiled_apply_change_set",
   ] as const);
 export const TILED_MCP_OPTIONAL_TOOL_NAMES =
   Object.freeze([
     "tiled_render_map",
     "tiled_preview_export",
-    "tiled_preview_terrain",
   ] as const);
 /** Every tool name this server may advertise, core or CLI-gated. */
 export type AdvertisedToolName =
@@ -1888,7 +1888,6 @@ const registeredToolNamesOutputSchema = z.union([
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       "tiled_preview_export",
-      "tiled_preview_terrain",
     ] as unknown as JsonValue,
   ),
   exactJsonValueOutputSchema(
@@ -2019,10 +2018,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ? (["tiled_render_map"] as const)
       : []),
     ...(cliCapabilities.tiled.available
-      ? ([
-          "tiled_preview_export",
-          "tiled_preview_terrain",
-        ] as const)
+      ? (["tiled_preview_export"] as const)
       : []),
   ];
   const capabilitiesResult = {
@@ -7064,8 +7060,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           return changeSets.put(plan);
         }),
     );
+  }
 
-    toolRegistrars["tiled_preview_terrain"] = () =>
+  // Terrain painting is core, not CLI-gated: corners are matched natively by
+  // `computeWangCornerPaint`. The CLI path stays available to
+  // `planTerrainPaint` as the parity reference the Tiled cross-checks drive.
+  toolRegistrars["tiled_preview_terrain"] = () =>
     register(
       server,
       registeredTools,
@@ -7141,13 +7141,10 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               expectedMapRevision,
               expectedDependencyRevisions,
             },
-            (scriptPath) =>
-              cli.runEvaluate({ scriptPath }),
           );
           return changeSets.put(plan);
         }),
     );
-  }
 
   for (const name of advertisedToolNames) {
     const registrar = toolRegistrars[name];

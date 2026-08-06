@@ -253,6 +253,10 @@ import {
   wangEditPlanId,
 } from "./wangEdits.js";
 import {
+  computeWangCornerPaint,
+  parseWangTiles,
+} from "./wangMatcher.js";
+import {
   MAX_WORLD_MAP_MEMBERS,
   type WorldEditOperation,
   type WorldEditPlan,
@@ -9088,7 +9092,15 @@ export class MapService {
         string
       >;
     },
-    evaluate: (scriptPath: string) => Promise<{
+    /**
+     * Drives Tiled's own `TileLayer.wangEdit()` through the CLI.
+     *
+     * Optional: when omitted, corners are matched natively by
+     * {@link computeWangCornerPaint}, which is what makes terrain painting
+     * available on machines with no Tiled install. The CLI path is retained
+     * as the parity reference that `verify:tiled-1.12.2` cross-checks.
+     */
+    evaluate?: (scriptPath: string) => Promise<{
       stdout: string;
       stderr: string;
     }>,
@@ -9208,6 +9220,73 @@ export class MapService {
       "read",
     );
 
+    const cells: Array<{
+      x: number;
+      y: number;
+      tile: TileRef | null;
+    }> = [];
+
+    if (evaluate === undefined) {
+      // Native path. Only tiles belonging to the selected tileset contribute
+      // known corners; anything else (empty, or another tileset) leaves the
+      // cell's corners unset, which the matcher treats as "no opinion".
+      const painted = computeWangCornerPaint({
+        width: context.width,
+        height: context.height,
+        wangTiles: parseWangTiles(
+          wangSet.wangtiles,
+          `${binding.path}.wangsets[${input.wangSetIndex}]`,
+        ),
+        corners: input.corners,
+        currentTileId: (x, y) => {
+          const ref = gidToTileRef(
+            readLayerGid(layer, x, y),
+            context.orientation,
+            context.bindings,
+          );
+          return ref !== null &&
+            ref.tileset.kind === "external" &&
+            ref.tileset.assetId ===
+              binding.assetId
+            ? ref.localId
+            : null;
+        },
+      });
+      for (const cell of painted) {
+        // Decode through the same path the CLI diff uses, so both routes
+        // emit byte-identical TileRefs -- including the explicit identity
+        // transform, whose `kind` follows the map's orientation.
+        cells.push({
+          x: cell.x,
+          y: cell.y,
+          tile: gidToTileRef(
+            binding.firstGid + cell.tileId,
+            context.orientation,
+            context.bindings,
+          ),
+        });
+      }
+      if (cells.length === 0) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "The terrain paint produced no cell changes; the painted corners already match the Wang set.",
+          { cornerCount: input.corners.length },
+        );
+      }
+      return this.planEdits(
+        input.mapPath,
+        input.expectedMapRevision,
+        input.expectedDependencyRevisions,
+        [
+          {
+            type: "setTiles",
+            layerId: input.layerId,
+            cells,
+          },
+        ],
+      );
+    }
+
     const absoluteSource =
       await this.resolver.resolveExisting(
         input.mapPath,
@@ -9265,11 +9344,6 @@ export class MapService {
       input.mapPath,
       "read",
     );
-    const cells: Array<{
-      x: number;
-      y: number;
-      tile: TileRef | null;
-    }> = [];
     for (let y = 0; y < context.height; y += 1) {
       for (let x = 0; x < context.width; x += 1) {
         const before = readLayerGid(layer, x, y);

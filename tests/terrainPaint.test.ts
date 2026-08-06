@@ -305,6 +305,130 @@ describe("terrain painting via Tiled wangEdit", () => {
       await harness.service.applyEdits(plan);
     },
   );
+
+  it("matches corners natively when no CLI runner is supplied", async () => {
+    const harness = await createHarness(roots);
+    const plan =
+      await harness.service.planTerrainPaint({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        tilesetAssetId: harness.assetId,
+        wangSetIndex: 0,
+        corners: [
+          { x: 1, y: 1, colorIndex: 1 },
+        ],
+        expectedMapRevision:
+          harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      });
+    // Corner (1,1) is shared by all four cells of this 2x2 map. Cell (0,0)
+    // already holds the all-colour-1 tile, so it is correctly left out: a
+    // cell whose tile does not change contributes nothing to the diff.
+    expect(plan).toMatchObject({
+      kind: "mapEdit",
+      operations: [
+        {
+          type: "setTiles",
+          layerId: 1,
+          cells: [
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 1 },
+          ],
+        },
+      ],
+    });
+    await harness.service.applyEdits(plan);
+  });
+
+  it("is deterministic across repeated native runs", async () => {
+    const run = async () => {
+      const harness = await createHarness(roots);
+      const plan =
+        await harness.service.planTerrainPaint({
+          mapPath: MAP_PATH,
+          layerId: 1,
+          tilesetAssetId: harness.assetId,
+          wangSetIndex: 0,
+          corners: [
+            { x: 1, y: 1, colorIndex: 1 },
+          ],
+          expectedMapRevision:
+            harness.mapRevision,
+          expectedDependencyRevisions:
+            harness.dependencyRevisions,
+        });
+      return JSON.stringify(plan.operations);
+    };
+    expect(await run()).toBe(await run());
+  });
+
+  /**
+   * The fidelity claim, checked rather than asserted.
+   *
+   * This Wang set has exactly one tile per corner pattern, so Tiled's
+   * probability-weighted random choice has nothing to choose between and its
+   * result must equal ours exactly. Where a set does offer several equally
+   * good candidates the two legitimately diverge -- that is the documented
+   * trade in `wangMatcher.ts` -- which is precisely why this asserts parity
+   * on an unambiguous set instead of a general one.
+   */
+  it.skipIf(!hasTiledCli)(
+    "agrees with the real Tiled CLI where the match is unique",
+    async () => {
+      const cellsFrom = async (
+        evaluate?: (
+          scriptPath: string,
+        ) => Promise<{
+          stdout: string;
+          stderr: string;
+        }>,
+      ) => {
+        const harness = await createHarness(
+          roots,
+          { realImage: true },
+        );
+        const plan =
+          await harness.service.planTerrainPaint(
+            {
+              mapPath: MAP_PATH,
+              layerId: 1,
+              tilesetAssetId: harness.assetId,
+              wangSetIndex: 0,
+              corners: [
+                { x: 1, y: 1, colorIndex: 1 },
+              ],
+              expectedMapRevision:
+                harness.mapRevision,
+              expectedDependencyRevisions:
+                harness.dependencyRevisions,
+            },
+            evaluate,
+          );
+        return (
+          plan.operations[0] as {
+            cells: Array<{
+              x: number;
+              y: number;
+              tile: unknown;
+            }>;
+          }
+        ).cells;
+      };
+
+      const adapter = new TiledCliAdapter({
+        tiledCliPath: REAL_TILED,
+        rasterizerPath: process.execPath,
+      });
+      const viaCli = await cellsFrom(
+        (scriptPath) =>
+          adapter.runEvaluate({ scriptPath }),
+      );
+      const native = await cellsFrom();
+      expect(native).toEqual(viaCli);
+    },
+  );
 });
 
 function baseMap(

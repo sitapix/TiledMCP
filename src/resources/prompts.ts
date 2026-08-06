@@ -24,7 +24,7 @@ const PIN_RULES = `Pinning rules that apply to every write below:
   together. A stale or partial pin fails closed rather than merging.
 - Never build or edit a raw global ID. A tile is a \`TileRef\`
   (\`{"tileset": {"kind": "external", "assetId": "asset_..."}, "localId": 0}\`),
-  or \`{"name": "floor.wood"}\` once roles are named, and \`null\` clears a cell.
+  or \`{"name": "floor_wood"}\` once roles are named, and \`null\` clears a cell.
 - Nothing touches the project until \`tiled_apply_change_set\`. Every planning
   tool returns an expiring \`changeSetId\`; read the plan it returns, then apply
   that id.
@@ -124,9 +124,11 @@ edits can address them by meaning instead of by local id.
 2. \`tiled_render_tileset_sheet\` -- page through and actually look at the
    tiles. Assign roles from what you see, not from id order.
 3. \`tiled_preview_tile_names\` -- name them on a consistent scheme, for example
-   \`floor.wood\`, \`floor.stone\`, \`wall.brick\`, \`wall.brick.corner\`,
-   \`door.closed\`, \`prop.barrel\`. A flat, predictable prefix scheme is what
-   makes a later palette or terrain call reviewable.
+   \`floor_wood\`, \`floor_stone\`, \`wall_brick\`, \`wall_brick_corner\`,
+   \`door_closed\`, \`prop_barrel\`. A flat, predictable prefix scheme is what
+   makes a later palette or terrain call reviewable. Names must match
+   \`^[a-z0-9][a-z0-9_-]{0,63}$\` -- lowercase, digits, underscore and hyphen
+   only. Dots are rejected, so use \`wall_brick\`, not \`wall.brick\`.
 4. \`tiled_apply_change_set\` to commit the registry.
 5. \`tiled_list_tile_names\` to confirm what was recorded.
 

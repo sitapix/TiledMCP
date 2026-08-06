@@ -78,7 +78,7 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 54 tools
+- `core`: 55 tools
 - `with-tmxrasterizer`: 57 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
@@ -255,9 +255,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:bf7098d2913fdd3a31c7da6eff2163edd83cc53244c4f30f2192a8715fc003dc",
+    "revision": "sha256:77be1e14f18c1d70e165767e59013ae568e20a6dbc6b3d10b3b19c9cedef6f5c",
     "serverVersion": "0.0.1",
-    "size": 107746
+    "size": 108533
   },
   "annotations": {
     "audience": [
@@ -269,7 +269,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 107746,
+  "size": 108533,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -277,7 +277,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 107746 UTF-8 bytes, revision `sha256:bf7098d2913fdd3a31c7da6eff2163edd83cc53244c4f30f2192a8715fc003dc`.
+Content contract: `text`, 108533 UTF-8 bytes, revision `sha256:77be1e14f18c1d70e165767e59013ae568e20a6dbc6b3d10b3b19c9cedef6f5c`.
 
 Resource templates: none.
 
@@ -14081,6 +14081,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_terrain",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     }
@@ -14299,6 +14303,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_transaction",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_terrain",
                       "type": "string"
                     },
                     {
@@ -14527,15 +14535,15 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_terrain",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     },
                     {
                       "const": "tiled_preview_export",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_terrain",
                       "type": "string"
                     }
                   ],
@@ -14756,6 +14764,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_terrain",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     },
@@ -14765,10 +14777,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_export",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_terrain",
                       "type": "string"
                     }
                   ],
@@ -75360,7 +75368,7 @@ Output schema:
 
 ### `tiled_preview_terrain`
 
-Availability: `tmxrasterizer-version-probe`
+Availability: `core`
 
 Paints Wang terrain corners through Tiled's own TileLayer.wangEdit() matcher, run headlessly by a server-authored static script against the pinned map (the CLI writes only a staging copy; parameters are embedded as an inert JSON literal, so no user input reaches script code). The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — apply needs no CLI replay, untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed.
 

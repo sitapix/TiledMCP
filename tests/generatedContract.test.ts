@@ -297,10 +297,11 @@ describe("generated MCP contract", () => {
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
       ),
+    // Terrain painting is deliberately absent here: corners are matched
+    // natively, so `tiled_preview_terrain` is core and needs no Tiled CLI.
     ).toEqual([
       "tiled_render_map",
       "tiled_preview_export",
-      "tiled_preview_terrain",
     ]);
     expect(
       coreTools.filter(

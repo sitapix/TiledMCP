@@ -212,6 +212,7 @@ const CORE_TOOLS = [
   "tiled_preview_property_types",
   "tiled_preview_world_edits",
   "tiled_preview_transaction",
+  "tiled_preview_terrain",
   "tiled_apply_change_set",
 ] as const;
 

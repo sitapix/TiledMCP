@@ -506,7 +506,10 @@ describe("native preview object debug server contract", () => {
     expect(registeredTools).toEqual([
       ...TILED_MCP_CORE_TOOL_NAMES,
     ]);
-    expect(registeredTools).toHaveLength(54);
+    // A literal, so growing the core surface stays a conscious edit.
+    // 55 since terrain painting became core: corners match natively, so
+    // `tiled_preview_terrain` no longer needs a local Tiled CLI.
+    expect(registeredTools).toHaveLength(55);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

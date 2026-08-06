@@ -94,9 +94,9 @@ interface Pins {
 async function readPins(
   project: TestProject,
 ): Promise<Pins & { tilesetAssetId: string }> {
-  const summary = (await project.service.getSummary({
-    mapPath: MAP_PATH,
-  })) as unknown as {
+  const summary = (await project.service.getSummary(
+    MAP_PATH,
+  )) as unknown as {
     revision: string;
     dependencyRevisions: Record<string, string>;
     tilesets: Array<{ assetId: string }>;
@@ -154,14 +154,14 @@ describe("build a map from a floor plan", () => {
         const namePlan =
           await project.service.planTileNameEdits({
             operations: Object.entries({
-              "floor.wood": TILE.floorWood,
-              "floor.stone": TILE.floorStone,
-              "wall.brick": TILE.wallBrick,
-              "wall.window": TILE.wallWindow,
-              "door.closed": TILE.doorClosed,
-              "floor.rug": TILE.floorRug,
-              "prop.barrel": TILE.propBarrel,
-              "prop.table": TILE.propTable,
+              "floor_wood": TILE.floorWood,
+              "floor_stone": TILE.floorStone,
+              "wall_brick": TILE.wallBrick,
+              "wall_window": TILE.wallWindow,
+              "door_closed": TILE.doorClosed,
+              "floor_rug": TILE.floorRug,
+              "prop_barrel": TILE.propBarrel,
+              "prop_table": TILE.propTable,
             }).map(([name, localId]) => ({
               type: "upsertName" as const,
               name,
@@ -179,8 +179,30 @@ describe("build a map from a floor plan", () => {
           ).count,
         ).toBe(8);
 
-        // Steps 4 and 5: build the palette by meaning, then import.
+        // Step 4: build the palette by meaning. Semantic {name} references
+        // are resolved against the registry before planning -- the same
+        // order `tiled_preview_import_image` itself uses, since the service
+        // layer takes resolved TileRefs.
         const pins = await readPins(project);
+        const swatches = [
+          [COLOR.floorWood, "floor_wood"],
+          [COLOR.floorStone, "floor_stone"],
+          [COLOR.wallBrick, "wall_brick"],
+          [COLOR.wallWindow, "wall_window"],
+          [COLOR.doorClosed, "door_closed"],
+          [COLOR.floorRug, "floor_rug"],
+          [COLOR.propBarrel, "prop_barrel"],
+          [COLOR.propTable, "prop_table"],
+        ] as const;
+        const resolved =
+          await project.service.resolveNamedTiles(
+            MAP_PATH,
+            swatches.map(([, name]) => ({
+              name,
+            })),
+          );
+
+        // Step 5: import.
         const importPlan =
           await project.service.planImportImage({
             mapPath: MAP_PATH,
@@ -192,40 +214,12 @@ describe("build a map from a floor plan", () => {
               width: WIDTH,
               height: HEIGHT,
             },
-            palette: [
-              {
-                color: COLOR.floorWood,
-                tile: { name: "floor.wood" },
-              },
-              {
-                color: COLOR.floorStone,
-                tile: { name: "floor.stone" },
-              },
-              {
-                color: COLOR.wallBrick,
-                tile: { name: "wall.brick" },
-              },
-              {
-                color: COLOR.wallWindow,
-                tile: { name: "wall.window" },
-              },
-              {
-                color: COLOR.doorClosed,
-                tile: { name: "door.closed" },
-              },
-              {
-                color: COLOR.floorRug,
-                tile: { name: "floor.rug" },
-              },
-              {
-                color: COLOR.propBarrel,
-                tile: { name: "prop.barrel" },
-              },
-              {
-                color: COLOR.propTable,
-                tile: { name: "prop.table" },
-              },
-            ],
+            palette: swatches.map(
+              ([color], index) => ({
+                color,
+                tile: resolved[index] ?? null,
+              }),
+            ),
             expectedMapRevision:
               pins.expectedMapRevision,
             expectedDependencyRevisions:
@@ -290,14 +284,16 @@ describe("build a map from a floor plan", () => {
         // pixel (112, 112).
         const pins = await readPins(project);
         const plan =
-          await project.service.planEdits({
-            mapPath: MAP_PATH,
-            operations: [
+          await project.service.planEdits(
+            MAP_PATH,
+            pins.expectedMapRevision,
+            pins.expectedDependencyRevisions,
+            [
               {
                 type: "createObject",
                 layerId: OBJECT_LAYER_ID,
-                shape: "point",
                 object: {
+                  shape: "point",
                   name: "hearth",
                   x: 112,
                   y: 112,
@@ -306,8 +302,8 @@ describe("build a map from a floor plan", () => {
               {
                 type: "createObject",
                 layerId: OBJECT_LAYER_ID,
-                shape: "rectangle",
                 object: {
+                  shape: "rectangle",
                   name: "bar",
                   x: 32,
                   y: 32,
@@ -316,11 +312,7 @@ describe("build a map from a floor plan", () => {
                 },
               },
             ],
-            expectedRevision:
-              pins.expectedMapRevision,
-            expectedDependencyRevisions:
-              pins.expectedDependencyRevisions,
-          });
+          );
         await project.service.applyEdits(plan);
 
         const listed =
@@ -346,10 +338,18 @@ describe("build a map from a floor plan", () => {
           await project.service.renderPreview({
             mapPath: MAP_PATH,
           });
-        expect(preview.png.byteLength).toBeGreaterThan(0);
+        expect(
+          preview.png.byteLength,
+        ).toBeGreaterThan(0);
+        // The native preview defaults to scale 2, so a 16x12 map of 16px
+        // tiles comes back at 512x384 rather than 256x192.
         expect(preview.result).toMatchObject({
-          width: WIDTH * 16,
-          height: HEIGHT * 16,
+          mimeType: "image/png",
+          scale: 2,
+          pixelSize: {
+            width: WIDTH * 16 * 2,
+            height: HEIGHT * 16 * 2,
+          },
         });
       },
     );
@@ -364,18 +364,18 @@ describe("build a map from a floor plan", () => {
       async (project) => {
         const pins = await readPins(project);
         const first =
-          await project.service.planEdits({
-            mapPath: MAP_PATH,
-            operations: [
+          await project.service.planEdits(
+            MAP_PATH,
+            pins.expectedMapRevision,
+            pins.expectedDependencyRevisions,
+            [
               {
                 type: "fillRegion",
                 layerId: FLOOR_LAYER_ID,
-                region: {
-                  x: 0,
-                  y: 0,
-                  width: 2,
-                  height: 2,
-                },
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
                 tile: {
                   tileset: {
                     kind: "external",
@@ -385,27 +385,23 @@ describe("build a map from a floor plan", () => {
                 },
               },
             ],
-            expectedRevision:
-              pins.expectedMapRevision,
-            expectedDependencyRevisions:
-              pins.expectedDependencyRevisions,
-          });
+          );
         await project.service.applyEdits(first);
 
         // The map has moved on; the original pin must now fail closed.
         await expect(
-          project.service.planEdits({
-            mapPath: MAP_PATH,
-            operations: [
+          project.service.planEdits(
+            MAP_PATH,
+            pins.expectedMapRevision,
+            pins.expectedDependencyRevisions,
+            [
               {
                 type: "fillRegion",
                 layerId: FLOOR_LAYER_ID,
-                region: {
-                  x: 2,
-                  y: 2,
-                  width: 2,
-                  height: 2,
-                },
+                x: 2,
+                y: 2,
+                width: 2,
+                height: 2,
                 tile: {
                   tileset: {
                     kind: "external",
@@ -415,13 +411,9 @@ describe("build a map from a floor plan", () => {
                 },
               },
             ],
-            expectedRevision:
-              pins.expectedMapRevision,
-            expectedDependencyRevisions:
-              pins.expectedDependencyRevisions,
-          }),
+          ),
         ).rejects.toMatchObject({
-          code: "REVISION_MISMATCH",
+          code: "REVISION_CONFLICT",
         });
       },
     );

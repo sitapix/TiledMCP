@@ -20,7 +20,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "floor.wood"
+          "value": "floor_wood"
         }
       ]
     },
@@ -31,7 +31,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "floor.stone"
+          "value": "floor_stone"
         }
       ]
     },
@@ -42,7 +42,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "wall.brick"
+          "value": "wall_brick"
         }
       ]
     },
@@ -53,7 +53,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "wall.window"
+          "value": "wall_window"
         }
       ]
     },
@@ -64,7 +64,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "door.closed"
+          "value": "door_closed"
         }
       ]
     },
@@ -75,7 +75,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "floor.rug"
+          "value": "floor_rug"
         }
       ]
     },
@@ -86,7 +86,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "prop.barrel"
+          "value": "prop_barrel"
         }
       ]
     },
@@ -97,7 +97,7 @@
         {
           "name": "role",
           "type": "string",
-          "value": "prop.table"
+          "value": "prop_table"
         }
       ]
     }

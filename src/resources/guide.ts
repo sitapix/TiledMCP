@@ -37,7 +37,9 @@ approve, apply cycle and the revision pinning described later in this guide.
    \`tiled_render_tileset_sheet\` to actually look at them. Do not infer a
    tile's role from its local id. If roles are not recorded yet, name them
    through \`tiled_preview_tile_names\` first -- everything downstream becomes
-   reviewable when a palette reads \`{"name": "wall.brick"}\`.
+   reviewable when a palette reads \`{"name": "wall_brick"}\`. Registry names
+   must match \`^[a-z0-9][a-z0-9_-]{0,63}$\`; dots are rejected, so
+   \`wall_brick\` rather than \`wall.brick\`.
 4. **Build the palette.** Identify the distinct colours in the plan image and
    what each means. Every cell resolves to the *nearest* palette colour by
    squared RGB distance, so an omitted colour does not become empty -- it
@@ -859,20 +861,33 @@ that leaves the map fails closed), at most 10,000 cells per shape, and a
 \`null\` tile erases along the shape. Every preview, revision-pin, and
 transaction rule applies unchanged.
 
-## Paint terrain with Tiled's own matcher
+## Paint terrain corners
 
-When the local Tiled CLI is available, the optional
-\`tiled_preview_terrain\` paints Wang corners through Tiled's own
-\`TileLayer.wangEdit()\` — the same matcher as the editor's Terrain
-Brush — run headlessly by a server-authored static script (parameters
-are embedded as an inert JSON literal; the CLI writes only a staging
-copy of the map). Corners address the corner grid, \`x\` in
-\`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based wang color
-indexes, and the selected set must be corner or mixed type on an
-external atlas tileset. The result is an ordinary \`mapEdit\` change
-set carrying the exact \`setTiles\` cell diff — apply never re-runs the
-CLI, untouched bytes stay untouched, and the plan can join transactions
-like any map edit. A paint that changes nothing fails closed.
+\`tiled_preview_terrain\` paints Wang corners so that walls, paths and
+shorelines pick the right tile at every junction instead of being
+placed one at a time. It is a core tool: corners are matched natively,
+with no local Tiled install required.
+
+Corners address the corner grid — \`x\` in \`[0, width]\` and \`y\` in
+\`[0, height]\`, one larger than the cell grid on each axis — with
+1-based wang color indexes, and the selected set must be corner or
+mixed type on an external atlas tileset. Painting one corner restyles
+the up-to-four cells that share it, which is what makes a junction
+agree with itself. The result is an ordinary \`mapEdit\` change set
+carrying the exact \`setTiles\` cell diff, so untouched bytes stay
+untouched and the plan can join transactions like any map edit. A paint
+that changes nothing fails closed.
+
+Two things to know about the native matcher. Where Tiled's own
+\`WangFiller\` picks *randomly* (weighted by \`probability\`) among tiles
+that match a corner pattern equally well, this picks the lowest local
+tile id, because the same input must always produce the same bytes. The
+chosen tile is always one Tiled considers valid for that pattern, but on
+a set with several equally-good candidates it need not be the one a
+given editor session produced. And where no tile in the set matches a
+required pattern, the paint fails closed naming the cell and the
+pattern, rather than approximating with a near-match — add the missing
+Wang tile instead.
 
 ## Edit Wang terrain sets
 

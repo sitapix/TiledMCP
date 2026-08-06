@@ -32,49 +32,49 @@ interface Role {
 const ROLES: readonly Role[] = [
   {
     id: 0,
-    name: "floor.wood",
+    name: "floor_wood",
     className: "Floor",
     rgb: [207, 196, 168],
   },
   {
     id: 1,
-    name: "floor.stone",
+    name: "floor_stone",
     className: "Floor",
     rgb: [143, 143, 150],
   },
   {
     id: 2,
-    name: "wall.brick",
+    name: "wall_brick",
     className: "Wall",
     rgb: [107, 74, 47],
   },
   {
     id: 3,
-    name: "wall.window",
+    name: "wall_window",
     className: "Wall",
     rgb: [111, 168, 200],
   },
   {
     id: 4,
-    name: "door.closed",
+    name: "door_closed",
     className: "Door",
     rgb: [63, 107, 163],
   },
   {
     id: 5,
-    name: "floor.rug",
+    name: "floor_rug",
     className: "Floor",
     rgb: [184, 67, 58],
   },
   {
     id: 6,
-    name: "prop.barrel",
+    name: "prop_barrel",
     className: "Prop",
     rgb: [47, 107, 74],
   },
   {
     id: 7,
-    name: "prop.table",
+    name: "prop_table",
     className: "Prop",
     rgb: [163, 63, 91],
   },
@@ -232,25 +232,25 @@ async function writePlan(): Promise<void> {
       put(
         x,
         y,
-        onBorder ? "wall.brick" : "floor.wood",
+        onBorder ? "wall_brick" : "floor_wood",
       );
     }
   }
   for (const x of [4, 5, 10, 11]) {
-    put(x, 0, "wall.window");
+    put(x, 0, "wall_window");
   }
   for (const x of [7, 8]) {
-    put(x, MAP_HEIGHT - 1, "door.closed");
-    put(x, MAP_HEIGHT - 2, "floor.stone");
-    put(x, 7, "prop.table");
+    put(x, MAP_HEIGHT - 1, "door_closed");
+    put(x, MAP_HEIGHT - 2, "floor_stone");
+    put(x, 7, "prop_table");
   }
   for (let y = 4; y <= 6; y++) {
     for (let x = 6; x <= 9; x++) {
-      put(x, y, "floor.rug");
+      put(x, y, "floor_rug");
     }
   }
-  put(2, 2, "prop.barrel");
-  put(13, 2, "prop.barrel");
+  put(2, 2, "prop_barrel");
+  put(13, 2, "prop_barrel");
 
   await sharp(pixels, {
     raw: {
