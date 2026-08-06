@@ -4031,14 +4031,41 @@ export const previewEditsToolOutputSchema =
  * second element -- is reachable. Declaring the full 18-kind union here would
  * advertise 17 operations the tool cannot produce.
  *
- * `summary` deliberately stays on the generic union. Its optional members
- * (`transcodes`, `chunkedTileLayerIds`, ...) depend on the target layer's
- * encoding and on whether the map is infinite, and an over-tight schema here
- * would not fail loudly: `register()` swallows an output mismatch into
- * `INTERNAL_ERROR`. Narrowing it needs coverage of those cases first.
+ * `summary` carries only the base members, with none of the optional ones the
+ * generic union allows. Every optional is reachable only through an operation
+ * this tool cannot emit:
  *
- * `tests/previewShape.test.ts` exercises this over the MCP surface.
+ * - `transcodes` is pushed at exactly one site, inside the
+ *   `operation.type === "transcodeTileLayer"` branch of `mapOperations.ts`.
+ * - `chunkedTileLayerIds` needs a chunked layer, which only exists on an
+ *   infinite map, and this tool rejects those with `UNSUPPORTED_MAP_PROFILE`.
+ * - `mapUpdates`, `mapResizes`, `removedTilesets`, `deletedLayers`,
+ *   `movedLayers`, `duplicatedLayers` and `tileReplacements` each require their
+ *   own operation kind, and `layerUpdates` requires `updateLayer`.
+ *
+ * That reasoning is load-bearing: `register()` turns an output-schema mismatch
+ * into an opaque `INTERNAL_ERROR` rather than a loud failure, so a member that
+ * turns out to be reachable would surface as an unexplained error on a user's
+ * map. `tests/previewShape.test.ts` pins the CSV and zlib cases over the MCP
+ * surface and asserts the infinite-map rejection that closes the last gap.
  */
+const drawShapeSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    cellWrites: nonnegativeIntegerOutputSchema,
+    affectedLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedTileLayerIds: z
+      .array(positiveIdOutputSchema)
+      .length(1),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+  })
+  .strict();
+
 export const previewShapeToolOutputSchema =
   toolOutputSchema(
     z
@@ -4047,8 +4074,7 @@ export const previewShapeToolOutputSchema =
         operations: z.tuple([
           setTilesOperationPreviewOutputSchema,
         ]),
-        summary:
-          genericMapEditSummaryOutputSchema,
+        summary: drawShapeSummaryOutputSchema,
       })
       .strict(),
   );

@@ -709,11 +709,22 @@ so this breadth costs transport bytes on one `tools/list` per session, not model
 number worth watching is the ~90 KB of *input* schemas, where `tiled_preview_edits` alone is
 about a quarter of the total.
 
-`tiled_preview_shape` is the one narrowed case, and only halfway: `MapService.planDrawShape` calls
-`planEdits` with a hardcoded single-element `[{ type: "setTiles" }]` that `planEdits` deep-copies
-straight into the plan, so `operations` is provably a one-element tuple. Its `summary` stays on
-the generic union for the reason above. Narrow another tool only behind end-to-end coverage
-through the MCP surface — `tests/previewShape.test.ts` is the pattern; a test that calls
+`tiled_preview_shape` is the one narrowed case, at 7,765 bytes against the generic 73,837. It is
+worth reading as the template for what "enough evidence" means, because the bar is unreachability
+proven from source, not a summary observed on a fixture:
+
+- `operations` — `MapService.planDrawShape` calls `planEdits` with a hardcoded single-element
+  `[{ type: "setTiles" }]`, and `planEdits` deep-copies that array straight into the plan. No
+  second element and no other kind is constructible.
+- `summary.transcodes` — pushed at exactly one site in `mapOperations.ts`, inside the
+  `operation.type === "transcodeTileLayer"` branch. Note that a zlib layer does *not* reach it:
+  writes are source-preserving, so the layer keeps its encoding and nothing re-encodes.
+- `summary.chunkedTileLayerIds` — requires a chunked layer, which exists only on an infinite map,
+  and the planner rejects those with `UNSUPPORTED_MAP_PROFILE`.
+- the remaining optional members each require their own operation kind.
+
+Narrow another tool only behind end-to-end coverage through the MCP surface.
+`tests/previewShape.test.ts` is the pattern, including the negative case — a test that calls
 `MapService` directly does not exercise output validation at all and will not catch the failure.
 
 ## 16. Configuration
