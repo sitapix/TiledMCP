@@ -8,7 +8,12 @@ import {
 } from "./storage/checkpoints.js";
 
 export interface ServerConfig {
-  projectDir: string;
+  /**
+   * Absent exactly when neither --project-dir nor TILED_PROJECT_DIR was
+   * given; startup then defers to the client's MCP roots and fails closed
+   * if the client cannot supply one.
+   */
+  projectDir: string | undefined;
   tiledCliPath: string;
   rasterizerPath: string;
   checkpointBytes: number;
@@ -20,15 +25,8 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Ser
   const projectArg = options.get("--project-dir");
   const projectDir = projectArg ?? env.TILED_PROJECT_DIR;
 
-  if (!projectDir) {
-    throw new TiledMcpError(
-      "PROJECT_ROOT_REQUIRED",
-      "A project root is required. Pass --project-dir <path> or set TILED_PROJECT_DIR.",
-    );
-  }
-
   return {
-    projectDir: resolve(projectDir),
+    projectDir: projectDir ? resolve(projectDir) : undefined,
     tiledCliPath: options.get("--tiled-cli") ?? env.TILED_CLI_PATH ?? "tiled",
     rasterizerPath:
       options.get("--rasterizer") ?? env.TILED_RASTERIZER_PATH ?? "tmxrasterizer",
@@ -44,10 +42,12 @@ export function loadConfig(argv: readonly string[], env: NodeJS.ProcessEnv): Ser
 
 export function helpText(): string {
   return [
-    "Usage: tiled-mcp --project-dir <path> [options]",
+    "Usage: tiled-mcp-server [--project-dir <path>] [options]",
     "",
     "Options:",
-    "  --project-dir <path>  Required project sandbox root",
+    "  --project-dir <path>  Project sandbox root (env: TILED_PROJECT_DIR).",
+    "                        When omitted, the client's first MCP root is used;",
+    "                        startup fails closed if the client offers none.",
     "  --tiled-cli <path>    Tiled executable (default: tiled)",
     "  --rasterizer <path>   TmxRasterizer executable (default: tmxrasterizer)",
     `  --checkpoint-bytes <bytes>  Checkpoint storage quota ` +

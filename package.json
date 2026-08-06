@@ -1,6 +1,6 @@
 {
   "name": "tiled-mcp-server",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A safety-first MCP server for inspecting and editing Tiled maps.",
   "license": "MIT",
   "repository": {

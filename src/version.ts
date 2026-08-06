@@ -1,5 +1,5 @@
 export const SERVER_NAME = "tiled-mcp";
-export const SERVER_VERSION = "0.0.1";
+export const SERVER_VERSION = "0.0.2";
 /**
  * Human-facing presentation for `Implementation`. `title` is the display name
  * clients show in place of the programmatic `name`; `description` was added in

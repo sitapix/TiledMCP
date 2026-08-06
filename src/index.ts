@@ -2,13 +2,9 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { TiledCliAdapter } from "./adapters/tiledCli.js";
+import { bootTiledMcpServer } from "./boot.js";
 import { helpText, loadConfig } from "./config.js";
 import { asTiledMcpError } from "./errors.js";
-import { MapService } from "./maps/mapService.js";
-import { ProjectPathResolver } from "./project/pathResolver.js";
-import { createTiledMcpServer } from "./server.js";
-import { DocumentStore } from "./storage/documentStore.js";
 import { SERVER_NAME, SERVER_VERSION } from "./version.js";
 
 async function main(): Promise<void> {
@@ -19,76 +15,12 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig(argv, process.env);
-  const resolver = await ProjectPathResolver.create(config.projectDir);
-  const store = new DocumentStore(
-    resolver,
-    undefined,
-    undefined,
-    {
-      maxBytes: config.checkpointBytes,
-      ...(config.retainCommittedPerTarget === undefined
-        ? {}
-        : {
-            retainCommittedPerTarget:
-              config.retainCommittedPerTarget,
-          }),
-    },
-  );
-  const transactionReport =
-    await store.recoverTransactions();
-  process.stderr.write(
-    [
-      "tiled-mcp: transaction recovery",
-      `scanned=${transactionReport.scannedManifests}`,
-      `rolledBack=${transactionReport.rolledBack}`,
-      `rolledForward=${transactionReport.rolledForwardTargets}`,
-      `alreadyComplete=${transactionReport.alreadyCompleteTargets}`,
-      `conflicts=${transactionReport.conflicts.length}`,
-      `corrupt=${transactionReport.corruptManifests.length}`,
-      `sweptStaged=${transactionReport.sweptStagedObjects}`,
-    ].join(" ") + "\n",
-  );
-  const checkpointReport = await store.reconcilePreparedCheckpoints();
-  const reconciliationCounts = {
-    reconciled: checkpointReport.outcomes.filter(
-      ({ outcome }) => outcome === "reconciled",
-    ).length,
-    writeDidNotLand: checkpointReport.outcomes.filter(
-      ({ outcome }) => outcome === "writeDidNotLand",
-    ).length,
-    conflicts: checkpointReport.outcomes.filter(
-      ({ outcome }) => outcome === "conflict",
-    ).length,
-    errors: checkpointReport.outcomes.filter(
-      ({ outcome }) => outcome === "error",
-    ).length,
-  };
-  process.stderr.write(
-    [
-      "tiled-mcp: checkpoint scan",
-      `scanned=${checkpointReport.scannedEntries}`,
-      `reconciled=${reconciliationCounts.reconciled}`,
-      `writeDidNotLand=${reconciliationCounts.writeDidNotLand}`,
-      `conflicts=${reconciliationCounts.conflicts}`,
-      `corrupt=${checkpointReport.corruptEntries.length}`,
-      `errors=${reconciliationCounts.errors}`,
-      `truncated=${checkpointReport.truncated}`,
-    ].join(" ") + "\n",
-  );
-  const maps = new MapService(resolver, store);
-  const cli = new TiledCliAdapter({
-    tiledCliPath: config.tiledCliPath,
-    rasterizerPath: config.rasterizerPath,
+  const { registeredTools, projectDir } = await bootTiledMcpServer({
+    config,
+    transport: new StdioServerTransport(),
   });
-  const { server, registeredTools } = await createTiledMcpServer({
-    resolver,
-    store,
-    maps,
-    cli,
-  });
-  await server.connect(new StdioServerTransport());
   process.stderr.write(
-    `${SERVER_NAME} ${SERVER_VERSION} ready for ${resolver.root} (${registeredTools.length} tools)\n`,
+    `${SERVER_NAME} ${SERVER_VERSION} ready for ${projectDir} (${registeredTools.length} tools)\n`,
   );
 }
 

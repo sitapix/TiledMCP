@@ -8,10 +8,10 @@ import {
 } from "../src/storage/checkpoints.js";
 
 describe("loadConfig", () => {
-  it("fails closed without a project root", () => {
-    expect(() => loadConfig([], {})).toThrow(
-      expect.objectContaining({ code: "PROJECT_ROOT_REQUIRED" }),
-    );
+  it("defers the project root to client MCP roots when none is given", () => {
+    // Boot fails closed later if the client cannot supply a root; config
+    // itself no longer requires one up front.
+    expect(loadConfig([], {}).projectDir).toBeUndefined();
   });
 
   it("loads explicit options over environment defaults", () => {
