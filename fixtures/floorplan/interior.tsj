@@ -1,0 +1,154 @@
+{
+  "columns": 8,
+  "image": "tiles.png",
+  "imageheight": 16,
+  "imagewidth": 128,
+  "margin": 0,
+  "name": "interior",
+  "spacing": 0,
+  "tilecount": 8,
+  "tiledversion": "1.12.2",
+  "tileheight": 16,
+  "tilewidth": 16,
+  "type": "tileset",
+  "version": "1.10",
+  "tiles": [
+    {
+      "id": 0,
+      "type": "Floor",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "floor.wood"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "type": "Floor",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "floor.stone"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "Wall",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "wall.brick"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "Wall",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "wall.window"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "Door",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "door.closed"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "Floor",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "floor.rug"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "Prop",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "prop.barrel"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "Prop",
+      "properties": [
+        {
+          "name": "role",
+          "type": "string",
+          "value": "prop.table"
+        }
+      ]
+    }
+  ],
+  "wangsets": [
+    {
+      "name": "Walls",
+      "tile": -1,
+      "type": "corner",
+      "colors": [
+        {
+          "color": "#6b4a2f",
+          "name": "Wall",
+          "probability": 1,
+          "tile": 2
+        },
+        {
+          "color": "#cfc4a8",
+          "name": "Floor",
+          "probability": 1,
+          "tile": 0
+        }
+      ],
+      "wangtiles": [
+        {
+          "tileid": 2,
+          "wangid": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1
+          ]
+        },
+        {
+          "tileid": 0,
+          "wangid": [
+            0,
+            2,
+            0,
+            2,
+            0,
+            2,
+            0,
+            2
+          ]
+        }
+      ]
+    }
+  ]
+}

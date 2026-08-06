@@ -61,4 +61,16 @@ silently wrong edits.
 Render to check your work: \`tiled_render_preview\` for the current state and
 \`tiled_render_diff\` to confirm an applied change did what you intended.
 
+## Start from a prompt, not from the tool list
+
+This server registers MCP prompts that carry the exact call sequence for a
+whole task, which is faster and safer than assembling one from the tool list:
+
+- \`build_from_floor_plan\` -- turn a floor-plan image into a finished map:
+  inspect the tiles, build a colour-to-tile palette, import the plan as floors,
+  run the walls, place the sprites, verify by rendering.
+- \`set_up_tile_roles\` -- record which tiles are floors, walls, doors and props
+  so later edits address tiles by meaning rather than by local id.
+- \`review_map\` -- read-only inspection of one map.
+
 Read the \`tiled://guide\` resource for per-workflow detail.`;

@@ -1585,7 +1585,46 @@ describe("generated MCP contract", () => {
     expect(contract.resourceTemplateDefinitions).toEqual(
       [],
     );
-    expect(contract.prompts).toEqual([]);
+    // Prompts are the task-shaped entry points into the tool surface. The
+    // contract records them in advertised order, flagship build workflow
+    // first, so a client can read the intended starting point off the list.
+    expect(contract.prompts).toEqual([
+      expect.objectContaining({
+        name: "build_from_floor_plan",
+        arguments: [
+          expect.objectContaining({
+            name: "planImagePath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: false,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "set_up_tile_roles",
+        arguments: [
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: true,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "review_map",
+        arguments: [
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+        ],
+      }),
+    ]);
 
     const profiles = asRecord(
       contract.profiles,

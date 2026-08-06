@@ -13,6 +13,56 @@ TiledMCP inspects and edits Tiled project files under one configured project
 root. Treat every path as a project-relative POSIX path. Absolute paths and
 \`..\` traversal are rejected.
 
+## Where to start
+
+Most of this document is per-tool reference, organised by tool. If you have a
+task rather than a question, start from one of the registered MCP prompts --
+\`build_from_floor_plan\`, \`set_up_tile_roles\` or \`review_map\` -- which
+carry the whole call sequence. The recipe immediately below is the one worth
+reading inline, because it is the path most builds take.
+
+## Recipe: build a map from a floor-plan image
+
+The short version of \`build_from_floor_plan\`. Every step obeys the preview,
+approve, apply cycle and the revision pinning described later in this guide.
+
+1. **Orient.** \`tiled_get_capabilities\` for the registered tool set and
+   limits, then \`tiled_list_files\` for the real project-relative paths.
+2. **Read the map.** \`tiled_get_map_summary\`. Keep the \`revision\`, the
+   complete \`dependencyRevisions\`, the layer ids and the tileset
+   \`assetId\` values together, from that one read. Create a target tile layer
+   with \`tiled_create_layer\` if there is not already a suitable one.
+3. **Learn the tiles.** \`tiled_list_tile_names\` for an existing semantic
+   registry, \`tiled_find_tiles\` to search by class or property, and
+   \`tiled_render_tileset_sheet\` to actually look at them. Do not infer a
+   tile's role from its local id. If roles are not recorded yet, name them
+   through \`tiled_preview_tile_names\` first -- everything downstream becomes
+   reviewable when a palette reads \`{"name": "wall.brick"}\`.
+4. **Build the palette.** Identify the distinct colours in the plan image and
+   what each means. Every cell resolves to the *nearest* palette colour by
+   squared RGB distance, so an omitted colour does not become empty -- it
+   becomes whichever entry is nearest. Give every region you care about an
+   entry, and use a \`null\` tile where a colour should erase.
+5. **Lay the floors.** \`tiled_preview_import_image\` with the image, the target
+   layer, a bounded region and that palette. It resamples the image onto the
+   cell grid, each cell averaging its alpha-weighted pixel block, and returns an
+   ordinary \`mapEdit\` change set. Read the plan and \`summary\`, apply it,
+   then \`tiled_render_preview\` and compare against the plan image before going
+   further.
+6. **Run the walls.** If \`tiled_preview_terrain\` is registered, paint Wang
+   corners so junctions pick the right tile automatically: corners address the
+   corner grid, \`x\` in \`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based
+   colour indexes. Otherwise place walls explicitly with
+   \`tiled_preview_shape\` (rectangle outline for a room, line for a run) or a
+   \`fillRegion\` operation.
+7. **Place the sprites.** \`createObject\` operations through
+   \`tiled_preview_edits\`, \`tiled_preview_template\` for a saved template, or
+   \`tiled_preview_prefab\` to stamp a region that already exists elsewhere.
+   Use \`tiled_convert_coordinates\` for anything non-orthogonal.
+8. **Verify.** \`tiled_render_preview\` (with \`overlays.grid\` or
+   \`overlays.coordinates\` when exact placement matters),
+   \`tiled_render_diff\` against the previous state, and \`tiled_validate\`.
+
 ## Discover the active surface
 
 1. Call \`tiled_get_capabilities\` and inspect \`registeredTools\`, the edit

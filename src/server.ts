@@ -191,7 +191,6 @@ import {
 } from "./outputSchemas/common.js";
 import {
   addTilesetPreviewToolOutputSchema,
-  advertisedMapEditPreviewToolOutputSchema,
   checkpointPruneBatchPreviewToolOutputSchema,
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
@@ -316,6 +315,7 @@ import {
   registerGuideResource,
 } from "./resources/guide.js";
 import { TILED_MCP_SERVER_INSTRUCTIONS } from "./resources/instructions.js";
+import { registerTiledMcpPrompts } from "./resources/prompts.js";
 import {
   DEFAULT_RASTER_RENDER_EDGE,
   MAX_RASTER_INPUT_AGGREGATE_BYTES,
@@ -2002,7 +2002,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, prompts: {} },
       instructions:
         TILED_MCP_SERVER_INSTRUCTIONS,
     },
@@ -2011,6 +2011,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
 
   registerGuideResource(server);
   registerApplicationErrorResource(server);
+  registerTiledMcpPrompts(server);
 
   const advertisedToolNames = [
     ...TILED_MCP_CORE_TOOL_NAMES,
@@ -5461,8 +5462,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         .strict(),
       outputSchema:
         previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5553,8 +5552,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5705,8 +5702,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5809,8 +5804,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -5906,8 +5899,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6033,8 +6024,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6101,8 +6090,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -6550,8 +6537,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema: previewEditsToolOutputSchema,
-      advertisedOutputSchema:
-        advertisedMapEditPreviewToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({
@@ -7134,8 +7119,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           .strict(),
         outputSchema:
           previewEditsToolOutputSchema,
-        advertisedOutputSchema:
-          advertisedMapEditPreviewToolOutputSchema,
         annotations: PREVIEW_ONLY,
       },
       async ({
@@ -7238,21 +7221,6 @@ function register<
     description: string;
     inputSchema: InputSchema;
     outputSchema: OutputSchema;
-    /**
-     * What the tool *declares* to clients, when that should differ from what
-     * it is *checked* against. `outputSchema` stays the exhaustive closed
-     * schema and remains the only thing this function validates against, so
-     * the correctness guarantee is unchanged; this is a strictly looser
-     * projection of the same value.
-     *
-     * It exists because the closed 18-kind `ChangeSetPlan` union costs about
-     * 73 KB per tool and nine tools return it, which is ~609 KB of identical
-     * JSON Schema on the wire. MCP has no way to share a definition across
-     * tool definitions, and the SDK converts with Zod's `reused: "inline"`
-     * hardcoded, so `$defs` factoring is not reachable either. Declaring the
-     * plan structurally is.
-     */
-    advertisedOutputSchema?: z.ZodType;
     annotations: ToolAnnotations;
   },
   callback: (
@@ -7285,20 +7253,7 @@ function register<
       return internalToolError();
     }
   }) as unknown as ToolCallback<InputSchema>;
-  const {
-    advertisedOutputSchema,
-    ...advertised
-  } = config;
-  server.registerTool(
-    name,
-    advertisedOutputSchema === undefined
-      ? advertised
-      : {
-          ...advertised,
-          outputSchema: advertisedOutputSchema,
-        },
-    sdkCallback,
-  );
+  server.registerTool(name, config, sdkCallback);
   registeredTools.push(name);
 }
 

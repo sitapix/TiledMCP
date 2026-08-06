@@ -3920,37 +3920,3 @@ export const previewEditsToolOutputSchema =
   toolOutputSchema(
     genericMapEditPreviewOutputSchema,
   );
-
-/**
- * The advertised projection of a map-edit preview.
- *
- * Every tool that returns a map-edit change set is still *validated* against
- * the exhaustive schema above -- `register()` in `server.ts` parses each
- * response with the closed union and degrades a mismatch to `INTERNAL_ERROR`.
- * This is only what those tools *declare*.
- *
- * The distinction pays for itself: enumerating all twenty operation variants
- * with their nested object, shape and text schemas costs ~73 KB, nine tools
- * return exactly that value, and MCP has no way to share one definition
- * between tool definitions. A client gains nothing from the enumeration that
- * it cannot read off the plan it was handed, so the plan is declared
- * structurally -- `operations` stays present, ordered and bounded, and each
- * entry still announces its `type`.
- */
-const advertisedMapEditPreviewOutputSchema = z
-  .object({
-    ...mapEditPreviewCommonShape,
-    operations: z
-      .array(
-        z.looseObject({ type: z.string() }),
-      )
-      .min(1)
-      .max(128),
-    summary: genericMapEditSummaryOutputSchema,
-  })
-  .strict();
-
-export const advertisedMapEditPreviewToolOutputSchema =
-  toolOutputSchema(
-    advertisedMapEditPreviewOutputSchema,
-  );
