@@ -6,6 +6,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -27,7 +28,6 @@ import type {
   MapEditPlan,
 } from "../src/maps/types.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/text.tmj";
 const OBJECT_LAYER_ID = 7;
@@ -762,7 +762,7 @@ async function createHarness(
     root,
     service: new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     ),
   };
 }

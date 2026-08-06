@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -185,11 +186,15 @@ const CORE_TOOLS = [
   "tiled_validate",
   "tiled_analyze_usage",
   "tiled_check_connectivity",
+  "tiled_convert_coordinates",
   "tiled_create_map",
   "tiled_create_tileset",
   "tiled_delete_file",
   "tiled_add_tileset_to_map",
+  "tiled_replace_tileset_in_map",
+  "tiled_preview_merge_map",
   "tiled_update_tile",
+  "tiled_update_tileset",
   "tiled_update_wangsets",
   "tiled_create_layer",
   "tiled_preview_edits",
@@ -209,6 +214,7 @@ const CORE_TOOLS = [
   "tiled_preview_property_types",
   "tiled_preview_world_edits",
   "tiled_preview_transaction",
+  "tiled_preview_terrain",
   "tiled_apply_change_set",
 ] as const;
 
@@ -274,7 +280,7 @@ describe("createTiledMcpServer", () => {
     );
     const resolver =
       await ProjectPathResolver.create(harness.root);
-    const store = new DocumentStore(resolver);
+    const store = makeStore(resolver);
     const maps = new MapService(resolver, store);
     const cli = new TiledCliAdapter({
       tiledCliPath: join(
@@ -307,7 +313,7 @@ describe("createTiledMcpServer", () => {
     expect(probeCalls).toBe(0);
   });
 
-  it("advertises exactly the fifty-two core tools with safety annotations", async () => {
+  it("advertises exactly the core tool list with safety annotations", async () => {
     const response = await harness.client.listTools();
     const byName = new Map(response.tools.map((tool) => [tool.name, tool]));
 
@@ -356,6 +362,7 @@ describe("createTiledMcpServer", () => {
       "tiled_delete_file",
       "tiled_add_tileset_to_map",
       "tiled_update_tile",
+      "tiled_update_tileset",
       "tiled_create_layer",
     ]) {
       expect(byName.get(name)?.annotations).toMatchObject({
@@ -10796,12 +10803,7 @@ async function createHarness(
   await writeFile(join(root, "tiles", "terrain.png"), await terrainPng());
 
   const resolver = await ProjectPathResolver.create(root);
-  const store = new DocumentStore(
-    resolver,
-    undefined,
-    undefined,
-    options.checkpointOptions,
-  );
+  const store = makeStore(resolver, { checkpointOptions: options.checkpointOptions });
   const maps = new MapService(resolver, store);
   const missingExecutable = join(root, "does-not-exist");
   const cli = new TiledCliAdapter({

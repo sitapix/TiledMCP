@@ -4,6 +4,7 @@ import {
 } from "node:crypto";
 
 import { TiledMcpError } from "./errors.js";
+import type { Revision } from "./storage/revision.js";
 import {
   stableJson,
   type JsonValue,
@@ -41,6 +42,12 @@ import {
   type TilesetEditPlan,
   type UpdateTileOperationPreview,
 } from "./maps/tilesetEdits.js";
+import {
+  assertTilesetPropertyEditPlan,
+  updateTilesetOperationPreview,
+  type TilesetPropertyEditPlan,
+  type UpdateTilesetOperationPreview,
+} from "./maps/tilesetProperties.js";
 import {
   assertTilesetCreatePlan,
   CREATE_TILESET_WARNING,
@@ -155,6 +162,7 @@ const REVISION_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 export type ChangeSetPlan =
   | MapEditPlan
   | TilesetEditPlan
+  | TilesetPropertyEditPlan
   | TilesetCreatePlan
   | FileDeletePlan
   | WorldEditPlan
@@ -171,7 +179,7 @@ export type ChangeSetPlan =
   | PreparedCheckpointAbandonPlan
   | PreparedCheckpointDiscardPlan;
 
-type ChangeSetOperationResult =
+export type ChangeSetOperationResult =
   | TileNameEditApplyResult
   | (CommitResult & {
       changeSetId: string;
@@ -259,6 +267,16 @@ export interface TilesetEditChangeSetPreview
   summary: TilesetEditPlan["summary"];
 }
 
+export interface TilesetPropertyEditChangeSetPreview
+  extends ChangeSetPreviewCommon {
+  kind: "tilesetPropertyEdit";
+  mapPath: string;
+  tilesetPath: string;
+  assetId: string;
+  mapRevision: string;
+  summary: TilesetPropertyEditPlan["summary"];
+}
+
 export interface TilesetCreateChangeSetPreview
   extends ChangeSetPreviewCommon {
   kind: "tilesetCreate";
@@ -318,7 +336,7 @@ export interface PropertyTypeEditChangeSetPreview
 export interface TileNameEditChangeSetPreview
   extends ChangeSetPreviewCommon {
   kind: "tileNameEdit";
-  registryRevision: string | null;
+  registryRevision: Revision | null;
   summary: TileNameEditPlan["summary"];
 }
 
@@ -777,6 +795,7 @@ export interface PreparedCheckpointAbandonChangeSetPreview
 export type ChangeSetPreview =
   | MapEditChangeSetPreview
   | TilesetEditChangeSetPreview
+  | TilesetPropertyEditChangeSetPreview
   | TilesetCreateChangeSetPreview
   | FileDeleteChangeSetPreview
   | WorldEditChangeSetPreview
@@ -1107,6 +1126,34 @@ type OperationPreview =
       gidRange: { first: number; last: number };
     }
   | {
+      type: "replaceTilesetInMap";
+      destructive: false;
+      warning: string;
+      firstGid: number;
+      from: {
+        tilesetPath: string;
+        assetId: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      to: {
+        tilesetPath: string;
+        source: string;
+        assetId: string;
+        tilesetRevision: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      /**
+       * Highest local id any surviving reference still uses, or `null` when
+       * nothing refers to the tileset. This is the number that decides whether
+       * a smaller replacement is safe.
+       */
+      highestReferencedLocalId: number | null;
+      referencedCellCount: number;
+      referencedObjectCount: number;
+    }
+  | {
       type: "removeTilesetFromMap";
       destructive: true;
       warning: string;
@@ -1150,6 +1197,7 @@ type OperationPreview =
       };
     }
   | UpdateTileOperationPreview
+  | UpdateTilesetOperationPreview
   | {
       type: "createTileset";
       destructive: false;
@@ -2336,6 +2384,33 @@ function toPreview(entry: ChangeSetEntry): ChangeSetPreview {
         (tileUpdate) =>
           updateTileOperationPreview(tileUpdate),
       ),
+      summary: structuredClone(plan.summary),
+      snapshotConsistency: "non-atomic-read-set",
+      createdAt: entry.createdAt,
+      expiresAt: new Date(
+        entry.expiresAt,
+      ).toISOString(),
+    };
+  }
+  if (
+    entry.plan.kind === "tilesetPropertyEdit"
+  ) {
+    const plan = entry.plan;
+    assertTilesetPropertyEditPlan(plan);
+    return {
+      kind: plan.kind,
+      changeSetId: entry.id,
+      planDigest: plan.id,
+      mapPath: plan.mapPath,
+      tilesetPath: plan.tilesetPath,
+      assetId: plan.assetId,
+      expectedRevision: plan.baseRevision,
+      mapRevision: plan.mapRevision,
+      operations: [
+        updateTilesetOperationPreview(
+          plan.summary,
+        ),
+      ],
       summary: structuredClone(plan.summary),
       snapshotConsistency: "non-atomic-read-set",
       createdAt: entry.createdAt,
@@ -4192,6 +4267,40 @@ function summarizeOperation(
       y: operation.y,
       expectedTemplateRevision:
         operation.expectedTemplateRevision,
+    };
+  }
+
+  if (
+    operation.type === "replaceTilesetInMap"
+  ) {
+    return {
+      type: operation.type,
+      // Not destructive: firstgid does not move, so every cell keeps pointing
+      // at the same slot. What changes is which art that slot resolves to.
+      destructive: false,
+      warning:
+        "This repoints one tileset reference in place. Every GID keeps its value and its slot, so each cell now shows the tile at the same local id in the replacement -- which is the intent when the art changed, and a silent remap when the two tilesets are not laid out alike. Compare both tilesets before approving.",
+      firstGid: operation.firstGid,
+      from: {
+        tilesetPath: operation.fromTilesetPath,
+        assetId: operation.fromAssetId,
+        tileCount: operation.fromTileCount,
+        gidSpan: operation.fromGidSpan,
+      },
+      to: {
+        tilesetPath: operation.tilesetPath,
+        source: operation.source,
+        assetId: operation.assetId,
+        tilesetRevision: operation.tilesetRevision,
+        tileCount: operation.tileCount,
+        gidSpan: operation.gidSpan,
+      },
+      highestReferencedLocalId:
+        operation.highestReferencedLocalId,
+      referencedCellCount:
+        operation.referencedCellCount,
+      referencedObjectCount:
+        operation.referencedObjectCount,
     };
   }
 

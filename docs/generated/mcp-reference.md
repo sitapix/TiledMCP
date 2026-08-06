@@ -6,7 +6,76 @@ Server: `tiled-mcp` `0.0.1`
 
 Protocol baseline: `2025-11-25`
 
-Server instructions: none.
+Server instructions: TiledMCP inspects and edits Tiled map assets (TMJ/TSJ/TMX/TSX/TX) under one
+configured project root.
+
+## Paths and discovery
+
+Every path input is a project-relative POSIX path. Absolute paths and `..`
+traversal are rejected. Call `tiled_get_capabilities` first: the registered
+tool set varies with the local Tiled CLI, and it also declares renderer limits,
+edit profiles, and the application-error contract.
+
+## Reading results
+
+`structuredContent.result` is the authoritative machine-readable value. The
+text block beside it is a bounded one-line summary (at most 1024 bytes) that
+deliberately omits fields; never parse it to recover them.
+
+On failure, branch only on `structuredContent.result.error.code`. The
+`message` and `details` values are for people and have no stable shape.
+Treat an unknown code as a generic failure rather than as success.
+
+## Writing: preview, approve, apply
+
+No project asset changes until you call `tiled_apply_change_set`. Planning
+tools validate the whole edit and return an expiring `changeSetId`; the
+human-visible plan they return is the approval boundary. Exactly two tools
+write directly without this cycle: `tiled_create_map` and
+`tiled_create_checkpoint`.
+
+Every write is a compare-and-set. Read the target first (for example with
+`tiled_get_map_summary`), then pass its `revision` as
+`expectedMapRevision` and its complete `dependencyRevisions` record as
+`expectedDependencyRevisions`. Pass them unchanged and together, from the
+same read. A stale or partial pin fails closed rather than merging.
+
+Never construct or edit raw global IDs. A tile value is a `TileRef`
+(`{"tileset": {"kind": "external", "assetId": "asset_..."}, "localId": 0}`),
+and `null` clears a cell. Preserve transform fields returned by a read unless
+the edit is meant to change them.
+
+## Working effectively
+
+Undefined or unsupported semantics fail closed with a specific code instead of
+being approximated -- an error usually means the input was underspecified, not
+that the operation is impossible.
+
+Use `tiled_convert_coordinates` rather than deriving isometric, staggered, or
+hexagonal placement by hand; the projection math is the most common source of
+silently wrong edits.
+
+Render to check your work: `tiled_render_preview` for the current state and
+`tiled_render_diff` to confirm an applied change did what you intended.
+
+## Start from a prompt, not from the tool list
+
+This server registers MCP prompts that carry the exact call sequence for a
+whole task, which is faster and safer than assembling one from the tool list:
+
+- `create_map_from_tilesheet` -- start here when all you have is a tilesheet
+  image and no map yet: cut the sheet into a tileset, create the map, attach
+  the tileset, add a layer, identify tiles by rendering the sheet with its
+  local IDs, then paint and verify. The other three assume a map already
+  exists.
+- `build_from_floor_plan` -- turn a floor-plan image into a finished map:
+  inspect the tiles, build a colour-to-tile palette, import the plan as floors,
+  run the walls, place the sprites, verify by rendering.
+- `set_up_tile_roles` -- record which tiles are floors, walls, doors and props
+  so later edits address tiles by meaning rather than by local id.
+- `review_map` -- read-only inspection of one map.
+
+Read the `tiled://guide` resource for per-workflow detail.
 
 The machine-readable source of truth is `contracts/mcp-contract.v1.json`. Regenerate both files with `pnpm contract:generate`.
 
@@ -14,8 +83,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 52 tools
-- `with-tmxrasterizer`: 55 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 57 tools
+- `with-tmxrasterizer`: 59 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -191,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:a5841d88d6fb4fa54872db8d8937a7f46d300b8dc900e2d1aa4054e0547ad834",
+    "revision": "sha256:c4c5f7d7bf4360cd2fd8c9f5e627a851fd6d7593751f4db0f45e3062e3ac5afe",
     "serverVersion": "0.0.1",
-    "size": 102587
+    "size": 113920
   },
   "annotations": {
     "audience": [
@@ -205,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 102587,
+  "size": 113920,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -213,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 102587 UTF-8 bytes, revision `sha256:a5841d88d6fb4fa54872db8d8937a7f46d300b8dc900e2d1aa4054e0547ad834`.
+Content contract: `text`, 113920 UTF-8 bytes, revision `sha256:c4c5f7d7bf4360cd2fd8c9f5e627a851fd6d7593751f4db0f45e3062e3ac5afe`.
 
 Resource templates: none.
 
@@ -4739,6 +4808,73 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "from": {
       "additionalProperties": false,
@@ -4798,62 +4934,7 @@ Input schema:
             },
             "tiles": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "localId": {
-                    "maximum": 268435455,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "kind": {
-                        "const": "external",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "assetId"
-                    ],
-                    "type": "object"
-                  },
-                  "transform": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "flipD": {
-                        "type": "boolean"
-                      },
-                      "flipH": {
-                        "type": "boolean"
-                      },
-                      "flipV": {
-                        "type": "boolean"
-                      },
-                      "kind": {
-                        "const": "orthogonal",
-                        "type": "string"
-                      },
-                      "rawFlags": {
-                        "maximum": 4294967295,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "tileset",
-                  "localId"
-                ],
-                "type": "object"
+                "$ref": "#/definitions/TileRef"
               },
               "maxItems": 64,
               "minItems": 1,
@@ -5050,6 +5131,506 @@ Output schema:
             "largestComponentSize",
             "componentSamples",
             "componentSamplesTruncated",
+            "snapshotConsistency"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_convert_coordinates`
+
+Availability: `core`
+
+Read-only batch of the official Tiled 1.12.2 renderer transforms between the three coordinate spaces (tile, screen, pixel) for orthogonal, isometric, staggered and hexagonal maps. Use this instead of deriving placement by hand: the spaces coincide only for orthogonal maps, isometric pixel coordinates are expressed in tile-height units on both axes, and the isometric screen origin is offset by the map height. Each conversion reports the raw transform output plus, when converting into tile space, the whole cell that contains it. The result also declares whether tile space is discrete (hexagonal and staggered snap to the nearest of four hexagon centres, so there is no sub-cell remainder) or continuous, and whether pixel space differs from screen space. Reads only the map header, so it still answers when tilesets are missing or broken.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Read local Tiled project data"
+}
+```
+
+Example purpose: Resolve a rendered screen position to the tile cell under it, and the same cell back to its screen origin.
+
+```json
+{
+  "arguments": {
+    "conversions": [
+      {
+        "from": "screen",
+        "to": "tile",
+        "x": 352,
+        "y": 16
+      },
+      {
+        "from": "tile",
+        "to": "screen",
+        "x": 5,
+        "y": 3
+      },
+      {
+        "from": "tile",
+        "to": "pixel",
+        "x": 5,
+        "y": 3
+      }
+    ],
+    "mapPath": "maps/example.tmj"
+  },
+  "name": "tiled_convert_coordinates"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "conversions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "tile = whole/fractional cell indices; screen = rendered pixel position; pixel = the space object x/y live in",
+            "enum": [
+              "tile",
+              "screen",
+              "pixel"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "description": "tile = whole/fractional cell indices; screen = rendered pixel position; pixel = the space object x/y live in",
+            "enum": [
+              "tile",
+              "screen",
+              "pixel"
+            ],
+            "type": "string"
+          },
+          "x": {
+            "maximum": 1000000000,
+            "minimum": -1000000000,
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1000000000,
+            "minimum": -1000000000,
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "conversions"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "conversions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "cell": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "from": {
+                    "enum": [
+                      "tile",
+                      "screen",
+                      "pixel"
+                    ],
+                    "type": "string"
+                  },
+                  "input": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "output": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "to": {
+                    "enum": [
+                      "tile",
+                      "screen",
+                      "pixel"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "input",
+                  "output"
+                ],
+                "type": "object"
+              },
+              "maxItems": 256,
+              "type": "array"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "profile": {
+              "const": "tiled-1.12.2-renderer-transforms-v1",
+              "type": "string"
+            },
+            "projection": {
+              "additionalProperties": false,
+              "properties": {
+                "hexSideLength": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "mapHeight": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "orientation": {
+                  "enum": [
+                    "orthogonal",
+                    "isometric",
+                    "staggered",
+                    "hexagonal"
+                  ],
+                  "type": "string"
+                },
+                "pixelSpace": {
+                  "enum": [
+                    "same-as-screen",
+                    "distinct-from-screen"
+                  ],
+                  "type": "string"
+                },
+                "staggerAxis": {
+                  "enum": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "string"
+                },
+                "staggerIndex": {
+                  "enum": [
+                    "odd",
+                    "even"
+                  ],
+                  "type": "string"
+                },
+                "tileHeight": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "tileSpace": {
+                  "enum": [
+                    "discrete",
+                    "continuous"
+                  ],
+                  "type": "string"
+                },
+                "tileWidth": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "orientation",
+                "tileWidth",
+                "tileHeight",
+                "mapHeight",
+                "tileSpace",
+                "pixelSpace"
+              ],
+              "type": "object"
+            },
+            "revision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mapPath",
+            "revision",
+            "profile",
+            "projection",
+            "conversions",
             "snapshotConsistency"
           ],
           "type": "object"
@@ -13413,6 +13994,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_convert_coordinates",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_map",
                       "type": "string"
                     },
@@ -13429,7 +14014,19 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_replace_tileset_in_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_merge_map",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_tileset",
                       "type": "string"
                     },
                     {
@@ -13506,6 +14103,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_transaction",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_terrain",
                       "type": "string"
                     },
                     {
@@ -13626,6 +14227,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_convert_coordinates",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_map",
                       "type": "string"
                     },
@@ -13642,7 +14247,19 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_replace_tileset_in_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_merge_map",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_tileset",
                       "type": "string"
                     },
                     {
@@ -13719,6 +14336,10 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_transaction",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_terrain",
                       "type": "string"
                     },
                     {
@@ -13843,6 +14464,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_convert_coordinates",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_map",
                       "type": "string"
                     },
@@ -13859,7 +14484,19 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_replace_tileset_in_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_merge_map",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_tileset",
                       "type": "string"
                     },
                     {
@@ -13939,15 +14576,15 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_terrain",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     },
                     {
                       "const": "tiled_preview_export",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_terrain",
                       "type": "string"
                     }
                   ],
@@ -14064,6 +14701,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_convert_coordinates",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_create_map",
                       "type": "string"
                     },
@@ -14080,7 +14721,19 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_replace_tileset_in_map",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_preview_merge_map",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_update_tile",
+                      "type": "string"
+                    },
+                    {
+                      "const": "tiled_update_tileset",
                       "type": "string"
                     },
                     {
@@ -14160,6 +14813,10 @@ Output schema:
                       "type": "string"
                     },
                     {
+                      "const": "tiled_preview_terrain",
+                      "type": "string"
+                    },
+                    {
                       "const": "tiled_apply_change_set",
                       "type": "string"
                     },
@@ -14169,10 +14826,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_export",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_terrain",
                       "type": "string"
                     }
                   ],
@@ -16084,10 +16737,7 @@ Output schema:
               "type": "number"
             },
             "type": {
-              "enum": [
-                "objectgroup",
-                "imagelayer"
-              ],
+              "const": "objectgroup",
               "type": "string"
             },
             "visible": {
@@ -16100,6 +16750,74 @@ Output schema:
             "visible",
             "opacity",
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "image": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "nameTruncated": {
+              "const": true,
+              "type": "boolean"
+            },
+            "opacity": {
+              "type": "number"
+            },
+            "repeatX": {
+              "const": true,
+              "type": "boolean"
+            },
+            "repeatY": {
+              "const": true,
+              "type": "boolean"
+            },
+            "type": {
+              "const": "imagelayer",
+              "type": "string"
+            },
+            "visible": {
+              "type": "boolean"
+            },
+            "x": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "visible",
+            "opacity",
+            "type",
+            "x",
+            "y"
           ],
           "type": "object"
         }
@@ -28844,7 +29562,7 @@ Output schema:
 
 Availability: `core`
 
-Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches and tile objects (a shape:"tile" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can replace an existing tile object's reference, and shape objects never become tile objects) without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.
+Plans a batch of map edits without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions; nothing is written until tiled_apply_change_set commits it. Batchable operations, by the "type" field: setTiles (direct cell writes), fillRegion (dense rectangle), stampPattern, floodFill (bounded four-way), copyRegion (snapshot-based), replaceTiles (exact swaps), updateMap (root map properties), updateLayer (common layer properties), createObject, updateObject, deleteObjects (including bounded scalar custom-property patches). These six must each be the only operation in their change set: resizeMap, removeTilesetFromMap, deleteLayer, moveLayer, duplicateLayer, transcodeTileLayer. A shape:"tile" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can retarget an existing tile object, and shape objects never become tile objects.
 
 Annotations:
 
@@ -28987,6 +29705,305 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -29157,62 +30174,7 @@ Input schema:
                     "tile": {
                       "anyOf": [
                         {
-                          "additionalProperties": false,
-                          "properties": {
-                            "localId": {
-                              "maximum": 268435455,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "tileset": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "assetId": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "const": "external",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "assetId"
-                              ],
-                              "type": "object"
-                            },
-                            "transform": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "flipD": {
-                                  "type": "boolean"
-                                },
-                                "flipH": {
-                                  "type": "boolean"
-                                },
-                                "flipV": {
-                                  "type": "boolean"
-                                },
-                                "kind": {
-                                  "const": "orthogonal",
-                                  "type": "string"
-                                },
-                                "rawFlags": {
-                                  "maximum": 4294967295,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "tileset",
-                            "localId"
-                          ],
-                          "type": "object"
+                          "$ref": "#/definitions/TileRef"
                         },
                         {
                           "type": "null"
@@ -29274,62 +30236,7 @@ Input schema:
               "tile": {
                 "anyOf": [
                   {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    "$ref": "#/definitions/TileRef"
                   },
                   {
                     "type": "null"
@@ -29380,62 +30287,7 @@ Input schema:
                   "items": {
                     "anyOf": [
                       {
-                        "additionalProperties": false,
-                        "properties": {
-                          "localId": {
-                            "maximum": 268435455,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileset": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "assetId": {
-                                "maxLength": 128,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "kind": {
-                                "const": "external",
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "assetId"
-                            ],
-                            "type": "object"
-                          },
-                          "transform": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "flipD": {
-                                "type": "boolean"
-                              },
-                              "flipH": {
-                                "type": "boolean"
-                              },
-                              "flipV": {
-                                "type": "boolean"
-                              },
-                              "kind": {
-                                "const": "orthogonal",
-                                "type": "string"
-                              },
-                              "rawFlags": {
-                                "maximum": 4294967295,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "tileset",
-                          "localId"
-                        ],
-                        "type": "object"
+                        "$ref": "#/definitions/TileRef"
                       },
                       {
                         "type": "null"
@@ -29485,62 +30337,7 @@ Input schema:
               "tile": {
                 "anyOf": [
                   {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    "$ref": "#/definitions/TileRef"
                   },
                   {
                     "type": "null"
@@ -29663,122 +30460,12 @@ Input schema:
                   "additionalProperties": false,
                   "properties": {
                     "from": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "localId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "tileset": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "assetId": {
-                              "maxLength": 128,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "kind": {
-                              "const": "external",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "assetId"
-                          ],
-                          "type": "object"
-                        },
-                        "transform": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "flipD": {
-                              "type": "boolean"
-                            },
-                            "flipH": {
-                              "type": "boolean"
-                            },
-                            "flipV": {
-                              "type": "boolean"
-                            },
-                            "kind": {
-                              "const": "orthogonal",
-                              "type": "string"
-                            },
-                            "rawFlags": {
-                              "maximum": 4294967295,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "type": "object"
-                        }
-                      },
-                      "required": [
-                        "tileset",
-                        "localId"
-                      ],
-                      "type": "object"
+                      "$ref": "#/definitions/TileRef"
                     },
                     "to": {
                       "anyOf": [
                         {
-                          "additionalProperties": false,
-                          "properties": {
-                            "localId": {
-                              "maximum": 268435455,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "tileset": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "assetId": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "const": "external",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "assetId"
-                              ],
-                              "type": "object"
-                            },
-                            "transform": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "flipD": {
-                                  "type": "boolean"
-                                },
-                                "flipH": {
-                                  "type": "boolean"
-                                },
-                                "flipV": {
-                                  "type": "boolean"
-                                },
-                                "kind": {
-                                  "const": "orthogonal",
-                                  "type": "string"
-                                },
-                                "rawFlags": {
-                                  "maximum": 4294967295,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "tileset",
-                            "localId"
-                          ],
-                          "type": "object"
+                          "$ref": "#/definitions/TileRef"
                         },
                         {
                           "type": "null"
@@ -30349,62 +31036,7 @@ Input schema:
                         "type": "string"
                       },
                       "tile": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "localId": {
-                            "maximum": 268435455,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileset": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "assetId": {
-                                "maxLength": 128,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "kind": {
-                                "const": "external",
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "assetId"
-                            ],
-                            "type": "object"
-                          },
-                          "transform": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "flipD": {
-                                "type": "boolean"
-                              },
-                              "flipH": {
-                                "type": "boolean"
-                              },
-                              "flipV": {
-                                "type": "boolean"
-                              },
-                              "kind": {
-                                "const": "orthogonal",
-                                "type": "string"
-                              },
-                              "rawFlags": {
-                                "maximum": 4294967295,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "tileset",
-                          "localId"
-                        ],
-                        "type": "object"
+                        "$ref": "#/definitions/TileRef"
                       },
                       "visible": {
                         "type": "boolean"
@@ -30460,6 +31092,36 @@ Input schema:
               "patch": {
                 "additionalProperties": false,
                 "properties": {
+                  "atlas": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "margin": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "spacing": {
+                        "maximum": 1000000000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "tileHeight": {
+                        "maximum": 1000000000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "tileWidth": {
+                        "maximum": 1000000000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "tileWidth",
+                      "tileHeight"
+                    ],
+                    "type": "object"
+                  },
                   "bold": {
                     "type": "boolean"
                   },
@@ -30536,236 +31198,11 @@ Input schema:
                     "type": "array"
                   },
                   "properties": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "remove": {
-                        "items": {
-                          "maxLength": 512,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "set": {
-                        "items": {
-                          "oneOf": [
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "enum": [
-                                    "string",
-                                    "file"
-                                  ],
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "int",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": -9007199254740991,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "float",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "number"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "bool",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "color",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            }
-                          ]
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setClassMembers": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "path": {
-                              "items": {
-                                "maxLength": 512,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "maxItems": 8,
-                              "minItems": 1,
-                              "type": "array"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "path",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setListElements": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "index": {
-                              "maximum": 100000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "index",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TilePropertiesPatch"
                       }
-                    },
-                    "type": "object"
+                    ]
                   },
                   "rotation": {
                     "maximum": 1000000000,
@@ -30780,62 +31217,11 @@ Input schema:
                     "type": "string"
                   },
                   "tile": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TileRef"
                       }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    ]
                   },
                   "underline": {
                     "type": "boolean"
@@ -37232,6 +37618,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -37362,79 +37835,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -43136,6 +43537,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -43183,79 +43671,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -43312,6 +43728,5667 @@ Input schema:
     "imagePath",
     "region",
     "palette",
+    "expectedMapRevision",
+    "expectedDependencyRevisions"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "ChangeSetCopyEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "layerId": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "x": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        },
+        "y": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        }
+      },
+      "required": [
+        "layerId",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetIdMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "to": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "ChangeSetLayerDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nameTruncated": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/definitions/ChangeSetLayerType"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "name",
+        "nameTruncated"
+      ],
+      "type": "object"
+    },
+    "ChangeSetLayerType": {
+      "enum": [
+        "tilelayer",
+        "objectgroup",
+        "imagelayer",
+        "group"
+      ],
+      "type": "string"
+    },
+    "ChangeSetObjectCoordinate": {
+      "maximum": 1000000000,
+      "minimum": -1000000000,
+      "type": "number"
+    },
+    "ChangeSetObjectExtent": {
+      "maximum": 1000000000,
+      "minimum": 0,
+      "type": "number"
+    },
+    "ChangeSetPositiveId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "ChangeSetPositiveRect": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "x": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        },
+        "y": {
+          "$ref": "#/definitions/ChangeSetSafeInteger"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetResizeBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ChangeSetResizeCroppedCell": {
+      "additionalProperties": false,
+      "properties": {
+        "gid": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "layerId": {
+          "$ref": "#/definitions/ChangeSetPositiveId"
+        },
+        "x": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "layerId",
+        "x",
+        "y",
+        "gid"
+      ],
+      "type": "object"
+    },
+    "ChangeSetSafeInteger": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "ChangeSetTileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "pattern": "^asset_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "additionalProperties": false,
+          "properties": {
+            "flipD": {
+              "type": "boolean"
+            },
+            "flipH": {
+              "type": "boolean"
+            },
+            "flipV": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "orthogonal",
+              "type": "string"
+            },
+            "rawFlags": {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "dependencyRevisions": {
+              "additionalProperties": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "propertyNames": {
+                "pattern": "^asset_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "mapEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "renderOrder",
+                            "backgroundColor",
+                            "className"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "backgroundColor": {
+                            "anyOf": [
+                              {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "className": {
+                            "type": "string"
+                          },
+                          "renderOrder": {
+                            "enum": [
+                              "right-down",
+                              "right-up",
+                              "left-down",
+                              "left-up"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "renderingMayChange": {
+                        "type": "boolean"
+                      },
+                      "requestedFields": {
+                        "items": {
+                          "enum": [
+                            "renderOrder",
+                            "backgroundColor",
+                            "className"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "updateMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "patch",
+                      "requestedFields",
+                      "changedFields",
+                      "wouldChange",
+                      "renderingMayChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "croppedCellSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
+                      "croppedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "groupLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "imageLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "mapDimensionsChanged": {
+                        "type": "boolean"
+                      },
+                      "movedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "newBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "objectLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectsOutsideNewBounds": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "y": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "oldBounds": {
+                        "$ref": "#/definitions/ChangeSetResizeBounds"
+                      },
+                      "omittedCroppedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "pixelOffset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "preservedNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "resizedTileLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "rewrittenCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "shiftedImageLayerIds": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "tileLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "resizeMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "oldBounds",
+                      "newBounds",
+                      "offset",
+                      "pixelOffset",
+                      "wouldChange",
+                      "mapDimensionsChanged",
+                      "tileLayerCount",
+                      "resizedTileLayerIds",
+                      "scannedCellCount",
+                      "rewrittenCellCount",
+                      "preservedNonEmptyCellCount",
+                      "croppedNonEmptyCellCount",
+                      "croppedCellSample",
+                      "omittedCroppedCellCount",
+                      "objectLayerCount",
+                      "movedObjectCount",
+                      "objectsOutsideNewBounds",
+                      "imageLayerCount",
+                      "shiftedImageLayerIds",
+                      "groupLayerCount",
+                      "lockedLayerCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "from": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "to": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "compression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "encoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "encoding",
+                          "compression"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "transcodeTileLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "layerId",
+                      "from",
+                      "to",
+                      "cellCount",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "bounds": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "omittedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "tile": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "x": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            },
+                            "y": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "tile"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "setTiles",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "cellCount",
+                      "bounds",
+                      "sample",
+                      "omittedCellCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "tile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "fillRegion",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "region",
+                      "tile"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "clearCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "nonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "sample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "tile": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "x": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            },
+                            "y": {
+                              "$ref": "#/definitions/ChangeSetSafeInteger"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "tile"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "transformedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "stampPattern",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "region",
+                      "cellCount",
+                      "nonEmptyCellCount",
+                      "clearCellCount",
+                      "transformedCellCount",
+                      "changedCellCount",
+                      "wouldChange",
+                      "sample",
+                      "omittedCellCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectedBounds": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "connectivity": {
+                        "const": "four-way",
+                        "type": "string"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "scannedCellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "seed": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "type": "object"
+                      },
+                      "sourceTile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetTile": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetTileRef"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "floodFill",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "seed",
+                      "connectivity",
+                      "sourceTile",
+                      "targetTile",
+                      "scannedCellCount",
+                      "changedCellCount",
+                      "affectedBounds",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "changedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "clearedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destination": {
+                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "overlapsSource": {
+                        "type": "boolean"
+                      },
+                      "overwrittenNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "source": {
+                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                      },
+                      "sourceNonEmptyCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "copyRegion",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "source",
+                      "destination",
+                      "scannedCellCount",
+                      "cellCount",
+                      "sourceNonEmptyCellCount",
+                      "changedCellCount",
+                      "overwrittenNonEmptyCellCount",
+                      "clearedCellCount",
+                      "overlapsSource",
+                      "wouldChange"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "mappingCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "mappingSample": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "from": {
+                              "$ref": "#/definitions/ChangeSetTileRef"
+                            },
+                            "to": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/ChangeSetTileRef"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "from",
+                            "to"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "omittedMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "region": {
+                        "$ref": "#/definitions/ChangeSetPositiveRect"
+                      },
+                      "replacedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scannedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "replaceTiles",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "region",
+                      "scannedCellCount",
+                      "replacedCellCount",
+                      "mappingCount",
+                      "mappingSample",
+                      "omittedMappingCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "rectangle",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "rectangle",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "point",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "point",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "ellipse",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "ellipse",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "capsule",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "capsule",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 3,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polygon",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polygon",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "points": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    },
+                                    "y": {
+                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 256,
+                                "minItems": 2,
+                                "type": "array"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "polyline",
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "points"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "polyline",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "bold": {
+                                "type": "boolean"
+                              },
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "color": {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              "fontFamily": {
+                                "maxLength": 512,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "height": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "horizontalAlignment": {
+                                "enum": [
+                                  "left",
+                                  "center",
+                                  "right",
+                                  "justify"
+                                ],
+                                "type": "string"
+                              },
+                              "italic": {
+                                "type": "boolean"
+                              },
+                              "kerning": {
+                                "type": "boolean"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "pixelSize": {
+                                "maximum": 999,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "strikeout": {
+                                "type": "boolean"
+                              },
+                              "text": {
+                                "maxLength": 8192,
+                                "type": "string"
+                              },
+                              "underline": {
+                                "type": "boolean"
+                              },
+                              "verticalAlignment": {
+                                "enum": [
+                                  "top",
+                                  "center",
+                                  "bottom"
+                                ],
+                                "type": "string"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectExtent"
+                                  }
+                                ]
+                              },
+                              "wrap": {
+                                "type": "boolean"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "text"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "text",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "object": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "className": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "height": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "name": {
+                                "maxLength": 1024,
+                                "type": "string"
+                              },
+                              "opacity": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "rotation": {
+                                "allOf": [
+                                  {
+                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                  }
+                                ]
+                              },
+                              "shape": {
+                                "const": "tile",
+                                "type": "string"
+                              },
+                              "tile": {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              "visible": {
+                                "type": "boolean"
+                              },
+                              "width": {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              },
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            },
+                            "required": [
+                              "shape",
+                              "x",
+                              "y",
+                              "tile",
+                              "width",
+                              "height"
+                            ],
+                            "type": "object"
+                          },
+                          "shape": {
+                            "const": "tile",
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "createObject",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "layerId",
+                          "shape",
+                          "object"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "x",
+                            "y",
+                            "width",
+                            "height",
+                            "points",
+                            "name",
+                            "className",
+                            "rotation",
+                            "visible",
+                            "opacity",
+                            "text",
+                            "fontFamily",
+                            "pixelSize",
+                            "wrap",
+                            "color",
+                            "bold",
+                            "italic",
+                            "underline",
+                            "strikeout",
+                            "kerning",
+                            "horizontalAlignment",
+                            "verticalAlignment",
+                            "properties",
+                            "tile"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "objectId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "className": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "color": {
+                            "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                            "type": "string"
+                          },
+                          "fontFamily": {
+                            "maxLength": 512,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "height": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              }
+                            ]
+                          },
+                          "horizontalAlignment": {
+                            "enum": [
+                              "left",
+                              "center",
+                              "right",
+                              "justify"
+                            ],
+                            "type": "string"
+                          },
+                          "italic": {
+                            "type": "boolean"
+                          },
+                          "kerning": {
+                            "type": "boolean"
+                          },
+                          "name": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "opacity": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "pixelSize": {
+                            "maximum": 999,
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "points": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "x": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                },
+                                "y": {
+                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y"
+                              ],
+                              "type": "object"
+                            },
+                            "maxItems": 256,
+                            "minItems": 2,
+                            "type": "array"
+                          },
+                          "properties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "remove": {
+                                "items": {
+                                  "maxLength": 512,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "set": {
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "enum": [
+                                            "string",
+                                            "file"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maxLength": 2048,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "int",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "maximum": 9007199254740991,
+                                          "minimum": -9007199254740991,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "float",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "bool",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "name": {
+                                          "maxLength": 512,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "const": "color",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "type",
+                                        "value"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 32,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setClassMembers": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "path": {
+                                      "items": {
+                                        "maxLength": 512,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "maxItems": 8,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "path",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "setListElements": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "index": {
+                                      "maximum": 100000,
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "property": {
+                                      "maxLength": 512,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "maxLength": 4096,
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "boolean"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "property",
+                                    "index",
+                                    "value"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 16,
+                                "minItems": 1,
+                                "type": "array"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "rotation": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "strikeout": {
+                            "type": "boolean"
+                          },
+                          "text": {
+                            "maxLength": 8192,
+                            "type": "string"
+                          },
+                          "tile": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              }
+                            ]
+                          },
+                          "underline": {
+                            "type": "boolean"
+                          },
+                          "verticalAlignment": {
+                            "enum": [
+                              "top",
+                              "center",
+                              "bottom"
+                            ],
+                            "type": "string"
+                          },
+                          "visible": {
+                            "type": "boolean"
+                          },
+                          "width": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectExtent"
+                              }
+                            ]
+                          },
+                          "wrap": {
+                            "type": "boolean"
+                          },
+                          "x": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "y": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "updateObject",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "objectId",
+                      "changedFields",
+                      "patch"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "expectedTemplateRevision": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "source": {
+                        "maxLength": 4096,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "templatePath": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "instantiateTemplate",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "x": {
+                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                      },
+                      "y": {
+                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "layerId",
+                      "templatePath",
+                      "source",
+                      "x",
+                      "y",
+                      "expectedTemplateRevision"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "changedFields": {
+                        "items": {
+                          "enum": [
+                            "name",
+                            "className",
+                            "visible",
+                            "opacity",
+                            "offsetX",
+                            "offsetY",
+                            "parallaxX",
+                            "parallaxY",
+                            "tintColor",
+                            "locked",
+                            "blendMode"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerType": {
+                        "$ref": "#/definitions/ChangeSetLayerType"
+                      },
+                      "patch": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blendMode": {
+                            "enum": [
+                              "normal",
+                              "add",
+                              "multiply",
+                              "screen",
+                              "overlay",
+                              "darken",
+                              "lighten",
+                              "color-dodge",
+                              "color-burn",
+                              "hard-light",
+                              "soft-light",
+                              "difference",
+                              "exclusion"
+                            ],
+                            "type": "string"
+                          },
+                          "className": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "locked": {
+                            "type": "boolean"
+                          },
+                          "name": {
+                            "maxLength": 1024,
+                            "type": "string"
+                          },
+                          "offsetX": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "offsetY": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "opacity": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "parallaxX": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "parallaxY": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
+                              }
+                            ]
+                          },
+                          "tintColor": {
+                            "anyOf": [
+                              {
+                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "visible": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "requestedFields": {
+                        "items": {
+                          "enum": [
+                            "name",
+                            "className",
+                            "visible",
+                            "opacity",
+                            "offsetX",
+                            "offsetY",
+                            "parallaxX",
+                            "parallaxY",
+                            "tintColor",
+                            "locked",
+                            "blendMode"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": {
+                        "const": "updateLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "layerType",
+                      "destructive",
+                      "warning",
+                      "patch",
+                      "requestedFields",
+                      "changedFields",
+                      "wouldChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "deleteDescendants": {
+                        "type": "boolean"
+                      },
+                      "deletedLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layer": {
+                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "omittedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "parentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "const": "deleteLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "deleteDescendants",
+                      "destructive",
+                      "warning",
+                      "layer",
+                      "parentGroupId",
+                      "index",
+                      "deletedLayerCount",
+                      "descendantLayerCount",
+                      "layerIdSample",
+                      "omittedLayerCount",
+                      "objectCount",
+                      "objectIdSample",
+                      "omittedObjectCount",
+                      "lockedLayerCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "effectivelyLockedLayerCountAfter": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "effectivelyLockedLayerCountBefore": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layer": {
+                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
+                      },
+                      "layerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "layerIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "type": "array"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "objectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "renderContextMayChange": {
+                        "type": "boolean"
+                      },
+                      "renderOrderMayChange": {
+                        "type": "boolean"
+                      },
+                      "sourceIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sourceParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "sourceParentLocked": {
+                        "type": "boolean"
+                      },
+                      "subtreeLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "targetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "targetParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetParentLocked": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "const": "moveLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      },
+                      "wouldChange": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "layerId",
+                      "destructive",
+                      "warning",
+                      "layer",
+                      "sourceParentGroupId",
+                      "sourceIndex",
+                      "targetParentGroupId",
+                      "targetIndex",
+                      "subtreeLayerCount",
+                      "descendantLayerCount",
+                      "layerIdSample",
+                      "omittedLayerCount",
+                      "objectCount",
+                      "lockedLayerCount",
+                      "sourceParentLocked",
+                      "targetParentLocked",
+                      "effectivelyLockedLayerCountBefore",
+                      "effectivelyLockedLayerCountAfter",
+                      "wouldChange",
+                      "renderOrderMayChange",
+                      "renderContextMayChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "affectsDescendants": {
+                        "type": "boolean"
+                      },
+                      "allocatedCellCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "copiedLayerCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "copiedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "createdRootLayerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "descendantLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "destructive": {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      "effectivelyLockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "fileReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "layerIdMappingSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetIdMapping"
+                        },
+                        "type": "array"
+                      },
+                      "layerType": {
+                        "$ref": "#/definitions/ChangeSetLayerType"
+                      },
+                      "lockedLayerCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nameTruncated": {
+                        "type": "boolean"
+                      },
+                      "objectIdMappingSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetIdMapping"
+                        },
+                        "type": "array"
+                      },
+                      "omittedLayerMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedObjectMappingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "remappedInternalObjectReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "renderContextMayChange": {
+                        "type": "boolean"
+                      },
+                      "renderOrderMayChange": {
+                        "type": "boolean"
+                      },
+                      "retainedExternalObjectReferenceCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "serializedDuplicateBytes": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "sourceIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "sourceLayerId": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "sourceParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "targetIndex": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "targetParentGroupId": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "tileObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "duplicateLayer",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "sourceLayerId",
+                      "createdRootLayerId",
+                      "layerType",
+                      "name",
+                      "nameTruncated",
+                      "sourceParentGroupId",
+                      "targetParentGroupId",
+                      "sourceIndex",
+                      "targetIndex",
+                      "copiedLayerCount",
+                      "descendantLayerCount",
+                      "copiedObjectCount",
+                      "allocatedCellCount",
+                      "serializedDuplicateBytes",
+                      "layerIdMappingSample",
+                      "omittedLayerMappingCount",
+                      "objectIdMappingSample",
+                      "omittedObjectMappingCount",
+                      "remappedInternalObjectReferenceCount",
+                      "retainedExternalObjectReferenceCount",
+                      "fileReferenceCount",
+                      "tileObjectCount",
+                      "lockedLayerCount",
+                      "effectivelyLockedLayerCount",
+                      "renderOrderMayChange",
+                      "renderContextMayChange",
+                      "affectsDescendants"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "objectCount": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "objectIdSample": {
+                        "items": {
+                          "$ref": "#/definitions/ChangeSetPositiveId"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "omittedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "deleteObjects",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "objectCount",
+                      "objectIdSample",
+                      "omittedObjectCount"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "destructive": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "gidRange": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "first": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "last": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "first",
+                          "last"
+                        ],
+                        "type": "object"
+                      },
+                      "index": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "scanned": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "objects": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "tileCells": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "tileCells",
+                          "objects"
+                        ],
+                        "type": "object"
+                      },
+                      "source": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "kind": {
+                            "const": "external",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "const": true,
+                            "type": "boolean"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "assetId",
+                          "path",
+                          "revision",
+                          "name",
+                          "tileCount",
+                          "gidSpan"
+                        ],
+                        "type": "object"
+                      },
+                      "type": {
+                        "const": "removeTilesetFromMap",
+                        "type": "string"
+                      },
+                      "warning": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "destructive",
+                      "warning",
+                      "tileset",
+                      "source",
+                      "index",
+                      "gidRange",
+                      "scanned"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 128,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "affectedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedObjectLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "cellWrites": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "createdObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "deletedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "deletedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "parentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "parentGroupId",
+                          "index",
+                          "deletedLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "objectIdSample",
+                          "omittedObjectCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "deletedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "duplicatedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "allocatedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "copiedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "copiedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "createdRootLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "fileReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "remappedInternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "retainedExternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "serializedDuplicateBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tileObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "sourceLayerId",
+                          "createdRootLayerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "targetParentGroupId",
+                          "sourceIndex",
+                          "targetIndex",
+                          "copiedLayerCount",
+                          "descendantLayerCount",
+                          "copiedObjectCount",
+                          "allocatedCellCount",
+                          "serializedDuplicateBytes",
+                          "layerIdMappingSample",
+                          "omittedLayerMappingCount",
+                          "objectIdMappingSample",
+                          "omittedObjectMappingCount",
+                          "remappedInternalObjectReferenceCount",
+                          "retainedExternalObjectReferenceCount",
+                          "fileReferenceCount",
+                          "tileObjectCount",
+                          "lockedLayerCount",
+                          "effectivelyLockedLayerCount",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderingMayChange": {
+                            "type": "boolean"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "renderingMayChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "movedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountAfter": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountBefore": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceParentLocked": {
+                            "type": "boolean"
+                          },
+                          "subtreeLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetParentLocked": {
+                            "type": "boolean"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "sourceIndex",
+                          "targetParentGroupId",
+                          "targetIndex",
+                          "subtreeLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "lockedLayerCount",
+                          "sourceParentLocked",
+                          "targetParentLocked",
+                          "effectivelyLockedLayerCountBefore",
+                          "effectivelyLockedLayerCountAfter",
+                          "wouldChange",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "operationCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "removedTilesets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tilesetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tilesetRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "assetId",
+                          "tilesetPath",
+                          "source",
+                          "tilesetRevision",
+                          "name",
+                          "nameTruncated",
+                          "index",
+                          "tileCount",
+                          "gidSpan",
+                          "firstGid",
+                          "lastGid",
+                          "scannedCellCount",
+                          "scannedObjectCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileCopies": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "destination": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "overlapsSource": {
+                            "type": "boolean"
+                          },
+                          "overwrittenNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "sourceNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "source",
+                          "destination",
+                          "scannedCellCount",
+                          "cellCount",
+                          "sourceNonEmptyCellCount",
+                          "changedCellCount",
+                          "overwrittenNonEmptyCellCount",
+                          "clearedCellCount",
+                          "overlapsSource",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileFloodFills": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectedBounds": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveRect"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "connectivity": {
+                            "const": "four-way",
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "seed": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "seed",
+                          "connectivity",
+                          "sourceTile",
+                          "targetTile",
+                          "scannedCellCount",
+                          "changedCellCount",
+                          "affectedBounds",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileReplacements": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "mappingCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "replacedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "scannedCellCount",
+                          "replacedCellCount",
+                          "mappingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileStamps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "nonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "transformedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "cellCount",
+                          "nonEmptyCellCount",
+                          "clearCellCount",
+                          "transformedCellCount",
+                          "changedCellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "type": "array"
+                    },
+                    "updatedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "operationCount",
+                    "cellWrites",
+                    "affectedLayerIds",
+                    "affectedTileLayerIds",
+                    "affectedObjectLayerIds",
+                    "createdObjectIds",
+                    "updatedObjectIds",
+                    "deletedObjectIds"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "affectedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedObjectLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "affectedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "cellWrites": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "chunkedTileLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "createdObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "deletedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "deletedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "parentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "parentGroupId",
+                          "index",
+                          "deletedLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "objectIdSample",
+                          "omittedObjectCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "deletedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "duplicatedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "allocatedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "copiedLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "copiedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "createdRootLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "fileReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectIdMappingSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetIdMapping"
+                            },
+                            "type": "array"
+                          },
+                          "omittedLayerMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedObjectMappingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "remappedInternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "retainedExternalObjectReferenceCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "serializedDuplicateBytes": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceLayerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tileObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "sourceLayerId",
+                          "createdRootLayerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "targetParentGroupId",
+                          "sourceIndex",
+                          "targetIndex",
+                          "copiedLayerCount",
+                          "descendantLayerCount",
+                          "copiedObjectCount",
+                          "allocatedCellCount",
+                          "serializedDuplicateBytes",
+                          "layerIdMappingSample",
+                          "omittedLayerMappingCount",
+                          "objectIdMappingSample",
+                          "omittedObjectMappingCount",
+                          "remappedInternalObjectReferenceCount",
+                          "retainedExternalObjectReferenceCount",
+                          "fileReferenceCount",
+                          "tileObjectCount",
+                          "lockedLayerCount",
+                          "effectivelyLockedLayerCount",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "layerUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "name",
+                                "className",
+                                "visible",
+                                "opacity",
+                                "offsetX",
+                                "offsetY",
+                                "parallaxX",
+                                "parallaxY",
+                                "tintColor",
+                                "locked",
+                                "blendMode"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "name",
+                                "className",
+                                "visible",
+                                "opacity",
+                                "offsetX",
+                                "offsetY",
+                                "parallaxX",
+                                "parallaxY",
+                                "tintColor",
+                                "locked",
+                                "blendMode"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapResizes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "croppedCellSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetResizeCroppedCell"
+                            },
+                            "maxItems": 16,
+                            "type": "array"
+                          },
+                          "croppedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "groupLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "imageLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "mapDimensionsChanged": {
+                            "type": "boolean"
+                          },
+                          "movedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "newHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "newWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 100000,
+                            "type": "integer"
+                          },
+                          "objectLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "objectsOutsideNewBounds": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offsetX": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "offsetY": {
+                            "maximum": 100000,
+                            "minimum": -100000,
+                            "type": "integer"
+                          },
+                          "oldHeight": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "oldWidth": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "omittedCroppedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "pixelOffsetX": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "pixelOffsetY": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
+                          },
+                          "preservedNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "resizedTileLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "rewrittenCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "shiftedImageLayerIds": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "tileLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "oldWidth",
+                          "oldHeight",
+                          "newWidth",
+                          "newHeight",
+                          "offsetX",
+                          "offsetY",
+                          "pixelOffsetX",
+                          "pixelOffsetY",
+                          "wouldChange",
+                          "mapDimensionsChanged",
+                          "tileLayerCount",
+                          "resizedTileLayerIds",
+                          "scannedCellCount",
+                          "rewrittenCellCount",
+                          "preservedNonEmptyCellCount",
+                          "croppedNonEmptyCellCount",
+                          "croppedCellSample",
+                          "omittedCroppedCellCount",
+                          "objectLayerCount",
+                          "movedObjectCount",
+                          "objectsOutsideNewBounds",
+                          "imageLayerCount",
+                          "shiftedImageLayerIds",
+                          "groupLayerCount",
+                          "lockedLayerCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "mapUpdates": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "changedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderingMayChange": {
+                            "type": "boolean"
+                          },
+                          "requestedFields": {
+                            "items": {
+                              "enum": [
+                                "renderOrder",
+                                "backgroundColor",
+                                "className"
+                              ],
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "requestedFields",
+                          "changedFields",
+                          "wouldChange",
+                          "renderingMayChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "movedLayers": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectsDescendants": {
+                            "type": "boolean"
+                          },
+                          "descendantLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountAfter": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "effectivelyLockedLayerCountBefore": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "layerIdSample": {
+                            "items": {
+                              "$ref": "#/definitions/ChangeSetPositiveId"
+                            },
+                            "type": "array"
+                          },
+                          "layerType": {
+                            "$ref": "#/definitions/ChangeSetLayerType"
+                          },
+                          "lockedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "objectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "omittedLayerCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "renderContextMayChange": {
+                            "type": "boolean"
+                          },
+                          "renderOrderMayChange": {
+                            "type": "boolean"
+                          },
+                          "sourceIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "sourceParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceParentLocked": {
+                            "type": "boolean"
+                          },
+                          "subtreeLayerCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "targetIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "targetParentGroupId": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveId"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetParentLocked": {
+                            "type": "boolean"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "layerType",
+                          "name",
+                          "nameTruncated",
+                          "sourceParentGroupId",
+                          "sourceIndex",
+                          "targetParentGroupId",
+                          "targetIndex",
+                          "subtreeLayerCount",
+                          "descendantLayerCount",
+                          "layerIdSample",
+                          "omittedLayerCount",
+                          "objectCount",
+                          "lockedLayerCount",
+                          "sourceParentLocked",
+                          "targetParentLocked",
+                          "effectivelyLockedLayerCountBefore",
+                          "effectivelyLockedLayerCountAfter",
+                          "wouldChange",
+                          "renderOrderMayChange",
+                          "renderContextMayChange",
+                          "affectsDescendants"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "operationCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "removedTilesets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "firstGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "gidSpan": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "lastGid": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "nameTruncated": {
+                            "type": "boolean"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedObjectCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tileCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "tilesetPath": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tilesetRevision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "assetId",
+                          "tilesetPath",
+                          "source",
+                          "tilesetRevision",
+                          "name",
+                          "nameTruncated",
+                          "index",
+                          "tileCount",
+                          "gidSpan",
+                          "firstGid",
+                          "lastGid",
+                          "scannedCellCount",
+                          "scannedObjectCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileCopies": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "destination": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "overlapsSource": {
+                            "type": "boolean"
+                          },
+                          "overwrittenNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "source": {
+                            "$ref": "#/definitions/ChangeSetCopyEndpoint"
+                          },
+                          "sourceNonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "source",
+                          "destination",
+                          "scannedCellCount",
+                          "cellCount",
+                          "sourceNonEmptyCellCount",
+                          "changedCellCount",
+                          "overwrittenNonEmptyCellCount",
+                          "clearedCellCount",
+                          "overlapsSource",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileFloodFills": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "affectedBounds": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetPositiveRect"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "connectivity": {
+                            "const": "four-way",
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "seed": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "x": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              },
+                              "y": {
+                                "$ref": "#/definitions/ChangeSetSafeInteger"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetTile": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/definitions/ChangeSetTileRef"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "seed",
+                          "connectivity",
+                          "sourceTile",
+                          "targetTile",
+                          "scannedCellCount",
+                          "changedCellCount",
+                          "affectedBounds",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileReplacements": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "mappingCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "replacedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scannedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "scannedCellCount",
+                          "replacedCellCount",
+                          "mappingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "tileStamps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "changedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "clearCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "nonEmptyCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "region": {
+                            "$ref": "#/definitions/ChangeSetPositiveRect"
+                          },
+                          "transformedCellCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "region",
+                          "cellCount",
+                          "nonEmptyCellCount",
+                          "clearCellCount",
+                          "transformedCellCount",
+                          "changedCellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "transcodes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cellCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "type": "integer"
+                          },
+                          "fromCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "fromEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          },
+                          "operationIndex": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "toCompression": {
+                            "enum": [
+                              "",
+                              "gzip",
+                              "zlib",
+                              "zstd"
+                            ],
+                            "type": "string"
+                          },
+                          "toEncoding": {
+                            "enum": [
+                              "csv",
+                              "base64"
+                            ],
+                            "type": "string"
+                          },
+                          "wouldChange": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "operationIndex",
+                          "layerId",
+                          "fromEncoding",
+                          "fromCompression",
+                          "toEncoding",
+                          "toCompression",
+                          "cellCount",
+                          "wouldChange"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1,
+                      "type": "array"
+                    },
+                    "updatedLayerIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    },
+                    "updatedObjectIds": {
+                      "items": {
+                        "$ref": "#/definitions/ChangeSetPositiveId"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "operationCount",
+                    "cellWrites",
+                    "affectedLayerIds",
+                    "affectedTileLayerIds",
+                    "affectedObjectLayerIds",
+                    "createdObjectIds",
+                    "updatedObjectIds",
+                    "deletedObjectIds",
+                    "updatedLayerIds",
+                    "layerUpdates"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "expectedRevision",
+            "dependencyRevisions",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt",
+            "operations",
+            "summary"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_preview_merge_map`
+
+Availability: `core`
+
+Stamps the tile layers of another project-local map into this one at an optional tile offset, matching layers by name, and returns an expiring map change set without modifying either map. GIDs are translated, not copied: each source cell is decoded against the source map's own firstgid table and re-expressed against this map's binding for the same tileset file, so two maps that order their tilesets differently still merge correctly. Empty source cells are skipped, so the destination shows through wherever the source has nothing. Fails closed when the two grids differ in orientation or tile size, when the source uses a tileset this map does not already reference (attach it with tiled_add_tileset_to_map first), when a source tile layer has no same-named tile layer here (create it with tiled_create_layer first), or when the source is infinite.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: 把另一张地图的图块层按名字贴进当前地图：GID 按各自的 firstgid 表翻译而非照抄，源图的空格子跳过。
+
+```json
+{
+  "arguments": {
+    "expectedDependencyRevisions": {
+      "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "mapPath": "maps/example.tmj",
+    "offsetX": 8,
+    "offsetY": 4,
+    "sourceMapPath": "maps/room.tmj"
+  },
+  "name": "tiled_preview_merge_map"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "expectedDependencyRevisions": {
+      "additionalProperties": {
+        "description": "SHA-256 revision returned by a read or preview",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedSourceMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "offsetX": {
+      "maximum": 1000000,
+      "minimum": -1000000,
+      "type": "integer"
+    },
+    "offsetY": {
+      "maximum": 1000000,
+      "minimum": -1000000,
+      "type": "integer"
+    },
+    "sourceMapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "sourceMapPath",
     "expectedMapRevision",
     "expectedDependencyRevisions"
   ],
@@ -57457,6 +63534,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "choices": {
       "items": {
@@ -57465,79 +63629,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -63266,6 +69358,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "draw": {
       "oneOf": [
@@ -63440,79 +69619,7 @@ Input schema:
     "tile": {
       "anyOf": [
         {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "localId": {
-                  "maximum": 268435455,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "tileset": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "assetId": {
-                      "maxLength": 128,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "kind": {
-                      "const": "external",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "assetId"
-                  ],
-                  "type": "object"
-                },
-                "transform": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "flipD": {
-                      "type": "boolean"
-                    },
-                    "flipH": {
-                      "type": "boolean"
-                    },
-                    "flipV": {
-                      "type": "boolean"
-                    },
-                    "kind": {
-                      "const": "orthogonal",
-                      "type": "string"
-                    },
-                    "rawFlags": {
-                      "maximum": 4294967295,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "type": "object"
-                }
-              },
-              "required": [
-                "tileset",
-                "localId"
-              ],
-              "type": "object"
-            },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "name": {
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
-            }
-          ]
+          "$ref": "#/definitions/NamedTileRef"
         },
         {
           "type": "null"
@@ -74764,7 +80871,7 @@ Output schema:
 
 ### `tiled_preview_terrain`
 
-Availability: `tmxrasterizer-version-probe`
+Availability: `core`
 
 Paints Wang terrain corners through Tiled's own TileLayer.wangEdit() matcher, run headlessly by a server-authored static script against the pinned map (the CLI writes only a staging copy; parameters are embedded as an inert JSON literal, so no user input reaches script code). The service diffs the target finite tile layer and returns an ordinary mapEdit change set carrying the exact setTiles cell writes — apply needs no CLI replay, untouched fragments keep their exact bytes, and every preview, revision-pin, and transaction rule applies unchanged. Corners address the corner grid (0..width, 0..height) with 1-based wang color indexes; the selected Wang set must be corner or mixed type on an external atlas tileset, and a paint that changes nothing fails closed.
 
@@ -94477,6 +100584,675 @@ Output schema:
 }
 ```
 
+### `tiled_replace_tileset_in_map`
+
+Availability: `core`
+
+Repoints one currently bound external tileset at a different project-local atlas TSJ, keeping its firstgid, and returns an expiring map change set without modifying project assets. Use this to change the art a finished map is drawn with: every GID keeps its value and its slot, so no cell is rewritten and each one now shows the tile at the same local id in the replacement. Removing and re-adding cannot do this — removal refuses any tileset a cell still references. Fails closed when a local id still in use does not exist in the replacement, and when the replacement's GID span would overlap the tileset bound after it; a smaller replacement is allowed only while nothing refers to the tiles it drops. The two tilesets are not compared for visual similarity, so a replacement laid out differently silently remaps every cell — read both before approving.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: 把已绑定的图块集原地指向另一个 TSJ：firstgid 不动，地图中每个 GID 原样保留，用于把占位美术换成最终美术。
+
+```json
+{
+  "arguments": {
+    "expectedDependencyRevisions": {
+      "asset_0123456789abcdef01234567": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedTilesetRevision": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "mapPath": "maps/example.tmj",
+    "tilesetAssetId": "asset_0123456789abcdef01234567",
+    "tilesetPath": "tiles/final.tsj"
+  },
+  "name": "tiled_replace_tileset_in_map"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "expectedDependencyRevisions": {
+      "additionalProperties": {
+        "description": "SHA-256 revision returned by a read or preview",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedTilesetRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "tilesetAssetId": {
+      "pattern": "^asset_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "tilesetPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "tilesetAssetId",
+    "tilesetPath",
+    "expectedMapRevision",
+    "expectedDependencyRevisions"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "dependencyRevisions": {
+              "additionalProperties": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "propertyNames": {
+                "pattern": "^asset_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "mapEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "operations": {
+              "items": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "destructive": {
+                      "const": false,
+                      "type": "boolean"
+                    },
+                    "firstGid": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "from": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "pattern": "^asset_[0-9a-f]{24}$",
+                          "type": "string"
+                        },
+                        "gidSpan": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "tileCount": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "tilesetPath": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tilesetPath",
+                        "assetId",
+                        "tileCount",
+                        "gidSpan"
+                      ],
+                      "type": "object"
+                    },
+                    "highestReferencedLocalId": {
+                      "anyOf": [
+                        {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "referencedCellCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "referencedObjectCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "to": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "pattern": "^asset_[0-9a-f]{24}$",
+                          "type": "string"
+                        },
+                        "gidSpan": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "source": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "tileCount": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "tilesetPath": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "tilesetRevision": {
+                          "pattern": "^sha256:[0-9a-f]{64}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tilesetPath",
+                        "source",
+                        "assetId",
+                        "tilesetRevision",
+                        "tileCount",
+                        "gidSpan"
+                      ],
+                      "type": "object"
+                    },
+                    "type": {
+                      "const": "replaceTilesetInMap",
+                      "type": "string"
+                    },
+                    "warning": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "destructive",
+                    "warning",
+                    "firstGid",
+                    "from",
+                    "to",
+                    "highestReferencedLocalId",
+                    "referencedCellCount",
+                    "referencedObjectCount"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "prospectiveDependencyRevisions": {
+              "additionalProperties": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "propertyNames": {
+                "pattern": "^asset_[0-9a-f]{24}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "affectedLayerIds": {
+                  "items": [],
+                  "type": "array"
+                },
+                "affectedObjectLayerIds": {
+                  "items": [],
+                  "type": "array"
+                },
+                "affectedTileLayerIds": {
+                  "items": [],
+                  "type": "array"
+                },
+                "cellWrites": {
+                  "const": 0,
+                  "type": "number"
+                },
+                "createdObjectIds": {
+                  "items": [],
+                  "type": "array"
+                },
+                "deletedObjectIds": {
+                  "items": [],
+                  "type": "array"
+                },
+                "operationCount": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "replacedTilesets": {
+                  "items": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "firstGid": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "from": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "pattern": "^asset_[0-9a-f]{24}$",
+                              "type": "string"
+                            },
+                            "gidSpan": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "source": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "tileCount": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "tilesetPath": {
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "tilesetPath",
+                            "source",
+                            "assetId",
+                            "tileCount",
+                            "gidSpan"
+                          ],
+                          "type": "object"
+                        },
+                        "highestReferencedLocalId": {
+                          "anyOf": [
+                            {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "referencedCellCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "referencedObjectCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "to": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "pattern": "^asset_[0-9a-f]{24}$",
+                              "type": "string"
+                            },
+                            "gidSpan": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "source": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "tileCount": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
+                            "tilesetPath": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "tilesetRevision": {
+                              "pattern": "^sha256:[0-9a-f]{64}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "tilesetPath",
+                            "source",
+                            "assetId",
+                            "tilesetRevision",
+                            "tileCount",
+                            "gidSpan"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "firstGid",
+                        "from",
+                        "to",
+                        "highestReferencedLocalId",
+                        "referencedCellCount",
+                        "referencedObjectCount"
+                      ],
+                      "type": "object"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "updatedObjectIds": {
+                  "items": [],
+                  "type": "array"
+                }
+              },
+              "required": [
+                "operationCount",
+                "cellWrites",
+                "affectedLayerIds",
+                "affectedTileLayerIds",
+                "affectedObjectLayerIds",
+                "createdObjectIds",
+                "updatedObjectIds",
+                "deletedObjectIds",
+                "replacedTilesets"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "expectedRevision",
+            "dependencyRevisions",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt",
+            "prospectiveDependencyRevisions",
+            "operations",
+            "summary"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
 ### `tiled_select`
 
 Availability: `core`
@@ -94525,6 +101301,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "layerId": {
       "exclusiveMinimum": 0,
@@ -94548,79 +101411,7 @@ Input schema:
             },
             "tiles": {
               "items": {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               "maxItems": 16,
               "minItems": 1,
@@ -94754,79 +101545,7 @@ Input schema:
                           },
                           "tiles": {
                             "items": {
-                              "anyOf": [
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "localId": {
-                                      "maximum": 268435455,
-                                      "minimum": 0,
-                                      "type": "integer"
-                                    },
-                                    "tileset": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "assetId": {
-                                          "maxLength": 128,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "kind": {
-                                          "const": "external",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "kind",
-                                        "assetId"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "transform": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "flipD": {
-                                          "type": "boolean"
-                                        },
-                                        "flipH": {
-                                          "type": "boolean"
-                                        },
-                                        "flipV": {
-                                          "type": "boolean"
-                                        },
-                                        "kind": {
-                                          "const": "orthogonal",
-                                          "type": "string"
-                                        },
-                                        "rawFlags": {
-                                          "maximum": 4294967295,
-                                          "minimum": 0,
-                                          "type": "integer"
-                                        }
-                                      },
-                                      "type": "object"
-                                    }
-                                  },
-                                  "required": [
-                                    "tileset",
-                                    "localId"
-                                  ],
-                                  "type": "object"
-                                },
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "name": {
-                                      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "name"
-                                  ],
-                                  "type": "object"
-                                }
-                              ]
+                              "$ref": "#/definitions/NamedTileRef"
                             },
                             "maxItems": 16,
                             "minItems": 1,
@@ -95458,6 +102177,240 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "embeddedIndex": {
       "maximum": 4095,
@@ -95791,236 +102744,11 @@ Input schema:
                     ]
                   },
                   "properties": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "remove": {
-                        "items": {
-                          "maxLength": 512,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "set": {
-                        "items": {
-                          "oneOf": [
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "enum": [
-                                    "string",
-                                    "file"
-                                  ],
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "int",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": -9007199254740991,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "float",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "number"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "bool",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "color",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            }
-                          ]
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setClassMembers": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "path": {
-                              "items": {
-                                "maxLength": 512,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "maxItems": 8,
-                              "minItems": 1,
-                              "type": "array"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "path",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setListElements": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "index": {
-                              "maximum": 100000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "index",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TilePropertiesPatch"
                       }
-                    },
-                    "type": "object"
+                    ]
                   }
                 },
                 "type": "object"
@@ -96911,6 +103639,904 @@ Output schema:
               "type": "object"
             }
           ]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ASSET_REGISTRY_CORRUPT",
+                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
+                    "CHANGE_SET_LIMIT_EXCEEDED",
+                    "CHANGE_SET_NOT_FOUND",
+                    "CHANGE_SET_OWNED",
+                    "CHECKPOINT_CHANGED",
+                    "CHECKPOINT_CORRUPT",
+                    "CHECKPOINT_NOT_COMMITTED",
+                    "CHECKPOINT_NOT_FOUND",
+                    "CHECKPOINT_QUOTA_EXCEEDED",
+                    "CHECKPOINT_STATE_CONFLICT",
+                    "DEPENDENCY_REVISION_CONFLICT",
+                    "DOCUMENT_CHANGED_DURING_READ",
+                    "DOCUMENT_TOO_LARGE",
+                    "DUPLICATE_JSON_KEY",
+                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
+                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
+                    "FILE_ALREADY_EXISTS",
+                    "FILE_IN_USE",
+                    "FILE_LOCKED",
+                    "FILE_LOCK_CORRUPT",
+                    "FILE_NOT_FOUND",
+                    "GID_OUT_OF_RANGE",
+                    "GID_RANGE_EXHAUSTED",
+                    "IMAGE_CHANGED_DURING_READ",
+                    "IMAGE_DIMENSIONS_EXCEEDED",
+                    "IMAGE_ENCODING_FAILED",
+                    "IMAGE_TOO_LARGE",
+                    "INTERNAL_ERROR",
+                    "INVALID_ARGUMENT",
+                    "INVALID_DOCUMENT",
+                    "INVALID_GID",
+                    "INVALID_JSON",
+                    "INVALID_PROJECT_PATH",
+                    "INVALID_TILESET_ATLAS",
+                    "INVALID_TILESET_IMAGE",
+                    "INVALID_TILE_DATA",
+                    "INVALID_TILE_TRANSFORM",
+                    "JSON_NESTING_LIMIT",
+                    "LAYER_DEPTH_EXCEEDED",
+                    "LAYER_HAS_DESCENDANTS",
+                    "LAYER_ID_EXHAUSTED",
+                    "LAYER_INDEX_OUT_OF_RANGE",
+                    "LAYER_LIMIT_EXCEEDED",
+                    "LAYER_MOVE_CYCLE",
+                    "LAYER_NOT_FOUND",
+                    "LAYER_TYPE_MISMATCH",
+                    "NEXT_LAYER_ID_INVALID",
+                    "NEXT_OBJECT_ID_INVALID",
+                    "OBJECT_ID_EXHAUSTED",
+                    "OBJECT_IN_USE",
+                    "OBJECT_LIMIT_EXCEEDED",
+                    "OBJECT_NOT_FOUND",
+                    "OBJECT_REFERENCE_NOT_FOUND",
+                    "OBJECT_SHAPE_MISMATCH",
+                    "OVERLAY_TOO_DENSE",
+                    "PAGE_OUT_OF_RANGE",
+                    "PARENT_DIRECTORY_NOT_FOUND",
+                    "PATH_OUTSIDE_ROOT",
+                    "PREVIEW_DIMENSIONS_EXCEEDED",
+                    "PREVIEW_REGION_REQUIRED",
+                    "RASTER_TEMP_CLEANUP_FAILED",
+                    "REGION_OUT_OF_BOUNDS",
+                    "RESERVED_PROJECT_PATH",
+                    "RESULT_LIMIT_EXCEEDED",
+                    "REVERT_WOULD_DELETE",
+                    "REVISION_CONFLICT",
+                    "STALE_FILE_LOCK",
+                    "SYMLINK_NOT_ALLOWED",
+                    "TILESET_ALREADY_REFERENCED",
+                    "TILESET_GID_RANGE_OVERLAP",
+                    "TILESET_IMAGE_DIMENSION_MISMATCH",
+                    "TILESET_IN_USE",
+                    "TILESET_NOT_FOUND",
+                    "TILESET_NOT_IN_MAP",
+                    "TILE_ID_OUT_OF_RANGE",
+                    "TMXRASTERIZER_FAILED",
+                    "TMXRASTERIZER_NOT_EXECUTABLE",
+                    "TMXRASTERIZER_NOT_FOUND",
+                    "TMXRASTERIZER_OUTPUT_INVALID",
+                    "TMXRASTERIZER_OUTPUT_LIMIT",
+                    "TMXRASTERIZER_OUTPUT_MISSING",
+                    "TMXRASTERIZER_TIMEOUT",
+                    "UNSAFE_JSON_NUMBER",
+                    "UNSAFE_RENDER_REFERENCE",
+                    "UNSAFE_SVG",
+                    "UNSORTED_TILESET_REFERENCES",
+                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
+                    "UNSUPPORTED_FORMAT",
+                    "UNSUPPORTED_IMAGE_FORMAT",
+                    "UNSUPPORTED_MAP_PROFILE",
+                    "UNSUPPORTED_OBJECT_PROFILE",
+                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
+                    "UNSUPPORTED_PROPERTY_QUERY",
+                    "UNSUPPORTED_PROPERTY_WRITE",
+                    "UNSUPPORTED_REFERENCE_SCAN",
+                    "UNSUPPORTED_RENDER_FEATURE",
+                    "UNSUPPORTED_RENDER_LAYER",
+                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
+                    "UNSUPPORTED_RESIZE_TEMPLATE",
+                    "UNSUPPORTED_TILESET",
+                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
+                    "UNSUPPORTED_TILE_ENCODING"
+                  ],
+                  "type": "string"
+                },
+                "details": {
+                  "additionalProperties": {
+                    "$ref": "#/definitions/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "message": {
+                  "maxLength": 4096,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "details"
+              ],
+              "type": "object"
+            },
+            "ok": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+}
+```
+
+### `tiled_update_tileset`
+
+Availability: `core`
+
+Validates tileset-level members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, scalar custom properties, and atlas (re-cutting the tile grid over the same image) — then returns an expiring tilesetPropertyEdit change set without modifying project assets. atlas takes tileWidth/tileHeight plus optional margin/spacing and recomputes columns and tilecount with Tiled's own formula from the image read at plan time, never from the declared imagewidth. Because tilecount sets the GID span every referencing map decodes against, a cut that changes it is refused unless the pinned map still resolves under the new count and no other project asset references the tileset; a cut that leaves the count alone is unrestricted. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.
+
+Annotations:
+
+```json
+{
+  "destructiveHint": false,
+  "idempotentHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true,
+  "title": "Preview a local Tiled map change"
+}
+```
+
+Example purpose: Give the tileset a class and a draw offset, and drop the fill mode back to Tiled's default by removing the member.
+
+```json
+{
+  "arguments": {
+    "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedTilesetRevision": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "mapPath": "maps/example.tmj",
+    "patch": {
+      "className": "Terrain",
+      "fillMode": null,
+      "objectAlignment": "bottomleft",
+      "tileOffset": {
+        "x": 0,
+        "y": -8
+      }
+    },
+    "tilesetAssetId": "asset_0123456789abcdef01234567"
+  },
+  "name": "tiled_update_tileset"
+}
+```
+
+Input schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "properties": {
+    "expectedMapRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "expectedTilesetRevision": {
+      "description": "SHA-256 revision returned by a read or preview",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mapPath": {
+      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "patch": {
+      "additionalProperties": false,
+      "properties": {
+        "className": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fillMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "stretch",
+                "preserve-aspect-fit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grid": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "height": {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "orientation": {
+                  "enum": [
+                    "orthogonal",
+                    "isometric"
+                  ],
+                  "type": "string"
+                },
+                "width": {
+                  "maximum": 1000000000,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "orientation",
+                "width",
+                "height"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "objectAlignment": {
+          "anyOf": [
+            {
+              "enum": [
+                "unspecified",
+                "topleft",
+                "top",
+                "topright",
+                "left",
+                "center",
+                "right",
+                "bottomleft",
+                "bottom",
+                "bottomright"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TilePropertiesPatch"
+            }
+          ]
+        },
+        "tileOffset": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1000000000,
+                  "minimum": -1000000000,
+                  "type": "integer"
+                },
+                "y": {
+                  "maximum": 1000000000,
+                  "minimum": -1000000000,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tileRenderSize": {
+          "anyOf": [
+            {
+              "enum": [
+                "tile",
+                "grid"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transformations": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hFlip": {
+                  "type": "boolean"
+                },
+                "preferUntransformed": {
+                  "type": "boolean"
+                },
+                "rotate": {
+                  "type": "boolean"
+                },
+                "vFlip": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "hFlip",
+                "vFlip",
+                "rotate",
+                "preferUntransformed"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "tilesetAssetId": {
+      "pattern": "^asset_[0-9a-f]{24}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "mapPath",
+    "tilesetAssetId",
+    "expectedMapRevision",
+    "expectedTilesetRevision",
+    "patch"
+  ],
+  "type": "object"
+}
+```
+
+Output schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "pattern": "^asset_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            "changeSetId": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "createdAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "expectedRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "expiresAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "tilesetPropertyEdit",
+              "type": "string"
+            },
+            "mapPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "mapRevision": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "changedFields": {
+                    "items": {
+                      "enum": [
+                        "name",
+                        "className",
+                        "tileOffset",
+                        "objectAlignment",
+                        "tileRenderSize",
+                        "fillMode",
+                        "transformations",
+                        "grid",
+                        "atlas",
+                        "properties"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 10,
+                    "type": "array"
+                  },
+                  "destructive": {
+                    "const": false,
+                    "type": "boolean"
+                  },
+                  "propertiesRemoved": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "propertiesSet": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "requestedFields": {
+                    "items": {
+                      "enum": [
+                        "name",
+                        "className",
+                        "tileOffset",
+                        "objectAlignment",
+                        "tileRenderSize",
+                        "fillMode",
+                        "transformations",
+                        "grid",
+                        "atlas",
+                        "properties"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 10,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": "updateTileset",
+                    "type": "string"
+                  },
+                  "warning": {
+                    "type": "string"
+                  },
+                  "wouldChange": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "type",
+                  "destructive",
+                  "warning",
+                  "requestedFields",
+                  "changedFields",
+                  "wouldChange"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1,
+              "minItems": 1,
+              "type": "array"
+            },
+            "planDigest": {
+              "pattern": "^changeset:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "snapshotConsistency": {
+              "const": "non-atomic-read-set",
+              "type": "string"
+            },
+            "summary": {
+              "additionalProperties": false,
+              "properties": {
+                "changedFields": {
+                  "items": {
+                    "enum": [
+                      "name",
+                      "className",
+                      "tileOffset",
+                      "objectAlignment",
+                      "tileRenderSize",
+                      "fillMode",
+                      "transformations",
+                      "grid",
+                      "atlas",
+                      "properties"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                "propertiesRemoved": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "propertiesSet": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "requestedFields": {
+                  "items": {
+                    "enum": [
+                      "name",
+                      "className",
+                      "tileOffset",
+                      "objectAlignment",
+                      "tileRenderSize",
+                      "fillMode",
+                      "transformations",
+                      "grid",
+                      "atlas",
+                      "properties"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "wouldChange": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "requestedFields",
+                "changedFields",
+                "wouldChange"
+              ],
+              "type": "object"
+            },
+            "tilesetPath": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "changeSetId",
+            "planDigest",
+            "mapPath",
+            "tilesetPath",
+            "assetId",
+            "expectedRevision",
+            "mapRevision",
+            "operations",
+            "summary",
+            "snapshotConsistency",
+            "createdAt",
+            "expiresAt"
+          ],
+          "type": "object"
         },
         {
           "additionalProperties": false,

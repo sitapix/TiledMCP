@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  TILED_MCP_CORE_TOOL_NAMES,
+  TILED_MCP_OPTIONAL_TOOL_NAMES,
+} from "../src/server.js";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,6 +141,57 @@ const EXPECTED_TEXT_OBJECT_CAPABILITIES = {
     "nested-tmj-text-with-tiled-default-elision",
 } as const;
 
+/**
+ * Byte-compare a generated artifact against its committed copy.
+ *
+ * `expect(buffer).toEqual(buffer)` deep-equals element by element: on the 4 MB
+ * contract that measured 4,953 ms against 0.4 ms for Buffer.equals, and three
+ * such assertions were most of this test's 20s budget. The happy path is now a
+ * memcmp; only a genuine mismatch pays for a diagnostic, which reports the same
+ * byte/line offset `pnpm contract:check` does.
+ */
+function expectBytesEqual(
+  actual: Buffer,
+  committed: Buffer,
+  label: string,
+): void {
+  if (actual.equals(committed)) {
+    return;
+  }
+  const shared = Math.min(
+    actual.byteLength,
+    committed.byteLength,
+  );
+  let offset = 0;
+  while (
+    offset < shared &&
+    actual[offset] === committed[offset]
+  ) {
+    offset += 1;
+  }
+  const line =
+    actual
+      .subarray(0, offset)
+      .toString("utf8")
+      .split("\n").length;
+  const window = (buffer: Buffer): string =>
+    JSON.stringify(
+      buffer
+        .subarray(
+          Math.max(0, offset - 60),
+          offset + 60,
+        )
+        .toString("utf8"),
+    );
+  throw new Error(
+    `${label} is stale at byte ${offset} (line ${line}); ` +
+      `generated ${actual.byteLength} bytes, committed ${committed.byteLength}. ` +
+      "Run pnpm contract:generate and review the diff.\n" +
+      `generated: ${window(actual)}\n` +
+      `committed: ${window(committed)}`,
+  );
+}
+
 describe("generated MCP contract", () => {
   let generated: GeneratedMcpContractArtifacts;
   let generatedAgain: GeneratedMcpContractArtifacts;
@@ -182,18 +237,25 @@ describe("generated MCP contract", () => {
   }, 20_000);
 
   it("matches the committed artifacts and is deterministic", () => {
-    expect(
+    expectBytesEqual(
       Buffer.from(
         generated.applicationErrorsJson,
         "utf8",
       ),
-    ).toEqual(committedApplicationErrors);
-    expect(
+      committedApplicationErrors,
+      "contracts/application-errors.v1.json",
+    );
+    expectBytesEqual(
       Buffer.from(generated.contractJson, "utf8"),
-    ).toEqual(committedContract);
-    expect(
+      committedContract,
+      "contracts/mcp-contract.v1.json",
+    );
+    expectBytesEqual(
       Buffer.from(generated.referenceMarkdown, "utf8"),
-    ).toEqual(committedReference);
+      committedReference,
+      "docs/generated/mcp-reference.md",
+    );
+    // Cheap: these fields are strings, and toEqual on strings is a memcmp.
     expect(generatedAgain).toEqual(generated);
   }, 20_000);
 
@@ -222,18 +284,24 @@ describe("generated MCP contract", () => {
       "contract.profiles.with-tmxrasterizer.toolOrder",
     );
 
-    expect(coreTools).toHaveLength(52);
-    expect(fullTools).toHaveLength(55);
-    expect(new Set(coreTools).size).toBe(52);
-    expect(new Set(fullTools).size).toBe(55);
+    // Counts come from the registration lists rather than being restated, so
+    // adding a tool no longer means editing a number in three test files.
+    const coreCount = TILED_MCP_CORE_TOOL_NAMES.length;
+    const fullCount =
+      coreCount + TILED_MCP_OPTIONAL_TOOL_NAMES.length;
+    expect(coreTools).toHaveLength(coreCount);
+    expect(fullTools).toHaveLength(fullCount);
+    expect(new Set(coreTools).size).toBe(coreCount);
+    expect(new Set(fullTools).size).toBe(fullCount);
     expect(
       fullTools.filter(
         (name) => !new Set(coreTools).has(name),
       ),
+    // Terrain painting is deliberately absent here: corners are matched
+    // natively, so `tiled_preview_terrain` is core and needs no Tiled CLI.
     ).toEqual([
       "tiled_render_map",
       "tiled_preview_export",
-      "tiled_preview_terrain",
     ]);
     expect(
       coreTools.filter(
@@ -252,8 +320,11 @@ describe("generated MCP contract", () => {
       ),
     );
 
-    expect(toolDefinitions).toHaveLength(55);
-    expect(new Set(toolNames).size).toBe(55);
+    const definedCount =
+      TILED_MCP_CORE_TOOL_NAMES.length +
+      TILED_MCP_OPTIONAL_TOOL_NAMES.length;
+    expect(toolDefinitions).toHaveLength(definedCount);
+    expect(new Set(toolNames).size).toBe(definedCount);
     expect([...toolNames].sort()).toEqual(
       [...fullTools].sort(),
     );
@@ -1515,7 +1586,68 @@ describe("generated MCP contract", () => {
     expect(contract.resourceTemplateDefinitions).toEqual(
       [],
     );
-    expect(contract.prompts).toEqual([]);
+    // Prompts are the task-shaped entry points into the tool surface. The
+    // contract records them in advertised order -- the two build workflows
+    // first, then the setup they depend on, then read-only review -- so a
+    // client can read the intended starting point off the list.
+    expect(contract.prompts).toEqual([
+      expect.objectContaining({
+        name: "build_from_floor_plan",
+        arguments: [
+          expect.objectContaining({
+            name: "planImagePath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: false,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "create_map_from_tilesheet",
+        arguments: [
+          expect.objectContaining({
+            name: "tilesheetImagePath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: false,
+          }),
+          expect.objectContaining({
+            name: "tileSize",
+            required: false,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "set_up_tile_roles",
+        arguments: [
+          expect.objectContaining({
+            name: "tilesetPath",
+            required: true,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        name: "review_map",
+        arguments: [
+          expect.objectContaining({
+            name: "mapPath",
+            required: true,
+          }),
+        ],
+      }),
+    ]);
 
     const profiles = asRecord(
       contract.profiles,

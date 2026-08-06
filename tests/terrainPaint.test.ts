@@ -1,4 +1,7 @@
-import { existsSync } from "node:fs";
+import {
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -7,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
@@ -19,12 +23,12 @@ import {
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import { TERRAIN_OK_MARKER } from "../src/maps/terrainPaint.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/level.tmj";
 const TILESET_PATH = "tiles/terrain.tsj";
-const REAL_TILED = "/usr/bin/tiled";
+// Resolved from TILED_CLI_PATH/PATH rather than a hardcoded Linux path,
+// which made these permanently skip on macOS regardless of the install.
+const REAL_TILED = TILED_CLI_PATH;
 
 interface Harness {
   root: string;
@@ -264,7 +268,7 @@ describe("terrain painting via Tiled wangEdit", () => {
     });
   });
 
-  it.skipIf(!existsSync(REAL_TILED))(
+  it.skipIf(!hasTiledCli)(
     "paints through the real Tiled CLI end to end",
     async () => {
       const harness = await createHarness(roots, {
@@ -299,6 +303,130 @@ describe("terrain painting via Tiled wangEdit", () => {
       ).cells;
       expect(cells.length).toBeGreaterThan(0);
       await harness.service.applyEdits(plan);
+    },
+  );
+
+  it("matches corners natively when no CLI runner is supplied", async () => {
+    const harness = await createHarness(roots);
+    const plan =
+      await harness.service.planTerrainPaint({
+        mapPath: MAP_PATH,
+        layerId: 1,
+        tilesetAssetId: harness.assetId,
+        wangSetIndex: 0,
+        corners: [
+          { x: 1, y: 1, colorIndex: 1 },
+        ],
+        expectedMapRevision:
+          harness.mapRevision,
+        expectedDependencyRevisions:
+          harness.dependencyRevisions,
+      });
+    // Corner (1,1) is shared by all four cells of this 2x2 map. Cell (0,0)
+    // already holds the all-colour-1 tile, so it is correctly left out: a
+    // cell whose tile does not change contributes nothing to the diff.
+    expect(plan).toMatchObject({
+      kind: "mapEdit",
+      operations: [
+        {
+          type: "setTiles",
+          layerId: 1,
+          cells: [
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 1 },
+          ],
+        },
+      ],
+    });
+    await harness.service.applyEdits(plan);
+  });
+
+  it("is deterministic across repeated native runs", async () => {
+    const run = async () => {
+      const harness = await createHarness(roots);
+      const plan =
+        await harness.service.planTerrainPaint({
+          mapPath: MAP_PATH,
+          layerId: 1,
+          tilesetAssetId: harness.assetId,
+          wangSetIndex: 0,
+          corners: [
+            { x: 1, y: 1, colorIndex: 1 },
+          ],
+          expectedMapRevision:
+            harness.mapRevision,
+          expectedDependencyRevisions:
+            harness.dependencyRevisions,
+        });
+      return JSON.stringify(plan.operations);
+    };
+    expect(await run()).toBe(await run());
+  });
+
+  /**
+   * The fidelity claim, checked rather than asserted.
+   *
+   * This Wang set has exactly one tile per corner pattern, so Tiled's
+   * probability-weighted random choice has nothing to choose between and its
+   * result must equal ours exactly. Where a set does offer several equally
+   * good candidates the two legitimately diverge -- that is the documented
+   * trade in `wangMatcher.ts` -- which is precisely why this asserts parity
+   * on an unambiguous set instead of a general one.
+   */
+  it.skipIf(!hasTiledCli)(
+    "agrees with the real Tiled CLI where the match is unique",
+    async () => {
+      const cellsFrom = async (
+        evaluate?: (
+          scriptPath: string,
+        ) => Promise<{
+          stdout: string;
+          stderr: string;
+        }>,
+      ) => {
+        const harness = await createHarness(
+          roots,
+          { realImage: true },
+        );
+        const plan =
+          await harness.service.planTerrainPaint(
+            {
+              mapPath: MAP_PATH,
+              layerId: 1,
+              tilesetAssetId: harness.assetId,
+              wangSetIndex: 0,
+              corners: [
+                { x: 1, y: 1, colorIndex: 1 },
+              ],
+              expectedMapRevision:
+                harness.mapRevision,
+              expectedDependencyRevisions:
+                harness.dependencyRevisions,
+            },
+            evaluate,
+          );
+        return (
+          plan.operations[0] as {
+            cells: Array<{
+              x: number;
+              y: number;
+              tile: unknown;
+            }>;
+          }
+        ).cells;
+      };
+
+      const adapter = new TiledCliAdapter({
+        tiledCliPath: REAL_TILED,
+        rasterizerPath: process.execPath,
+      });
+      const viaCli = await cellsFrom(
+        (scriptPath) =>
+          adapter.runEvaluate({ scriptPath }),
+      );
+      const native = await cellsFrom();
+      expect(native).toEqual(viaCli);
     },
   );
 });
@@ -432,10 +560,8 @@ async function createHarness(
     ),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  const service = new MapService(resolver, store);
+  const { service } =
+    await wireProject(root);
   const summary = (await service.getSummary(
     MAP_PATH,
   )) as {

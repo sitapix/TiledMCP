@@ -1,4 +1,9 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  TILED_CLI_ENV,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -22,8 +27,6 @@ import type {
   MapEditOperation,
   MapEditPlan,
 } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -736,7 +739,7 @@ describe("resizeMap", () => {
     );
     try {
       await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
+        TILED_CLI_PATH,
         [
           "--export-map",
           "json",
@@ -744,12 +747,7 @@ describe("resizeMap", () => {
           exported,
         ],
         {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
+          env: { ...TILED_CLI_ENV },
           timeout: 30_000,
           maxBuffer: 1024 * 1024,
         },
@@ -812,12 +810,11 @@ async function createHarness(
     "utf8",
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 

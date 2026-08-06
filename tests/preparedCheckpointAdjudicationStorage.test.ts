@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore, wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import {
@@ -58,9 +59,7 @@ describe("prepared checkpoint adjudication storage", () => {
       ),
     );
     await mkdir(join(root, "maps"));
-    resolver =
-      await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ resolver, store } = await wireProject(root));
   });
 
   afterEach(async () => {
@@ -134,14 +133,9 @@ describe("prepared checkpoint adjudication storage", () => {
   });
 
   it("preserves and pins v2 protected retention metadata across prepared commit", async () => {
-    const retained = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const retained = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         retainCommittedPerTarget: 2,
-      },
-    );
+      } });
     const prepared =
       await prepareCreate(retained);
     await writeFile(
@@ -394,11 +388,7 @@ describe("prepared checkpoint adjudication storage", () => {
 
   it("returns bounded unconfirmed success after the commit rename hook fails and does not run garbage collection", async () => {
     const observed: string[] = [];
-    const faulting = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faulting = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterPreparedCheckpointCommitInstalledBeforeDirectorySync({
             checkpointId,
@@ -409,8 +399,7 @@ describe("prepared checkpoint adjudication storage", () => {
             );
           },
         },
-      },
-    );
+      } });
     const prepared =
       await prepareCreate(faulting);
     await writeFile(
@@ -470,11 +459,7 @@ describe("prepared checkpoint adjudication storage", () => {
       );
     let changedLockCount = 0;
     const releaseFaulting =
-      new DocumentStore(
-        resolver,
-        64 * 1024 * 1024,
-        undefined,
-        {
+      makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
           observer: {
             async afterPreparedCheckpointCommitInstalledBeforeDirectorySync() {
               const lockNames = (
@@ -505,8 +490,7 @@ describe("prepared checkpoint adjudication storage", () => {
               }
             },
           },
-        },
-      );
+        } });
     const prepared =
       await prepareCreate(releaseFaulting);
     await writeFile(
@@ -561,11 +545,7 @@ describe("prepared checkpoint adjudication storage", () => {
 
   it("keeps abandon success bounded when post-unlink durability or garbage collection cannot be confirmed", async () => {
     const observed: string[] = [];
-    const faulting = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faulting = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterManifestDeletedBeforeGarbageCollection({
             checkpointId,
@@ -576,8 +556,7 @@ describe("prepared checkpoint adjudication storage", () => {
             );
           },
         },
-      },
-    );
+      } });
     const prepared =
       await prepareCreate(faulting);
     await writeFile(
@@ -622,11 +601,7 @@ describe("prepared checkpoint adjudication storage", () => {
 
   it("returns bounded abandon success when failure occurs after unlink but before checkpoint-directory fsync", async () => {
     const observed: string[] = [];
-    const faulting = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faulting = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterPreparedCheckpointAbandonManifestUnlinkedBeforeDirectorySync({
             checkpointId,
@@ -637,8 +612,7 @@ describe("prepared checkpoint adjudication storage", () => {
             );
           },
         },
-      },
-    );
+      } });
     const prepared =
       await prepareCreate(faulting);
     await writeFile(
@@ -772,14 +746,9 @@ describe("prepared checkpoint adjudication storage", () => {
       )).status,
     ).toBe("prepared");
 
-    const retained = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const retained = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         retainCommittedPerTarget: 2,
-      },
-    );
+      } });
     const retentionPrepared =
       await retained.checkpoints.prepare(
         "maps/retention.tmj",
@@ -1123,10 +1092,7 @@ describe("prepared checkpoint adjudication storage", () => {
   ])(
     "rejects an unsafe $name target without changing the manifest",
     async ({ makeTarget, maxBytes }) => {
-      const constrained = new DocumentStore(
-        resolver,
-        maxBytes,
-      );
+      const constrained = makeStore(resolver, { maxDocumentBytes: maxBytes });
       const prepared =
         await prepareCreate(constrained);
       await makeTarget(root);

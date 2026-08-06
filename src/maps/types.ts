@@ -443,6 +443,31 @@ export interface ResolvedAddTilesetToMapOperation {
   firstGid: number;
 }
 
+/**
+ * Emitted only by the dedicated `planReplaceTilesetInMap` use case, for the
+ * same reason `ResolvedAddTilesetToMapOperation` is: the path, revision and
+ * GID decisions are the server's to make, not a caller's to forge.
+ */
+export interface ResolvedReplaceTilesetInMapOperation {
+  type: "replaceTilesetInMap";
+  /** Serialized `tilesets[]` index being repointed. `firstgid` never moves. */
+  sourceIndex: number;
+  firstGid: number;
+  fromAssetId: string;
+  fromTilesetPath: string;
+  fromTileCount: number;
+  fromGidSpan: number;
+  tilesetPath: string;
+  source: string;
+  assetId: string;
+  tilesetRevision: string;
+  tileCount: number;
+  gidSpan: number;
+  highestReferencedLocalId: number | null;
+  referencedCellCount: number;
+  referencedObjectCount: number;
+}
+
 export type CreatableLayerType =
   | "tilelayer"
   | "objectgroup"
@@ -470,6 +495,7 @@ export interface ResolvedCreateLayerOperation {
 export type PlannedMapEditOperation =
   | MapEditOperation
   | ResolvedAddTilesetToMapOperation
+  | ResolvedReplaceTilesetInMapOperation
   | ResolvedCreateLayerOperation;
 
 export interface MapEditPlan {
@@ -741,6 +767,28 @@ export interface MapEditPlan {
       tileCount: number;
       gidSpan: number;
       firstGid: number;
+    }>;
+    replacedTilesets?: Array<{
+      firstGid: number;
+      from: {
+        tilesetPath: string;
+        source: string;
+        assetId: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      to: {
+        tilesetPath: string;
+        source: string;
+        assetId: string;
+        tilesetRevision: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      /** Highest local id any surviving cell or tile object still refers to. */
+      highestReferencedLocalId: number | null;
+      referencedCellCount: number;
+      referencedObjectCount: number;
     }>;
     createdLayers?: Array<{
       layerId: number;

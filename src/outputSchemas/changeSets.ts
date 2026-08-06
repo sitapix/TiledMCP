@@ -31,6 +31,7 @@ import {
   MAX_TILE_PROPERTY_SETS_PER_TILE,
   MAX_TILE_UPDATES_PER_CHANGE_SET,
 } from "../maps/tilesetEdits.js";
+import { TILESET_PROPERTY_PATCH_FIELDS } from "../maps/tilesetProperties.js";
 import { MAX_TILESET_WANG_COLORS_PER_SET } from "../maps/tilesetDetails.js";
 import {
   MAX_WANG_ASSIGNMENTS_PER_OPERATION,
@@ -1103,6 +1104,41 @@ const deleteObjectsOperationPreviewOutputSchema = z
   })
   .strict();
 
+const replaceTilesetOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("replaceTilesetInMap"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      firstGid: positiveIntegerOutputSchema,
+      from: z
+        .object({
+          tilesetPath: projectPathOutputSchema,
+          assetId: assetIdOutputSchema,
+          tileCount: positiveIntegerOutputSchema,
+          gidSpan: positiveIntegerOutputSchema,
+        })
+        .strict(),
+      to: z
+        .object({
+          tilesetPath: projectPathOutputSchema,
+          source: z.string().min(1),
+          assetId: assetIdOutputSchema,
+          tilesetRevision: revisionOutputSchema,
+          tileCount: positiveIntegerOutputSchema,
+          gidSpan: positiveIntegerOutputSchema,
+        })
+        .strict(),
+      /** `null` when nothing in the map refers to the tileset. */
+      highestReferencedLocalId:
+        nonnegativeIntegerOutputSchema.nullable(),
+      referencedCellCount:
+        nonnegativeIntegerOutputSchema,
+      referencedObjectCount:
+        nonnegativeIntegerOutputSchema,
+    })
+    .strict();
+
 const addTilesetOperationPreviewOutputSchema = z
   .object({
     type: z.literal("addTilesetToMap"),
@@ -1973,6 +2009,67 @@ const addTilesetMapEditPreviewOutputSchema = z
       addTilesetOperationPreviewOutputSchema,
     ]),
     summary: addTilesetSummaryOutputSchema,
+  })
+  .strict();
+
+const replacedTilesetSummaryOutputSchema = z
+  .object({
+    firstGid: positiveIntegerOutputSchema,
+    from: z
+      .object({
+        tilesetPath: projectPathOutputSchema,
+        source: z.string().min(1),
+        assetId: assetIdOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        gidSpan: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    to: z
+      .object({
+        tilesetPath: projectPathOutputSchema,
+        source: z.string().min(1),
+        assetId: assetIdOutputSchema,
+        tilesetRevision: revisionOutputSchema,
+        tileCount: positiveIntegerOutputSchema,
+        gidSpan: positiveIntegerOutputSchema,
+      })
+      .strict(),
+    highestReferencedLocalId:
+      nonnegativeIntegerOutputSchema.nullable(),
+    referencedCellCount:
+      nonnegativeIntegerOutputSchema,
+    referencedObjectCount:
+      nonnegativeIntegerOutputSchema,
+  })
+  .strict();
+
+const replaceTilesetSummaryOutputSchema = z
+  .object({
+    operationCount: z.literal(1),
+    // No cell is written: the swap moves one `source` member and leaves every
+    // GID exactly where it was.
+    cellWrites: z.literal(0),
+    affectedLayerIds: z.tuple([]),
+    affectedTileLayerIds: z.tuple([]),
+    affectedObjectLayerIds: z.tuple([]),
+    createdObjectIds: z.tuple([]),
+    updatedObjectIds: z.tuple([]),
+    deletedObjectIds: z.tuple([]),
+    replacedTilesets: z.tuple([
+      replacedTilesetSummaryOutputSchema,
+    ]),
+  })
+  .strict();
+
+const replaceTilesetMapEditPreviewOutputSchema = z
+  .object({
+    ...mapEditPreviewCommonShape,
+    prospectiveDependencyRevisions:
+      dependencyRevisionsOutputSchema,
+    operations: z.tuple([
+      replaceTilesetOperationPreviewOutputSchema,
+    ]),
+    summary: replaceTilesetSummaryOutputSchema,
   })
   .strict();
 
@@ -2881,6 +2978,11 @@ export const addTilesetPreviewToolOutputSchema =
     addTilesetMapEditPreviewOutputSchema,
   );
 
+export const replaceTilesetPreviewToolOutputSchema =
+  toolOutputSchema(
+    replaceTilesetMapEditPreviewOutputSchema,
+  );
+
 const tilePatchFieldOutputSchema = z.enum([
   "probability",
   "className",
@@ -3597,6 +3699,82 @@ const wangEditPreviewOutputSchema = z
 
 export const wangEditPreviewToolOutputSchema =
   toolOutputSchema(wangEditPreviewOutputSchema);
+
+const tilesetPropertyFieldOutputSchema = z.enum([
+  ...TILESET_PROPERTY_PATCH_FIELDS,
+]);
+
+const tilesetPropertyEditSummaryOutputSchema = z
+  .object({
+    requestedFields: z
+      .array(tilesetPropertyFieldOutputSchema)
+      .min(1)
+      .max(TILESET_PROPERTY_PATCH_FIELDS.length),
+    changedFields: z
+      .array(tilesetPropertyFieldOutputSchema)
+      .max(TILESET_PROPERTY_PATCH_FIELDS.length),
+    propertiesSet:
+      nonnegativeIntegerOutputSchema.optional(),
+    propertiesRemoved:
+      nonnegativeIntegerOutputSchema.optional(),
+    wouldChange: z.boolean(),
+  })
+  .strict();
+
+const tilesetPropertyEditOperationPreviewOutputSchema =
+  z
+    .object({
+      type: z.literal("updateTileset"),
+      destructive: z.literal(false),
+      warning: z.string(),
+      requestedFields: z
+        .array(tilesetPropertyFieldOutputSchema)
+        .min(1)
+        .max(
+          TILESET_PROPERTY_PATCH_FIELDS.length,
+        ),
+      changedFields: z
+        .array(tilesetPropertyFieldOutputSchema)
+        .max(
+          TILESET_PROPERTY_PATCH_FIELDS.length,
+        ),
+      propertiesSet:
+        nonnegativeIntegerOutputSchema.optional(),
+      propertiesRemoved:
+        nonnegativeIntegerOutputSchema.optional(),
+      wouldChange: z.boolean(),
+    })
+    .strict();
+
+const tilesetPropertyEditPreviewOutputSchema = z
+  .object({
+    kind: z.literal("tilesetPropertyEdit"),
+    changeSetId: changeSetIdOutputSchema,
+    planDigest: changeSetIdOutputSchema,
+    mapPath: projectPathOutputSchema,
+    tilesetPath: projectPathOutputSchema,
+    assetId: assetIdOutputSchema,
+    expectedRevision: revisionOutputSchema,
+    mapRevision: revisionOutputSchema,
+    operations: z
+      .array(
+        tilesetPropertyEditOperationPreviewOutputSchema,
+      )
+      .length(1),
+    summary:
+      tilesetPropertyEditSummaryOutputSchema,
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+    createdAt: isoTimestampOutputSchema,
+    expiresAt: isoTimestampOutputSchema,
+  })
+  .strict();
+
+export const tilesetPropertyEditPreviewToolOutputSchema =
+  toolOutputSchema(
+    tilesetPropertyEditPreviewOutputSchema,
+  );
 
 const fileExportSummaryOutputSchema = z
   .object({

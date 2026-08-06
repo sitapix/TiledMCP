@@ -70,6 +70,9 @@ type ListedResource = Awaited<
 type ListedResourceTemplate = Awaited<
   ReturnType<Client["listResourceTemplates"]>
 >["resourceTemplates"][number];
+type ListedPrompt = Awaited<
+  ReturnType<Client["listPrompts"]>
+>["prompts"][number];
 
 interface CallExample {
   name: string;
@@ -102,6 +105,7 @@ interface ProfileSnapshot {
   resources: ListedResource[];
   resourceTemplates: ListedResourceTemplate[];
   resourceContents: ResourceContentContract[];
+  prompts: ListedPrompt[];
   registeredTools: string[];
 }
 
@@ -181,7 +185,7 @@ export async function generateMcpContractArtifacts(): Promise<GeneratedMcpContra
     resourceTemplateDefinitions,
     resourceContentContracts:
       withRasterizer.resourceContents,
-    prompts: [],
+    prompts: core.prompts,
     examples: {
       path: EXAMPLES_RELATIVE_PATH,
       count: examples.examples.length,
@@ -243,6 +247,7 @@ async function collectProfile(
       toolsResponse,
       resourcesResponse,
       templatesResponse,
+      promptsResponse,
       guideResponse,
       applicationErrorsResponse,
       capabilitiesResponse,
@@ -250,6 +255,7 @@ async function collectProfile(
       client.listTools(),
       client.listResources(),
       client.listResourceTemplates(),
+      client.listPrompts(),
       client.readResource({ uri: "tiled://guide" }),
       client.readResource({
         uri: APPLICATION_ERROR_RESOURCE_URI,
@@ -270,6 +276,10 @@ async function collectProfile(
     assertNoPagination(
       templatesResponse.nextCursor,
       `${id} resource templates`,
+    );
+    assertNoPagination(
+      promptsResponse.nextCursor,
+      `${id} prompts`,
     );
     const serverInfo = client.getServerVersion();
     const serverCapabilities =
@@ -326,6 +336,7 @@ async function collectProfile(
         client.getInstructions() ?? null,
       tools: toolsResponse.tools,
       resources: resourcesResponse.resources,
+      prompts: promptsResponse.prompts,
       resourceTemplates:
         templatesResponse.resourceTemplates,
       resourceContents: [
@@ -666,10 +677,54 @@ function assertProfileInvariants(
       "Expected no resource templates.",
     );
   }
-  if ("prompts" in core.serverCapabilities) {
+  if (!("prompts" in core.serverCapabilities)) {
     throw new Error(
-      "Prompt discovery is now advertised; extend the generated MCP contract before proceeding.",
+      "Prompt discovery is no longer advertised; the contract records prompts.",
     );
+  }
+  // Prompts are the task-shaped entry points into the tool surface, so they
+  // are held to the same drift gate as tools: both profiles must advertise
+  // exactly the same set, in the same order.
+  assertStableEqual(
+    core.prompts,
+    withRasterizer.prompts,
+    "prompt definitions",
+  );
+  assertStringArraysEqual(
+    core.prompts.map(({ name }) => name),
+    // Registration order is the advertised order, and it is deliberate:
+    // the two build workflows first -- the flagship plan-to-map, then the
+    // cold start for when no map exists yet -- the setup they both depend on
+    // third, read-only review last.
+    [
+      "build_from_floor_plan",
+      "create_map_from_tilesheet",
+      "set_up_tile_roles",
+      "review_map",
+    ],
+    "prompt order",
+  );
+  for (const prompt of core.prompts) {
+    if (
+      typeof prompt.description !== "string" ||
+      prompt.description.length === 0
+    ) {
+      throw new Error(
+        `Prompt ${prompt.name} must carry a description.`,
+      );
+    }
+    for (const argument of prompt.arguments ??
+      []) {
+      if (
+        typeof argument.description !==
+          "string" ||
+        argument.description.length === 0
+      ) {
+        throw new Error(
+          `Prompt ${prompt.name} argument ${argument.name} must carry a description.`,
+        );
+      }
+    }
   }
 
   const fullByName = new Map(

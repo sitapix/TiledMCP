@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MAX_COORDINATE_CONVERSIONS } from "../maps/coordinates.js";
 import {
   MAX_USAGE_LAYER_SUMMARIES,
   MAX_USAGE_SCAN_VALUES,
@@ -901,6 +902,90 @@ const connectivityResultOutputSchema = z
 export const connectivityToolOutputSchema =
   toolOutputSchema(
     connectivityResultOutputSchema,
+  );
+
+const coordinateSpaceOutputSchema = z.enum([
+  "tile",
+  "screen",
+  "pixel",
+]);
+
+/**
+ * Transform outputs are genuinely fractional (a screen point rarely lands on a
+ * tile boundary), so these stay plain finite numbers rather than the integer
+ * schemas the rest of the surface uses.
+ */
+const coordinatePointOutputSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+  })
+  .strict();
+
+const coordinateConversionOutputSchema = z
+  .object({
+    from: coordinateSpaceOutputSchema,
+    to: coordinateSpaceOutputSchema,
+    input: coordinatePointOutputSchema,
+    output: coordinatePointOutputSchema,
+    cell: z
+      .object({
+        x: integerOutputSchema,
+        y: integerOutputSchema,
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const coordinateResultOutputSchema = z
+  .object({
+    mapPath: projectPathOutputSchema,
+    revision: revisionOutputSchema,
+    profile: z.literal(
+      "tiled-1.12.2-renderer-transforms-v1",
+    ),
+    projection: z
+      .object({
+        orientation: z.enum([
+          "orthogonal",
+          "isometric",
+          "staggered",
+          "hexagonal",
+        ]),
+        tileWidth: positiveIntegerOutputSchema,
+        tileHeight: positiveIntegerOutputSchema,
+        mapHeight: nonnegativeIntegerOutputSchema,
+        staggerAxis: z
+          .enum(["x", "y"])
+          .optional(),
+        staggerIndex: z
+          .enum(["odd", "even"])
+          .optional(),
+        hexSideLength:
+          nonnegativeIntegerOutputSchema.optional(),
+        tileSpace: z.enum([
+          "discrete",
+          "continuous",
+        ]),
+        pixelSpace: z.enum([
+          "same-as-screen",
+          "distinct-from-screen",
+        ]),
+      })
+      .strict(),
+    conversions: z
+      .array(coordinateConversionOutputSchema)
+      .max(MAX_COORDINATE_CONVERSIONS),
+    snapshotConsistency: z.literal(
+      "non-atomic-read-set",
+    ),
+  })
+  .strict();
+
+export const coordinateToolOutputSchema =
+  toolOutputSchema(
+    coordinateResultOutputSchema,
   );
 
 const usageTopTileOutputSchema = z

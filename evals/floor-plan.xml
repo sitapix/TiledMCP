@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Evaluation questions for the TiledMCP floor-plan workflow.
+
+  Every question is answered against the committed `fixtures/floorplan/`
+  project, laid out as the `build_from_floor_plan` prompt describes:
+
+    maps/tavern.tmj     16x12 orthogonal map, Floor tile layer (id 1),
+                        Objects object layer (id 2)
+    maps/interior.tsj   8-tile atlas; each tile carries a class and a `role`
+                        property, plus one corner Wang set named "Walls"
+    plans/plan.png      the floor plan, one pixel per cell
+
+  Each question requires several calls -- typically reading the tileset to
+  learn which local id carries a class or role, importing the plan through
+  `tiled_preview_import_image` with a palette covering all eight role colours,
+  then counting with `tiled_analyze_usage` or `tiled_get_region`. None of them
+  mutate anything the next question depends on, and every answer is a single
+  string that stays stable as long as the fixture does.
+
+  Ground truth was computed directly from the fixture bytes, not estimated.
+-->
+<evaluation>
+  <qa_pair>
+    <question>Open the TiledMCP floor-plan fixture. Import plans/plan.png onto the Floor layer of maps/tavern.tmj, mapping each of the eight role colours in maps/interior.tsj to its tile. How many cells then hold a tile whose class is "Wall"?</question>
+    <answer>50</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, exactly one tile in maps/interior.tsj has the class "Door". After importing plans/plan.png onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells hold that tile?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, several tiles in maps/interior.tsj share the class "Floor". After importing plans/plan.png onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells in total hold a tile of that class?</question>
+    <answer>136</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, find the tile in maps/interior.tsj whose "role" property is floor_rug. After importing plans/plan.png onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells hold that tile?</question>
+    <answer>12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, the north wall of the room in plans/plan.png is broken up by window tiles. After importing the plan onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells hold the tile whose "role" property is wall_window?</question>
+    <answer>4</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, two tiles in maps/interior.tsj carry the class "Prop". After importing plans/plan.png onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells in total hold a tile of that class?</question>
+    <answer>4</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, the tileset maps/interior.tsj defines exactly one Wang set. What is its type, as reported by tiled_get_tileset?</question>
+    <answer>corner</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, inspect the "Walls" Wang set in maps/interior.tsj. Which local tile id carries Wang colour 1 in all four of its corner slots?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, the room drawn in plans/plan.png is enclosed by a solid ring of wall, window and door cells around the edge of the 16x12 map. How many cells make up that outermost ring?</question>
+    <answer>52</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the TiledMCP floor-plan fixture, find the tile in maps/interior.tsj whose "role" property is floor_wood. After importing plans/plan.png onto the Floor layer of maps/tavern.tmj with a palette covering all eight role colours, how many cells hold that tile?</question>
+    <answer>122</answer>
+  </qa_pair>
+</evaluation>

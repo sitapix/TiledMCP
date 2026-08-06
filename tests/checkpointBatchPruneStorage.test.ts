@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { makeStore } from "./support/project.js";
 import {
   access,
   mkdir,
@@ -983,17 +984,12 @@ describe("checkpoint committed batch prune storage", () => {
       ): void | Promise<void>;
     },
   ): DocumentStore {
-    return new DocumentStore(
-      resolver,
-      undefined,
-      undefined,
-      {
+    return makeStore(resolver, { checkpointOptions: {
         ...checkpointOptions,
         ...(observer === undefined
           ? {}
           : { observer }),
-      },
-    );
+      } });
   }
 });
 

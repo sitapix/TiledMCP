@@ -1,4 +1,8 @@
 import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  TILED_MCP_CORE_TOOL_NAMES,
+  TILED_MCP_OPTIONAL_TOOL_NAMES,
+} from "../src/server.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -178,9 +182,12 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
     expect(tools.tools.map(({ name }) => name)).toContain(
       "tiled_render_tiles",
     );
-    expect(tools.tools.length === 52 ||
-        tools.tools.length === 53 ||
-        tools.tools.length === 55).toBe(
+    // Which optional tools register depends on the local CLI probes, so assert
+    // the range the registration lists allow rather than enumerating totals.
+    expect(tools.tools.length >= TILED_MCP_CORE_TOOL_NAMES.length &&
+        tools.tools.length <=
+          TILED_MCP_CORE_TOOL_NAMES.length +
+            TILED_MCP_OPTIONAL_TOOL_NAMES.length).toBe(
       true,
     );
     expect(tools.tools.map(({ name }) => name)).not.toContain(
@@ -1897,6 +1904,6 @@ it("serves tiled_find_tiles through the production stdio entry point", async () 
   }
 
   expect(stderr).toMatch(
-    /ready for .+ \((?:52|53|54|55) tools\)/u,
+    new RegExp(`ready for .+ \\((?:${TILED_MCP_CORE_TOOL_NAMES.length}|${TILED_MCP_CORE_TOOL_NAMES.length + 1}|${TILED_MCP_CORE_TOOL_NAMES.length + 2}|${TILED_MCP_CORE_TOOL_NAMES.length + TILED_MCP_OPTIONAL_TOOL_NAMES.length}) tools\\)`, "u"),
   );
-});
+}, 30_000);

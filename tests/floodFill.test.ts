@@ -1,4 +1,10 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  TILED_CLI_ENV,
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import {
   mkdir,
   mkdtemp,
@@ -36,8 +42,6 @@ import type {
   MapEditPlan,
   TileRef,
 } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -947,7 +951,7 @@ describe("floodFill", () => {
     expect(await readFile(mapPath)).toEqual(before);
   });
 
-  it("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
+  it.skipIf(!hasTiledCli)("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
     const harness = await createHarness(roots, {
       width: 3,
       height: 2,
@@ -992,32 +996,20 @@ describe("floodFill", () => {
       "maps",
       "roundtrip.tmj",
     );
-    try {
-      await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
-        [
-          "--export-map",
-          "json",
-          join(harness.root, MAP_PATH),
-          outputPath,
-        ],
-        {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
-          timeout: 30_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
-    } catch (error) {
-      if (hasErrorCode(error, "ENOENT")) {
-        return;
-      }
-      throw error;
-    }
+    await execFileAsync(
+      TILED_CLI_PATH,
+      [
+        "--export-map",
+        "json",
+        join(harness.root, MAP_PATH),
+        outputPath,
+      ],
+      {
+        env: { ...TILED_CLI_ENV },
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     const exported = JSON.parse(
       await readFile(outputPath, "utf8"),
@@ -1077,11 +1069,11 @@ async function createHarness(
     Buffer.from("placeholder image bytes", "utf8"),
   );
 
-  const resolver = await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 
@@ -1257,16 +1249,4 @@ function maskJsonValues(
       body.slice(range.offset + range.length);
   }
   return `${hasBom ? "\uFEFF" : ""}${body}`;
-}
-
-function hasErrorCode(
-  value: unknown,
-  code: string,
-): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    (value as { code?: unknown }).code === code
-  );
 }

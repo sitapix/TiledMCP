@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { makeStore, wireProject } from "./support/project.js";
 import {
   lstat,
   mkdir,
@@ -33,8 +34,7 @@ describe("prepared checkpoint reconciliation", () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "tiledmcp-recovery-"));
     await mkdir(join(root, "maps"));
-    const resolver = await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ store } = await wireProject(root));
   });
 
   afterEach(async () => {
@@ -207,15 +207,11 @@ describe("prepared checkpoint reconciliation", () => {
         code: "ENOTSUP",
       },
     );
-    const faultingStore = new DocumentStore(
-      await ProjectPathResolver.create(root),
-      undefined,
-      {
+    const faultingStore = makeStore(await ProjectPathResolver.create(root), { writeObserver: {
         afterTemporaryFileOpened() {
           throw preInstallFailure;
         },
-      },
-    );
+      } });
     const document: JsonObject = {
       type: "map",
       version: "1.10",

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Revision } from "../storage/revision.js";
 
 import { TiledMcpError } from "../errors.js";
 import {
@@ -140,7 +141,7 @@ export interface TileNameEditPlan {
    * the file did not exist — apply re-verifies either way, so a
    * concurrent registry write fails closed.
    */
-  registryRevision: string | null;
+  registryRevision: Revision | null;
   /**
    * Raw SHA-256 of the approved serialized registry content — the
    * uniform apply guard, mirroring fileExport's no-replace pin.

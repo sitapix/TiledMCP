@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { wireProject } from "./support/project.js";
 import {
   mkdir,
   mkdtemp,
@@ -16,7 +17,6 @@ import {
   serializeJsonDocument,
   type JsonObject,
 } from "../src/formats/json.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
   DocumentStore,
   readDocumentFileSnapshot,
@@ -42,8 +42,7 @@ describe("DocumentStore", () => {
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "tiledmcp-document-store-"));
     await mkdir(join(root, "maps"));
-    const resolver = await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ store } = await wireProject(root));
   });
 
   afterEach(async () => {

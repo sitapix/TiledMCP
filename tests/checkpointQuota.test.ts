@@ -19,6 +19,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -36,7 +37,6 @@ import {
   CheckpointStore,
   type CheckpointManifest,
 } from "../src/storage/checkpoints.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 import {
   revisionOf,
   shortHash,
@@ -1152,14 +1152,9 @@ describe("checkpoint retained-storage quota and garbage collection", () => {
     );
     const target = join(root, "maps", "quota.tmj");
     await writeFile(target, before);
-    const documents = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const documents = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         maxBytes: 1,
-      },
-    );
+      } });
     const loaded = await documents.read(
       "maps/quota.tmj",
     );
@@ -1195,14 +1190,9 @@ describe("checkpoint retained-storage quota and garbage collection", () => {
   it("rejects a quota-full document create without publishing the new target", async () => {
     const projectPath = "maps/quota-create.tmj";
     const target = join(root, projectPath);
-    const documents = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const documents = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         maxBytes: 1,
-      },
-    );
+      } });
 
     await expect(
       documents.create(projectPath, {

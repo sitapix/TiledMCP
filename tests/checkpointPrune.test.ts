@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { makeStore, wireProject } from "./support/project.js";
 import {
   mkdir,
   mkdtemp,
@@ -69,9 +70,7 @@ describe("checkpoint prune planning and application", () => {
       join(tmpdir(), "tiledmcp-checkpoint-prune-"),
     );
     await mkdir(join(root, "maps"));
-    resolver =
-      await ProjectPathResolver.create(root);
-    store = new DocumentStore(resolver);
+    ({ resolver, store } = await wireProject(root));
   });
 
   afterEach(async () => {
@@ -646,14 +645,9 @@ describe("checkpoint prune planning and application", () => {
       .update(orphan)
       .digest("hex");
     await writeFile(objectPath(orphanHash), orphan);
-    const constrained = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const constrained = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         maxEntries: 1,
-      },
-    );
+      } });
     const plan = await planCheckpointPrune(
       constrained,
       checkpoint.id,
@@ -698,11 +692,7 @@ describe("checkpoint prune planning and application", () => {
     const injected = new Error(
       "injected failure after manifest deletion",
     );
-    const faultingStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faultingStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterManifestDeletedBeforeGarbageCollection({
             checkpointId,
@@ -711,8 +701,7 @@ describe("checkpoint prune planning and application", () => {
             throw injected;
           },
         },
-      },
-    );
+      } });
     const checkpoint =
       await createCommittedCheckpoint(
         faultingStore,
@@ -775,11 +764,7 @@ describe("checkpoint prune planning and application", () => {
         ".tiledmcp/locks",
       );
     let changedLockCount = 0;
-    const releaseFaultStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const releaseFaultStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           async afterManifestDeletedBeforeGarbageCollection() {
             const lockNames = (
@@ -810,8 +795,7 @@ describe("checkpoint prune planning and application", () => {
             }
           },
         },
-      },
-    );
+      } });
     const checkpoint =
       await createCommittedCheckpoint(
         releaseFaultStore,

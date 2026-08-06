@@ -1,4 +1,10 @@
 import { execFile } from "node:child_process";
+import { wireProject } from "./support/project.js";
+import {
+  TILED_CLI_ENV,
+  hasTiledCli,
+  TILED_CLI_PATH,
+} from "./support/tiledCli.js";
 import { createHash } from "node:crypto";
 import {
   mkdir,
@@ -37,7 +43,6 @@ import type {
   MapEditPlan,
   RemoveTilesetFromMapOperation,
 } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 
 const execFileAsync = promisify(execFile);
@@ -1213,7 +1218,7 @@ describe("removeTilesetFromMap", () => {
     );
   });
 
-  it("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
+  it.skipIf(!hasTiledCli)("survives a real Tiled 1.12 JSON export round-trip when the CLI is available", async () => {
     const harness = await createHarness(roots);
     const targetBytes = await readFile(
       join(harness.root, TARGET_TILESET_PATH),
@@ -1241,32 +1246,20 @@ describe("removeTilesetFromMap", () => {
       "maps",
       "roundtrip.tmj",
     );
-    try {
-      await execFileAsync(
-        process.env.TILED_CLI_PATH ?? "tiled",
-        [
-          "--export-map",
-          "json",
-          join(harness.root, MAP_PATH),
-          outputPath,
-        ],
-        {
-          env: {
-            ...process.env,
-            LANG: "C",
-            LC_ALL: "C",
-            QT_QPA_PLATFORM: "offscreen",
-          },
-          timeout: 30_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
-    } catch (error) {
-      if (hasErrorCode(error, "ENOENT")) {
-        return;
-      }
-      throw error;
-    }
+    await execFileAsync(
+      TILED_CLI_PATH,
+      [
+        "--export-map",
+        "json",
+        join(harness.root, MAP_PATH),
+        outputPath,
+      ],
+      {
+        env: { ...TILED_CLI_ENV },
+        timeout: 30_000,
+        maxBuffer: 1024 * 1024,
+      },
+    );
 
     const exported = JSON.parse(
       await readFile(outputPath, "utf8"),
@@ -1330,13 +1323,12 @@ async function createHarness(
     );
   }
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { store, service } =
+    await wireProject(root);
   return {
     root,
     store,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 
@@ -1637,16 +1629,4 @@ function colorForName(name: string): string {
     Extra: "#663399",
   };
   return colors[name] ?? "#777777";
-}
-
-function hasErrorCode(
-  value: unknown,
-  code: string,
-): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    (value as { code?: unknown }).code === code
-  );
 }

@@ -13,6 +13,60 @@ TiledMCP inspects and edits Tiled project files under one configured project
 root. Treat every path as a project-relative POSIX path. Absolute paths and
 \`..\` traversal are rejected.
 
+## Where to start
+
+Most of this document is per-tool reference, organised by tool. If you have a
+task rather than a question, start from one of the registered MCP prompts --
+\`build_from_floor_plan\`, \`create_map_from_tilesheet\`, \`set_up_tile_roles\`
+or \`review_map\` -- which carry the whole call sequence. Start from
+\`create_map_from_tilesheet\` when all you have is an image and there is no map
+yet; the other three all assume a map already exists. The recipe immediately
+below is the one worth reading inline, because it is the path most builds take.
+
+## Recipe: build a map from a floor-plan image
+
+The short version of \`build_from_floor_plan\`. Every step obeys the preview,
+approve, apply cycle and the revision pinning described later in this guide.
+
+1. **Orient.** \`tiled_get_capabilities\` for the registered tool set and
+   limits, then \`tiled_list_files\` for the real project-relative paths.
+2. **Read the map.** \`tiled_get_map_summary\`. Keep the \`revision\`, the
+   complete \`dependencyRevisions\`, the layer ids and the tileset
+   \`assetId\` values together, from that one read. Create a target tile layer
+   with \`tiled_create_layer\` if there is not already a suitable one.
+3. **Learn the tiles.** \`tiled_list_tile_names\` for an existing semantic
+   registry, \`tiled_find_tiles\` to search by class or property, and
+   \`tiled_render_tileset_sheet\` to actually look at them. Do not infer a
+   tile's role from its local id. If roles are not recorded yet, name them
+   through \`tiled_preview_tile_names\` first -- everything downstream becomes
+   reviewable when a palette reads \`{"name": "wall_brick"}\`. Registry names
+   must match \`^[a-z0-9][a-z0-9_-]{0,63}$\`; dots are rejected, so
+   \`wall_brick\` rather than \`wall.brick\`.
+4. **Build the palette.** Identify the distinct colours in the plan image and
+   what each means. Every cell resolves to the *nearest* palette colour by
+   squared RGB distance, so an omitted colour does not become empty -- it
+   becomes whichever entry is nearest. Give every region you care about an
+   entry, and use a \`null\` tile where a colour should erase.
+5. **Lay the floors.** \`tiled_preview_import_image\` with the image, the target
+   layer, a bounded region and that palette. It resamples the image onto the
+   cell grid, each cell averaging its alpha-weighted pixel block, and returns an
+   ordinary \`mapEdit\` change set. Read the plan and \`summary\`, apply it,
+   then \`tiled_render_preview\` and compare against the plan image before going
+   further.
+6. **Run the walls.** If \`tiled_preview_terrain\` is registered, paint Wang
+   corners so junctions pick the right tile automatically: corners address the
+   corner grid, \`x\` in \`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based
+   colour indexes. Otherwise place walls explicitly with
+   \`tiled_preview_shape\` (rectangle outline for a room, line for a run) or a
+   \`fillRegion\` operation.
+7. **Place the sprites.** \`createObject\` operations through
+   \`tiled_preview_edits\`, \`tiled_preview_template\` for a saved template, or
+   \`tiled_preview_prefab\` to stamp a region that already exists elsewhere.
+   Use \`tiled_convert_coordinates\` for anything non-orthogonal.
+8. **Verify.** \`tiled_render_preview\` (with \`overlays.grid\` or
+   \`overlays.coordinates\` when exact placement matters),
+   \`tiled_render_diff\` against the previous state, and \`tiled_validate\`.
+
 ## Discover the active surface
 
 1. Call \`tiled_get_capabilities\` and inspect \`registeredTools\`, the edit
@@ -401,6 +455,93 @@ the native preview pixel-work limit. Use \`tiled_render_map\` or Tiled for full
 object-layer, font, tile-image, antialiased curve styling, and collision
 rendering.
 
+## Stitch one map into another
+
+\`tiled_preview_merge_map\` stamps another map's tile layers into this one,
+matching layers by name, at an optional \`offsetX\`/\`offsetY\` in tiles. Build a
+room once and merge it into a world map at several positions, or assemble a
+large map from chunks.
+
+GIDs are translated, not copied. Two maps rarely order their tilesets alike, so
+the same picture usually has a different GID in each; the planner decodes every
+source cell against the *source's* own \`firstgid\` table and re-expresses it
+against this map's binding for the same tileset file. Copying raw GIDs between
+maps is the classic way to silently repaint one, which is why this is not a
+region copy.
+
+Empty source cells are skipped, so the destination shows through wherever the
+source has nothing. To erase, use \`setTiles\` with an explicit \`null\`.
+
+It fails closed when:
+
+- the two grids differ in orientation or tile size,
+- the source uses a tileset this map does not already reference -- attach it
+  with \`tiled_add_tileset_to_map\` first,
+- a source tile layer has no same-named tile layer here -- create it with
+  \`tiled_create_layer\` first, so the result never depends on the order layers
+  happened to be created in,
+- the source is infinite, or the merge would write more cells than one change
+  set allows.
+
+The change set it returns is ordinary \`setTiles\` operations carrying resolved
+tile references, so the preview reads like any other edit and the source map is
+never touched.
+
+## Re-cut an atlas whose grid changed
+
+\`tiled_update_tileset\` accepts an \`atlas\` field -- \`tileWidth\`,
+\`tileHeight\`, optional \`margin\` and \`spacing\` -- that re-cuts the grid over
+the tileset's existing image. Use it when the art was re-exported at a
+different tile size. \`columns\` and \`tilecount\` are recomputed with Tiled's
+own formula from the image read at plan time; the declared \`imagewidth\` is
+never trusted, so a stale one cannot produce a wrong grid.
+
+\`tilecount\` is the member that matters. It sets the GID span every
+referencing map decodes its cells against, and a tileset edit pins only one
+map. So a cut that changes the count is refused unless both hold:
+
+- the pinned map still resolves -- no cell refers to a local id the new cut
+  does not produce, and
+- no other project asset references the tileset, because this change set pins
+  none of them and a moved span would silently invalidate them.
+
+A cut that leaves the count alone moves no span and is unrestricted, even with
+other referrers present.
+
+Pair it with \`tiled_replace_tileset_in_map\` when the art moved to a new file
+rather than changing shape in place.
+
+## Swap the art a map is drawn with
+
+\`tiled_replace_tileset_in_map\` repoints one bound external tileset at a
+different TSJ and keeps its \`firstgid\`. Every GID keeps its value and its
+slot, so no cell is rewritten -- each one simply now shows the tile at the same
+local id in the replacement. That is what makes retargeting greybox art to
+final art a one-operation change rather than a repaint.
+
+Remove-and-re-add cannot stand in for it: \`removeTilesetFromMap\` refuses any
+tileset a cell still references, so the only route without this tool is to
+clear every referring cell first.
+
+1. \`tiled_get_map_summary\` -- keep the map \`revision\`, the complete
+   \`dependencyRevisions\`, and the \`assetId\` of the tileset to repoint.
+2. \`tiled_replace_tileset_in_map\` with that \`tilesetAssetId\` and the
+   replacement's \`tilesetPath\`.
+3. Read the preview before approving. It reports
+   \`highestReferencedLocalId\` and the cell and object reference counts, which
+   is what tells you how much of the map the swap actually reinterprets.
+4. \`tiled_apply_change_set\`.
+
+It fails closed when a local id still in use does not exist in the replacement,
+and when the replacement's GID span would overlap the tileset bound after it.
+A smaller replacement is allowed only while nothing refers to the tiles it
+drops.
+
+What it does **not** check is whether the two tilesets are laid out alike. Two
+tilesets with matching tile counts and unrelated orderings will swap cleanly
+and silently remap the whole map. Render both with
+\`tiled_render_tileset_sheet\` and compare before approving.
+
 ## Attach an existing tileset safely
 
 \`tiled_add_tileset_to_map\` prepares a proposal for attaching one existing
@@ -659,6 +800,69 @@ representative cell each, and — when \`from\`/\`to\` are both given —
 whether the two cells share a component. Endpoints on blocked cells
 fail closed.
 
+## Update tileset-level properties
+
+\`tiled_update_tileset\` patches the tileset-level members of one
+currently referenced external TSJ: \`name\`, \`className\`,
+\`tileOffset\`, \`objectAlignment\`, \`tileRenderSize\`, \`fillMode\`,
+\`transformations\`, \`grid\`, and scalar custom \`properties\`. Pin both
+\`expectedMapRevision\` and \`expectedTilesetRevision\`; the result is a
+\`tilesetPropertyEdit\` change set that rewrites only the requested
+members.
+
+Every member except \`name\` and \`properties\` accepts \`null\`, which
+removes it. Removing a member and setting it to Tiled's default are
+different things — the file and the editor both show the difference —
+so choose deliberately.
+
+Tileset geometry is not editable here. \`tilewidth\`, \`tileheight\`,
+\`spacing\`, \`margin\`, \`columns\`, \`tilecount\` and \`image\` all
+re-slice the atlas or move the GID span, which would silently
+invalidate every referencing map; they belong to tileset creation.
+Tiles, Wang sets and referencing maps are never touched. A patch whose
+values already match the tileset fails closed rather than returning an
+empty change set.
+
+Use \`tiled_update_tile\` for per-tile metadata and
+\`tiled_update_wangsets\` for terrain data; this tool never touches
+either.
+
+## Convert between coordinate spaces
+
+Tiled has three coordinate spaces, and they coincide only for
+orthogonal maps. \`tiled_convert_coordinates\` applies the official
+1.12.2 renderer transforms between them for all four orientations, so
+placement never has to be derived by hand:
+
+- **tile** — cell indices, fractional except where noted below.
+- **screen** — the rendered pixel position used by previews and
+  renders.
+- **pixel** — the space object \`x\`/\`y\` live in.
+
+Pass 1 to 256 conversions in one call, each \`{from, to, x, y}\`. Every
+entry returns the raw transform \`output\`, plus a whole \`cell\` when
+converting into tile space.
+
+Three facts make hand-derived isometric and hexagonal placement
+unreliable, and the result declares each one:
+
+- The isometric screen origin is shifted right by
+  \`mapHeight * tileWidth / 2\` (integer division), so tile \`(0,0)\`
+  is not at screen \`(0,0)\`.
+- Isometric **pixel** coordinates divide *both* axes by
+  \`tileHeight\`, which is why object positions there do not scale
+  with \`tileWidth\`. The result reports
+  \`projection.pixelSpace: "distinct-from-screen"\` for isometric maps
+  and \`"same-as-screen"\` for every other orientation.
+- Hexagonal and staggered maps snap to the nearest of four hexagon
+  centres, so their tile space is discrete: there is no sub-cell
+  remainder and \`cell\` equals \`output\`. The result reports
+  \`projection.tileSpace: "discrete"\` for those and \`"continuous"\`
+  for orthogonal and isometric.
+
+This tool reads only the map header, so it still answers when the
+map's tilesets are missing or unreadable.
+
 ## Manage project property types
 
 \`tiled_list_property_types\` reads one \`.tiled-project\` file's
@@ -746,20 +950,33 @@ that leaves the map fails closed), at most 10,000 cells per shape, and a
 \`null\` tile erases along the shape. Every preview, revision-pin, and
 transaction rule applies unchanged.
 
-## Paint terrain with Tiled's own matcher
+## Paint terrain corners
 
-When the local Tiled CLI is available, the optional
-\`tiled_preview_terrain\` paints Wang corners through Tiled's own
-\`TileLayer.wangEdit()\` — the same matcher as the editor's Terrain
-Brush — run headlessly by a server-authored static script (parameters
-are embedded as an inert JSON literal; the CLI writes only a staging
-copy of the map). Corners address the corner grid, \`x\` in
-\`[0, width]\` and \`y\` in \`[0, height]\`, with 1-based wang color
-indexes, and the selected set must be corner or mixed type on an
-external atlas tileset. The result is an ordinary \`mapEdit\` change
-set carrying the exact \`setTiles\` cell diff — apply never re-runs the
-CLI, untouched bytes stay untouched, and the plan can join transactions
-like any map edit. A paint that changes nothing fails closed.
+\`tiled_preview_terrain\` paints Wang corners so that walls, paths and
+shorelines pick the right tile at every junction instead of being
+placed one at a time. It is a core tool: corners are matched natively,
+with no local Tiled install required.
+
+Corners address the corner grid — \`x\` in \`[0, width]\` and \`y\` in
+\`[0, height]\`, one larger than the cell grid on each axis — with
+1-based wang color indexes, and the selected set must be corner or
+mixed type on an external atlas tileset. Painting one corner restyles
+the up-to-four cells that share it, which is what makes a junction
+agree with itself. The result is an ordinary \`mapEdit\` change set
+carrying the exact \`setTiles\` cell diff, so untouched bytes stay
+untouched and the plan can join transactions like any map edit. A paint
+that changes nothing fails closed.
+
+Two things to know about the native matcher. Where Tiled's own
+\`WangFiller\` picks *randomly* (weighted by \`probability\`) among tiles
+that match a corner pattern equally well, this picks the lowest local
+tile id, because the same input must always produce the same bytes. The
+chosen tile is always one Tiled considers valid for that pattern, but on
+a set with several equally-good candidates it need not be the one a
+given editor session produced. And where no tile in the set matches a
+required pattern, the paint fails closed naming the cell and the
+pattern, rather than approximating with a near-match — add the missing
+Wang tile instead.
 
 ## Edit Wang terrain sets
 
@@ -853,8 +1070,7 @@ nested class/list elements fail closed.
 
 Use the generic \`{type:"removeTilesetFromMap", tilesetAssetId}\` operation
 to detach one current external atlas binding. This is the fourteenth generic
-operation, not a standalone tool, so the registry remains 32 core tools or 33
-when the rasterizer is available. The strict operation must be the only item
+operation, not a standalone tool. The strict operation must be the only item
 in its change set. Copy the opaque \`tilesetAssetId\` from a current map
 summary; do not substitute a path, tileset name, or derived ID.
 
@@ -906,6 +1122,24 @@ orthogonal TMJ. It supports \`tilelayer\`, \`objectgroup\`,
 4. Inspect the assigned layer ID, placement, allocated cell count, and image
    pin, then obtain client approval and call \`tiled_apply_change_set\`.
 5. Re-read the map summary before using the new numeric layer ID.
+
+### Tracing over a reference image
+
+Dropping an image in and building on top of it is an \`imagelayer\` plus tile
+layers above it. Two things about that workflow are worth knowing before you
+start rather than after:
+
+- \`tiled_get_map_summary\` reports an image layer's \`image.path\` (plus
+  \`repeatX\`/\`repeatY\` and its \`x\`/\`y\` offset), so you can find out what an
+  existing layer references. There is no revision on it: image-layer images
+  are not part of the map's dependency set, so nothing is pinned to report.
+- \`tiled_render_preview\` **does not draw image layers.** It is a tile-layer
+  renderer. It does not hide this -- the result carries \`partial: true\` and an
+  \`omittedLayers\` entry with \`reason: "unsupported-layer-type"\` -- but a
+  preview that looks empty is usually this, not a failed edit. To actually see
+  the reference, use \`tiled_render_map\`, which drives Tiled's own
+  TmxRasterizer and composites image layers. That tool is registered only when
+  a local Tiled install is detected, so check \`tiled_get_capabilities\` first.
 
 Tile layers inherit the finite map dimensions and start filled with GID zero.
 The server advances the existing \`nextlayerid\`; it never fills an ID gap
@@ -1011,8 +1245,7 @@ object-reference values verbatim, nested class and list values as
 bounded raw JSON with explicit \`valueSemantics\` markers, and only
 oversized entries with a \`valueOmitted\` marker — with at most 128
 entries projected and a \`propertiesTruncated\` flag beyond that. It
-still does not return vendor fields or tile objects. The registry is
-32 core tools or 33 with the rasterizer. The native preview base image now
+still does not return vendor fields or tile objects. The native preview base image now
 renders visible object layers too (profile \`base-object-layers-v1\`):
 basic shapes draw with Tiled's group color (else gray), a 50-alpha fill, a
 one-pixel black shadow, Tiled's topdown-or-index draw order, layer-times-
@@ -1028,8 +1261,7 @@ substitution, wrapping, glyph layout, tile object images, antialiased
 curve styling, and class colors.
 
 Use \`{type:"updateMap", patch}\` to change existing root map properties.
-This is the thirteenth generic operation, not a standalone tool, so the
-registry remains 32 core tools or 33 when the rasterizer is available. The
+This is the thirteenth generic operation, not a standalone tool. The
 strict, non-empty patch may contain:
 
 - \`renderOrder\`: \`right-down\`, \`right-up\`, \`left-down\`, or
@@ -1052,8 +1284,7 @@ restore the original serialized values produce a file-level exact-byte no-op.
 
 Use \`{type:"updateLayer", layerId, patch}\` to update an existing
 \`tilelayer\`, \`objectgroup\`, \`imagelayer\`, or \`group\`. This is the
-seventh operation in the generic preview union, not a standalone tool, so the
-registry remains 32 core tools or 33 when the rasterizer is available. The
+seventh operation in the generic preview union, not a standalone tool. The
 patch must contain at least one field and may contain only:
 
 - \`name\`, \`className\`, \`visible\`, and \`opacity\`;
@@ -1084,8 +1315,7 @@ tile-data and object edits. \`updateLayer\` itself does not move or delete
 layers; deletion and moving use the exclusive operations below.
 
 Use \`{type:"deleteLayer", layerId, deleteDescendants?}\` to permanently remove
-an existing layer. It is the eighth generic operation, not a standalone tool,
-so the registry remains 32 core tools or 33 with the rasterizer. A
+an existing layer. It is the eighth generic operation, not a standalone tool. A
 \`deleteLayer\` change set must contain exactly this one operation; do not mix
 it with tile, object, or layer updates.
 
@@ -1112,8 +1342,7 @@ revision-pinned approval, checkpoint, and apply flow remains mandatory.
 
 Use \`{type:"moveLayer", layerId, parentGroupId?, index}\` to reorder a layer
 or move it into or out of a Group. This is the ninth generic operation, not a
-standalone tool, so the registry remains 32 core tools or 33 with the
-rasterizer. A move change set must contain exactly one operation and cannot be
+standalone tool. A move change set must contain exactly one operation and cannot be
 mixed with tile, object, update, delete, or another move.
 
 Omit \`parentGroupId\` for the root \`layers\` array; input \`null\` is not
@@ -1150,8 +1379,7 @@ atomic-replacement flow.
 
 Use \`{type:"duplicateLayer", layerId, destination?, name?}\` to copy any
 supported layer or a complete Group subtree. This is the tenth generic
-operation, not a standalone tool, so the registry remains 32 core tools or 33
-with the rasterizer. A duplicate change set must contain exactly one operation.
+operation, not a standalone tool. A duplicate change set must contain exactly one operation.
 
 \`destination\` has exactly three branches:
 
@@ -1238,8 +1466,7 @@ apply not to rewrite the map.
 Use
 \`{type:"stampPattern", layerId, x, y, pattern:(TileRef|null)[][]}\` for a
 dense rectangular tile stamp. This is the eleventh generic operation, not a
-standalone tool, so the registry remains 32 core tools or 33 with the
-rasterizer. The row-major pattern must be non-empty and rectangular: every
+standalone tool. The row-major pattern must be non-empty and rectangular: every
 row is non-empty and has the same width, with no sparse holes or
 \`undefined\`. Width and height are each capped at 256 and the complete
 pattern at 16,384 cells.
@@ -1269,7 +1496,7 @@ and revision.
 
 Use \`{type:"floodFill", layerId, x, y, tile:TileRef|null}\` for a bounded
 paint-bucket edit. This is the twelfth generic operation, not a standalone
-tool, so the registry remains 32 core tools or 33 with the rasterizer.
+tool.
 \`x\` and \`y\` are an absolute seed coordinate inside the finite tile
 layer. Connectivity is always four-way; there is no connectivity input and
 diagonal-only cells are not connected.
@@ -1306,8 +1533,7 @@ revision.
 Use
 \`{type:"copyRegion",source:{layerId,x,y,width,height},destination:{layerId,x,y}}\`
 to copy one complete tile rectangle within the same map. This is the fifteenth
-generic operation, not a standalone tool, so the registry remains 28 core
-tools or 29 with the rasterizer. The operation, source, and destination are
+generic operation, not a standalone tool. The operation, source, and destination are
 strict objects and reject extra keys.
 
 Both layer IDs must identify finite orthogonal tile layers with numeric data

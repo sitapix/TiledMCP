@@ -6,6 +6,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
@@ -16,8 +17,6 @@ import {
   type JsonObject,
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/level.tmj";
 const TILESET_PATH = "tiles/props.tsj";
@@ -430,10 +429,8 @@ async function createHarness(
     );
   }
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
-  const service = new MapService(resolver, store);
+  const { service } =
+    await wireProject(root);
   const summary = (await service.getSummary(
     MAP_PATH,
   )) as {

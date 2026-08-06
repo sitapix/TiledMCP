@@ -7,6 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import {
@@ -32,7 +33,6 @@ import type {
   ResolvedCreateLayerOperation,
 } from "../src/maps/types.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
 
 const MAP_PATH = "maps/level.tmj";
@@ -469,7 +469,7 @@ describe("MapService createLayer", () => {
       await ProjectPathResolver.create(harness.root);
     const restarted = new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     );
     await restarted.initializeAssetRegistry();
     const afterSnapshot = await mapSnapshot(restarted);
@@ -570,7 +570,7 @@ async function createHarness(): Promise<Harness> {
     imageBytes,
     service: new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     ),
   };
 }

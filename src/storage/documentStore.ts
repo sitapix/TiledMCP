@@ -51,7 +51,7 @@ import {
   type FileIdentity,
 } from "./fileIdentity.js";
 import { KeyedMutex } from "./keyedMutex.js";
-import { revisionOf } from "./revision.js";
+import { revisionOf, type Revision } from "./revision.js";
 import {
   MAX_TRANSACTION_LABEL_LENGTH,
   MAX_TRANSACTION_STAGED_BYTES,
@@ -142,6 +142,28 @@ export interface CommitResult {
   changed: boolean;
   checkpointRetention?: CheckpointRetentionResult;
   warnings?: string[];
+}
+
+/**
+ * A server-owned directory under `.tiledmcp`.
+ *
+ * The template literal is the guard: it makes passing a project-relative path
+ * such as `"maps"` a compile error, so the un-checkpointed write path cannot
+ * be aimed at a user's document by a typo or a refactor.
+ */
+export type InternalDirectory =
+  | ".tiledmcp"
+  | `.tiledmcp/${string}`;
+
+/**
+ * Result of replacing a server-owned `.tiledmcp` file. Deliberately narrower
+ * than {@link CommitResult}: internal files are never checkpointed, so there
+ * is no `checkpointId` to report.
+ */
+export interface InternalFileCommitResult {
+  path: string;
+  beforeRevision: string | null;
+  revision: string;
 }
 
 export interface FileDeleteStoreResult {
@@ -592,6 +614,66 @@ export class DocumentStore {
     this.assertSize(content, normalized);
     parseJsonDocument(decodeUtf8Strict(content, normalized), normalized);
     return this.commitContent(normalized, expectedRevision, content, label);
+  }
+
+  /**
+   * Durably replace a server-owned file under `.tiledmcp`, holding the same
+   * in-process mutex and cross-process lock that guard project documents.
+   *
+   * Internal files are bookkeeping rather than project assets, so they stay
+   * outside the checkpoint system — there is no user document to restore, and
+   * a checkpoint of the registry would be restored independently of the maps
+   * it names. They still need the lock, the atomic rename and the fsync: a
+   * torn write loses the whole registry, and a concurrent write loses an edit.
+   */
+  async commitInternalFile(
+    internalDirectory: InternalDirectory,
+    fileName: string,
+    expectedRevision: Revision | null,
+    proposedContent: Buffer,
+  ): Promise<InternalFileCommitResult> {
+    const content = Buffer.from(proposedContent);
+    const target = `${internalDirectory}/${fileName}`;
+    return this.mutex.runExclusive(target, () =>
+      withProjectFileLock(
+        this.resolver,
+        target,
+        async () => {
+          const directory =
+            await this.resolver.ensureInternalDirectory(
+              internalDirectory,
+            );
+          const absolutePath = join(
+            directory,
+            fileName,
+          );
+          const actualRevision =
+            await readInternalFileRevision(
+              absolutePath,
+            );
+          if (actualRevision !== expectedRevision) {
+            throw new TiledMcpError(
+              "REVISION_CONFLICT",
+              `${target} changed since the edit was planned.`,
+              {
+                path: target,
+                expectedRevision,
+                actualRevision,
+              },
+            );
+          }
+          await writeFileDurably(
+            absolutePath,
+            content,
+          );
+          return {
+            path: target,
+            beforeRevision: actualRevision,
+            revision: revisionOf(content),
+          };
+        },
+      ),
+    );
   }
 
   async reconcilePreparedCheckpoints(
@@ -4197,6 +4279,24 @@ async function writeFileDurably(
   await syncDirectoryBestEffort(
     dirname(path),
   ).catch(() => {});
+}
+
+/**
+ * Revision of a server-owned internal file, or `null` when it does not exist
+ * yet. A missing file is the legitimate initial state for the tile-name
+ * registry, so absence is a revision value rather than an error.
+ */
+async function readInternalFileRevision(
+  path: string,
+): Promise<string | null> {
+  try {
+    return revisionOf(await readFile(path));
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function syncDirectoryBestEffort(

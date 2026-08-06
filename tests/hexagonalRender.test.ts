@@ -5,19 +5,19 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { hexTileToScreen } from "../src/images/isometricPreview.js";
+import { hexagonalTileToScreen } from "../src/maps/coordinates.js";
 import {
   serializeJsonDocument,
   type JsonObject,
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/hex.tmj";
 
@@ -54,6 +54,65 @@ describe("hexagonal screen transform", () => {
     expect(
       hexTileToScreen(hexagonal, 1, 0),
     ).toEqual({ x: 16, y: 0 });
+  });
+
+  /**
+   * RenderParams derives its own tile size (`columnWidth + sideOffsetX`), and
+   * tileToScreenCoords steps by that rather than by the map's declared size.
+   * The two only diverge when `tileSize - sideLength` is odd, which is why an
+   * even-dimension fixture cannot catch a regression here.
+   */
+  it("steps by the derived tile size when the declared size is odd", () => {
+    // staggerX, tileHeight 33: sideOffsetY = 16, so rows step by 32, not 33.
+    expect(
+      hexTileToScreen(
+        {
+          tileWidth: 32,
+          tileHeight: 33,
+          hexSideLength: 0,
+          staggerAxis: "x",
+          staggerIndex: "odd",
+        },
+        0,
+        3,
+      ),
+    ).toEqual({ x: 0, y: 96 });
+
+    // staggerY, tileWidth 33: sideOffsetX = 16, so columns step by 32, not 33.
+    expect(
+      hexTileToScreen(
+        {
+          tileWidth: 33,
+          tileHeight: 32,
+          hexSideLength: 0,
+          staggerAxis: "y",
+          staggerIndex: "odd",
+        },
+        1,
+        0,
+      ),
+    ).toEqual({ x: 32, y: 0 });
+  });
+
+  it("shares one transform with tiled_convert_coordinates", () => {
+    // The renderer and the coordinate tool must never disagree about where a
+    // cell sits; they resolve to the same function, and this pins that.
+    const geometry = {
+      tileWidth: 33,
+      tileHeight: 33,
+      hexSideLength: 15,
+      staggerAxis: "y" as const,
+      staggerIndex: "even" as const,
+    };
+    for (let x = 0; x < 4; x += 1) {
+      for (let y = 0; y < 4; y += 1) {
+        expect(
+          hexTileToScreen(geometry, x, y),
+        ).toEqual(
+          hexagonalTileToScreen(geometry, x, y),
+        );
+      }
+    }
   });
 });
 
@@ -270,11 +329,10 @@ async function createHarness(
     join(root, MAP_PATH),
     serializeJsonDocument(map),
   );
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { service } =
+    await wireProject(root);
   return {
     root,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }

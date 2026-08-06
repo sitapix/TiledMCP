@@ -8,6 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -438,7 +439,7 @@ async function createStore(
 ): Promise<DocumentStore> {
   const resolver =
     await ProjectPathResolver.create(root);
-  return new DocumentStore(resolver);
+  return makeStore(resolver);
 }
 
 async function createHarness(
@@ -466,12 +467,7 @@ async function createHarness(
 
   const resolver =
     await ProjectPathResolver.create(root);
-  const store = new DocumentStore(
-    resolver,
-    undefined,
-    undefined,
-    {},
-    crashStep === undefined
+  const store = makeStore(resolver, { checkpointOptions: {}, transactionObserver: crashStep === undefined
       ? undefined
       : {
           beforeStep: (step) => {
@@ -481,7 +477,6 @@ async function createHarness(
               );
             }
           },
-        },
-  );
+        } });
   return { root, resolver, store };
 }

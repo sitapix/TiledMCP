@@ -7,6 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,7 +22,6 @@ import {
   type FileDeletePlan,
 } from "../src/maps/fileDelete.js";
 import { MapService } from "../src/maps/mapService.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import {
   applyCheckpointRestore,
   planCheckpointRestore,
@@ -455,13 +455,12 @@ async function createHarness(
     "utf8",
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { store, service } =
+    await wireProject(root);
   return {
     root,
     store,
-    service: new MapService(resolver, store),
+    service: service,
   };
 }
 

@@ -7,6 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { makeStore } from "./support/project.js";
 import { join } from "node:path";
 
 import {
@@ -50,14 +51,9 @@ describe("prepared checkpoint adjudication protocol", () => {
     await mkdir(join(root, "maps"));
     const resolver =
       await ProjectPathResolver.create(root);
-    store = new DocumentStore(
-      resolver,
-      undefined,
-      undefined,
-      {
+    store = makeStore(resolver, { checkpointOptions: {
         retainCommittedPerTarget: 2,
-      },
-    );
+      } });
   });
 
   afterEach(async () => {
@@ -515,11 +511,7 @@ describe("prepared checkpoint adjudication protocol", () => {
     const resolver =
       await ProjectPathResolver.create(root);
     const committedIds: string[] = [];
-    const faultingStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const faultingStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterPreparedCheckpointCommitInstalledBeforeDirectorySync({
             checkpointId,
@@ -530,8 +522,7 @@ describe("prepared checkpoint adjudication protocol", () => {
             );
           },
         },
-      },
-    );
+      } });
     const projectPath =
       "maps/cached-unconfirmed-commit.tmj";
     const absolutePath = join(
@@ -624,11 +615,7 @@ describe("prepared checkpoint adjudication protocol", () => {
       const resolver =
         await ProjectPathResolver.create(root);
       const deletedIds: string[] = [];
-      const faultingStore = new DocumentStore(
-        resolver,
-        64 * 1024 * 1024,
-        undefined,
-        {
+      const faultingStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
           ...(mode === "failed"
             ? {
                 observer: {
@@ -647,8 +634,7 @@ describe("prepared checkpoint adjudication protocol", () => {
                 },
               }
             : {}),
-        },
-      );
+        } });
       const projectPath =
         `maps/cached-${mode}-abandon.tmj`;
       const absolutePath = join(
@@ -765,11 +751,7 @@ describe("prepared checkpoint adjudication protocol", () => {
       await ProjectPathResolver.create(root);
     const committedIds: string[] = [];
     const abandonedIds: string[] = [];
-    const racingStore = new DocumentStore(
-      resolver,
-      64 * 1024 * 1024,
-      undefined,
-      {
+    const racingStore = makeStore(resolver, { maxDocumentBytes: 64 * 1024 * 1024, checkpointOptions: {
         observer: {
           afterPreparedCheckpointCommitInstalledBeforeDirectorySync({
             checkpointId,
@@ -782,8 +764,7 @@ describe("prepared checkpoint adjudication protocol", () => {
             abandonedIds.push(checkpointId);
           },
         },
-      },
-    );
+      } });
     const projectPath =
       "maps/concurrent-adjudication.tmj";
     const absolutePath = join(

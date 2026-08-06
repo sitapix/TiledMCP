@@ -94,6 +94,7 @@ import {
   DEFAULT_USAGE_TOP_TILE_LIMIT,
   MAX_ADD_TILESET_GID_SCANS,
   MAX_CELL_WRITES,
+  MAX_MERGE_OFFSET,
   MAX_CREATE_MAP_DIMENSION,
   MAX_CREATE_MAP_TILE_EDGE,
   MAX_CREATE_TILE_LAYER_CELLS,
@@ -191,6 +192,7 @@ import {
 } from "./outputSchemas/common.js";
 import {
   addTilesetPreviewToolOutputSchema,
+  replaceTilesetPreviewToolOutputSchema,
   checkpointPruneBatchPreviewToolOutputSchema,
   checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
@@ -204,6 +206,7 @@ import {
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
+  tilesetPropertyEditPreviewToolOutputSchema,
   fileExportPreviewToolOutputSchema,
   propertyTypeEditPreviewToolOutputSchema,
   tileNameEditPreviewToolOutputSchema,
@@ -215,6 +218,21 @@ import {
   MAX_CREATE_TILESET_SPACING,
   MAX_CREATE_TILESET_TILE_EDGE,
 } from "./maps/tilesetCreate.js";
+import {
+  MAX_COORDINATE_CONVERSIONS,
+  MAX_COORDINATE_MAGNITUDE,
+} from "./maps/coordinates.js";
+import {
+  MAX_TILESET_CLASS_NAME_CODE_POINTS,
+  MAX_TILESET_GRID_EDGE,
+  MAX_TILESET_NAME_CODE_POINTS,
+  MAX_TILESET_OFFSET,
+  TILESET_FILL_MODES,
+  TILESET_GRID_ORIENTATIONS,
+  TILESET_OBJECT_ALIGNMENTS,
+  TILESET_RENDER_SIZES,
+  type TilesetPropertyPatch,
+} from "./maps/tilesetProperties.js";
 import { MAX_WORLD_EDIT_OPERATIONS } from "./maps/worldRead.js";
 import {
   MAX_DELETE_REFERENCE_SCAN_ASSETS,
@@ -282,6 +300,7 @@ import {
   tilesetDetailToolOutputSchema,
   usageAnalysisToolOutputSchema,
   connectivityToolOutputSchema,
+  coordinateToolOutputSchema,
 } from "./outputSchemas/semantic.js";
 import type { ProjectPathResolver } from "./project/pathResolver.js";
 import {
@@ -297,6 +316,8 @@ import {
   GUIDE_RESOURCE_URI,
   registerGuideResource,
 } from "./resources/guide.js";
+import { TILED_MCP_SERVER_INSTRUCTIONS } from "./resources/instructions.js";
+import { registerTiledMcpPrompts } from "./resources/prompts.js";
 import {
   DEFAULT_RASTER_RENDER_EDGE,
   MAX_RASTER_INPUT_AGGREGATE_BYTES,
@@ -309,28 +330,23 @@ import {
   RASTER_RENDER_PROFILE,
   RASTER_SNAPSHOT_CONSISTENCY,
 } from "./rasterContract.js";
+import { applyChangeSetPlan } from "./planKinds.js";
 import {
-  applyCheckpointPruneBatch,
   CHECKPOINT_PRUNE_BATCH_GARBAGE_COLLECTION,
   MAX_CHECKPOINT_BATCH_PRUNE_COUNT,
   MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
   planCheckpointPruneBatch,
 } from "./storage/checkpointBatchPrune.js";
 import {
-  applyCheckpointPrune,
   planCheckpointPrune,
 } from "./storage/checkpointPrune.js";
 import {
-  applyCheckpointRestore,
   planCheckpointRestore,
 } from "./storage/checkpointRestore.js";
 import {
-  applyPreparedCheckpointDiscard,
   planPreparedCheckpointDiscard,
 } from "./storage/preparedCheckpointDiscard.js";
 import {
-  applyPreparedCheckpointAbandon,
-  applyPreparedCheckpointCommit,
   planPreparedCheckpointAbandon,
   planPreparedCheckpointCommit,
 } from "./storage/preparedCheckpointAdjudication.js";
@@ -414,6 +430,20 @@ const safeIntegerSchema = z
   .min(Number.MIN_SAFE_INTEGER)
   .max(Number.MAX_SAFE_INTEGER);
 const positiveSafeIntegerSchema = safeIntegerSchema.min(1);
+const coordinateSpaceSchema = z
+  .enum(["tile", "screen", "pixel"])
+  .describe(
+    "tile = whole/fractional cell indices; screen = rendered pixel position; pixel = the space object x/y live in",
+  );
+/**
+ * Ordinates are fractional on purpose -- a screen point mid-tile is the normal
+ * input -- so this bounds magnitude rather than requiring integers.
+ */
+const coordinateOrdinateSchema = z
+  .number()
+  .finite()
+  .min(-MAX_COORDINATE_MAGNITUDE)
+  .max(MAX_COORDINATE_MAGNITUDE);
 const nativePreviewHighlightRectInputSchema = z
   .object({
     x: z
@@ -740,6 +770,22 @@ const createLayerInputSchema = z
     }
   });
 
+/**
+ * Shared input sub-schemas carry a registry `id`.
+ *
+ * Zod inlines a reused schema at every use site, so the tile-reference family
+ * alone was repeated fifteen times across the advertised input schemas. An
+ * `id` makes the SDK's converter emit one `definitions` entry and a `$ref` per
+ * use instead, which is what an agent carries in context for a whole session.
+ *
+ * Only worth doing where a schema is reused *within* one tool's document: MCP
+ * gives every tool its own schema, so a single-use `$ref` costs more than the
+ * inlining it replaces. Tagging the output schemas the same way measured as a
+ * net loss and was reverted.
+ *
+ * The ids are part of the published contract, so renaming one means rerunning
+ * `pnpm contract:generate`.
+ */
 const tileTransformSchema = z
   .object({
     kind: z.literal("orthogonal").optional(),
@@ -748,7 +794,8 @@ const tileTransformSchema = z
     flipD: z.boolean().optional(),
     rawFlags: uint32Schema.optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "TileTransform" });
 
 const tileRefSchema = z
   .object({
@@ -761,18 +808,21 @@ const tileRefSchema = z
     localId: z.number().int().min(0).max(0x0fffffff),
     transform: tileTransformSchema.optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "TileRef" });
 
-const namedTileRefSchema = z.union([
-  tileRefSchema,
-  z
-    .object({
-      name: z
-        .string()
-        .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
-    })
-    .strict(),
-]);
+const namedTileRefSchema = z
+  .union([
+    tileRefSchema,
+    z
+      .object({
+        name: z
+          .string()
+          .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
+      })
+      .strict(),
+  ])
+  .meta({ id: "NamedTileRef" });
 
 const setTilesSchema = z
   .object({
@@ -1174,7 +1224,8 @@ const tilePropertiesPatchSchema = z
       message:
         "Tile properties patch must contain set, remove, setClassMembers, or setListElements entries",
     },
-  );
+  )
+  .meta({ id: "TilePropertiesPatch" });
 
 const objectPatchSchema = z
   .object({
@@ -1209,6 +1260,33 @@ const objectPatchSchema = z
       textObjectHorizontalAlignmentSchema.optional(),
     verticalAlignment:
       textObjectVerticalAlignmentSchema.optional(),
+    atlas: z
+      .object({
+        tileWidth: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        tileHeight: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        margin: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_TILESET_GRID_EDGE)
+          .optional(),
+        spacing: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_TILESET_GRID_EDGE)
+          .optional(),
+      })
+      .strict()
+      .optional(),
     properties:
       tilePropertiesPatchSchema.optional(),
   })
@@ -1552,6 +1630,93 @@ const tileMetadataPatchSchema = z
     },
   );
 
+/**
+ * Tileset-level members. Everything but `name` and `properties` is nullable,
+ * because removing the member and setting it to Tiled's default value are
+ * distinguishable in the file and so must be distinguishable here.
+ */
+const tilesetPropertyPatchSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(MAX_TILESET_NAME_CODE_POINTS)
+      .optional(),
+    className: z
+      .string()
+      .min(1)
+      .max(MAX_TILESET_CLASS_NAME_CODE_POINTS)
+      .nullable()
+      .optional(),
+    tileOffset: z
+      .object({
+        x: z
+          .number()
+          .int()
+          .min(-MAX_TILESET_OFFSET)
+          .max(MAX_TILESET_OFFSET),
+        y: z
+          .number()
+          .int()
+          .min(-MAX_TILESET_OFFSET)
+          .max(MAX_TILESET_OFFSET),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    objectAlignment: z
+      .enum([...TILESET_OBJECT_ALIGNMENTS])
+      .nullable()
+      .optional(),
+    tileRenderSize: z
+      .enum([...TILESET_RENDER_SIZES])
+      .nullable()
+      .optional(),
+    fillMode: z
+      .enum([...TILESET_FILL_MODES])
+      .nullable()
+      .optional(),
+    transformations: z
+      .object({
+        hFlip: z.boolean(),
+        vFlip: z.boolean(),
+        rotate: z.boolean(),
+        preferUntransformed: z.boolean(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    grid: z
+      .object({
+        orientation: z.enum([
+          ...TILESET_GRID_ORIENTATIONS,
+        ]),
+        width: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+        height: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_TILESET_GRID_EDGE),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    properties:
+      tilePropertiesPatchSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (patch) => Object.keys(patch).length > 0,
+    {
+      message:
+        "Tileset patch must contain at least one field",
+    },
+  );
+
 const tileMetadataUpdateSchema = z.union([
   z
     .object({
@@ -1639,11 +1804,15 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_validate",
     "tiled_analyze_usage",
     "tiled_check_connectivity",
+    "tiled_convert_coordinates",
     "tiled_create_map",
     "tiled_create_tileset",
     "tiled_delete_file",
     "tiled_add_tileset_to_map",
+    "tiled_replace_tileset_in_map",
+    "tiled_preview_merge_map",
     "tiled_update_tile",
+    "tiled_update_tileset",
     "tiled_update_wangsets",
     "tiled_create_layer",
     "tiled_preview_edits",
@@ -1663,14 +1832,19 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_property_types",
     "tiled_preview_world_edits",
     "tiled_preview_transaction",
+    "tiled_preview_terrain",
     "tiled_apply_change_set",
   ] as const);
 export const TILED_MCP_OPTIONAL_TOOL_NAMES =
   Object.freeze([
     "tiled_render_map",
     "tiled_preview_export",
-    "tiled_preview_terrain",
   ] as const);
+/** Every tool name this server may advertise, core or CLI-gated. */
+export type AdvertisedToolName =
+  | (typeof TILED_MCP_CORE_TOOL_NAMES)[number]
+  | (typeof TILED_MCP_OPTIONAL_TOOL_NAMES)[number];
+
 const capabilityIssueOutputSchema = z
   .object({
     code: z.enum(
@@ -1766,7 +1940,6 @@ const registeredToolNamesOutputSchema = z.union([
     [
       ...TILED_MCP_CORE_TOOL_NAMES,
       "tiled_preview_export",
-      "tiled_preview_terrain",
     ] as unknown as JsonValue,
   ),
   exactJsonValueOutputSchema(
@@ -1879,12 +2052,17 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const renderMutex = new KeyedMutex();
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {}, prompts: {} },
+      instructions:
+        TILED_MCP_SERVER_INSTRUCTIONS,
+    },
   );
   const registeredTools: string[] = [];
 
   registerGuideResource(server);
   registerApplicationErrorResource(server);
+  registerTiledMcpPrompts(server);
 
   const advertisedToolNames = [
     ...TILED_MCP_CORE_TOOL_NAMES,
@@ -1892,10 +2070,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ? (["tiled_render_map"] as const)
       : []),
     ...(cliCapabilities.tiled.available
-      ? ([
-          "tiled_preview_export",
-          "tiled_preview_terrain",
-        ] as const)
+      ? (["tiled_preview_export"] as const)
       : []),
   ];
   const capabilitiesResult = {
@@ -3299,6 +3474,21 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
     );
 
+  /**
+   * Registrars keyed by tool name.
+   *
+   * Registration is driven by `advertisedToolNames` below, so the advertised
+   * order IS the registration order by construction. The frozen name list and
+   * the registration sequence can no longer drift apart, which previously was
+   * only caught by a runtime comparison after every tool had been registered.
+   * Optional tools define a registrar only when their CLI probe succeeded --
+   * exactly the condition under which they are advertised.
+   */
+  const toolRegistrars: Partial<
+    Record<AdvertisedToolName, () => void>
+  > = {};
+
+  toolRegistrars["tiled_get_capabilities"] = () =>
   register(
     server,
     registeredTools,
@@ -3316,6 +3506,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       toolResult(capabilitiesResult),
   );
 
+  toolRegistrars["tiled_list_files"] = () =>
   register(
     server,
     registeredTools,
@@ -3331,6 +3522,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ limit }) => executeTool(() => resolver.listAssets(limit)),
   );
 
+  toolRegistrars["tiled_list_world_maps"] = () =>
   register(
     server,
     registeredTools,
@@ -3361,6 +3553,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   );
 
 
+  toolRegistrars["tiled_list_property_types"] = () =>
   register(
     server,
     registeredTools,
@@ -3384,6 +3577,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_list_checkpoints"] = () =>
   register(
     server,
     registeredTools,
@@ -3413,6 +3607,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_create_checkpoint"] = () =>
   register(
     server,
     registeredTools,
@@ -3500,6 +3695,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_discard"] = () =>
   register(
     server,
     registeredTools,
@@ -3532,6 +3728,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_commit"] = () =>
   register(
     server,
     registeredTools,
@@ -3564,6 +3761,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_prepared_checkpoint_abandon"] = () =>
   register(
     server,
     registeredTools,
@@ -3596,6 +3794,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_prune"] = () =>
   register(
     server,
     registeredTools,
@@ -3626,6 +3825,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_prune_batch"] = () =>
   register(
     server,
     registeredTools,
@@ -3669,6 +3869,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_preview_checkpoint_restore"] = () =>
   register(
     server,
     registeredTools,
@@ -3701,6 +3902,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_map_summary"] = () =>
   register(
     server,
     registeredTools,
@@ -3716,6 +3918,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ mapPath }) => executeTool(() => maps.getSummary(mapPath)),
   );
 
+  toolRegistrars["tiled_get_tileset"] = () =>
   register(
     server,
     registeredTools,
@@ -3778,6 +3981,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_find_tiles"] = () =>
   register(
     server,
     registeredTools,
@@ -3836,6 +4040,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_region"] = () =>
   register(
     server,
     registeredTools,
@@ -3860,6 +4065,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async (input) => executeTool(() => maps.getRegion(input)),
   );
 
+  toolRegistrars["tiled_render_tileset_sheet"] = () =>
   register(
     server,
     registeredTools,
@@ -3921,6 +4127,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_tiles"] = () =>
   register(
     server,
     registeredTools,
@@ -4023,6 +4230,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_render_preview"] = () =>
   register(
     server,
     registeredTools,
@@ -4158,6 +4366,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_diff"] = () =>
   register(
     server,
     registeredTools,
@@ -4233,6 +4442,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_render_isometric"] = () =>
   register(
     server,
     registeredTools,
@@ -4306,6 +4516,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_render_hexagonal"] = () =>
   register(
     server,
     registeredTools,
@@ -4379,6 +4590,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_list_objects"] = () =>
   register(
     server,
     registeredTools,
@@ -4407,6 +4619,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_get_object"] = () =>
   register(
     server,
     registeredTools,
@@ -4433,6 +4646,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_validate"] = () =>
   register(
     server,
     registeredTools,
@@ -4449,6 +4663,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     async ({ mapPath }) => executeTool(() => maps.validate(mapPath)),
   );
 
+  toolRegistrars["tiled_analyze_usage"] = () =>
   register(
     server,
     registeredTools,
@@ -4468,6 +4683,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_check_connectivity"] = () =>
   register(
     server,
     registeredTools,
@@ -4549,6 +4765,55 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_convert_coordinates"] = () =>
+  register(
+    server,
+    registeredTools,
+    "tiled_convert_coordinates",
+    {
+      title: "Convert between tile, screen and pixel coordinates",
+      description:
+        "Read-only batch of the official Tiled 1.12.2 renderer transforms between the three coordinate spaces (tile, screen, pixel) for orthogonal, isometric, staggered and hexagonal maps. Use this instead of deriving placement by hand: the spaces coincide only for orthogonal maps, isometric pixel coordinates are expressed in tile-height units on both axes, and the isometric screen origin is offset by the map height. Each conversion reports the raw transform output plus, when converting into tile space, the whole cell that contains it. The result also declares whether tile space is discrete (hexagonal and staggered snap to the nearest of four hexagon centres, so there is no sub-cell remainder) or continuous, and whether pixel space differs from screen space. Reads only the map header, so it still answers when tilesets are missing or broken.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          conversions: z
+            .array(
+              z
+                .object({
+                  from: coordinateSpaceSchema,
+                  to: coordinateSpaceSchema,
+                  x: coordinateOrdinateSchema,
+                  y: coordinateOrdinateSchema,
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(MAX_COORDINATE_CONVERSIONS),
+        })
+        .strict(),
+      outputSchema: coordinateToolOutputSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ mapPath, conversions }) =>
+      executeTool(() =>
+        maps.convertCoordinates({
+          mapPath,
+          conversions: conversions.map(
+            (conversion) => ({
+              from: conversion.from,
+              to: conversion.to,
+              point: {
+                x: conversion.x,
+                y: conversion.y,
+              },
+            }),
+          ),
+        }),
+      ),
+  );
+
+  toolRegistrars["tiled_create_map"] = () =>
   register(
     server,
     registeredTools,
@@ -4610,6 +4875,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
+  toolRegistrars["tiled_create_tileset"] = () =>
   register(
     server,
     registeredTools,
@@ -4691,6 +4957,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_delete_file"] = () =>
   register(
     server,
     registeredTools,
@@ -4717,6 +4984,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_add_tileset_to_map"] = () =>
   register(
     server,
     registeredTools,
@@ -4772,6 +5040,126 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_merge_map"] = () =>
+    register(
+      server,
+      registeredTools,
+      "tiled_preview_merge_map",
+      {
+        title: "Preview merging another map in",
+        description:
+          "Stamps the tile layers of another project-local map into this one at an optional tile offset, matching layers by name, and returns an expiring map change set without modifying either map. GIDs are translated, not copied: each source cell is decoded against the source map's own firstgid table and re-expressed against this map's binding for the same tileset file, so two maps that order their tilesets differently still merge correctly. Empty source cells are skipped, so the destination shows through wherever the source has nothing. Fails closed when the two grids differ in orientation or tile size, when the source uses a tileset this map does not already reference (attach it with tiled_add_tileset_to_map first), when a source tile layer has no same-named tile layer here (create it with tiled_create_layer first), or when the source is infinite.",
+        inputSchema: z
+          .object({
+            mapPath: projectPathSchema,
+            sourceMapPath: projectPathSchema,
+            expectedMapRevision: revisionSchema,
+            expectedDependencyRevisions:
+              dependencyRevisionsSchema,
+            expectedSourceMapRevision:
+              revisionSchema.optional(),
+            offsetX: z
+              .number()
+              .int()
+              .min(-MAX_MERGE_OFFSET)
+              .max(MAX_MERGE_OFFSET)
+              .optional(),
+            offsetY: z
+              .number()
+              .int()
+              .min(-MAX_MERGE_OFFSET)
+              .max(MAX_MERGE_OFFSET)
+              .optional(),
+          })
+          .strict(),
+        outputSchema: previewEditsToolOutputSchema,
+        annotations: PREVIEW_ONLY,
+      },
+      async ({
+        mapPath,
+        sourceMapPath,
+        expectedMapRevision,
+        expectedDependencyRevisions,
+        expectedSourceMapRevision,
+        offsetX,
+        offsetY,
+      }) =>
+        executeTool(async () => {
+          const plan = await maps.planMergeMap({
+            mapPath,
+            sourceMapPath,
+            expectedMapRevision,
+            expectedDependencyRevisions,
+            ...(expectedSourceMapRevision ===
+            undefined
+              ? {}
+              : { expectedSourceMapRevision }),
+            ...(offsetX === undefined
+              ? {}
+              : { offsetX }),
+            ...(offsetY === undefined
+              ? {}
+              : { offsetY }),
+          });
+          return changeSets.put(plan);
+        }),
+    );
+
+  toolRegistrars["tiled_replace_tileset_in_map"] =
+    () =>
+      register(
+        server,
+        registeredTools,
+        "tiled_replace_tileset_in_map",
+        {
+          title:
+            "Preview repointing a tileset reference",
+          description:
+            "Repoints one currently bound external tileset at a different project-local atlas TSJ, keeping its firstgid, and returns an expiring map change set without modifying project assets. Use this to change the art a finished map is drawn with: every GID keeps its value and its slot, so no cell is rewritten and each one now shows the tile at the same local id in the replacement. Removing and re-adding cannot do this — removal refuses any tileset a cell still references. Fails closed when a local id still in use does not exist in the replacement, and when the replacement's GID span would overlap the tileset bound after it; a smaller replacement is allowed only while nothing refers to the tiles it drops. The two tilesets are not compared for visual similarity, so a replacement laid out differently silently remaps every cell — read both before approving.",
+          inputSchema: z
+            .object({
+              mapPath: projectPathSchema,
+              tilesetAssetId: z
+                .string()
+                .regex(/^asset_[0-9a-f]{24}$/u),
+              tilesetPath: projectPathSchema,
+              expectedMapRevision: revisionSchema,
+              expectedDependencyRevisions:
+                dependencyRevisionsSchema,
+              expectedTilesetRevision:
+                revisionSchema.optional(),
+            })
+            .strict(),
+          outputSchema:
+            replaceTilesetPreviewToolOutputSchema,
+          annotations: PREVIEW_ONLY,
+        },
+        async ({
+          mapPath,
+          tilesetAssetId,
+          tilesetPath,
+          expectedMapRevision,
+          expectedDependencyRevisions,
+          expectedTilesetRevision,
+        }) =>
+          executeTool(async () => {
+            const plan =
+              await maps.planReplaceTilesetInMap({
+                mapPath,
+                tilesetAssetId,
+                tilesetPath,
+                expectedMapRevision,
+                expectedDependencyRevisions,
+                ...(expectedTilesetRevision ===
+                undefined
+                  ? {}
+                  : { expectedTilesetRevision }),
+              });
+            return changeSets.put(plan);
+          }),
+      );
+
+  toolRegistrars["tiled_update_tile"] = () =>
   register(
     server,
     registeredTools,
@@ -4898,6 +5286,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     })
     .strict();
 
+  toolRegistrars["tiled_update_wangsets"] = () =>
   register(
     server,
     registeredTools,
@@ -5038,6 +5427,51 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_update_tileset"] = () =>
+  register(
+    server,
+    registeredTools,
+    "tiled_update_tileset",
+    {
+      title: "Preview tileset-level property updates",
+      description:
+        "Validates tileset-level members of one currently referenced external TSJ — name, class, tileOffset, objectAlignment, tileRenderSize, fillMode, transformations, grid, scalar custom properties, and atlas (re-cutting the tile grid over the same image) — then returns an expiring tilesetPropertyEdit change set without modifying project assets. atlas takes tileWidth/tileHeight plus optional margin/spacing and recomputes columns and tilecount with Tiled's own formula from the image read at plan time, never from the declared imagewidth. Because tilecount sets the GID span every referencing map decodes against, a cut that changes it is refused unless the pinned map still resolves under the new count and no other project asset references the tileset; a cut that leaves the count alone is unrestricted. Every member except name and properties accepts null, which removes it and so restores Tiled's own default rather than writing that default explicitly. Geometry is deliberately not editable here: tilewidth, tileheight, spacing, margin, columns, tilecount and image all re-slice the atlas or move the GID span, which would silently invalidate referencing maps. Tiles, wangsets and referencing maps are never touched. A patch that matches the tileset's current values fails closed instead of returning an empty change set.",
+      inputSchema: z
+        .object({
+          mapPath: projectPathSchema,
+          tilesetAssetId: z
+            .string()
+            .regex(/^asset_[0-9a-f]{24}$/u),
+          expectedMapRevision: revisionSchema,
+          expectedTilesetRevision: revisionSchema,
+          patch: tilesetPropertyPatchSchema,
+        })
+        .strict(),
+      outputSchema:
+        tilesetPropertyEditPreviewToolOutputSchema,
+      annotations: PREVIEW_ONLY,
+    },
+    async ({
+      mapPath,
+      tilesetAssetId,
+      expectedMapRevision,
+      expectedTilesetRevision,
+      patch,
+    }) =>
+      executeTool(async () => {
+        const plan =
+          await maps.planTilesetPropertyEdit({
+            mapPath,
+            tilesetAssetId,
+            expectedMapRevision,
+            expectedTilesetRevision,
+            patch: patch as TilesetPropertyPatch,
+          });
+        return changeSets.put(plan);
+      }),
+  );
+
+  toolRegistrars["tiled_create_layer"] = () =>
   register(
     server,
     registeredTools,
@@ -5083,6 +5517,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_edits"] = () =>
   register(
     server,
     registeredTools,
@@ -5090,7 +5525,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     {
       title: "Preview map edits",
       description:
-        "Validates root map-property updates, exclusive bounded map resizing, exclusive unused-tileset-reference removal, direct tile writes, dense rectangular pattern stamps, bounded four-way flood fills, snapshot-based tile-region copies, exact tile replacements, common layer-property updates, exclusive safe layer deletion, movement or duplication, and object operations including bounded scalar custom-property patches and tile objects (a shape:\"tile\" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can replace an existing tile object's reference, and shape objects never become tile objects) without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions.",
+        "Plans a batch of map edits without modifying project assets, then returns an expiring changeSetId bound to the exact map and current dependency revisions; nothing is written until tiled_apply_change_set commits it. Batchable operations, by the \"type\" field: setTiles (direct cell writes), fillRegion (dense rectangle), stampPattern, floodFill (bounded four-way), copyRegion (snapshot-based), replaceTiles (exact swaps), updateMap (root map properties), updateLayer (common layer properties), createObject, updateObject, deleteObjects (including bounded scalar custom-property patches). These six must each be the only operation in their change set: resizeMap, removeTilesetFromMap, deleteLayer, moveLayer, duplicateLayer, transcodeTileLayer. A shape:\"tile\" draft encodes its external TileRef into gid exactly like a tile-layer cell and requires explicit width/height; updateObject can retarget an existing tile object, and shape objects never become tile objects.",
       inputSchema: z
         .object({
           mapPath: projectPathSchema,
@@ -5213,6 +5648,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_shape"] = () =>
   register(
     server,
     registeredTools,
@@ -5313,6 +5749,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_generate"] = () =>
   register(
     server,
     registeredTools,
@@ -5476,6 +5913,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_scatter"] = () =>
   register(
     server,
     registeredTools,
@@ -5578,6 +6016,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_import_image"] = () =>
   register(
     server,
     registeredTools,
@@ -5668,6 +6107,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_prefab"] = () =>
   register(
     server,
     registeredTools,
@@ -5784,6 +6224,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_template"] = () =>
   register(
     server,
     registeredTools,
@@ -5844,6 +6285,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tmx"] = () =>
   register(
     server,
     registeredTools,
@@ -5882,6 +6324,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tsx"] = () =>
   register(
     server,
     registeredTools,
@@ -5921,6 +6364,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_write_tx"] = () =>
   register(
     server,
     registeredTools,
@@ -6015,6 +6459,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       .strict(),
   ] as const;
 
+  toolRegistrars["tiled_select"] = () =>
   register(
     server,
     registeredTools,
@@ -6151,6 +6596,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_list_tile_names"] = () =>
   register(
     server,
     registeredTools,
@@ -6168,6 +6614,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       executeTool(() => maps.listTileNames()),
   );
 
+  toolRegistrars["tiled_preview_tile_names"] = () =>
   register(
     server,
     registeredTools,
@@ -6238,6 +6685,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_validation_fixes"] = () =>
   register(
     server,
     registeredTools,
@@ -6274,6 +6722,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_property_types"] = () =>
   register(
     server,
     registeredTools,
@@ -6424,6 +6873,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_world_edits"] = () =>
   register(
     server,
     registeredTools,
@@ -6500,6 +6950,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
+  toolRegistrars["tiled_preview_transaction"] = () =>
   register(
     server,
     registeredTools,
@@ -6569,6 +7020,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
     return outcome.result;
   };
 
+  toolRegistrars["tiled_apply_change_set"] = () =>
   register(
     server,
     registeredTools,
@@ -6600,95 +7052,14 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           changeSetId,
           expectedRevision,
           (plan) =>
-            plan.kind === "checkpointRestore"
-              ? applyCheckpointRestore(store, plan)
-              : plan.kind ===
-                  "preparedCheckpointDiscard"
-                ? applyPreparedCheckpointDiscard(
-                    store,
-                    plan,
-                  )
-                : plan.kind ===
-                    "preparedCheckpointCommit"
-                  ? applyPreparedCheckpointCommit(
-                      store,
-                      plan,
-                    )
-                  : plan.kind ===
-                      "preparedCheckpointAbandon"
-                    ? applyPreparedCheckpointAbandon(
-                        store,
-                        plan,
-                      )
-                    : plan.kind ===
-                        "checkpointPrune"
-                      ? applyCheckpointPrune(
-                          store,
-                          plan,
-                        )
-                      : plan.kind ===
-                          "checkpointPruneBatch"
-                        ? applyCheckpointPruneBatch(
-                            store,
-                            plan,
-                          )
-                        : plan.kind ===
-                            "tilesetEdit"
-                          ? maps.applyTilesetEdit(
-                              plan,
-                            )
-                          : plan.kind ===
-                              "tilesetCreate"
-                            ? maps.applyTilesetCreate(
-                                plan,
-                              )
-                            : plan.kind ===
-                                "fileDelete"
-                              ? maps.applyDeleteFile(
-                                  plan,
-                                )
-                              : plan.kind ===
-                                  "transaction"
-                                ? applyTransactionChangeSet(
-                                    plan,
-                                  )
-                                : plan.kind ===
-                                    "worldEdit"
-                                  ? maps.applyWorldEdits(
-                                      plan,
-                                    )
-                                  : plan.kind ===
-                                      "wangEdit"
-                                    ? maps.applyWangsetEdit(
-                                        plan,
-                                      )
-                                    : plan.kind ===
-                                        "fileExport"
-                                      ? maps.applyExportFile(
-                                          plan,
-                                          (options) =>
-                                            cli.exportAsset(
-                                              options,
-                                            ),
-                                        )
-                                      : plan.kind ===
-                                          "embeddedTilesetEdit"
-                                        ? maps.applyEmbeddedTilesetEdit(
-                                            plan,
-                                          )
-                                        : plan.kind ===
-                                            "propertyTypeEdit"
-                                          ? maps.applyPropertyTypeEdit(
-                                              plan,
-                                            )
-                                          : plan.kind ===
-                                              "tileNameEdit"
-                                            ? maps.applyTileNameEdit(
-                                                plan,
-                                              )
-                                            : maps.applyEdits(
-                                                plan,
-                                              ),
+            applyChangeSetPlan(plan, {
+              store,
+              maps,
+              exportAsset: (options) =>
+                cli.exportAsset(options),
+              applyTransaction:
+                applyTransactionChangeSet,
+            }),
         ),
       ),
   );
@@ -6706,6 +7077,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         "Available TmxRasterizer capability is missing its probed version.",
       );
     }
+    toolRegistrars[TILED_MCP_OPTIONAL_TOOL_NAMES[0]] = () =>
     register(
       server,
       registeredTools,
@@ -6802,6 +7174,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   }
 
   if (cliCapabilities.tiled.available) {
+    toolRegistrars["tiled_preview_export"] = () =>
     register(
       server,
       registeredTools,
@@ -6858,7 +7231,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           return changeSets.put(plan);
         }),
     );
+  }
 
+  // Terrain painting is core, not CLI-gated: corners are matched natively by
+  // `computeWangCornerPaint`. The CLI path stays available to
+  // `planTerrainPaint` as the parity reference the Tiled cross-checks drive.
+  toolRegistrars["tiled_preview_terrain"] = () =>
     register(
       server,
       registeredTools,
@@ -6934,12 +7312,19 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
               expectedMapRevision,
               expectedDependencyRevisions,
             },
-            (scriptPath) =>
-              cli.runEvaluate({ scriptPath }),
           );
           return changeSets.put(plan);
         }),
     );
+
+  for (const name of advertisedToolNames) {
+    const registrar = toolRegistrars[name];
+    if (registrar === undefined) {
+      throw new Error(
+        `No registrar is defined for advertised tool ${name}.`,
+      );
+    }
+    registrar();
   }
 
   if (

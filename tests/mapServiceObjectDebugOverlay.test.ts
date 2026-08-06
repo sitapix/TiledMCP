@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { makeStore } from "./support/project.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,7 +22,6 @@ import {
 } from "../src/images/mapPreview.js";
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 
 const MAP_PATH = "maps/object-debug.tmj";
 const OBJECT_LAYER_ID = 20;
@@ -60,7 +60,7 @@ describe("MapService native object debug overlay", () => {
       await ProjectPathResolver.create(root);
     service = new MapService(
       resolver,
-      new DocumentStore(resolver),
+      makeStore(resolver),
     );
   });
 

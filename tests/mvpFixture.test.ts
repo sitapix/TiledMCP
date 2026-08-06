@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
+import { makeStore } from "./support/project.js";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { MapService } from "../src/maps/mapService.js";
 import { ProjectPathResolver } from "../src/project/pathResolver.js";
-import { DocumentStore } from "../src/storage/documentStore.js";
 import { revisionOf } from "../src/storage/revision.js";
 
 describe("checked-in M1 fixture", () => {
@@ -13,7 +13,7 @@ describe("checked-in M1 fixture", () => {
     const resolver = await ProjectPathResolver.create(
       resolve("fixtures/mvp"),
     );
-    const store = new DocumentStore(resolver);
+    const store = makeStore(resolver);
     const service = new MapService(resolver, store);
     const summary = await service.getSummary("basic.tmj");
     const tileset = (

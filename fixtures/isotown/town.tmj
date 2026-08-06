@@ -1,0 +1,268 @@
+{
+  "compressionlevel": -1,
+  "height": 6,
+  "infinite": false,
+  "nextlayerid": 5,
+  "nextobjectid": 7,
+  "orientation": "isometric",
+  "renderorder": "right-down",
+  "tiledversion": "1.12.2",
+  "tileheight": 32,
+  "tilewidth": 64,
+  "type": "map",
+  "version": "1.10",
+  "width": 8,
+  "tilesets": [
+    {
+      "firstgid": 1,
+      "source": "town.tsj"
+    }
+  ],
+  "layers": [
+    {
+      "id": 1,
+      "name": "Terrain",
+      "type": "group",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "layers": [
+        {
+          "id": 2,
+          "name": "Ground",
+          "type": "tilelayer",
+          "width": 8,
+          "height": 6,
+          "opacity": 1,
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "data": [
+            1,
+            1,
+            1,
+            1,
+            3,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            3,
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            3,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            3,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            3,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Overlay",
+          "type": "tilelayer",
+          "width": 8,
+          "height": 6,
+          "opacity": 1,
+          "visible": true,
+          "x": 0,
+          "y": 0,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            4,
+            4,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            5,
+            5,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            6,
+            0,
+            0,
+            536870918,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Markers",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": [
+        {
+          "id": 1,
+          "name": "plaza",
+          "type": "Zone",
+          "x": 128,
+          "y": 64,
+          "width": 96,
+          "height": 48,
+          "rotation": 0,
+          "visible": true
+        },
+        {
+          "id": 2,
+          "name": "pond",
+          "type": "Zone",
+          "x": 64,
+          "y": 96,
+          "width": 64,
+          "height": 32,
+          "rotation": 0,
+          "visible": true,
+          "ellipse": true
+        },
+        {
+          "id": 3,
+          "name": "start",
+          "type": "Spawn",
+          "x": 32,
+          "y": 32,
+          "width": 0,
+          "height": 0,
+          "rotation": 0,
+          "visible": true,
+          "point": true
+        },
+        {
+          "id": 4,
+          "name": "guard_loop",
+          "type": "Patrol",
+          "x": 160,
+          "y": 128,
+          "width": 0,
+          "height": 0,
+          "rotation": 0,
+          "visible": true,
+          "polygon": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 64,
+              "y": 0
+            },
+            {
+              "x": 64,
+              "y": 32
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "name": "cart_path",
+          "type": "Route",
+          "x": 96,
+          "y": 160,
+          "width": 0,
+          "height": 0,
+          "rotation": 0,
+          "visible": true,
+          "polyline": [
+            {
+              "x": 0,
+              "y": 0
+            },
+            {
+              "x": 48,
+              "y": 16
+            },
+            {
+              "x": 96,
+              "y": 0
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "name": "signpost",
+          "type": "Label",
+          "x": 200,
+          "y": 40,
+          "width": 120,
+          "height": 24,
+          "rotation": 0,
+          "visible": true,
+          "text": {
+            "text": "Market Square",
+            "wrap": true
+          }
+        }
+      ]
+    }
+  ]
+}

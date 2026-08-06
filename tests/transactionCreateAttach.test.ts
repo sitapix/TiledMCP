@@ -6,6 +6,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { wireProject } from "./support/project.js";
 import { join } from "node:path";
 
 import sharp from "sharp";
@@ -21,7 +22,6 @@ import {
 } from "../src/formats/json.js";
 import { MapService } from "../src/maps/mapService.js";
 import type { UpdateMapOperation } from "../src/maps/types.js";
-import { ProjectPathResolver } from "../src/project/pathResolver.js";
 import { revisionOf } from "../src/storage/revision.js";
 import { DocumentStore } from "../src/storage/documentStore.js";
 
@@ -600,13 +600,12 @@ async function createHarness(
     ),
   );
 
-  const resolver =
-    await ProjectPathResolver.create(root);
-  const store = new DocumentStore(resolver);
+  const { store, service } =
+    await wireProject(root);
   return {
     root,
     store,
-    service: new MapService(resolver, store),
+    service: service,
     registry: new ChangeSetRegistry(),
   };
 }
