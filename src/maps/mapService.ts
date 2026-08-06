@@ -468,6 +468,26 @@ export type {
   UpdateWangsetsInput,
 } from "./mapDomain.js";
 
+/**
+ * Orientation guards for reads that only touch a tileset.
+ *
+ * `getTileset`, `findTiles`, `renderTilesetSheet` and `renderTiles` take a
+ * `mapPath` solely to resolve the tileset reference and pin revisions -- what
+ * they then read and draw is the tileset, which has no projection. They shared
+ * the edit path's loader, though, so all four inherited its orthogonal-only
+ * guard and refused every isometric, staggered and hexagonal map. The effect
+ * was that on those maps a client could not read a tileset at all, and so
+ * could not discover a single tile id, class or property: "read-only support"
+ * that cannot enumerate tiles is not support.
+ *
+ * Editing through these paths is still gated separately -- this only widens
+ * what may be read.
+ */
+const TILESET_READ_ORIENTATIONS = {
+  allowIsometric: true,
+  allowStaggeredHexagonal: true,
+} as const;
+
 export class MapService {
   private readonly assetRegistry: AssetRegistry;
 
@@ -976,6 +996,7 @@ export class MapService {
     }
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
+      ...TILESET_READ_ORIENTATIONS,
     });
     const binding = this.requireTilesetBinding(
       context,
@@ -1086,6 +1107,7 @@ export class MapService {
     const context = await this.loadEditableContext(mapPath, {
       allowCollectionTilesets: true,
       allowEmbeddedTilesets: true,
+      ...TILESET_READ_ORIENTATIONS,
     });
     const embedded = context.embeddedBindings.find(
       (candidate) =>
@@ -1278,6 +1300,7 @@ export class MapService {
     );
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
+      ...TILESET_READ_ORIENTATIONS,
       ...(input.expectedMapRevision === undefined
         ? {}
         : { expectedMapRevision: input.expectedMapRevision }),
@@ -1398,6 +1421,7 @@ export class MapService {
   ): Promise<RenderTilesetSheetResult> {
     const context = await this.loadEditableContext(input.mapPath, {
       allowCollectionTilesets: true,
+      ...TILESET_READ_ORIENTATIONS,
     });
     const binding = this.requireTilesetBinding(
       context,
@@ -1737,6 +1761,7 @@ export class MapService {
       input.mapPath,
       {
         allowCollectionTilesets: true,
+        ...TILESET_READ_ORIENTATIONS,
         ...(input.expectedMapRevision === undefined
           ? {}
           : {
