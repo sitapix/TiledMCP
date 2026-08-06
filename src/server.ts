@@ -193,7 +193,6 @@ import {
   addTilesetPreviewToolOutputSchema,
   replaceTilesetPreviewToolOutputSchema,
   checkpointPruneBatchPreviewToolOutputSchema,
-  checkpointPrunePreviewToolOutputSchema,
   checkpointRestorePreviewToolOutputSchema,
   createLayerPreviewToolOutputSchema,
   createTilesetPreviewToolOutputSchema,
@@ -337,7 +336,6 @@ import {
   planCheckpointPruneBatch,
 } from "./storage/checkpointBatchPrune.js";
 import {
-  planCheckpointPrune,
 } from "./storage/checkpointPrune.js";
 import {
   planCheckpointRestore,
@@ -359,7 +357,12 @@ import {
 import type { DocumentStore } from "./storage/documentStore.js";
 import { KeyedMutex } from "./storage/keyedMutex.js";
 import { revisionOf } from "./storage/revision.js";
-import { SERVER_NAME, SERVER_VERSION } from "./version.js";
+import {
+  SERVER_DESCRIPTION,
+  SERVER_NAME,
+  SERVER_TITLE,
+  SERVER_VERSION,
+} from "./version.js";
 
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47,
@@ -1785,7 +1788,6 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_prepared_checkpoint_discard",
     "tiled_preview_prepared_checkpoint_commit",
     "tiled_preview_prepared_checkpoint_abandon",
-    "tiled_preview_checkpoint_prune",
     "tiled_preview_checkpoint_prune_batch",
     "tiled_preview_checkpoint_restore",
     "tiled_get_map_summary",
@@ -1965,13 +1967,6 @@ const PREVIEW_ONLY: ToolAnnotations = {
   openWorldHint: false,
 };
 
-const CHECKPOINT_PRUNE_PREVIEW: ToolAnnotations = {
-  title: "Preview pruning a recovery checkpoint",
-  readOnlyHint: true,
-  destructiveHint: false,
-  idempotentHint: false,
-  openWorldHint: false,
-};
 
 const CHECKPOINT_PRUNE_BATCH_PREVIEW: ToolAnnotations = {
   title:
@@ -2050,7 +2045,12 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
   const changeSets = new ChangeSetRegistry();
   const renderMutex = new KeyedMutex();
   const server = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
+    {
+      name: SERVER_NAME,
+      title: SERVER_TITLE,
+      description: SERVER_DESCRIPTION,
+      version: SERVER_VERSION,
+    },
     {
       capabilities: { tools: {}, prompts: {} },
       instructions:
@@ -2596,7 +2596,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           },
           pruneBatch: {
             scope:
-              "2-to-32-explicit-committed-checkpoints",
+              "1-to-32-explicit-committed-checkpoints",
             minCheckpointCount:
               MIN_CHECKPOINT_BATCH_PRUNE_COUNT,
             maxCheckpointCount:
@@ -3793,37 +3793,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       ),
   );
 
-  toolRegistrars["tiled_preview_checkpoint_prune"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_preview_checkpoint_prune",
-    {
-      title: "Preview pruning a recovery checkpoint",
-      description:
-        "Pins the raw manifest revision of one committed recovery checkpoint and returns a destructive prune proposal without deleting it. Prepared checkpoints are rejected; reconcile them or use the dedicated safe-discard preview when its exact-before eligibility is proven. Applying the proposal removes only the manifest, then runs fail-closed garbage collection for unreferenced checkpoint objects and private crash temporary files.",
-      inputSchema: z
-        .object({
-          checkpointId: z
-            .string()
-            .regex(CHECKPOINT_ID_PATTERN),
-        })
-        .strict(),
-      outputSchema:
-        checkpointPrunePreviewToolOutputSchema,
-      annotations: CHECKPOINT_PRUNE_PREVIEW,
-    },
-    async ({ checkpointId }) =>
-      executeTool(async () =>
-        changeSets.put(
-          await planCheckpointPrune(
-            store,
-            checkpointId,
-          ),
-        ),
-      ),
-  );
-
   toolRegistrars["tiled_preview_checkpoint_prune_batch"] = () =>
   register(
     server,
@@ -3833,7 +3802,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       title:
         "Preview pruning recovery checkpoints in a batch",
       description:
-        "Pins 2 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.",
+        "Pins 1 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.",
       inputSchema: z
         .object({
           checkpointIds: z

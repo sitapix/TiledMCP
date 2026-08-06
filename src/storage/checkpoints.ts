@@ -54,7 +54,12 @@ const CHECKPOINT_RETENTION_SEQUENCE_MAX_BYTES = 1_024;
 export const MIN_AUTOMATIC_CHECKPOINT_RETENTION_COUNT = 2;
 export const ROLLING_CHECKPOINT_RETENTION_POLICY =
   "rolling-per-target-count-v1" as const;
-export const MIN_CHECKPOINT_BATCH_PRUNE_COUNT = 2;
+/**
+ * One, not two: the batch prune tool absorbed the former single-checkpoint
+ * prune tool, so a one-element batch is now the only way to prune one
+ * checkpoint. Enforced identically at plan and apply time.
+ */
+export const MIN_CHECKPOINT_BATCH_PRUNE_COUNT = 1;
 export const MAX_CHECKPOINT_BATCH_PRUNE_COUNT = 32;
 export const CHECKPOINT_BATCH_PRUNE_STORE_LOCK_WARNING =
   "Checkpoint batch pruning deleted one or more manifests, but release of the checkpoint-store lock could not be confirmed.";

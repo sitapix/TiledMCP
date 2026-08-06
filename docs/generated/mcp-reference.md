@@ -83,8 +83,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 57 tools
-- `with-tmxrasterizer`: 59 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 56 tools
+- `with-tmxrasterizer`: 58 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -260,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:c4c5f7d7bf4360cd2fd8c9f5e627a851fd6d7593751f4db0f45e3062e3ac5afe",
+    "revision": "sha256:71a2c7c6e9ab84569b0c12750f8c8d4db3d8eed6d5bf2ae4cd82dc0acfea266d",
     "serverVersion": "0.0.1",
-    "size": 113920
+    "size": 113897
   },
   "annotations": {
     "audience": [
@@ -274,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 113920,
+  "size": 113897,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -282,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 113920 UTF-8 bytes, revision `sha256:c4c5f7d7bf4360cd2fd8c9f5e627a851fd6d7593751f4db0f45e3062e3ac5afe`.
+Content contract: `text`, 113897 UTF-8 bytes, revision `sha256:71a2c7c6e9ab84569b0c12750f8c8d4db3d8eed6d5bf2ae4cd82dc0acfea266d`.
 
 Resource templates: none.
 
@@ -3230,7 +3230,7 @@ Output schema:
                     },
                     "manifestDeletedCount": {
                       "maximum": 32,
-                      "minimum": 2,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     "outcomes": {
@@ -3271,7 +3271,7 @@ Output schema:
                         "type": "object"
                       },
                       "maxItems": 32,
-                      "minItems": 2,
+                      "minItems": 1,
                       "type": "array"
                     },
                     "replayDisposition": {
@@ -3280,7 +3280,7 @@ Output schema:
                     },
                     "requestedCheckpointCount": {
                       "maximum": 32,
-                      "minimum": 2,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     "status": {
@@ -3449,7 +3449,7 @@ Output schema:
                         ]
                       },
                       "maxItems": 32,
-                      "minItems": 2,
+                      "minItems": 1,
                       "type": "array"
                     },
                     "replayDisposition": {
@@ -3458,7 +3458,7 @@ Output schema:
                     },
                     "requestedCheckpointCount": {
                       "maximum": 32,
-                      "minimum": 2,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     "status": {
@@ -10360,7 +10360,7 @@ Output schema:
                       "type": "number"
                     },
                     "minCheckpointCount": {
-                      "const": 2,
+                      "const": 1,
                       "type": "number"
                     },
                     "ordering": {
@@ -10376,7 +10376,7 @@ Output schema:
                       "type": "string"
                     },
                     "scope": {
-                      "const": "2-to-32-explicit-committed-checkpoints",
+                      "const": "1-to-32-explicit-committed-checkpoints",
                       "type": "string"
                     },
                     "stopOnFirstFailure": {
@@ -11850,7 +11850,7 @@ Output schema:
                   "type": "number"
                 },
                 "maxInlineImageBytes": {
-                  "const": 8388608,
+                  "const": 7340032,
                   "type": "number"
                 },
                 "maxLayerNameLength": {
@@ -11874,7 +11874,7 @@ Output schema:
                   "type": "number"
                 },
                 "maxNativePreviewBytes": {
-                  "const": 8388608,
+                  "const": 7340032,
                   "type": "number"
                 },
                 "maxNativePreviewEdge": {
@@ -12090,7 +12090,7 @@ Output schema:
                   "type": "number"
                 },
                 "maxTileRenderBytes": {
-                  "const": 8388608,
+                  "const": 7340032,
                   "type": "number"
                 },
                 "maxTileRenderColumns": {
@@ -12162,7 +12162,7 @@ Output schema:
                   "type": "number"
                 },
                 "maxTilesetSheetBytes": {
-                  "const": 8388608,
+                  "const": 7340032,
                   "type": "number"
                 },
                 "maxTilesetSheetColumns": {
@@ -13922,10 +13922,6 @@ Output schema:
                       "type": "string"
                     },
                     {
-                      "const": "tiled_preview_checkpoint_prune",
-                      "type": "string"
-                    },
-                    {
                       "const": "tiled_preview_checkpoint_prune_batch",
                       "type": "string"
                     },
@@ -14152,10 +14148,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_prepared_checkpoint_abandon",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_checkpoint_prune",
                       "type": "string"
                     },
                     {
@@ -14392,10 +14384,6 @@ Output schema:
                       "type": "string"
                     },
                     {
-                      "const": "tiled_preview_checkpoint_prune",
-                      "type": "string"
-                    },
-                    {
                       "const": "tiled_preview_checkpoint_prune_batch",
                       "type": "string"
                     },
@@ -14626,10 +14614,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_preview_prepared_checkpoint_abandon",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_preview_checkpoint_prune",
                       "type": "string"
                     },
                     {
@@ -27736,547 +27720,11 @@ Output schema:
 }
 ```
 
-### `tiled_preview_checkpoint_prune`
-
-Availability: `core`
-
-Pins the raw manifest revision of one committed recovery checkpoint and returns a destructive prune proposal without deleting it. Prepared checkpoints are rejected; reconcile them or use the dedicated safe-discard preview when its exact-before eligibility is proven. Applying the proposal removes only the manifest, then runs fail-closed garbage collection for unreferenced checkpoint objects and private crash temporary files.
-
-Annotations:
-
-```json
-{
-  "destructiveHint": false,
-  "idempotentHint": false,
-  "openWorldHint": false,
-  "readOnlyHint": true,
-  "title": "Preview pruning a recovery checkpoint"
-}
-```
-
-Example purpose: 固定一个已提交 checkpoint 的原始 manifest revision，预览永久删除该恢复点但不立即执行。
-
-```json
-{
-  "arguments": {
-    "checkpointId": "00000000-0000-4000-8000-000000000000"
-  },
-  "name": "tiled_preview_checkpoint_prune"
-}
-```
-
-Input schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "properties": {
-    "checkpointId": {
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "checkpointId"
-  ],
-  "type": "object"
-}
-```
-
-Output schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "definitions": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "properties": {
-    "result": {
-      "anyOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "changeSetId": {
-              "pattern": "^changeset:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "checkpoint": {
-              "additionalProperties": false,
-              "properties": {
-                "afterRevision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                },
-                "before": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "existed": {
-                          "const": false,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "existed"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "existed": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "objectHash": {
-                          "pattern": "^[0-9a-f]{64}$",
-                          "type": "string"
-                        },
-                        "revision": {
-                          "pattern": "^sha256:[0-9a-f]{64}$",
-                          "type": "string"
-                        },
-                        "size": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "existed",
-                        "revision",
-                        "objectHash",
-                        "size"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "createdAt": {
-                  "maxLength": 64,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "id": {
-                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                  "type": "string"
-                },
-                "label": {
-                  "maxLength": 1024,
-                  "type": "string"
-                },
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "status": {
-                  "const": "committed",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "status",
-                "createdAt",
-                "path",
-                "before",
-                "afterRevision"
-              ],
-              "type": "object"
-            },
-            "createdAt": {
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-              "type": "string"
-            },
-            "expectedRevision": {
-              "pattern": "^sha256:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "expiresAt": {
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-              "type": "string"
-            },
-            "kind": {
-              "const": "checkpointPrune",
-              "type": "string"
-            },
-            "manifest": {
-              "additionalProperties": false,
-              "properties": {
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                },
-                "size": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "revision",
-                "size"
-              ],
-              "type": "object"
-            },
-            "operations": {
-              "items": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "checkpointId": {
-                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                      "type": "string"
-                    },
-                    "destructive": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "garbageCollection": {
-                      "const": "fail-closed-after-manifest-prune",
-                      "type": "string"
-                    },
-                    "manifestBytes": {
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991,
-                      "type": "integer"
-                    },
-                    "manifestRevision": {
-                      "pattern": "^sha256:[0-9a-f]{64}$",
-                      "type": "string"
-                    },
-                    "removesProjectAsset": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "removesRecoveryPoint": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "const": "committed",
-                      "type": "string"
-                    },
-                    "targetPath": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "type": {
-                      "const": "pruneCheckpoint",
-                      "type": "string"
-                    },
-                    "warning": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "destructive",
-                    "warning",
-                    "checkpointId",
-                    "targetPath",
-                    "status",
-                    "manifestRevision",
-                    "manifestBytes",
-                    "removesRecoveryPoint",
-                    "removesProjectAsset",
-                    "garbageCollection"
-                  ],
-                  "type": "object"
-                }
-              ],
-              "type": "array"
-            },
-            "planDigest": {
-              "pattern": "^changeset:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "snapshotConsistency": {
-              "const": "non-atomic-read-set",
-              "type": "string"
-            },
-            "summary": {
-              "additionalProperties": false,
-              "properties": {
-                "checkpointId": {
-                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                  "type": "string"
-                },
-                "destructive": {
-                  "const": true,
-                  "type": "boolean"
-                },
-                "garbageCollection": {
-                  "const": "fail-closed-after-manifest-prune",
-                  "type": "string"
-                },
-                "manifestBytes": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "manifestRevision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                },
-                "operationCount": {
-                  "const": 1,
-                  "type": "number"
-                },
-                "removesProjectAsset": {
-                  "const": false,
-                  "type": "boolean"
-                },
-                "removesRecoveryPoint": {
-                  "const": true,
-                  "type": "boolean"
-                },
-                "status": {
-                  "const": "committed",
-                  "type": "string"
-                },
-                "targetPath": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "warning": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "operationCount",
-                "destructive",
-                "checkpointId",
-                "targetPath",
-                "status",
-                "manifestRevision",
-                "manifestBytes",
-                "removesRecoveryPoint",
-                "removesProjectAsset",
-                "garbageCollection",
-                "warning"
-              ],
-              "type": "object"
-            },
-            "targetPath": {
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "changeSetId",
-            "planDigest",
-            "targetPath",
-            "expectedRevision",
-            "checkpoint",
-            "manifest",
-            "operations",
-            "summary",
-            "snapshotConsistency",
-            "createdAt",
-            "expiresAt"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "error": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "enum": [
-                    "ASSET_REGISTRY_CORRUPT",
-                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
-                    "CHANGE_SET_LIMIT_EXCEEDED",
-                    "CHANGE_SET_NOT_FOUND",
-                    "CHANGE_SET_OWNED",
-                    "CHECKPOINT_CHANGED",
-                    "CHECKPOINT_CORRUPT",
-                    "CHECKPOINT_NOT_COMMITTED",
-                    "CHECKPOINT_NOT_FOUND",
-                    "CHECKPOINT_QUOTA_EXCEEDED",
-                    "CHECKPOINT_STATE_CONFLICT",
-                    "DEPENDENCY_REVISION_CONFLICT",
-                    "DOCUMENT_CHANGED_DURING_READ",
-                    "DOCUMENT_TOO_LARGE",
-                    "DUPLICATE_JSON_KEY",
-                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
-                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
-                    "FILE_ALREADY_EXISTS",
-                    "FILE_IN_USE",
-                    "FILE_LOCKED",
-                    "FILE_LOCK_CORRUPT",
-                    "FILE_NOT_FOUND",
-                    "GID_OUT_OF_RANGE",
-                    "GID_RANGE_EXHAUSTED",
-                    "IMAGE_CHANGED_DURING_READ",
-                    "IMAGE_DIMENSIONS_EXCEEDED",
-                    "IMAGE_ENCODING_FAILED",
-                    "IMAGE_TOO_LARGE",
-                    "INTERNAL_ERROR",
-                    "INVALID_ARGUMENT",
-                    "INVALID_DOCUMENT",
-                    "INVALID_GID",
-                    "INVALID_JSON",
-                    "INVALID_PROJECT_PATH",
-                    "INVALID_TILESET_ATLAS",
-                    "INVALID_TILESET_IMAGE",
-                    "INVALID_TILE_DATA",
-                    "INVALID_TILE_TRANSFORM",
-                    "JSON_NESTING_LIMIT",
-                    "LAYER_DEPTH_EXCEEDED",
-                    "LAYER_HAS_DESCENDANTS",
-                    "LAYER_ID_EXHAUSTED",
-                    "LAYER_INDEX_OUT_OF_RANGE",
-                    "LAYER_LIMIT_EXCEEDED",
-                    "LAYER_MOVE_CYCLE",
-                    "LAYER_NOT_FOUND",
-                    "LAYER_TYPE_MISMATCH",
-                    "NEXT_LAYER_ID_INVALID",
-                    "NEXT_OBJECT_ID_INVALID",
-                    "OBJECT_ID_EXHAUSTED",
-                    "OBJECT_IN_USE",
-                    "OBJECT_LIMIT_EXCEEDED",
-                    "OBJECT_NOT_FOUND",
-                    "OBJECT_REFERENCE_NOT_FOUND",
-                    "OBJECT_SHAPE_MISMATCH",
-                    "OVERLAY_TOO_DENSE",
-                    "PAGE_OUT_OF_RANGE",
-                    "PARENT_DIRECTORY_NOT_FOUND",
-                    "PATH_OUTSIDE_ROOT",
-                    "PREVIEW_DIMENSIONS_EXCEEDED",
-                    "PREVIEW_REGION_REQUIRED",
-                    "RASTER_TEMP_CLEANUP_FAILED",
-                    "REGION_OUT_OF_BOUNDS",
-                    "RESERVED_PROJECT_PATH",
-                    "RESULT_LIMIT_EXCEEDED",
-                    "REVERT_WOULD_DELETE",
-                    "REVISION_CONFLICT",
-                    "STALE_FILE_LOCK",
-                    "SYMLINK_NOT_ALLOWED",
-                    "TILESET_ALREADY_REFERENCED",
-                    "TILESET_GID_RANGE_OVERLAP",
-                    "TILESET_IMAGE_DIMENSION_MISMATCH",
-                    "TILESET_IN_USE",
-                    "TILESET_NOT_FOUND",
-                    "TILESET_NOT_IN_MAP",
-                    "TILE_ID_OUT_OF_RANGE",
-                    "TMXRASTERIZER_FAILED",
-                    "TMXRASTERIZER_NOT_EXECUTABLE",
-                    "TMXRASTERIZER_NOT_FOUND",
-                    "TMXRASTERIZER_OUTPUT_INVALID",
-                    "TMXRASTERIZER_OUTPUT_LIMIT",
-                    "TMXRASTERIZER_OUTPUT_MISSING",
-                    "TMXRASTERIZER_TIMEOUT",
-                    "UNSAFE_JSON_NUMBER",
-                    "UNSAFE_RENDER_REFERENCE",
-                    "UNSAFE_SVG",
-                    "UNSORTED_TILESET_REFERENCES",
-                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
-                    "UNSUPPORTED_FORMAT",
-                    "UNSUPPORTED_IMAGE_FORMAT",
-                    "UNSUPPORTED_MAP_PROFILE",
-                    "UNSUPPORTED_OBJECT_PROFILE",
-                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_PROPERTY_QUERY",
-                    "UNSUPPORTED_PROPERTY_WRITE",
-                    "UNSUPPORTED_REFERENCE_SCAN",
-                    "UNSUPPORTED_RENDER_FEATURE",
-                    "UNSUPPORTED_RENDER_LAYER",
-                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
-                    "UNSUPPORTED_RESIZE_TEMPLATE",
-                    "UNSUPPORTED_TILESET",
-                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
-                    "UNSUPPORTED_TILE_ENCODING"
-                  ],
-                  "type": "string"
-                },
-                "details": {
-                  "additionalProperties": {
-                    "$ref": "#/definitions/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
-                  "type": "object"
-                },
-                "message": {
-                  "maxLength": 4096,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "code",
-                "message",
-                "details"
-              ],
-              "type": "object"
-            },
-            "ok": {
-              "const": false,
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "ok",
-            "error"
-          ],
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "required": [
-    "result"
-  ],
-  "type": "object"
-}
-```
-
 ### `tiled_preview_checkpoint_prune_batch`
 
 Availability: `core`
 
-Pins 2 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.
+Pins 1 to 32 explicit committed recovery checkpoint manifests, canonicalizes their UUIDs to lowercase, and orders them by checkpoint ID. The destructive proposal is non-atomic: apply preflights every pin, removes manifests sequentially with per-item directory durability, stops on the first failure, caches any partial result without resume, and runs fail-closed garbage collection once only after all selected manifests are removed. Prepared checkpoints and duplicate normalized IDs are rejected.
 
 Annotations:
 
@@ -28317,7 +27765,7 @@ Input schema:
         "type": "string"
       },
       "maxItems": 32,
-      "minItems": 2,
+      "minItems": 1,
       "type": "array"
     }
   },
@@ -28640,7 +28088,7 @@ Output schema:
                 ]
               },
               "maxItems": 32,
-              "minItems": 2,
+              "minItems": 1,
               "type": "array"
             },
             "createdAt": {
@@ -28672,7 +28120,7 @@ Output schema:
                     },
                     "checkpointCount": {
                       "maximum": 32,
-                      "minimum": 2,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     "checkpointIds": {
@@ -28681,7 +28129,7 @@ Output schema:
                         "type": "string"
                       },
                       "maxItems": 32,
-                      "minItems": 2,
+                      "minItems": 1,
                       "type": "array"
                     },
                     "destructive": {
@@ -28711,7 +28159,7 @@ Output schema:
                     },
                     "removesRecoveryPointCount": {
                       "maximum": 32,
-                      "minimum": 2,
+                      "minimum": 1,
                       "type": "integer"
                     },
                     "status": {
@@ -28784,7 +28232,7 @@ Output schema:
                 },
                 "checkpointCount": {
                   "maximum": 32,
-                  "minimum": 2,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 "checkpointIds": {
@@ -28793,7 +28241,7 @@ Output schema:
                     "type": "string"
                   },
                   "maxItems": 32,
-                  "minItems": 2,
+                  "minItems": 1,
                   "type": "array"
                 },
                 "destructive": {
@@ -28827,7 +28275,7 @@ Output schema:
                 },
                 "removesRecoveryPointCount": {
                   "maximum": 32,
-                  "minimum": 2,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 "status": {
@@ -96971,7 +96419,7 @@ Output schema:
           "properties": {
             "byteLength": {
               "exclusiveMinimum": 0,
-              "maximum": 8388608,
+              "maximum": 7340032,
               "type": "integer"
             },
             "dependencyRevisions": {
@@ -97489,7 +96937,7 @@ Output schema:
           "properties": {
             "byteLength": {
               "exclusiveMinimum": 0,
-              "maximum": 8388608,
+              "maximum": 7340032,
               "type": "integer"
             },
             "contentPixelRect": {
@@ -98926,7 +98374,7 @@ Output schema:
               "properties": {
                 "byteLength": {
                   "exclusiveMinimum": 0,
-                  "maximum": 8388608,
+                  "maximum": 7340032,
                   "type": "integer"
                 },
                 "image": {
@@ -99231,7 +98679,7 @@ Output schema:
               "properties": {
                 "byteLength": {
                   "exclusiveMinimum": 0,
-                  "maximum": 8388608,
+                  "maximum": 7340032,
                   "type": "integer"
                 },
                 "images": {
@@ -99833,7 +99281,7 @@ Output schema:
               "properties": {
                 "byteLength": {
                   "exclusiveMinimum": 0,
-                  "maximum": 8388608,
+                  "maximum": 7340032,
                   "type": "integer"
                 },
                 "image": {
@@ -100129,7 +99577,7 @@ Output schema:
               "properties": {
                 "byteLength": {
                   "exclusiveMinimum": 0,
-                  "maximum": 8388608,
+                  "maximum": 7340032,
                   "type": "integer"
                 },
                 "images": {

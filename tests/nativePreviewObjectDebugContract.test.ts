@@ -515,7 +515,9 @@ describe("native preview object debug server contract", () => {
     // 57 since `tiled_preview_merge_map`: stitching a map in needs GID
     // translation between two independent tileset orderings, which no
     // existing operation performs.
-    expect(registeredTools).toHaveLength(57);
+    // 56 again: `tiled_preview_checkpoint_prune` folded into
+    // `tiled_preview_checkpoint_prune_batch`, which now accepts 1..32 ids.
+    expect(registeredTools).toHaveLength(56);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

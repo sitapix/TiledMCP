@@ -65,7 +65,7 @@ describe("checkpoint committed batch prune storage", () => {
     });
   });
 
-  it("requires 2..32 unique canonical lowercase UUIDs and all committed manifests", async () => {
+  it("requires 1..32 unique canonical lowercase UUIDs and all committed manifests", async () => {
     const store = documentStore();
     const committed =
       await committedCheckpoint(
@@ -82,13 +82,6 @@ describe("checkpoint committed batch prune storage", () => {
         "prepared",
       );
 
-    await expect(
-      store.inspectCheckpointBatchPrune([
-        committed.id,
-      ]),
-    ).rejects.toMatchObject({
-      code: "INVALID_ARGUMENT",
-    });
     await expect(
       store.inspectCheckpointBatchPrune([
         committed.id,

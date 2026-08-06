@@ -1677,16 +1677,14 @@ or create a checkpoint. \`tiled_create_map\` instead prepares an
 \`tiled_list_checkpoints\` lists bounded checkpoint metadata and corrupt
 entries without reading the stored document bytes.
 
-To permanently remove one committed recovery point, call
-\`tiled_preview_checkpoint_prune\` with its checkpoint ID. The preview pins
-the SHA-256 revision of the raw manifest bytes without reading the stored
-document blob. Present the destructive warning for approval, then pass the
-returned change-set ID and expected revision to \`tiled_apply_change_set\`.
-The prune tool accepts committed checkpoints only.
-
-To drain an explicit retention backlog, call
-\`tiled_preview_checkpoint_prune_batch\` with 2 through 32 distinct committed
-checkpoint UUIDs selected from a current listing. The tool never chooses
+To permanently remove committed recovery points -- whether one or a backlog --
+call \`tiled_preview_checkpoint_prune_batch\` with 1 through 32 distinct
+committed checkpoint UUIDs selected from a current listing. A single-element
+batch is how you prune one checkpoint; the preview pins the SHA-256 revision of
+each raw manifest's bytes without reading the stored document blob. Present the
+destructive warning for approval, then pass the returned change-set ID and
+expected revision to \`tiled_apply_change_set\`. The tool accepts committed
+checkpoints only. The tool never chooses
 retention victims from ordinals, timestamps, labels, or storage pressure.
 It sorts the selected IDs into canonical UUID order, exposes that execution
 order, pins every raw manifest revision, size, metadata record, and target
