@@ -242,6 +242,7 @@ import {
   type MapEditPlan,
   type PlannedMapEditOperation,
   type ResolvedAddTilesetToMapOperation,
+  type ResolvedReplaceTilesetInMapOperation,
   type ResolvedCreateLayerOperation,
   type TileRef,
 } from "./types.js";
@@ -316,6 +317,7 @@ import type {
   LayerTraversalBudget,
   ListObjectsInput,
   PlanAddTilesetToMapInput,
+  PlanReplaceTilesetInMapInput,
   PlanCreateLayerInput,
   ProspectiveImageBinding,
   ProspectiveTilesetBinding,
@@ -388,6 +390,7 @@ import {
   reencodeWrittenTileLayers,
   relativeProjectReference,
   resolveAddTilesetToMapOperation,
+  resolveReplaceTilesetInMapOperation,
   resolveCreateLayerOperation,
   sourceArrayDeletionsForSummary,
   sourceArrayInsertionsForSummary,
@@ -3917,6 +3920,125 @@ export class MapService {
       "the add-tileset change set was being prepared",
     );
     return { ...unsignedPlan, id: planId(unsignedPlan) };
+  }
+
+  /**
+   * Repoints one external tileset reference at a different `.tsj`.
+   *
+   * Remove-then-add cannot express this: removal refuses any tileset still in
+   * use, so retargeting a map's art would mean clearing every referring cell
+   * first. Here `firstgid` never moves, so the map's GIDs are untouched and
+   * the swap costs one member of one `tilesets[]` entry.
+   */
+  async planReplaceTilesetInMap(
+    input: PlanReplaceTilesetInMapInput,
+  ): Promise<MapEditPlan> {
+    assertRequiredRevision(
+      input.expectedMapRevision,
+      "expectedMapRevision",
+    );
+    assertOptionalRevision(
+      input.expectedTilesetRevision,
+      "expectedTilesetRevision",
+    );
+    const mapPath = this.resolver.normalize(
+      input.mapPath,
+    );
+    const tilesetPath = this.resolver.normalize(
+      input.tilesetPath,
+    );
+    if (
+      posix.extname(tilesetPath).toLowerCase() !==
+      ".tsj"
+    ) {
+      throw new TiledMcpError(
+        "UNSUPPORTED_FORMAT",
+        "Replacing a tileset reference requires a .tsj path.",
+        { path: tilesetPath },
+      );
+    }
+
+    const context =
+      await this.loadEditableContext(mapPath, {
+        expectedMapRevision:
+          input.expectedMapRevision,
+        expectedDependencyRevisions:
+          input.expectedDependencyRevisions,
+      });
+    assertDependencyRevisions(
+      input.expectedDependencyRevisions,
+      context.dependencyRevisions,
+    );
+    const prospective =
+      await this.loadProspectiveTilesetBinding(
+        tilesetPath,
+        input.expectedTilesetRevision,
+        undefined,
+        false,
+        undefined,
+      );
+    const operation =
+      resolveReplaceTilesetInMapOperation(
+        context,
+        input.tilesetAssetId,
+        prospective,
+      );
+    const edited = cloneJson(
+      context.loaded.document,
+    );
+    const operations: PlannedMapEditOperation[] =
+      [operation];
+    const summary =
+      validateAndSummarizeOperations(
+        edited,
+        context.orientation,
+        context.bindings,
+        operations,
+        context.loaded.path,
+        {
+          allowResolvedReplaceTileset: true,
+          sourceBytes: context.loaded.size,
+        },
+      );
+    const unsignedPlan: Omit<
+      MapEditPlan,
+      "id"
+    > = {
+      kind: "mapEdit",
+      version: 1,
+      mapPath: context.loaded.path,
+      baseRevision: context.loaded.revision,
+      dependencyRevisions:
+        context.dependencyRevisions,
+      prospectiveDependencyRevisions: {
+        [prospective.assetId]:
+          prospective.revision,
+      },
+      operations,
+      summary,
+    };
+
+    await this.assertDependenciesUnchanged(
+      context.bindings,
+    );
+    await assertRevisionUnchanged(
+      this.store,
+      prospective.path,
+      prospective.revision,
+      "DEPENDENCY_REVISION_CONFLICT",
+      "the replace-tileset change set was being prepared",
+    );
+    await assertRevisionUnchanged(
+      this.store,
+      context.loaded.path,
+      context.loaded.revision,
+      "REVISION_CONFLICT",
+      "the replace-tileset change set was being prepared",
+    );
+    return {
+      ...unsignedPlan,
+      id: planId(unsignedPlan),
+    };
   }
 
   async planUpdateTile(
@@ -10749,6 +10871,12 @@ export class MapService {
       ): operation is ResolvedAddTilesetToMapOperation =>
         operation.type === "addTilesetToMap",
     );
+    const replaceTilesetOperations = plan.operations.filter(
+      (
+        operation,
+      ): operation is ResolvedReplaceTilesetInMapOperation =>
+        operation.type === "replaceTilesetInMap",
+    );
     const createLayerOperations = plan.operations.filter(
       (
         operation,
@@ -10757,8 +10885,12 @@ export class MapService {
     );
     if (
       addTilesetOperations.length > 1 ||
+      replaceTilesetOperations.length > 1 ||
       createLayerOperations.length > 1 ||
-      addTilesetOperations.length + createLayerOperations.length > 1
+      addTilesetOperations.length +
+        replaceTilesetOperations.length +
+        createLayerOperations.length >
+        1
     ) {
       throw new TiledMcpError(
         "INVALID_CHANGE_SET",
@@ -10766,7 +10898,10 @@ export class MapService {
       );
     }
     if (
-      addTilesetOperations.length + createLayerOperations.length === 1 &&
+      addTilesetOperations.length +
+        replaceTilesetOperations.length +
+        createLayerOperations.length ===
+        1 &&
       plan.operations.length !== 1
     ) {
       throw new TiledMcpError(
@@ -10813,6 +10948,60 @@ export class MapService {
         throw new TiledMcpError(
           "INVALID_CHANGE_SET",
           "The planned tileset reference no longer matches its canonical path, revision, tile count or assigned firstgid.",
+          {
+            path: plannedOperation.tilesetPath,
+            assetId: plannedOperation.assetId,
+          },
+        );
+      }
+    } else if (replaceTilesetOperations.length === 1) {
+      const plannedOperation =
+        replaceTilesetOperations[0];
+      if (plannedOperation === undefined) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "The replace-tileset operation is missing.",
+        );
+      }
+      const transactionSource =
+        prospectiveTilesetSources?.get(
+          plannedOperation.tilesetPath,
+        );
+      prospectiveTileset =
+        await this.loadProspectiveTilesetBinding(
+          plannedOperation.tilesetPath,
+          plannedOperation.tilesetRevision,
+          plannedOperation.assetId,
+          transactionSource === undefined,
+          transactionSource,
+        );
+      assertDependencyRevisions(
+        plan.prospectiveDependencyRevisions ?? {},
+        {
+          [prospectiveTileset.assetId]:
+            prospectiveTileset.revision,
+        },
+      );
+      // Re-derived from the pinned bytes rather than trusted: the survey of
+      // which local ids are still referenced has to reflect the map as it is
+      // now, not as it was when the plan was built.
+      const resolvedOperation =
+        resolveReplaceTilesetInMapOperation(
+          context,
+          plannedOperation.fromAssetId,
+          prospectiveTileset,
+        );
+      if (
+        stableJson(
+          resolvedOperation as unknown as JsonValue,
+        ) !==
+        stableJson(
+          plannedOperation as unknown as JsonValue,
+        )
+      ) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "The planned tileset replacement no longer matches the map's current bindings or tile usage.",
           {
             path: plannedOperation.tilesetPath,
             assetId: plannedOperation.assetId,
@@ -10900,6 +11089,8 @@ export class MapService {
       plan.mapPath,
       {
         allowResolvedAddTileset: addTilesetOperations.length === 1,
+        allowResolvedReplaceTileset:
+          replaceTilesetOperations.length === 1,
         allowResolvedCreateLayer:
           createLayerOperations.length === 1,
         sourceBytes: context.loaded.size,

@@ -1126,6 +1126,34 @@ type OperationPreview =
       gidRange: { first: number; last: number };
     }
   | {
+      type: "replaceTilesetInMap";
+      destructive: false;
+      warning: string;
+      firstGid: number;
+      from: {
+        tilesetPath: string;
+        assetId: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      to: {
+        tilesetPath: string;
+        source: string;
+        assetId: string;
+        tilesetRevision: string;
+        tileCount: number;
+        gidSpan: number;
+      };
+      /**
+       * Highest local id any surviving reference still uses, or `null` when
+       * nothing refers to the tileset. This is the number that decides whether
+       * a smaller replacement is safe.
+       */
+      highestReferencedLocalId: number | null;
+      referencedCellCount: number;
+      referencedObjectCount: number;
+    }
+  | {
       type: "removeTilesetFromMap";
       destructive: true;
       warning: string;
@@ -4239,6 +4267,40 @@ function summarizeOperation(
       y: operation.y,
       expectedTemplateRevision:
         operation.expectedTemplateRevision,
+    };
+  }
+
+  if (
+    operation.type === "replaceTilesetInMap"
+  ) {
+    return {
+      type: operation.type,
+      // Not destructive: firstgid does not move, so every cell keeps pointing
+      // at the same slot. What changes is which art that slot resolves to.
+      destructive: false,
+      warning:
+        "This repoints one tileset reference in place. Every GID keeps its value and its slot, so each cell now shows the tile at the same local id in the replacement -- which is the intent when the art changed, and a silent remap when the two tilesets are not laid out alike. Compare both tilesets before approving.",
+      firstGid: operation.firstGid,
+      from: {
+        tilesetPath: operation.fromTilesetPath,
+        assetId: operation.fromAssetId,
+        tileCount: operation.fromTileCount,
+        gidSpan: operation.fromGidSpan,
+      },
+      to: {
+        tilesetPath: operation.tilesetPath,
+        source: operation.source,
+        assetId: operation.assetId,
+        tilesetRevision: operation.tilesetRevision,
+        tileCount: operation.tileCount,
+        gidSpan: operation.gidSpan,
+      },
+      highestReferencedLocalId:
+        operation.highestReferencedLocalId,
+      referencedCellCount:
+        operation.referencedCellCount,
+      referencedObjectCount:
+        operation.referencedObjectCount,
     };
   }
 

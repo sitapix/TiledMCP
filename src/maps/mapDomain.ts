@@ -538,6 +538,17 @@ export interface AnalyzeUsageInput {
   expectedDependencyRevisions?: Record<string, string>;
 }
 
+export interface PlanReplaceTilesetInMapInput {
+  mapPath: string;
+  /** The currently bound tileset to repoint, by its map-summary asset id. */
+  tilesetAssetId: string;
+  /** The `.tsj` to point that slot at instead. */
+  tilesetPath: string;
+  expectedMapRevision: string;
+  expectedDependencyRevisions: Record<string, string>;
+  expectedTilesetRevision?: string;
+}
+
 export interface PlanAddTilesetToMapInput {
   mapPath: string;
   tilesetPath: string;

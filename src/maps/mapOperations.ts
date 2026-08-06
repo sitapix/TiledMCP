@@ -154,6 +154,7 @@ export function validateAndSummarizeOperations(
   mapPath: string,
   options: {
     allowResolvedAddTileset?: boolean;
+    allowResolvedReplaceTileset?: boolean;
     allowResolvedCreateLayer?: boolean;
     sourceBytes?: number;
   } = {},
@@ -278,6 +279,9 @@ export function validateAndSummarizeOperations(
   const addedTilesets: NonNullable<
     MapEditPlan["summary"]["addedTilesets"]
   > = [];
+  const replacedTilesets: NonNullable<
+    MapEditPlan["summary"]["replacedTilesets"]
+  > = [];
   const removedTilesets: NonNullable<
     MapEditPlan["summary"]["removedTilesets"]
   > = [];
@@ -390,6 +394,72 @@ export function validateAndSummarizeOperations(
         tileCount: operation.tileCount,
         gidSpan: operation.gidSpan,
         firstGid: operation.firstGid,
+      });
+    } else if (
+      operation.type === "replaceTilesetInMap"
+    ) {
+      if (
+        options.allowResolvedReplaceTileset !==
+          true ||
+        operations.length !== 1
+      ) {
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          "replaceTilesetInMap is available only through its dedicated preview tool and cannot be batched with generic map edits.",
+        );
+      }
+      const entries = expectArray(
+        map.tilesets,
+        `${mapPath}.tilesets`,
+      );
+      const raw = entries[operation.sourceIndex];
+      const entry = isRecordValue(raw)
+        ? (raw as JsonObject)
+        : undefined;
+      if (
+        entry === undefined ||
+        entry.firstgid !== operation.firstGid ||
+        typeof entry.source !== "string"
+      ) {
+        throw new TiledMcpError(
+          "INVALID_CHANGE_SET",
+          "The tileset entry being replaced no longer matches the planned slot.",
+          {
+            path: mapPath,
+            sourceIndex: operation.sourceIndex,
+            firstGid: operation.firstGid,
+          },
+        );
+      }
+      // Only `source` moves. `firstgid` staying put is the whole contract:
+      // every GID keeps its value, so no cell has to be rewritten.
+      entry.source = operation.source;
+      entries[operation.sourceIndex] = entry;
+      map.tilesets = entries;
+      replacedTilesets.push({
+        firstGid: operation.firstGid,
+        from: {
+          tilesetPath: operation.fromTilesetPath,
+          source: operation.source,
+          assetId: operation.fromAssetId,
+          tileCount: operation.fromTileCount,
+          gidSpan: operation.fromGidSpan,
+        },
+        to: {
+          tilesetPath: operation.tilesetPath,
+          source: operation.source,
+          assetId: operation.assetId,
+          tilesetRevision:
+            operation.tilesetRevision,
+          tileCount: operation.tileCount,
+          gidSpan: operation.gidSpan,
+        },
+        highestReferencedLocalId:
+          operation.highestReferencedLocalId,
+        referencedCellCount:
+          operation.referencedCellCount,
+        referencedObjectCount:
+          operation.referencedObjectCount,
       });
     } else if (
       operation.type === "removeTilesetFromMap"
@@ -2134,6 +2204,7 @@ export function validateAndSummarizeOperations(
     changedLayerMembers.size +
     (createdObjectIds.size > 0 ? 1 : 0) +
     (addedTilesets.length > 0 ? 1 : 0) +
+    (replacedTilesets.length > 0 ? 1 : 0) +
     (removedTilesets.length > 0 ? 1 : 0) +
     (createdLayers.length > 0 ? 2 : 0) +
     duplicatedLayers.reduce(
@@ -2228,6 +2299,9 @@ export function validateAndSummarizeOperations(
       ? {}
       : { tileCopies }),
     ...(addedTilesets.length === 0 ? {} : { addedTilesets }),
+    ...(replacedTilesets.length === 0
+      ? {}
+      : { replacedTilesets }),
     ...(removedTilesets.length === 0
       ? {}
       : { removedTilesets }),

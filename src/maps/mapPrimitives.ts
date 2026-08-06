@@ -114,6 +114,7 @@ import {
   type MapEditPlan,
   type ObjectPathPoint,
   type ResolvedAddTilesetToMapOperation,
+  type ResolvedReplaceTilesetInMapOperation,
   type ResolvedCreateLayerOperation,
   type TileRef,
 } from "./types.js";
@@ -254,12 +255,249 @@ export function resolveAddTilesetToMapOperation(
   };
 }
 
+/**
+ * Walks every GID that resolves to one tileset.
+ *
+ * `onReference` exists so that replacing a tileset and removing one agree on
+ * what "referenced" means. Removal rejects on the first hit; replacement needs
+ * to survey them all to learn the highest local id still in use. Running both
+ * off one traversal is the point -- a second scanner would be free to drift,
+ * and the two would disagree about a map neither could then be edited.
+ */
+/**
+ * Resolves a tileset swap that keeps every GID meaning what it meant.
+ *
+ * `firstgid` deliberately does not move. That is what makes this
+ * non-destructive: every cell keeps pointing at the same slot, so the swap is
+ * a change of art rather than a rewrite of the map. Removing and re-adding
+ * cannot do this -- removal refuses any tileset still in use, so the only
+ * route available today is to clear every referring cell first, which destroys
+ * the thing being retargeted.
+ *
+ * Two ways it fails closed:
+ *
+ * - A local id still referenced by some cell must exist in the replacement.
+ *   Otherwise surviving GIDs would point past the end of the new tileset, and
+ *   the map would decode as corrupt on the next read.
+ * - The replacement's GID span must fit the room the old one occupied, unless
+ *   nothing follows it. Widening a tileset that has a neighbour above it would
+ *   silently overlap that neighbour's range and repoint its tiles.
+ */
+export function resolveReplaceTilesetInMapOperation(
+  context: EditableContext,
+  fromAssetId: string,
+  prospective: ProspectiveTilesetBinding,
+): ResolvedReplaceTilesetInMapOperation {
+  const entries = expectArray(
+    context.loaded.document.tilesets,
+    `${context.loaded.path}.tilesets`,
+  );
+  assertSerializedTilesetOrder(
+    entries,
+    context.loaded.path,
+  );
+
+  const target = context.bindings.find(
+    (binding) => binding.assetId === fromAssetId,
+  );
+  if (target === undefined) {
+    throw new TiledMcpError(
+      "TILESET_NOT_FOUND",
+      `The requested tileset asset is not referenced by ${context.loaded.path}.`,
+      {
+        mapPath: context.loaded.path,
+        tilesetAssetId: fromAssetId,
+      },
+    );
+  }
+  // `context.bindings` holds only external references -- embedded tilesets
+  // live in `embeddedBindings` and are part of the map document, so there is
+  // no separate kind check to make here.
+  if (prospective.assetId === fromAssetId) {
+    throw new TiledMcpError(
+      "INVALID_ARGUMENT",
+      "The replacement tileset is the one already referenced at that slot.",
+      {
+        mapPath: context.loaded.path,
+        tilesetAssetId: fromAssetId,
+      },
+    );
+  }
+  const collision = context.bindings.find(
+    (binding) =>
+      binding.assetId !== fromAssetId &&
+      (binding.assetId === prospective.assetId ||
+        binding.path === prospective.path),
+  );
+  if (collision !== undefined) {
+    throw new TiledMcpError(
+      "TILESET_ALREADY_REFERENCED",
+      `${context.loaded.path} already references ${prospective.path} at another slot.`,
+      {
+        mapPath: context.loaded.path,
+        tilesetPath: prospective.path,
+        firstGid: collision.firstGid,
+      },
+    );
+  }
+
+  // Survey what the old tileset still holds, through the same scanner the
+  // removal guard uses.
+  let highestReferencedLocalId: number | null =
+    null;
+  let referencedCellCount = 0;
+  let referencedObjectCount = 0;
+  inspectTilesetUsage(
+    context.loaded.document,
+    context.bindings,
+    fromAssetId,
+    context.loaded.path,
+    undefined,
+    (matchedLocalId, reference) => {
+      highestReferencedLocalId =
+        highestReferencedLocalId === null
+          ? matchedLocalId
+          : Math.max(
+              highestReferencedLocalId,
+              matchedLocalId,
+            );
+      if (reference.kind === "cell") {
+        referencedCellCount += 1;
+      } else {
+        referencedObjectCount += 1;
+      }
+    },
+  );
+
+  const highest: number | null =
+    highestReferencedLocalId;
+  if (
+    highest !== null &&
+    highest >= prospective.tileCount
+  ) {
+    throw new TiledMcpError(
+      "TILESET_IN_USE",
+      `Local id ${highest} is still referenced but ${prospective.path} defines only ${prospective.tileCount} tiles; the replacement must cover every referenced tile.`,
+      {
+        mapPath: context.loaded.path,
+        tilesetPath: prospective.path,
+        highestReferencedLocalId: highest,
+        replacementTileCount:
+          prospective.tileCount,
+      },
+    );
+  }
+
+  // A tileset above this one pins how far the range may grow.
+  let nextFirstGid: number | undefined;
+  for (const binding of context.bindings) {
+    if (binding.firstGid > target.firstGid) {
+      nextFirstGid =
+        nextFirstGid === undefined
+          ? binding.firstGid
+          : Math.min(
+              nextFirstGid,
+              binding.firstGid,
+            );
+    }
+  }
+  const lastGid =
+    target.firstGid + prospective.gidSpan - 1;
+  if (
+    nextFirstGid !== undefined &&
+    lastGid >= nextFirstGid
+  ) {
+    throw new TiledMcpError(
+      "GID_RANGE_EXHAUSTED",
+      `${prospective.path} spans ${prospective.gidSpan} GIDs, which would overlap the tileset that follows it at firstgid ${nextFirstGid}. Replace the last tileset, or make the replacement no larger than the one it replaces.`,
+      {
+        mapPath: context.loaded.path,
+        tilesetPath: prospective.path,
+        firstGid: target.firstGid,
+        gidSpan: prospective.gidSpan,
+        nextFirstGid,
+      },
+    );
+  }
+  if (lastGid > 0x0fffffff) {
+    throw new TiledMcpError(
+      "GID_RANGE_EXHAUSTED",
+      "The replacement tileset does not fit in Tiled's 28-bit base GID range.",
+      {
+        mapPath: context.loaded.path,
+        tilesetPath: prospective.path,
+        firstGid: target.firstGid,
+        gidSpan: prospective.gidSpan,
+        maximumBaseGid: 0x0fffffff,
+      },
+    );
+  }
+
+  const sourceIndex = entries.findIndex(
+    (entry) =>
+      isRecordValue(entry) &&
+      (entry as JsonObject).firstgid ===
+        target.firstGid,
+  );
+  if (sourceIndex < 0) {
+    throw new TiledMcpError(
+      "INVALID_DOCUMENT",
+      `${context.loaded.path}.tilesets has no entry with firstgid ${target.firstGid}.`,
+      { path: context.loaded.path },
+    );
+  }
+
+  const source = posix.relative(
+    posix.dirname(context.loaded.path),
+    prospective.path,
+  );
+  if (
+    source.length === 0 ||
+    source.includes("\\") ||
+    posix.isAbsolute(source) ||
+    posix.normalize(source) !== source
+  ) {
+    throw new TiledMcpError(
+      "INVALID_PROJECT_PATH",
+      "The replacement tileset could not be represented by a canonical map-relative POSIX source.",
+      {
+        mapPath: context.loaded.path,
+        tilesetPath: prospective.path,
+        source,
+      },
+    );
+  }
+
+  return {
+    type: "replaceTilesetInMap",
+    sourceIndex,
+    firstGid: target.firstGid,
+    fromAssetId,
+    fromTilesetPath: target.path,
+    fromTileCount: target.tileCount,
+    fromGidSpan: target.gidSpan,
+    tilesetPath: prospective.path,
+    source,
+    assetId: prospective.assetId,
+    tilesetRevision: prospective.revision,
+    tileCount: prospective.tileCount,
+    gidSpan: prospective.gidSpan,
+    highestReferencedLocalId: highest,
+    referencedCellCount,
+    referencedObjectCount,
+  };
+}
+
 export function inspectTilesetUsage(
   map: JsonObject,
   bindings: readonly TilesetBinding[],
   tilesetAssetId: string,
   mapPath: string,
   localId?: number,
+  onReference?: (
+    matchedLocalId: number,
+    reference: TilesetUsageReference,
+  ) => void,
 ): TilesetUsageInspection {
   const result: TilesetUsageInspection = {
     scannedCellCount: 0,
@@ -309,6 +547,10 @@ export function inspectTilesetUsage(
       (localId !== undefined &&
         tile.localId !== localId)
     ) {
+      return;
+    }
+    if (onReference !== undefined) {
+      onReference(tile.localId, reference);
       return;
     }
     throw new TiledMcpError(
@@ -3323,7 +3565,10 @@ export function sourcePatchPathsForSummary(
   if (summary.createdObjectIds.length > 0) {
     paths.push(["nextobjectid"]);
   }
-  if ((summary.addedTilesets?.length ?? 0) > 0) {
+  if (
+    (summary.addedTilesets?.length ?? 0) > 0 ||
+    (summary.replacedTilesets?.length ?? 0) > 0
+  ) {
     paths.push(["tilesets"]);
   }
   if ((summary.createdLayers?.length ?? 0) > 0) {
