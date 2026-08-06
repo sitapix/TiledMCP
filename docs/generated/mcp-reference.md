@@ -83,8 +83,8 @@ Schema-valid calls below use fixed placeholders and must never be sent as-is. Re
 
 ## Surface profiles
 
-- `core`: 56 tools
-- `with-tmxrasterizer`: 58 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
+- `core`: 54 tools
+- `with-tmxrasterizer`: 56 tools; adds `tiled_render_map` only after a successful TmxRasterizer version probe
 
 ## Stable TiledMCP error codes
 
@@ -260,9 +260,9 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 ```json
 {
   "_meta": {
-    "revision": "sha256:71a2c7c6e9ab84569b0c12750f8c8d4db3d8eed6d5bf2ae4cd82dc0acfea266d",
+    "revision": "sha256:4a5a35f6c905420e5f6a4e9d19f4ca7f7da4246280d4874f5e06606b950e9de0",
     "serverVersion": "0.0.1",
-    "size": 113897
+    "size": 113893
   },
   "annotations": {
     "audience": [
@@ -274,7 +274,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
   "description": "A concise workflow for inspecting, previewing, approving, applying, and verifying safe Tiled map edits.",
   "mimeType": "text/markdown",
   "name": "guide",
-  "size": 113897,
+  "size": 113893,
   "title": "TiledMCP safe editing guide",
   "uri": "tiled://guide"
 }
@@ -282,7 +282,7 @@ A concise workflow for inspecting, previewing, approving, applying, and verifyin
 
 Content contract: `text`, 3952 UTF-8 bytes, revision `sha256:d1084ed44040f54a9304177f00cd7cd96f943a74acf7610172cf277f73458239`.
 
-Content contract: `text`, 113897 UTF-8 bytes, revision `sha256:71a2c7c6e9ab84569b0c12750f8c8d4db3d8eed6d5bf2ae4cd82dc0acfea266d`.
+Content contract: `text`, 113893 UTF-8 bytes, revision `sha256:4a5a35f6c905420e5f6a4e9d19f4ca7f7da4246280d4874f5e06606b950e9de0`.
 
 Resource templates: none.
 
@@ -13962,14 +13962,6 @@ Output schema:
                       "type": "string"
                     },
                     {
-                      "const": "tiled_render_isometric",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_hexagonal",
-                      "type": "string"
-                    },
-                    {
                       "const": "tiled_list_objects",
                       "type": "string"
                     },
@@ -14188,14 +14180,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_render_diff",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_isometric",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_hexagonal",
                       "type": "string"
                     },
                     {
@@ -14424,14 +14408,6 @@ Output schema:
                       "type": "string"
                     },
                     {
-                      "const": "tiled_render_isometric",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_hexagonal",
-                      "type": "string"
-                    },
-                    {
                       "const": "tiled_list_objects",
                       "type": "string"
                     },
@@ -14654,14 +14630,6 @@ Output schema:
                     },
                     {
                       "const": "tiled_render_diff",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_isometric",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiled_render_hexagonal",
                       "type": "string"
                     },
                     {
@@ -69142,30 +69110,6 @@ Output schema:
       ],
       "type": "object"
     },
-    "ChangeSetLayerDescriptor": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/ChangeSetPositiveId"
-        },
-        "name": {
-          "type": "string"
-        },
-        "nameTruncated": {
-          "type": "boolean"
-        },
-        "type": {
-          "$ref": "#/definitions/ChangeSetLayerType"
-        }
-      },
-      "required": [
-        "id",
-        "type",
-        "name",
-        "nameTruncated"
-      ],
-      "type": "object"
-    },
     "ChangeSetLayerType": {
       "enum": [
         "tilelayer",
@@ -69174,16 +69118,6 @@ Output schema:
         "group"
       ],
       "type": "string"
-    },
-    "ChangeSetObjectCoordinate": {
-      "maximum": 1000000000,
-      "minimum": -1000000000,
-      "type": "number"
-    },
-    "ChangeSetObjectExtent": {
-      "maximum": 1000000000,
-      "minimum": 0,
-      "type": "number"
     },
     "ChangeSetPositiveId": {
       "exclusiveMinimum": 0,
@@ -69213,26 +69147,6 @@ Output schema:
       "required": [
         "x",
         "y",
-        "width",
-        "height"
-      ],
-      "type": "object"
-    },
-    "ChangeSetResizeBounds": {
-      "additionalProperties": false,
-      "properties": {
-        "height": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        },
-        "width": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        }
-      },
-      "required": [
         "width",
         "height"
       ],
@@ -69406,2734 +69320,74 @@ Output schema:
               "type": "string"
             },
             "operations": {
-              "items": {
-                "oneOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "changedFields": {
-                        "items": {
-                          "enum": [
-                            "renderOrder",
-                            "backgroundColor",
-                            "className"
-                          ],
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "patch": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "backgroundColor": {
-                            "anyOf": [
-                              {
-                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "className": {
-                            "type": "string"
-                          },
-                          "renderOrder": {
-                            "enum": [
-                              "right-down",
-                              "right-up",
-                              "left-down",
-                              "left-up"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "renderingMayChange": {
-                        "type": "boolean"
-                      },
-                      "requestedFields": {
-                        "items": {
-                          "enum": [
-                            "renderOrder",
-                            "backgroundColor",
-                            "className"
-                          ],
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "type": {
-                        "const": "updateMap",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
+              "items": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bounds": {
+                      "$ref": "#/definitions/ChangeSetPositiveRect"
                     },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "patch",
-                      "requestedFields",
-                      "changedFields",
-                      "wouldChange",
-                      "renderingMayChange"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "croppedCellSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetResizeCroppedCell"
-                        },
-                        "maxItems": 16,
-                        "type": "array"
-                      },
-                      "croppedNonEmptyCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "groupLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "imageLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "lockedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "mapDimensionsChanged": {
-                        "type": "boolean"
-                      },
-                      "movedObjectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "newBounds": {
-                        "$ref": "#/definitions/ChangeSetResizeBounds"
-                      },
-                      "objectLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "objectsOutsideNewBounds": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "offset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "x": {
-                            "maximum": 100000,
-                            "minimum": -100000,
-                            "type": "integer"
-                          },
-                          "y": {
-                            "maximum": 100000,
-                            "minimum": -100000,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "x",
-                          "y"
-                        ],
-                        "type": "object"
-                      },
-                      "oldBounds": {
-                        "$ref": "#/definitions/ChangeSetResizeBounds"
-                      },
-                      "omittedCroppedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "pixelOffset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "x": {
-                            "$ref": "#/definitions/ChangeSetSafeInteger"
-                          },
-                          "y": {
-                            "$ref": "#/definitions/ChangeSetSafeInteger"
-                          }
-                        },
-                        "required": [
-                          "x",
-                          "y"
-                        ],
-                        "type": "object"
-                      },
-                      "preservedNonEmptyCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "resizedTileLayerIds": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "type": "array"
-                      },
-                      "rewrittenCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "scannedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "shiftedImageLayerIds": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "type": "array"
-                      },
-                      "tileLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "resizeMap",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
+                    "cellCount": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
                     },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "oldBounds",
-                      "newBounds",
-                      "offset",
-                      "pixelOffset",
-                      "wouldChange",
-                      "mapDimensionsChanged",
-                      "tileLayerCount",
-                      "resizedTileLayerIds",
-                      "scannedCellCount",
-                      "rewrittenCellCount",
-                      "preservedNonEmptyCellCount",
-                      "croppedNonEmptyCellCount",
-                      "croppedCellSample",
-                      "omittedCroppedCellCount",
-                      "objectLayerCount",
-                      "movedObjectCount",
-                      "objectsOutsideNewBounds",
-                      "imageLayerCount",
-                      "shiftedImageLayerIds",
-                      "groupLayerCount",
-                      "lockedLayerCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "cellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "from": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "compression": {
-                            "enum": [
-                              "",
-                              "gzip",
-                              "zlib",
-                              "zstd"
-                            ],
-                            "type": "string"
-                          },
-                          "encoding": {
-                            "enum": [
-                              "csv",
-                              "base64"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "encoding",
-                          "compression"
-                        ],
-                        "type": "object"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "to": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "compression": {
-                            "enum": [
-                              "",
-                              "gzip",
-                              "zlib",
-                              "zstd"
-                            ],
-                            "type": "string"
-                          },
-                          "encoding": {
-                            "enum": [
-                              "csv",
-                              "base64"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "encoding",
-                          "compression"
-                        ],
-                        "type": "object"
-                      },
-                      "type": {
-                        "const": "transcodeTileLayer",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
+                    "layerId": {
+                      "$ref": "#/definitions/ChangeSetPositiveId"
                     },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "layerId",
-                      "from",
-                      "to",
-                      "cellCount",
-                      "wouldChange"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "bounds": {
-                        "$ref": "#/definitions/ChangeSetPositiveRect"
-                      },
-                      "cellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "omittedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "sample": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "tile": {
-                              "anyOf": [
-                                {
-                                  "$ref": "#/definitions/ChangeSetTileRef"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "x": {
-                              "$ref": "#/definitions/ChangeSetSafeInteger"
-                            },
-                            "y": {
-                              "$ref": "#/definitions/ChangeSetSafeInteger"
-                            }
-                          },
-                          "required": [
-                            "x",
-                            "y",
-                            "tile"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 8,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "type": {
-                        "const": "setTiles",
-                        "type": "string"
-                      }
+                    "omittedCellCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
                     },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "cellCount",
-                      "bounds",
-                      "sample",
-                      "omittedCellCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "region": {
-                        "$ref": "#/definitions/ChangeSetPositiveRect"
-                      },
-                      "tile": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetTileRef"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "type": {
-                        "const": "fillRegion",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "region",
-                      "tile"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "cellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "changedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "clearCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "nonEmptyCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "omittedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "region": {
-                        "$ref": "#/definitions/ChangeSetPositiveRect"
-                      },
-                      "sample": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "tile": {
-                              "anyOf": [
-                                {
-                                  "$ref": "#/definitions/ChangeSetTileRef"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "x": {
-                              "$ref": "#/definitions/ChangeSetSafeInteger"
-                            },
-                            "y": {
-                              "$ref": "#/definitions/ChangeSetSafeInteger"
-                            }
-                          },
-                          "required": [
-                            "x",
-                            "y",
-                            "tile"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 8,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "transformedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "stampPattern",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "destructive",
-                      "warning",
-                      "region",
-                      "cellCount",
-                      "nonEmptyCellCount",
-                      "clearCellCount",
-                      "transformedCellCount",
-                      "changedCellCount",
-                      "wouldChange",
-                      "sample",
-                      "omittedCellCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "affectedBounds": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveRect"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "changedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "connectivity": {
-                        "const": "four-way",
-                        "type": "string"
-                      },
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "scannedCellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "seed": {
+                    "sample": {
+                      "items": {
                         "additionalProperties": false,
                         "properties": {
-                          "x": {
-                            "$ref": "#/definitions/ChangeSetSafeInteger"
-                          },
-                          "y": {
-                            "$ref": "#/definitions/ChangeSetSafeInteger"
-                          }
-                        },
-                        "required": [
-                          "x",
-                          "y"
-                        ],
-                        "type": "object"
-                      },
-                      "sourceTile": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetTileRef"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "targetTile": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetTileRef"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "type": {
-                        "const": "floodFill",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "destructive",
-                      "warning",
-                      "seed",
-                      "connectivity",
-                      "sourceTile",
-                      "targetTile",
-                      "scannedCellCount",
-                      "changedCellCount",
-                      "affectedBounds",
-                      "wouldChange"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "cellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "changedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "clearedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destination": {
-                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
-                      },
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "overlapsSource": {
-                        "type": "boolean"
-                      },
-                      "overwrittenNonEmptyCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "scannedCellCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "source": {
-                        "$ref": "#/definitions/ChangeSetCopyEndpoint"
-                      },
-                      "sourceNonEmptyCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "copyRegion",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "source",
-                      "destination",
-                      "scannedCellCount",
-                      "cellCount",
-                      "sourceNonEmptyCellCount",
-                      "changedCellCount",
-                      "overwrittenNonEmptyCellCount",
-                      "clearedCellCount",
-                      "overlapsSource",
-                      "wouldChange"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "mappingCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "mappingSample": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "from": {
-                              "$ref": "#/definitions/ChangeSetTileRef"
-                            },
-                            "to": {
-                              "anyOf": [
-                                {
-                                  "$ref": "#/definitions/ChangeSetTileRef"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "from",
-                            "to"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 8,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "omittedMappingCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "region": {
-                        "$ref": "#/definitions/ChangeSetPositiveRect"
-                      },
-                      "replacedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "scannedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "replaceTiles",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "destructive",
-                      "warning",
-                      "region",
-                      "scannedCellCount",
-                      "replacedCellCount",
-                      "mappingCount",
-                      "mappingSample",
-                      "omittedMappingCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "oneOf": [
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "height": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "rectangle",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "width": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "rectangle",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "point",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "point",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "height": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "ellipse",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "width": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "ellipse",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "height": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "capsule",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "width": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "capsule",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "points": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "x": {
-                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                    },
-                                    "y": {
-                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                    }
-                                  },
-                                  "required": [
-                                    "x",
-                                    "y"
-                                  ],
-                                  "type": "object"
-                                },
-                                "maxItems": 256,
-                                "minItems": 3,
-                                "type": "array"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "polygon",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y",
-                              "points"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "polygon",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "points": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "x": {
-                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                    },
-                                    "y": {
-                                      "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                    }
-                                  },
-                                  "required": [
-                                    "x",
-                                    "y"
-                                  ],
-                                  "type": "object"
-                                },
-                                "maxItems": 256,
-                                "minItems": 2,
-                                "type": "array"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "polyline",
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y",
-                              "points"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "polyline",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "bold": {
-                                "type": "boolean"
-                              },
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "color": {
-                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                "type": "string"
-                              },
-                              "fontFamily": {
-                                "maxLength": 512,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "height": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "horizontalAlignment": {
-                                "enum": [
-                                  "left",
-                                  "center",
-                                  "right",
-                                  "justify"
-                                ],
-                                "type": "string"
-                              },
-                              "italic": {
-                                "type": "boolean"
-                              },
-                              "kerning": {
-                                "type": "boolean"
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "pixelSize": {
-                                "maximum": 999,
-                                "minimum": 1,
-                                "type": "integer"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "text",
-                                "type": "string"
-                              },
-                              "strikeout": {
-                                "type": "boolean"
-                              },
-                              "text": {
-                                "maxLength": 8192,
-                                "type": "string"
-                              },
-                              "underline": {
-                                "type": "boolean"
-                              },
-                              "verticalAlignment": {
-                                "enum": [
-                                  "top",
-                                  "center",
-                                  "bottom"
-                                ],
-                                "type": "string"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "width": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectExtent"
-                                  }
-                                ]
-                              },
-                              "wrap": {
-                                "type": "boolean"
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y",
-                              "text"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "text",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      },
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "layerId": {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          "object": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "className": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "height": {
-                                "$ref": "#/definitions/ChangeSetObjectExtent"
-                              },
-                              "name": {
-                                "maxLength": 1024,
-                                "type": "string"
-                              },
-                              "opacity": {
-                                "maximum": 1,
-                                "minimum": 0,
-                                "type": "number"
-                              },
-                              "rotation": {
-                                "allOf": [
-                                  {
-                                    "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                  }
-                                ]
-                              },
-                              "shape": {
-                                "const": "tile",
-                                "type": "string"
-                              },
-                              "tile": {
-                                "$ref": "#/definitions/ChangeSetTileRef"
-                              },
-                              "visible": {
-                                "type": "boolean"
-                              },
-                              "width": {
-                                "$ref": "#/definitions/ChangeSetObjectExtent"
-                              },
-                              "x": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              },
-                              "y": {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            },
-                            "required": [
-                              "shape",
-                              "x",
-                              "y",
-                              "tile",
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          },
-                          "shape": {
-                            "const": "tile",
-                            "type": "string"
-                          },
-                          "type": {
-                            "const": "createObject",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "layerId",
-                          "shape",
-                          "object"
-                        ],
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "changedFields": {
-                        "items": {
-                          "enum": [
-                            "x",
-                            "y",
-                            "width",
-                            "height",
-                            "points",
-                            "name",
-                            "className",
-                            "rotation",
-                            "visible",
-                            "opacity",
-                            "text",
-                            "fontFamily",
-                            "pixelSize",
-                            "wrap",
-                            "color",
-                            "bold",
-                            "italic",
-                            "underline",
-                            "strikeout",
-                            "kerning",
-                            "horizontalAlignment",
-                            "verticalAlignment",
-                            "properties",
-                            "tile"
-                          ],
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "objectId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "patch": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "bold": {
-                            "type": "boolean"
-                          },
-                          "className": {
-                            "maxLength": 1024,
-                            "type": "string"
-                          },
-                          "color": {
-                            "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                            "type": "string"
-                          },
-                          "fontFamily": {
-                            "maxLength": 512,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "height": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectExtent"
-                              }
-                            ]
-                          },
-                          "horizontalAlignment": {
-                            "enum": [
-                              "left",
-                              "center",
-                              "right",
-                              "justify"
-                            ],
-                            "type": "string"
-                          },
-                          "italic": {
-                            "type": "boolean"
-                          },
-                          "kerning": {
-                            "type": "boolean"
-                          },
-                          "name": {
-                            "maxLength": 1024,
-                            "type": "string"
-                          },
-                          "opacity": {
-                            "maximum": 1,
-                            "minimum": 0,
-                            "type": "number"
-                          },
-                          "pixelSize": {
-                            "maximum": 999,
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "points": {
-                            "items": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "x": {
-                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                },
-                                "y": {
-                                  "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                                }
-                              },
-                              "required": [
-                                "x",
-                                "y"
-                              ],
-                              "type": "object"
-                            },
-                            "maxItems": 256,
-                            "minItems": 2,
-                            "type": "array"
-                          },
-                          "properties": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "remove": {
-                                "items": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "maxItems": 32,
-                                "minItems": 1,
-                                "type": "array"
-                              },
-                              "set": {
-                                "items": {
-                                  "oneOf": [
-                                    {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "name": {
-                                          "maxLength": 512,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "type": {
-                                          "enum": [
-                                            "string",
-                                            "file"
-                                          ],
-                                          "type": "string"
-                                        },
-                                        "value": {
-                                          "maxLength": 2048,
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name",
-                                        "type",
-                                        "value"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "name": {
-                                          "maxLength": 512,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "type": {
-                                          "const": "int",
-                                          "type": "string"
-                                        },
-                                        "value": {
-                                          "maximum": 9007199254740991,
-                                          "minimum": -9007199254740991,
-                                          "type": "integer"
-                                        }
-                                      },
-                                      "required": [
-                                        "name",
-                                        "type",
-                                        "value"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "name": {
-                                          "maxLength": 512,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "type": {
-                                          "const": "float",
-                                          "type": "string"
-                                        },
-                                        "value": {
-                                          "type": "number"
-                                        }
-                                      },
-                                      "required": [
-                                        "name",
-                                        "type",
-                                        "value"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "name": {
-                                          "maxLength": 512,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "type": {
-                                          "const": "bool",
-                                          "type": "string"
-                                        },
-                                        "value": {
-                                          "type": "boolean"
-                                        }
-                                      },
-                                      "required": [
-                                        "name",
-                                        "type",
-                                        "value"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "name": {
-                                          "maxLength": 512,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "type": {
-                                          "const": "color",
-                                          "type": "string"
-                                        },
-                                        "value": {
-                                          "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "name",
-                                        "type",
-                                        "value"
-                                      ],
-                                      "type": "object"
-                                    }
-                                  ]
-                                },
-                                "maxItems": 32,
-                                "minItems": 1,
-                                "type": "array"
-                              },
-                              "setClassMembers": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "path": {
-                                      "items": {
-                                        "maxLength": 512,
-                                        "minLength": 1,
-                                        "type": "string"
-                                      },
-                                      "maxItems": 8,
-                                      "minItems": 1,
-                                      "type": "array"
-                                    },
-                                    "property": {
-                                      "maxLength": 512,
-                                      "minLength": 1,
-                                      "type": "string"
-                                    },
-                                    "value": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 4096,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "property",
-                                    "path",
-                                    "value"
-                                  ],
-                                  "type": "object"
-                                },
-                                "maxItems": 16,
-                                "minItems": 1,
-                                "type": "array"
-                              },
-                              "setListElements": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "index": {
-                                      "maximum": 100000,
-                                      "minimum": 0,
-                                      "type": "integer"
-                                    },
-                                    "property": {
-                                      "maxLength": 512,
-                                      "minLength": 1,
-                                      "type": "string"
-                                    },
-                                    "value": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 4096,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "property",
-                                    "index",
-                                    "value"
-                                  ],
-                                  "type": "object"
-                                },
-                                "maxItems": 16,
-                                "minItems": 1,
-                                "type": "array"
-                              }
-                            },
-                            "type": "object"
-                          },
-                          "rotation": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "strikeout": {
-                            "type": "boolean"
-                          },
-                          "text": {
-                            "maxLength": 8192,
-                            "type": "string"
-                          },
                           "tile": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetTileRef"
-                              }
-                            ]
-                          },
-                          "underline": {
-                            "type": "boolean"
-                          },
-                          "verticalAlignment": {
-                            "enum": [
-                              "top",
-                              "center",
-                              "bottom"
-                            ],
-                            "type": "string"
-                          },
-                          "visible": {
-                            "type": "boolean"
-                          },
-                          "width": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectExtent"
-                              }
-                            ]
-                          },
-                          "wrap": {
-                            "type": "boolean"
-                          },
-                          "x": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "y": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "type": {
-                        "const": "updateObject",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "objectId",
-                      "changedFields",
-                      "patch"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "expectedTemplateRevision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "source": {
-                        "maxLength": 4096,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "templatePath": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "const": "instantiateTemplate",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "x": {
-                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                      },
-                      "y": {
-                        "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "layerId",
-                      "templatePath",
-                      "source",
-                      "x",
-                      "y",
-                      "expectedTemplateRevision"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "affectsDescendants": {
-                        "type": "boolean"
-                      },
-                      "changedFields": {
-                        "items": {
-                          "enum": [
-                            "name",
-                            "className",
-                            "visible",
-                            "opacity",
-                            "offsetX",
-                            "offsetY",
-                            "parallaxX",
-                            "parallaxY",
-                            "tintColor",
-                            "locked",
-                            "blendMode"
-                          ],
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "layerType": {
-                        "$ref": "#/definitions/ChangeSetLayerType"
-                      },
-                      "patch": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "blendMode": {
-                            "enum": [
-                              "normal",
-                              "add",
-                              "multiply",
-                              "screen",
-                              "overlay",
-                              "darken",
-                              "lighten",
-                              "color-dodge",
-                              "color-burn",
-                              "hard-light",
-                              "soft-light",
-                              "difference",
-                              "exclusion"
-                            ],
-                            "type": "string"
-                          },
-                          "className": {
-                            "maxLength": 1024,
-                            "type": "string"
-                          },
-                          "locked": {
-                            "type": "boolean"
-                          },
-                          "name": {
-                            "maxLength": 1024,
-                            "type": "string"
-                          },
-                          "offsetX": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "offsetY": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "opacity": {
-                            "maximum": 1,
-                            "minimum": 0,
-                            "type": "number"
-                          },
-                          "parallaxX": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "parallaxY": {
-                            "allOf": [
-                              {
-                                "$ref": "#/definitions/ChangeSetObjectCoordinate"
-                              }
-                            ]
-                          },
-                          "tintColor": {
                             "anyOf": [
                               {
-                                "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                "type": "string"
+                                "$ref": "#/definitions/ChangeSetTileRef"
                               },
                               {
                                 "type": "null"
                               }
                             ]
                           },
-                          "visible": {
-                            "type": "boolean"
-                          }
-                        },
-                        "type": "object"
-                      },
-                      "requestedFields": {
-                        "items": {
-                          "enum": [
-                            "name",
-                            "className",
-                            "visible",
-                            "opacity",
-                            "offsetX",
-                            "offsetY",
-                            "parallaxX",
-                            "parallaxY",
-                            "tintColor",
-                            "locked",
-                            "blendMode"
-                          ],
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "type": {
-                        "const": "updateLayer",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "layerType",
-                      "destructive",
-                      "warning",
-                      "patch",
-                      "requestedFields",
-                      "changedFields",
-                      "wouldChange",
-                      "affectsDescendants"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "deleteDescendants": {
-                        "type": "boolean"
-                      },
-                      "deletedLayerCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "descendantLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "index": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "layer": {
-                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "layerIdSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "type": "array"
-                      },
-                      "lockedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "objectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "objectIdSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "type": "array"
-                      },
-                      "omittedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "omittedObjectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "parentGroupId": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
+                          "x": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
                           },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "type": {
-                        "const": "deleteLayer",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "deleteDescendants",
-                      "destructive",
-                      "warning",
-                      "layer",
-                      "parentGroupId",
-                      "index",
-                      "deletedLayerCount",
-                      "descendantLayerCount",
-                      "layerIdSample",
-                      "omittedLayerCount",
-                      "objectCount",
-                      "objectIdSample",
-                      "omittedObjectCount",
-                      "lockedLayerCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "affectsDescendants": {
-                        "type": "boolean"
-                      },
-                      "descendantLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "effectivelyLockedLayerCountAfter": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "effectivelyLockedLayerCountBefore": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "layer": {
-                        "$ref": "#/definitions/ChangeSetLayerDescriptor"
-                      },
-                      "layerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "layerIdSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "type": "array"
-                      },
-                      "lockedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "objectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "omittedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "renderContextMayChange": {
-                        "type": "boolean"
-                      },
-                      "renderOrderMayChange": {
-                        "type": "boolean"
-                      },
-                      "sourceIndex": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "sourceParentGroupId": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "sourceParentLocked": {
-                        "type": "boolean"
-                      },
-                      "subtreeLayerCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "targetIndex": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "targetParentGroupId": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "targetParentLocked": {
-                        "type": "boolean"
-                      },
-                      "type": {
-                        "const": "moveLayer",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      },
-                      "wouldChange": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "layerId",
-                      "destructive",
-                      "warning",
-                      "layer",
-                      "sourceParentGroupId",
-                      "sourceIndex",
-                      "targetParentGroupId",
-                      "targetIndex",
-                      "subtreeLayerCount",
-                      "descendantLayerCount",
-                      "layerIdSample",
-                      "omittedLayerCount",
-                      "objectCount",
-                      "lockedLayerCount",
-                      "sourceParentLocked",
-                      "targetParentLocked",
-                      "effectivelyLockedLayerCountBefore",
-                      "effectivelyLockedLayerCountAfter",
-                      "wouldChange",
-                      "renderOrderMayChange",
-                      "renderContextMayChange",
-                      "affectsDescendants"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "affectsDescendants": {
-                        "type": "boolean"
-                      },
-                      "allocatedCellCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "copiedLayerCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "copiedObjectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "createdRootLayerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "descendantLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "destructive": {
-                        "const": false,
-                        "type": "boolean"
-                      },
-                      "effectivelyLockedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "fileReferenceCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "layerIdMappingSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetIdMapping"
-                        },
-                        "type": "array"
-                      },
-                      "layerType": {
-                        "$ref": "#/definitions/ChangeSetLayerType"
-                      },
-                      "lockedLayerCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "nameTruncated": {
-                        "type": "boolean"
-                      },
-                      "objectIdMappingSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetIdMapping"
-                        },
-                        "type": "array"
-                      },
-                      "omittedLayerMappingCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "omittedObjectMappingCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "remappedInternalObjectReferenceCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "renderContextMayChange": {
-                        "type": "boolean"
-                      },
-                      "renderOrderMayChange": {
-                        "type": "boolean"
-                      },
-                      "retainedExternalObjectReferenceCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "serializedDuplicateBytes": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "sourceIndex": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "sourceLayerId": {
-                        "$ref": "#/definitions/ChangeSetPositiveId"
-                      },
-                      "sourceParentGroupId": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "targetIndex": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "targetParentGroupId": {
-                        "anyOf": [
-                          {
-                            "$ref": "#/definitions/ChangeSetPositiveId"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "tileObjectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "duplicateLayer",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "sourceLayerId",
-                      "createdRootLayerId",
-                      "layerType",
-                      "name",
-                      "nameTruncated",
-                      "sourceParentGroupId",
-                      "targetParentGroupId",
-                      "sourceIndex",
-                      "targetIndex",
-                      "copiedLayerCount",
-                      "descendantLayerCount",
-                      "copiedObjectCount",
-                      "allocatedCellCount",
-                      "serializedDuplicateBytes",
-                      "layerIdMappingSample",
-                      "omittedLayerMappingCount",
-                      "objectIdMappingSample",
-                      "omittedObjectMappingCount",
-                      "remappedInternalObjectReferenceCount",
-                      "retainedExternalObjectReferenceCount",
-                      "fileReferenceCount",
-                      "tileObjectCount",
-                      "lockedLayerCount",
-                      "effectivelyLockedLayerCount",
-                      "renderOrderMayChange",
-                      "renderContextMayChange",
-                      "affectsDescendants"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "objectCount": {
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991,
-                        "type": "integer"
-                      },
-                      "objectIdSample": {
-                        "items": {
-                          "$ref": "#/definitions/ChangeSetPositiveId"
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "omittedObjectCount": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": {
-                        "const": "deleteObjects",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "objectCount",
-                      "objectIdSample",
-                      "omittedObjectCount"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "destructive": {
-                        "const": true,
-                        "type": "boolean"
-                      },
-                      "gidRange": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "first": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "last": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
+                          "y": {
+                            "$ref": "#/definitions/ChangeSetSafeInteger"
                           }
                         },
                         "required": [
-                          "first",
-                          "last"
+                          "x",
+                          "y",
+                          "tile"
                         ],
                         "type": "object"
                       },
-                      "index": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "scanned": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "objects": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileCells": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "tileCells",
-                          "objects"
-                        ],
-                        "type": "object"
-                      },
-                      "source": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "pattern": "^asset_[0-9a-f]{24}$",
-                            "type": "string"
-                          },
-                          "gidSpan": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "nameTruncated": {
-                            "const": true,
-                            "type": "boolean"
-                          },
-                          "path": {
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "revision": {
-                            "pattern": "^sha256:[0-9a-f]{64}$",
-                            "type": "string"
-                          },
-                          "tileCount": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId",
-                          "path",
-                          "revision",
-                          "name",
-                          "tileCount",
-                          "gidSpan"
-                        ],
-                        "type": "object"
-                      },
-                      "type": {
-                        "const": "removeTilesetFromMap",
-                        "type": "string"
-                      },
-                      "warning": {
-                        "type": "string"
-                      }
+                      "maxItems": 8,
+                      "minItems": 1,
+                      "type": "array"
                     },
-                    "required": [
-                      "type",
-                      "destructive",
-                      "warning",
-                      "tileset",
-                      "source",
-                      "index",
-                      "gidRange",
-                      "scanned"
-                    ],
-                    "type": "object"
-                  }
-                ]
-              },
-              "maxItems": 128,
-              "minItems": 1,
+                    "type": {
+                      "const": "setTiles",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "layerId",
+                    "cellCount",
+                    "bounds",
+                    "sample",
+                    "omittedCellCount"
+                  ],
+                  "type": "object"
+                }
+              ],
               "type": "array"
             },
             "planDigest": {
@@ -95145,1173 +92399,6 @@ Output schema:
 }
 ```
 
-### `tiled_render_hexagonal`
-
-Availability: `core`
-
-Renders a bounded region of one finite staggered or hexagonal TMJ map using the exact Tiled 1.12.2 HexagonalRenderer transform — staggered maps are the hexSideLength=0 degenerate case, matching the official class hierarchy — with cells compositing in the editor's row order on both stagger axes. Same strict profile as tiled_render_isometric: external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, hexagonal rotation flags, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Read-only.
-
-Annotations:
-
-```json
-{
-  "destructiveHint": false,
-  "idempotentHint": true,
-  "openWorldHint": false,
-  "readOnlyHint": true,
-  "title": "Read local Tiled project data"
-}
-```
-
-Example purpose: Render a bounded staggered or hexagonal map region as a PNG using the official HexagonalRenderer transform.
-
-```json
-{
-  "arguments": {
-    "mapPath": "maps/hex.tmj",
-    "region": {
-      "height": 8,
-      "width": 8,
-      "x": 0,
-      "y": 0
-    },
-    "scale": 2
-  },
-  "name": "tiled_render_hexagonal"
-}
-```
-
-Input schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "properties": {
-    "layerIds": {
-      "items": {
-        "exclusiveMinimum": 0,
-        "maximum": 9007199254740991,
-        "type": "integer"
-      },
-      "maxItems": 128,
-      "minItems": 1,
-      "type": "array"
-    },
-    "mapPath": {
-      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "region": {
-      "additionalProperties": false,
-      "properties": {
-        "height": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        },
-        "width": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        },
-        "x": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "y": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "x",
-        "y",
-        "width",
-        "height"
-      ],
-      "type": "object"
-    },
-    "scale": {
-      "maximum": 4,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "mapPath",
-    "region"
-  ],
-  "type": "object"
-}
-```
-
-Output schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "definitions": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "properties": {
-    "result": {
-      "anyOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "byteLength": {
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
-              "type": "integer"
-            },
-            "dependencyRevisions": {
-              "additionalProperties": {
-                "pattern": "^sha256:[0-9a-f]{64}$",
-                "type": "string"
-              },
-              "propertyNames": {
-                "pattern": "^asset_[0-9a-f]{24}$",
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "layers": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
-                    "type": "integer"
-                  },
-                  "name": {
-                    "maxLength": 128,
-                    "type": "string"
-                  },
-                  "nameTruncated": {
-                    "const": true,
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "id",
-                  "name"
-                ],
-                "type": "object"
-              },
-              "maxItems": 128,
-              "minItems": 1,
-              "type": "array"
-            },
-            "map": {
-              "additionalProperties": false,
-              "properties": {
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "revision"
-              ],
-              "type": "object"
-            },
-            "mimeType": {
-              "const": "image/png",
-              "type": "string"
-            },
-            "omittedObjectLayerIds": {
-              "items": {
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "type": "integer"
-              },
-              "maxItems": 128,
-              "type": "array"
-            },
-            "pixelSize": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "projection": {
-              "additionalProperties": false,
-              "properties": {
-                "hexSideLength": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "orientation": {
-                  "enum": [
-                    "staggered",
-                    "hexagonal"
-                  ],
-                  "type": "string"
-                },
-                "originPixel": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "x": {
-                      "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    },
-                    "y": {
-                      "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "object"
-                },
-                "staggerAxis": {
-                  "enum": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "string"
-                },
-                "staggerIndex": {
-                  "enum": [
-                    "odd",
-                    "even"
-                  ],
-                  "type": "string"
-                },
-                "tileHeight": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "tileWidth": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "orientation",
-                "tileWidth",
-                "tileHeight",
-                "staggerAxis",
-                "staggerIndex",
-                "hexSideLength",
-                "originPixel"
-              ],
-              "type": "object"
-            },
-            "region": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "x": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "y": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "x",
-                "y",
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "renderProfile": {
-              "const": "staggered-hexagonal-tile-layers-v1",
-              "type": "string"
-            },
-            "scale": {
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
-              "type": "integer"
-            },
-            "sha256": {
-              "pattern": "^sha256:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "snapshotConsistency": {
-              "const": "non-atomic-read-set",
-              "type": "string"
-            },
-            "sources": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "image": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "pattern": "^asset_[0-9a-f]{24}$",
-                        "type": "string"
-                      },
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "assetId",
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "tileset",
-                  "image"
-                ],
-                "type": "object"
-              },
-              "maxItems": 64,
-              "type": "array"
-            }
-          },
-          "required": [
-            "mimeType",
-            "pixelSize",
-            "byteLength",
-            "sha256",
-            "map",
-            "dependencyRevisions",
-            "region",
-            "scale",
-            "projection",
-            "layers",
-            "omittedObjectLayerIds",
-            "sources",
-            "renderProfile",
-            "snapshotConsistency"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "error": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "enum": [
-                    "ASSET_REGISTRY_CORRUPT",
-                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
-                    "CHANGE_SET_LIMIT_EXCEEDED",
-                    "CHANGE_SET_NOT_FOUND",
-                    "CHANGE_SET_OWNED",
-                    "CHECKPOINT_CHANGED",
-                    "CHECKPOINT_CORRUPT",
-                    "CHECKPOINT_NOT_COMMITTED",
-                    "CHECKPOINT_NOT_FOUND",
-                    "CHECKPOINT_QUOTA_EXCEEDED",
-                    "CHECKPOINT_STATE_CONFLICT",
-                    "DEPENDENCY_REVISION_CONFLICT",
-                    "DOCUMENT_CHANGED_DURING_READ",
-                    "DOCUMENT_TOO_LARGE",
-                    "DUPLICATE_JSON_KEY",
-                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
-                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
-                    "FILE_ALREADY_EXISTS",
-                    "FILE_IN_USE",
-                    "FILE_LOCKED",
-                    "FILE_LOCK_CORRUPT",
-                    "FILE_NOT_FOUND",
-                    "GID_OUT_OF_RANGE",
-                    "GID_RANGE_EXHAUSTED",
-                    "IMAGE_CHANGED_DURING_READ",
-                    "IMAGE_DIMENSIONS_EXCEEDED",
-                    "IMAGE_ENCODING_FAILED",
-                    "IMAGE_TOO_LARGE",
-                    "INTERNAL_ERROR",
-                    "INVALID_ARGUMENT",
-                    "INVALID_DOCUMENT",
-                    "INVALID_GID",
-                    "INVALID_JSON",
-                    "INVALID_PROJECT_PATH",
-                    "INVALID_TILESET_ATLAS",
-                    "INVALID_TILESET_IMAGE",
-                    "INVALID_TILE_DATA",
-                    "INVALID_TILE_TRANSFORM",
-                    "JSON_NESTING_LIMIT",
-                    "LAYER_DEPTH_EXCEEDED",
-                    "LAYER_HAS_DESCENDANTS",
-                    "LAYER_ID_EXHAUSTED",
-                    "LAYER_INDEX_OUT_OF_RANGE",
-                    "LAYER_LIMIT_EXCEEDED",
-                    "LAYER_MOVE_CYCLE",
-                    "LAYER_NOT_FOUND",
-                    "LAYER_TYPE_MISMATCH",
-                    "NEXT_LAYER_ID_INVALID",
-                    "NEXT_OBJECT_ID_INVALID",
-                    "OBJECT_ID_EXHAUSTED",
-                    "OBJECT_IN_USE",
-                    "OBJECT_LIMIT_EXCEEDED",
-                    "OBJECT_NOT_FOUND",
-                    "OBJECT_REFERENCE_NOT_FOUND",
-                    "OBJECT_SHAPE_MISMATCH",
-                    "OVERLAY_TOO_DENSE",
-                    "PAGE_OUT_OF_RANGE",
-                    "PARENT_DIRECTORY_NOT_FOUND",
-                    "PATH_OUTSIDE_ROOT",
-                    "PREVIEW_DIMENSIONS_EXCEEDED",
-                    "PREVIEW_REGION_REQUIRED",
-                    "RASTER_TEMP_CLEANUP_FAILED",
-                    "REGION_OUT_OF_BOUNDS",
-                    "RESERVED_PROJECT_PATH",
-                    "RESULT_LIMIT_EXCEEDED",
-                    "REVERT_WOULD_DELETE",
-                    "REVISION_CONFLICT",
-                    "STALE_FILE_LOCK",
-                    "SYMLINK_NOT_ALLOWED",
-                    "TILESET_ALREADY_REFERENCED",
-                    "TILESET_GID_RANGE_OVERLAP",
-                    "TILESET_IMAGE_DIMENSION_MISMATCH",
-                    "TILESET_IN_USE",
-                    "TILESET_NOT_FOUND",
-                    "TILESET_NOT_IN_MAP",
-                    "TILE_ID_OUT_OF_RANGE",
-                    "TMXRASTERIZER_FAILED",
-                    "TMXRASTERIZER_NOT_EXECUTABLE",
-                    "TMXRASTERIZER_NOT_FOUND",
-                    "TMXRASTERIZER_OUTPUT_INVALID",
-                    "TMXRASTERIZER_OUTPUT_LIMIT",
-                    "TMXRASTERIZER_OUTPUT_MISSING",
-                    "TMXRASTERIZER_TIMEOUT",
-                    "UNSAFE_JSON_NUMBER",
-                    "UNSAFE_RENDER_REFERENCE",
-                    "UNSAFE_SVG",
-                    "UNSORTED_TILESET_REFERENCES",
-                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
-                    "UNSUPPORTED_FORMAT",
-                    "UNSUPPORTED_IMAGE_FORMAT",
-                    "UNSUPPORTED_MAP_PROFILE",
-                    "UNSUPPORTED_OBJECT_PROFILE",
-                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_PROPERTY_QUERY",
-                    "UNSUPPORTED_PROPERTY_WRITE",
-                    "UNSUPPORTED_REFERENCE_SCAN",
-                    "UNSUPPORTED_RENDER_FEATURE",
-                    "UNSUPPORTED_RENDER_LAYER",
-                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
-                    "UNSUPPORTED_RESIZE_TEMPLATE",
-                    "UNSUPPORTED_TILESET",
-                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
-                    "UNSUPPORTED_TILE_ENCODING"
-                  ],
-                  "type": "string"
-                },
-                "details": {
-                  "additionalProperties": {
-                    "$ref": "#/definitions/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
-                  "type": "object"
-                },
-                "message": {
-                  "maxLength": 4096,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "code",
-                "message",
-                "details"
-              ],
-              "type": "object"
-            },
-            "ok": {
-              "const": false,
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "ok",
-            "error"
-          ],
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "required": [
-    "result"
-  ],
-  "type": "object"
-}
-```
-
-### `tiled_render_isometric`
-
-Availability: `core`
-
-Renders a bounded region of one finite isometric TMJ map using the exact Tiled 1.12.2 IsometricRenderer placement math — the region paints as its own diamond, cells composite in the editor's diagonal scanline order, and tile images anchor bottom-left like the official CellRenderer. The strict profile covers external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, anti-diagonal flips, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Orthogonal maps belong to tiled_render_preview. Read-only.
-
-Annotations:
-
-```json
-{
-  "destructiveHint": false,
-  "idempotentHint": true,
-  "openWorldHint": false,
-  "readOnlyHint": true,
-  "title": "Read local Tiled project data"
-}
-```
-
-Example purpose: Render a bounded isometric map region as a PNG diamond using the official IsometricRenderer placement math.
-
-```json
-{
-  "arguments": {
-    "mapPath": "maps/iso.tmj",
-    "region": {
-      "height": 8,
-      "width": 8,
-      "x": 0,
-      "y": 0
-    },
-    "scale": 2
-  },
-  "name": "tiled_render_isometric"
-}
-```
-
-Input schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "properties": {
-    "layerIds": {
-      "items": {
-        "exclusiveMinimum": 0,
-        "maximum": 9007199254740991,
-        "type": "integer"
-      },
-      "maxItems": 128,
-      "minItems": 1,
-      "type": "array"
-    },
-    "mapPath": {
-      "description": "Canonical project-relative POSIX path; absolute paths and .. are forbidden",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "region": {
-      "additionalProperties": false,
-      "properties": {
-        "height": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        },
-        "width": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
-        },
-        "x": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "y": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "x",
-        "y",
-        "width",
-        "height"
-      ],
-      "type": "object"
-    },
-    "scale": {
-      "maximum": 4,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "mapPath",
-    "region"
-  ],
-  "type": "object"
-}
-```
-
-Output schema:
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": false,
-  "definitions": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/definitions/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "properties": {
-    "result": {
-      "anyOf": [
-        {
-          "additionalProperties": false,
-          "properties": {
-            "byteLength": {
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
-              "type": "integer"
-            },
-            "dependencyRevisions": {
-              "additionalProperties": {
-                "pattern": "^sha256:[0-9a-f]{64}$",
-                "type": "string"
-              },
-              "propertyNames": {
-                "pattern": "^asset_[0-9a-f]{24}$",
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "layers": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
-                    "type": "integer"
-                  },
-                  "name": {
-                    "maxLength": 128,
-                    "type": "string"
-                  },
-                  "nameTruncated": {
-                    "const": true,
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "id",
-                  "name"
-                ],
-                "type": "object"
-              },
-              "maxItems": 128,
-              "minItems": 1,
-              "type": "array"
-            },
-            "map": {
-              "additionalProperties": false,
-              "properties": {
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "revision"
-              ],
-              "type": "object"
-            },
-            "mimeType": {
-              "const": "image/png",
-              "type": "string"
-            },
-            "omittedObjectLayerIds": {
-              "items": {
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "type": "integer"
-              },
-              "maxItems": 128,
-              "type": "array"
-            },
-            "pixelSize": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "projection": {
-              "additionalProperties": false,
-              "properties": {
-                "orientation": {
-                  "const": "isometric",
-                  "type": "string"
-                },
-                "originPixel": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "x": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "y": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "object"
-                },
-                "tileHeight": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "tileWidth": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "orientation",
-                "tileWidth",
-                "tileHeight",
-                "originPixel"
-              ],
-              "type": "object"
-            },
-            "region": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991,
-                  "type": "integer"
-                },
-                "x": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "y": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "x",
-                "y",
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "renderProfile": {
-              "const": "isometric-tile-layers-v1",
-              "type": "string"
-            },
-            "scale": {
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
-              "type": "integer"
-            },
-            "sha256": {
-              "pattern": "^sha256:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "snapshotConsistency": {
-              "const": "non-atomic-read-set",
-              "type": "string"
-            },
-            "sources": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "image": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "pattern": "^asset_[0-9a-f]{24}$",
-                        "type": "string"
-                      },
-                      "path": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "revision": {
-                        "pattern": "^sha256:[0-9a-f]{64}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "assetId",
-                      "path",
-                      "revision"
-                    ],
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "tileset",
-                  "image"
-                ],
-                "type": "object"
-              },
-              "maxItems": 64,
-              "type": "array"
-            }
-          },
-          "required": [
-            "mimeType",
-            "pixelSize",
-            "byteLength",
-            "sha256",
-            "map",
-            "dependencyRevisions",
-            "region",
-            "scale",
-            "projection",
-            "layers",
-            "omittedObjectLayerIds",
-            "sources",
-            "renderProfile",
-            "snapshotConsistency"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "error": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "enum": [
-                    "ASSET_REGISTRY_CORRUPT",
-                    "ASSET_REGISTRY_LIMIT_EXCEEDED",
-                    "CHANGE_SET_LIMIT_EXCEEDED",
-                    "CHANGE_SET_NOT_FOUND",
-                    "CHANGE_SET_OWNED",
-                    "CHECKPOINT_CHANGED",
-                    "CHECKPOINT_CORRUPT",
-                    "CHECKPOINT_NOT_COMMITTED",
-                    "CHECKPOINT_NOT_FOUND",
-                    "CHECKPOINT_QUOTA_EXCEEDED",
-                    "CHECKPOINT_STATE_CONFLICT",
-                    "DEPENDENCY_REVISION_CONFLICT",
-                    "DOCUMENT_CHANGED_DURING_READ",
-                    "DOCUMENT_TOO_LARGE",
-                    "DUPLICATE_JSON_KEY",
-                    "DUPLICATE_LAYER_TARGET_IN_SOURCE_SUBTREE",
-                    "EXTERNAL_REFERENCE_NOT_ALLOWED",
-                    "FILE_ALREADY_EXISTS",
-                    "FILE_IN_USE",
-                    "FILE_LOCKED",
-                    "FILE_LOCK_CORRUPT",
-                    "FILE_NOT_FOUND",
-                    "GID_OUT_OF_RANGE",
-                    "GID_RANGE_EXHAUSTED",
-                    "IMAGE_CHANGED_DURING_READ",
-                    "IMAGE_DIMENSIONS_EXCEEDED",
-                    "IMAGE_ENCODING_FAILED",
-                    "IMAGE_TOO_LARGE",
-                    "INTERNAL_ERROR",
-                    "INVALID_ARGUMENT",
-                    "INVALID_DOCUMENT",
-                    "INVALID_GID",
-                    "INVALID_JSON",
-                    "INVALID_PROJECT_PATH",
-                    "INVALID_TILESET_ATLAS",
-                    "INVALID_TILESET_IMAGE",
-                    "INVALID_TILE_DATA",
-                    "INVALID_TILE_TRANSFORM",
-                    "JSON_NESTING_LIMIT",
-                    "LAYER_DEPTH_EXCEEDED",
-                    "LAYER_HAS_DESCENDANTS",
-                    "LAYER_ID_EXHAUSTED",
-                    "LAYER_INDEX_OUT_OF_RANGE",
-                    "LAYER_LIMIT_EXCEEDED",
-                    "LAYER_MOVE_CYCLE",
-                    "LAYER_NOT_FOUND",
-                    "LAYER_TYPE_MISMATCH",
-                    "NEXT_LAYER_ID_INVALID",
-                    "NEXT_OBJECT_ID_INVALID",
-                    "OBJECT_ID_EXHAUSTED",
-                    "OBJECT_IN_USE",
-                    "OBJECT_LIMIT_EXCEEDED",
-                    "OBJECT_NOT_FOUND",
-                    "OBJECT_REFERENCE_NOT_FOUND",
-                    "OBJECT_SHAPE_MISMATCH",
-                    "OVERLAY_TOO_DENSE",
-                    "PAGE_OUT_OF_RANGE",
-                    "PARENT_DIRECTORY_NOT_FOUND",
-                    "PATH_OUTSIDE_ROOT",
-                    "PREVIEW_DIMENSIONS_EXCEEDED",
-                    "PREVIEW_REGION_REQUIRED",
-                    "RASTER_TEMP_CLEANUP_FAILED",
-                    "REGION_OUT_OF_BOUNDS",
-                    "RESERVED_PROJECT_PATH",
-                    "RESULT_LIMIT_EXCEEDED",
-                    "REVERT_WOULD_DELETE",
-                    "REVISION_CONFLICT",
-                    "STALE_FILE_LOCK",
-                    "SYMLINK_NOT_ALLOWED",
-                    "TILESET_ALREADY_REFERENCED",
-                    "TILESET_GID_RANGE_OVERLAP",
-                    "TILESET_IMAGE_DIMENSION_MISMATCH",
-                    "TILESET_IN_USE",
-                    "TILESET_NOT_FOUND",
-                    "TILESET_NOT_IN_MAP",
-                    "TILE_ID_OUT_OF_RANGE",
-                    "TMXRASTERIZER_FAILED",
-                    "TMXRASTERIZER_NOT_EXECUTABLE",
-                    "TMXRASTERIZER_NOT_FOUND",
-                    "TMXRASTERIZER_OUTPUT_INVALID",
-                    "TMXRASTERIZER_OUTPUT_LIMIT",
-                    "TMXRASTERIZER_OUTPUT_MISSING",
-                    "TMXRASTERIZER_TIMEOUT",
-                    "UNSAFE_JSON_NUMBER",
-                    "UNSAFE_RENDER_REFERENCE",
-                    "UNSAFE_SVG",
-                    "UNSORTED_TILESET_REFERENCES",
-                    "UNSUPPORTED_DUPLICATE_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_DUPLICATE_TEMPLATE",
-                    "UNSUPPORTED_FORMAT",
-                    "UNSUPPORTED_IMAGE_FORMAT",
-                    "UNSUPPORTED_MAP_PROFILE",
-                    "UNSUPPORTED_OBJECT_PROFILE",
-                    "UNSUPPORTED_OBJECT_REFERENCE_ANALYSIS",
-                    "UNSUPPORTED_PROPERTY_QUERY",
-                    "UNSUPPORTED_PROPERTY_WRITE",
-                    "UNSUPPORTED_REFERENCE_SCAN",
-                    "UNSUPPORTED_RENDER_FEATURE",
-                    "UNSUPPORTED_RENDER_LAYER",
-                    "UNSUPPORTED_RESIZE_LAYER_BOUNDS",
-                    "UNSUPPORTED_RESIZE_TEMPLATE",
-                    "UNSUPPORTED_TILESET",
-                    "UNSUPPORTED_TILESET_REMOVAL_TEMPLATE",
-                    "UNSUPPORTED_TILE_ENCODING"
-                  ],
-                  "type": "string"
-                },
-                "details": {
-                  "additionalProperties": {
-                    "$ref": "#/definitions/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
-                  "type": "object"
-                },
-                "message": {
-                  "maxLength": 4096,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "code",
-                "message",
-                "details"
-              ],
-              "type": "object"
-            },
-            "ok": {
-              "const": false,
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "ok",
-            "error"
-          ],
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "required": [
-    "result"
-  ],
-  "type": "object"
-}
-```
-
 ### `tiled_render_map`
 
 Availability: `tmxrasterizer-version-probe`
@@ -96933,954 +93020,1340 @@ Output schema:
     "result": {
       "anyOf": [
         {
-          "additionalProperties": false,
-          "properties": {
-            "byteLength": {
-              "exclusiveMinimum": 0,
-              "maximum": 7340032,
-              "type": "integer"
-            },
-            "contentPixelRect": {
+          "anyOf": [
+            {
               "additionalProperties": false,
               "properties": {
-                "height": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
+                "byteLength": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 7340032,
                   "type": "integer"
                 },
-                "width": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "x": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "y": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "x",
-                "y",
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "coordinateTransform": {
-              "additionalProperties": false,
-              "properties": {
-                "pixelOrigin": {
+                "contentPixelRect": {
                   "additionalProperties": false,
                   "properties": {
-                    "x": {
+                    "height": {
                       "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    },
-                    "y": {
-                      "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "object"
-                },
-                "pixelsPerTile": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "x": {
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991,
-                      "type": "integer"
-                    },
-                    "y": {
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "object"
-                },
-                "tileOrigin": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "x": {
-                      "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    },
-                    "y": {
-                      "maximum": 9007199254740991,
-                      "minimum": -9007199254740991,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y"
-                  ],
-                  "type": "object"
-                }
-              },
-              "required": [
-                "tileOrigin",
-                "pixelOrigin",
-                "pixelsPerTile"
-              ],
-              "type": "object"
-            },
-            "dependencyRevisions": {
-              "additionalProperties": {
-                "pattern": "^sha256:[0-9a-f]{64}$",
-                "type": "string"
-              },
-              "propertyNames": {
-                "pattern": "^asset_[0-9a-f]{24}$",
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "layerIds": {
-              "items": {
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991,
-                "type": "integer"
-              },
-              "maxItems": 128,
-              "type": "array"
-            },
-            "layerSelection": {
-              "enum": [
-                "visible",
-                "explicit"
-              ],
-              "type": "string"
-            },
-            "map": {
-              "additionalProperties": false,
-              "properties": {
-                "path": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "revision": {
-                  "pattern": "^sha256:[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "revision"
-              ],
-              "type": "object"
-            },
-            "mimeType": {
-              "const": "image/png",
-              "type": "string"
-            },
-            "objectLayerRendering": {
-              "additionalProperties": false,
-              "properties": {
-                "colors": {
-                  "const": "group-color-else-gray-class-colors-unsupported",
-                  "type": "string"
-                },
-                "drawOrder": {
-                  "const": "tiled-topdown-stable-or-index",
-                  "type": "string"
-                },
-                "fillAlpha": {
-                  "const": 50,
-                  "type": "number"
-                },
-                "opacity": {
-                  "const": "layer-times-object-source-over",
-                  "type": "string"
-                },
-                "pointMarker": {
-                  "const": "tiled-pin-cosmetic-radius-10",
-                  "type": "string"
-                },
-                "profile": {
-                  "const": "base-object-layers-v1",
-                  "type": "string"
-                },
-                "shadow": {
-                  "const": "one-pixel-black-offset",
-                  "type": "string"
-                },
-                "stroke": {
-                  "const": "one-pixel-cosmetic",
-                  "type": "string"
-                },
-                "templates": {
-                  "const": "omitted-counted",
-                  "type": "string"
-                },
-                "text": {
-                  "const": "layout-box-only",
-                  "type": "string"
-                },
-                "tileObjects": {
-                  "const": "affine-nearest-neighbor-images",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "profile",
-                "colors",
-                "fillAlpha",
-                "shadow",
-                "stroke",
-                "text",
-                "tileObjects",
-                "templates",
-                "pointMarker",
-                "drawOrder",
-                "opacity"
-              ],
-              "type": "object"
-            },
-            "objectLayers": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "color": {
-                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                    "type": "string"
-                  },
-                  "drawOrder": {
-                    "enum": [
-                      "topdown",
-                      "index"
-                    ],
-                    "type": "string"
-                  },
-                  "hiddenObjectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "id": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
-                    "type": "integer"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "objectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "omittedTemplateObjectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "renderedObjectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "textBoxCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "tileObjectCount": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "id",
-                  "name",
-                  "drawOrder",
-                  "objectCount",
-                  "renderedObjectCount",
-                  "tileObjectCount",
-                  "omittedTemplateObjectCount",
-                  "hiddenObjectCount",
-                  "textBoxCount"
-                ],
-                "type": "object"
-              },
-              "maxItems": 128,
-              "type": "array"
-            },
-            "omittedLayerCount": {
-              "maximum": 9007199254740991,
-              "minimum": 0,
-              "type": "integer"
-            },
-            "omittedLayers": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
-                    "type": "integer"
-                  },
-                  "name": {
-                    "type": "string"
-                  },
-                  "reason": {
-                    "const": "unsupported-layer-type",
-                    "type": "string"
-                  },
-                  "type": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "id",
-                  "name",
-                  "type",
-                  "reason"
-                ],
-                "type": "object"
-              },
-              "maxItems": 128,
-              "type": "array"
-            },
-            "omittedLayersTruncated": {
-              "type": "boolean"
-            },
-            "overlays": {
-              "additionalProperties": false,
-              "properties": {
-                "coordinates": {
-                  "type": "boolean"
-                },
-                "grid": {
-                  "type": "boolean"
-                },
-                "highlights": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "blendMode": {
-                      "const": "source-over",
-                      "type": "string"
-                    },
-                    "color": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "a": {
-                          "const": 96,
-                          "type": "number"
-                        },
-                        "b": {
-                          "const": 21,
-                          "type": "number"
-                        },
-                        "g": {
-                          "const": 204,
-                          "type": "number"
-                        },
-                        "r": {
-                          "const": 250,
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "r",
-                        "g",
-                        "b",
-                        "a"
-                      ],
-                      "type": "object"
-                    },
-                    "entries": {
-                      "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "clipped": {
-                            "type": "boolean"
-                          },
-                          "renderedTileRect": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "height": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "width": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "x": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              },
-                              "y": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "x",
-                              "y",
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          },
-                          "requestedTileRect": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "height": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "width": {
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991,
-                                "type": "integer"
-                              },
-                              "x": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              },
-                              "y": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "x",
-                              "y",
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          },
-                          "sourceIndex": {
-                            "maximum": 63,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "sourceIndex",
-                          "requestedTileRect",
-                          "renderedTileRect",
-                          "clipped"
-                        ],
-                        "type": "object"
-                      },
-                      "maxItems": 64,
-                      "type": "array"
-                    },
-                    "highlightedTileCount": {
-                      "maximum": 20000,
                       "minimum": 0,
                       "type": "integer"
                     },
-                    "overlapMode": {
-                      "const": "tile-union",
+                    "width": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "y": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "coordinateTransform": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "pixelOrigin": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        },
+                        "y": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    },
+                    "pixelsPerTile": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        "y": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    },
+                    "tileOrigin": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        },
+                        "y": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "tileOrigin",
+                    "pixelOrigin",
+                    "pixelsPerTile"
+                  ],
+                  "type": "object"
+                },
+                "dependencyRevisions": {
+                  "additionalProperties": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "pattern": "^asset_[0-9a-f]{24}$",
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "layerIds": {
+                  "items": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "layerSelection": {
+                  "enum": [
+                    "visible",
+                    "explicit"
+                  ],
+                  "type": "string"
+                },
+                "map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "minLength": 1,
                       "type": "string"
                     },
-                    "style": {
-                      "const": "selection-amber-v1",
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
                       "type": "string"
                     }
                   },
                   "required": [
-                    "style",
-                    "entries",
-                    "highlightedTileCount",
-                    "color",
-                    "blendMode",
-                    "overlapMode"
+                    "path",
+                    "revision"
                   ],
                   "type": "object"
                 },
-                "objectDebug": {
+                "mimeType": {
+                  "const": "image/png",
+                  "type": "string"
+                },
+                "objectLayerRendering": {
                   "additionalProperties": false,
                   "properties": {
-                    "color": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "a": {
-                          "const": 255,
-                          "type": "number"
-                        },
-                        "b": {
-                          "const": 238,
-                          "type": "number"
-                        },
-                        "g": {
-                          "const": 211,
-                          "type": "number"
-                        },
-                        "r": {
-                          "const": 34,
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "r",
-                        "g",
-                        "b",
-                        "a"
-                      ],
-                      "type": "object"
-                    },
-                    "curveTessellation": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "algorithm": {
-                          "const": "uniform-angle-output-sagitta-v1",
-                          "type": "string"
-                        },
-                        "capsuleConstruction": {
-                          "const": "two-semicircles-plus-two-straight-segments",
-                          "type": "string"
-                        },
-                        "degenerateExtent": {
-                          "const": "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
-                          "type": "string"
-                        },
-                        "errorSpace": {
-                          "const": "continuous-output-before-quantization",
-                          "type": "string"
-                        },
-                        "maximumAggregateSegments": {
-                          "const": 65536,
-                          "type": "number"
-                        },
-                        "maximumChordErrorPixels": {
-                          "const": 0.25,
-                          "type": "number"
-                        },
-                        "maximumSegmentsPerObject": {
-                          "const": 4096,
-                          "type": "number"
-                        },
-                        "minimumSegments": {
-                          "const": 12,
-                          "type": "number"
-                        },
-                        "offscreenPolicy": {
-                          "const": "conservative-rotated-bounds-skip-before-tessellation",
-                          "type": "string"
-                        },
-                        "overflowPolicy": {
-                          "const": "reject-whole-preview",
-                          "type": "string"
-                        },
-                        "segmentMultiple": {
-                          "const": 4,
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "algorithm",
-                        "maximumChordErrorPixels",
-                        "minimumSegments",
-                        "maximumSegmentsPerObject",
-                        "maximumAggregateSegments",
-                        "segmentMultiple",
-                        "errorSpace",
-                        "overflowPolicy",
-                        "offscreenPolicy",
-                        "capsuleConstruction",
-                        "degenerateExtent"
-                      ],
-                      "type": "object"
-                    },
-                    "drawOrder": {
-                      "const": "after-highlights-and-grid-before-coordinates",
+                    "colors": {
+                      "const": "group-color-else-gray-class-colors-unsupported",
                       "type": "string"
                     },
-                    "entries": {
-                      "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "clipped": {
-                            "type": "boolean"
-                          },
-                          "collisionObjectCount": {
-                            "maximum": 128,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "layerId": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "objectId": {
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991,
-                            "type": "integer"
-                          },
-                          "rendered": {
-                            "type": "boolean"
-                          },
-                          "representation": {
-                            "enum": [
-                              "geometry-outline",
-                              "text-box-only",
-                              "tile-frame-only",
-                              "tile-frame-and-collision"
-                            ],
-                            "type": "string"
-                          },
-                          "shape": {
-                            "enum": [
-                              "rectangle",
-                              "point",
-                              "ellipse",
-                              "capsule",
-                              "polygon",
-                              "polyline",
-                              "text",
-                              "tile"
-                            ],
-                            "type": "string"
-                          },
-                          "sourceIndex": {
-                            "maximum": 63,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "sourceIndex",
-                          "objectId",
-                          "layerId",
-                          "shape",
-                          "representation",
-                          "rendered",
-                          "clipped"
-                        ],
-                        "type": "object"
-                      },
-                      "maxItems": 64,
-                      "type": "array"
+                    "drawOrder": {
+                      "const": "tiled-topdown-stable-or-index",
+                      "type": "string"
                     },
-                    "idLabels": {
-                      "const": false,
-                      "type": "boolean"
+                    "fillAlpha": {
+                      "const": 50,
+                      "type": "number"
                     },
-                    "originMarker": {
-                      "const": "crosshair-5px",
+                    "opacity": {
+                      "const": "layer-times-object-source-over",
+                      "type": "string"
+                    },
+                    "pointMarker": {
+                      "const": "tiled-pin-cosmetic-radius-10",
                       "type": "string"
                     },
                     "profile": {
-                      "const": "explicit-basic-object-geometry-v4",
+                      "const": "base-object-layers-v1",
                       "type": "string"
                     },
-                    "quantization": {
-                      "const": "round-nearest-output-pixel",
+                    "shadow": {
+                      "const": "one-pixel-black-offset",
                       "type": "string"
                     },
-                    "renderedObjectCount": {
-                      "maximum": 64,
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "selectedObjectCount": {
-                      "maximum": 64,
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "strokeWidth": {
-                      "const": 1,
-                      "type": "number"
-                    },
-                    "style": {
-                      "const": "geometry-cyan-v1",
+                    "stroke": {
+                      "const": "one-pixel-cosmetic",
                       "type": "string"
                     },
-                    "tileObjectCollision": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "curveSegmentPlanning": {
-                          "const": "affine-spectral-norm-output-radius",
-                          "type": "string"
-                        },
-                        "fillMode": {
-                          "const": "stretch-only-fail-closed",
-                          "type": "string"
-                        },
-                        "flipFlags": {
-                          "const": "applied-like-tile-image",
-                          "type": "string"
-                        },
-                        "groupMetadata": {
-                          "const": "position-draworder-color-visibility-ignored",
-                          "type": "string"
-                        },
-                        "hiddenCollisionObjects": {
-                          "const": "drawn",
-                          "type": "string"
-                        },
-                        "markerPrecedence": {
-                          "const": "single-shape-marker-only-fail-closed-on-conflict",
-                          "type": "string"
-                        },
-                        "nestedTileOrTemplateObjects": {
-                          "const": "fail-closed",
-                          "type": "string"
-                        },
-                        "offscreenPolicy": {
-                          "const": "clip-after-tessellation",
-                          "type": "string"
-                        },
-                        "pointObjects": {
-                          "const": "fixed-5px-output-crosshair",
-                          "type": "string"
-                        },
-                        "selection": {
-                          "const": "explicit-tile-object-selection-opt-in",
-                          "type": "string"
-                        },
-                        "source": {
-                          "const": "tiled-1.12-show-tile-collision-shapes",
-                          "type": "string"
-                        },
-                        "styling": {
-                          "const": "shared-geometry-cyan-outline-no-fill",
-                          "type": "string"
-                        },
-                        "transform": {
-                          "const": "tile-image-fragment-affine-with-inner-shape-rotation",
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "source",
-                        "selection",
-                        "transform",
-                        "flipFlags",
-                        "groupMetadata",
-                        "hiddenCollisionObjects",
-                        "markerPrecedence",
-                        "pointObjects",
-                        "curveSegmentPlanning",
-                        "offscreenPolicy",
-                        "nestedTileOrTemplateObjects",
-                        "fillMode",
-                        "styling"
-                      ],
-                      "type": "object"
+                    "templates": {
+                      "const": "omitted-counted",
+                      "type": "string"
                     },
-                    "tileObjectFrames": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "alignmentResolution": {
-                          "const": "tileset-objectalignment-unspecified-bottom-left",
-                          "type": "string"
-                        },
-                        "collisionShapes": {
-                          "const": "explicit-opt-in",
-                          "type": "string"
-                        },
-                        "danglingGidPolicy": {
-                          "const": "fail-closed",
-                          "type": "string"
-                        },
-                        "flipFlags": {
-                          "const": "image-only-outline-unchanged",
-                          "type": "string"
-                        },
-                        "imageRendering": {
-                          "const": false,
-                          "type": "boolean"
-                        },
-                        "missingDimensionDefault": {
-                          "const": "tileset-tile-size",
-                          "type": "string"
-                        },
-                        "rotationCenter": {
-                          "const": "object-anchor",
-                          "type": "string"
-                        },
-                        "source": {
-                          "const": "tiled-1.12-object-outline-rect",
-                          "type": "string"
-                        },
-                        "tileOffsetScaling": {
-                          "const": "scaled-by-object-over-tile-size",
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "source",
-                        "alignmentResolution",
-                        "tileOffsetScaling",
-                        "missingDimensionDefault",
-                        "flipFlags",
-                        "rotationCenter",
-                        "danglingGidPolicy",
-                        "imageRendering",
-                        "collisionShapes"
-                      ],
-                      "type": "object"
+                    "text": {
+                      "const": "layout-box-only",
+                      "type": "string"
                     },
-                    "visibilityPolicy": {
-                      "const": "explicit-ignore-object-and-layer-visibility-opacity",
+                    "tileObjects": {
+                      "const": "affine-nearest-neighbor-images",
                       "type": "string"
                     }
                   },
                   "required": [
                     "profile",
-                    "style",
-                    "color",
-                    "strokeWidth",
-                    "originMarker",
-                    "idLabels",
-                    "visibilityPolicy",
+                    "colors",
+                    "fillAlpha",
+                    "shadow",
+                    "stroke",
+                    "text",
+                    "tileObjects",
+                    "templates",
+                    "pointMarker",
                     "drawOrder",
-                    "quantization",
-                    "curveTessellation",
-                    "tileObjectFrames",
-                    "tileObjectCollision",
-                    "selectedObjectCount",
-                    "renderedObjectCount",
-                    "entries"
+                    "opacity"
                   ],
                   "type": "object"
-                }
-              },
-              "required": [
-                "grid",
-                "coordinates",
-                "highlights",
-                "objectDebug"
-              ],
-              "type": "object"
-            },
-            "partial": {
-              "type": "boolean"
-            },
-            "pixelSize": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 2048,
-                  "type": "integer"
                 },
-                "width": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 2048,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "width",
-                "height"
-              ],
-              "type": "object"
-            },
-            "renderProfile": {
-              "enum": [
-                "finite-orthogonal-static-atlas-tilelayers-v1",
-                "infinite-orthogonal-static-atlas-chunked-tilelayers-v1"
-              ],
-              "type": "string"
-            },
-            "scale": {
-              "exclusiveMinimum": 0,
-              "maximum": 4,
-              "type": "integer"
-            },
-            "sha256": {
-              "pattern": "^sha256:[0-9a-f]{64}$",
-              "type": "string"
-            },
-            "snapshotConsistency": {
-              "const": "non-atomic-read-set",
-              "type": "string"
-            },
-            "sources": {
-              "items": {
-                "anyOf": [
-                  {
+                "objectLayers": {
+                  "items": {
                     "additionalProperties": false,
                     "properties": {
-                      "assetId": {
-                        "pattern": "^asset_[0-9a-f]{24}$",
+                      "color": {
+                        "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
                         "type": "string"
                       },
-                      "image": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "format": {
-                            "enum": [
-                              "jpeg",
-                              "png",
-                              "svg",
-                              "webp"
-                            ],
-                            "type": "string"
+                      "drawOrder": {
+                        "enum": [
+                          "topdown",
+                          "index"
+                        ],
+                        "type": "string"
+                      },
+                      "hiddenObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "id": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "objectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "omittedTemplateObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "renderedObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "textBoxCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "tileObjectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "drawOrder",
+                      "objectCount",
+                      "renderedObjectCount",
+                      "tileObjectCount",
+                      "omittedTemplateObjectCount",
+                      "hiddenObjectCount",
+                      "textBoxCount"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "omittedLayerCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "omittedLayers": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "const": "unsupported-layer-type",
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "type",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "omittedLayersTruncated": {
+                  "type": "boolean"
+                },
+                "overlays": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coordinates": {
+                      "type": "boolean"
+                    },
+                    "grid": {
+                      "type": "boolean"
+                    },
+                    "highlights": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "blendMode": {
+                          "const": "source-over",
+                          "type": "string"
+                        },
+                        "color": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "a": {
+                              "const": 96,
+                              "type": "number"
+                            },
+                            "b": {
+                              "const": 21,
+                              "type": "number"
+                            },
+                            "g": {
+                              "const": 204,
+                              "type": "number"
+                            },
+                            "r": {
+                              "const": 250,
+                              "type": "number"
+                            }
                           },
-                          "path": {
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "pixelSize": {
+                          "required": [
+                            "r",
+                            "g",
+                            "b",
+                            "a"
+                          ],
+                          "type": "object"
+                        },
+                        "entries": {
+                          "items": {
                             "additionalProperties": false,
                             "properties": {
-                              "height": {
-                                "maximum": 9007199254740991,
+                              "clipped": {
+                                "type": "boolean"
+                              },
+                              "renderedTileRect": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "x": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "y": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y",
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "requestedTileRect": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "type": "integer"
+                                  },
+                                  "x": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "y": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y",
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "sourceIndex": {
+                                "maximum": 63,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "sourceIndex",
+                              "requestedTileRect",
+                              "renderedTileRect",
+                              "clipped"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 64,
+                          "type": "array"
+                        },
+                        "highlightedTileCount": {
+                          "maximum": 20000,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "overlapMode": {
+                          "const": "tile-union",
+                          "type": "string"
+                        },
+                        "style": {
+                          "const": "selection-amber-v1",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "style",
+                        "entries",
+                        "highlightedTileCount",
+                        "color",
+                        "blendMode",
+                        "overlapMode"
+                      ],
+                      "type": "object"
+                    },
+                    "objectDebug": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "color": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "a": {
+                              "const": 255,
+                              "type": "number"
+                            },
+                            "b": {
+                              "const": 238,
+                              "type": "number"
+                            },
+                            "g": {
+                              "const": 211,
+                              "type": "number"
+                            },
+                            "r": {
+                              "const": 34,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "r",
+                            "g",
+                            "b",
+                            "a"
+                          ],
+                          "type": "object"
+                        },
+                        "curveTessellation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "algorithm": {
+                              "const": "uniform-angle-output-sagitta-v1",
+                              "type": "string"
+                            },
+                            "capsuleConstruction": {
+                              "const": "two-semicircles-plus-two-straight-segments",
+                              "type": "string"
+                            },
+                            "degenerateExtent": {
+                              "const": "tiled-1.12-single-zero-line-double-zero-anchor-centered-20-map-pixel-circle",
+                              "type": "string"
+                            },
+                            "errorSpace": {
+                              "const": "continuous-output-before-quantization",
+                              "type": "string"
+                            },
+                            "maximumAggregateSegments": {
+                              "const": 65536,
+                              "type": "number"
+                            },
+                            "maximumChordErrorPixels": {
+                              "const": 0.25,
+                              "type": "number"
+                            },
+                            "maximumSegmentsPerObject": {
+                              "const": 4096,
+                              "type": "number"
+                            },
+                            "minimumSegments": {
+                              "const": 12,
+                              "type": "number"
+                            },
+                            "offscreenPolicy": {
+                              "const": "conservative-rotated-bounds-skip-before-tessellation",
+                              "type": "string"
+                            },
+                            "overflowPolicy": {
+                              "const": "reject-whole-preview",
+                              "type": "string"
+                            },
+                            "segmentMultiple": {
+                              "const": 4,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "algorithm",
+                            "maximumChordErrorPixels",
+                            "minimumSegments",
+                            "maximumSegmentsPerObject",
+                            "maximumAggregateSegments",
+                            "segmentMultiple",
+                            "errorSpace",
+                            "overflowPolicy",
+                            "offscreenPolicy",
+                            "capsuleConstruction",
+                            "degenerateExtent"
+                          ],
+                          "type": "object"
+                        },
+                        "drawOrder": {
+                          "const": "after-highlights-and-grid-before-coordinates",
+                          "type": "string"
+                        },
+                        "entries": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "clipped": {
+                                "type": "boolean"
+                              },
+                              "collisionObjectCount": {
+                                "maximum": 128,
                                 "minimum": 0,
                                 "type": "integer"
                               },
-                              "width": {
+                              "layerId": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "objectId": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "type": "integer"
+                              },
+                              "rendered": {
+                                "type": "boolean"
+                              },
+                              "representation": {
+                                "enum": [
+                                  "geometry-outline",
+                                  "text-box-only",
+                                  "tile-frame-only",
+                                  "tile-frame-and-collision"
+                                ],
+                                "type": "string"
+                              },
+                              "shape": {
+                                "enum": [
+                                  "rectangle",
+                                  "point",
+                                  "ellipse",
+                                  "capsule",
+                                  "polygon",
+                                  "polyline",
+                                  "text",
+                                  "tile"
+                                ],
+                                "type": "string"
+                              },
+                              "sourceIndex": {
+                                "maximum": 63,
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "sourceIndex",
+                              "objectId",
+                              "layerId",
+                              "shape",
+                              "representation",
+                              "rendered",
+                              "clipped"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 64,
+                          "type": "array"
+                        },
+                        "idLabels": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "originMarker": {
+                          "const": "crosshair-5px",
+                          "type": "string"
+                        },
+                        "profile": {
+                          "const": "explicit-basic-object-geometry-v4",
+                          "type": "string"
+                        },
+                        "quantization": {
+                          "const": "round-nearest-output-pixel",
+                          "type": "string"
+                        },
+                        "renderedObjectCount": {
+                          "maximum": 64,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "selectedObjectCount": {
+                          "maximum": 64,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "strokeWidth": {
+                          "const": 1,
+                          "type": "number"
+                        },
+                        "style": {
+                          "const": "geometry-cyan-v1",
+                          "type": "string"
+                        },
+                        "tileObjectCollision": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "curveSegmentPlanning": {
+                              "const": "affine-spectral-norm-output-radius",
+                              "type": "string"
+                            },
+                            "fillMode": {
+                              "const": "stretch-only-fail-closed",
+                              "type": "string"
+                            },
+                            "flipFlags": {
+                              "const": "applied-like-tile-image",
+                              "type": "string"
+                            },
+                            "groupMetadata": {
+                              "const": "position-draworder-color-visibility-ignored",
+                              "type": "string"
+                            },
+                            "hiddenCollisionObjects": {
+                              "const": "drawn",
+                              "type": "string"
+                            },
+                            "markerPrecedence": {
+                              "const": "single-shape-marker-only-fail-closed-on-conflict",
+                              "type": "string"
+                            },
+                            "nestedTileOrTemplateObjects": {
+                              "const": "fail-closed",
+                              "type": "string"
+                            },
+                            "offscreenPolicy": {
+                              "const": "clip-after-tessellation",
+                              "type": "string"
+                            },
+                            "pointObjects": {
+                              "const": "fixed-5px-output-crosshair",
+                              "type": "string"
+                            },
+                            "selection": {
+                              "const": "explicit-tile-object-selection-opt-in",
+                              "type": "string"
+                            },
+                            "source": {
+                              "const": "tiled-1.12-show-tile-collision-shapes",
+                              "type": "string"
+                            },
+                            "styling": {
+                              "const": "shared-geometry-cyan-outline-no-fill",
+                              "type": "string"
+                            },
+                            "transform": {
+                              "const": "tile-image-fragment-affine-with-inner-shape-rotation",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "selection",
+                            "transform",
+                            "flipFlags",
+                            "groupMetadata",
+                            "hiddenCollisionObjects",
+                            "markerPrecedence",
+                            "pointObjects",
+                            "curveSegmentPlanning",
+                            "offscreenPolicy",
+                            "nestedTileOrTemplateObjects",
+                            "fillMode",
+                            "styling"
+                          ],
+                          "type": "object"
+                        },
+                        "tileObjectFrames": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alignmentResolution": {
+                              "const": "tileset-objectalignment-unspecified-bottom-left",
+                              "type": "string"
+                            },
+                            "collisionShapes": {
+                              "const": "explicit-opt-in",
+                              "type": "string"
+                            },
+                            "danglingGidPolicy": {
+                              "const": "fail-closed",
+                              "type": "string"
+                            },
+                            "flipFlags": {
+                              "const": "image-only-outline-unchanged",
+                              "type": "string"
+                            },
+                            "imageRendering": {
+                              "const": false,
+                              "type": "boolean"
+                            },
+                            "missingDimensionDefault": {
+                              "const": "tileset-tile-size",
+                              "type": "string"
+                            },
+                            "rotationCenter": {
+                              "const": "object-anchor",
+                              "type": "string"
+                            },
+                            "source": {
+                              "const": "tiled-1.12-object-outline-rect",
+                              "type": "string"
+                            },
+                            "tileOffsetScaling": {
+                              "const": "scaled-by-object-over-tile-size",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "alignmentResolution",
+                            "tileOffsetScaling",
+                            "missingDimensionDefault",
+                            "flipFlags",
+                            "rotationCenter",
+                            "danglingGidPolicy",
+                            "imageRendering",
+                            "collisionShapes"
+                          ],
+                          "type": "object"
+                        },
+                        "visibilityPolicy": {
+                          "const": "explicit-ignore-object-and-layer-visibility-opacity",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "style",
+                        "color",
+                        "strokeWidth",
+                        "originMarker",
+                        "idLabels",
+                        "visibilityPolicy",
+                        "drawOrder",
+                        "quantization",
+                        "curveTessellation",
+                        "tileObjectFrames",
+                        "tileObjectCollision",
+                        "selectedObjectCount",
+                        "renderedObjectCount",
+                        "entries"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "grid",
+                    "coordinates",
+                    "highlights",
+                    "objectDebug"
+                  ],
+                  "type": "object"
+                },
+                "partial": {
+                  "type": "boolean"
+                },
+                "pixelSize": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 2048,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 2048,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "renderProfile": {
+                  "enum": [
+                    "finite-orthogonal-static-atlas-tilelayers-v1",
+                    "infinite-orthogonal-static-atlas-chunked-tilelayers-v1"
+                  ],
+                  "type": "string"
+                },
+                "scale": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 4,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "snapshotConsistency": {
+                  "const": "non-atomic-read-set",
+                  "type": "string"
+                },
+                "sources": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "image": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "format": {
+                                "enum": [
+                                  "jpeg",
+                                  "png",
+                                  "svg",
+                                  "webp"
+                                ],
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "pixelSize": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "revision",
+                              "format",
+                              "pixelSize"
+                            ],
+                            "type": "object"
+                          },
+                          "tileset": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "revision"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "tileset",
+                          "image"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "embedded": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "sourceIndex": {
                                 "maximum": 9007199254740991,
                                 "minimum": 0,
                                 "type": "integer"
                               }
                             },
                             "required": [
-                              "width",
-                              "height"
+                              "sourceIndex"
                             ],
                             "type": "object"
                           },
-                          "revision": {
-                            "pattern": "^sha256:[0-9a-f]{64}$",
-                            "type": "string"
+                          "image": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "format": {
+                                "enum": [
+                                  "jpeg",
+                                  "png",
+                                  "svg",
+                                  "webp"
+                                ],
+                                "type": "string"
+                              },
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "pixelSize": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "height": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "width": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "width",
+                                  "height"
+                                ],
+                                "type": "object"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "revision",
+                              "format",
+                              "pixelSize"
+                            ],
+                            "type": "object"
+                          },
+                          "tileset": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "path": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "revision": {
+                                "pattern": "^sha256:[0-9a-f]{64}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "revision"
+                            ],
+                            "type": "object"
                           }
                         },
                         "required": [
-                          "path",
-                          "revision",
-                          "format",
-                          "pixelSize"
+                          "embedded",
+                          "tileset",
+                          "image"
                         ],
                         "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                "tileRegion": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "y": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "truncated": {
+                  "const": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "mimeType",
+                "pixelSize",
+                "byteLength",
+                "sha256",
+                "map",
+                "dependencyRevisions",
+                "sources",
+                "tileRegion",
+                "coordinateTransform",
+                "contentPixelRect",
+                "layerIds",
+                "layerSelection",
+                "omittedLayers",
+                "omittedLayerCount",
+                "omittedLayersTruncated",
+                "partial",
+                "snapshotConsistency",
+                "scale",
+                "overlays",
+                "objectLayers",
+                "objectLayerRendering",
+                "renderProfile",
+                "truncated"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "byteLength": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "dependencyRevisions": {
+                  "additionalProperties": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "pattern": "^asset_[0-9a-f]{24}$",
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "layers": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
                       },
-                      "tileset": {
+                      "name": {
+                        "maxLength": 128,
+                        "type": "string"
+                      },
+                      "nameTruncated": {
+                        "const": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "revision"
+                  ],
+                  "type": "object"
+                },
+                "mimeType": {
+                  "const": "image/png",
+                  "type": "string"
+                },
+                "omittedObjectLayerIds": {
+                  "items": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "pixelSize": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "projection": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "orientation": {
+                      "const": "isometric",
+                      "type": "string"
+                    },
+                    "originPixel": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "y": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    },
+                    "tileHeight": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileWidth": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "orientation",
+                    "tileWidth",
+                    "tileHeight",
+                    "originPixel"
+                  ],
+                  "type": "object"
+                },
+                "region": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "y": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "renderProfile": {
+                  "const": "isometric-tile-layers-v1",
+                  "type": "string"
+                },
+                "scale": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "snapshotConsistency": {
+                  "const": "non-atomic-read-set",
+                  "type": "string"
+                },
+                "sources": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "image": {
                         "additionalProperties": false,
                         "properties": {
                           "path": {
@@ -97897,82 +94370,282 @@ Output schema:
                           "revision"
                         ],
                         "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
                       }
                     },
                     "required": [
-                      "assetId",
                       "tileset",
                       "image"
                     ],
                     "type": "object"
                   },
-                  {
+                  "maxItems": 64,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "mimeType",
+                "pixelSize",
+                "byteLength",
+                "sha256",
+                "map",
+                "dependencyRevisions",
+                "region",
+                "scale",
+                "projection",
+                "layers",
+                "omittedObjectLayerIds",
+                "sources",
+                "renderProfile",
+                "snapshotConsistency"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "byteLength": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "dependencyRevisions": {
+                  "additionalProperties": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "pattern": "^asset_[0-9a-f]{24}$",
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "layers": {
+                  "items": {
                     "additionalProperties": false,
                     "properties": {
-                      "embedded": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "sourceIndex": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "sourceIndex"
-                        ],
-                        "type": "object"
+                      "id": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "type": "integer"
                       },
+                      "name": {
+                        "maxLength": 128,
+                        "type": "string"
+                      },
+                      "nameTruncated": {
+                        "const": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 128,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "map": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "revision": {
+                      "pattern": "^sha256:[0-9a-f]{64}$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "revision"
+                  ],
+                  "type": "object"
+                },
+                "mimeType": {
+                  "const": "image/png",
+                  "type": "string"
+                },
+                "omittedObjectLayerIds": {
+                  "items": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                },
+                "pixelSize": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "projection": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "hexSideLength": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "orientation": {
+                      "enum": [
+                        "staggered",
+                        "hexagonal"
+                      ],
+                      "type": "string"
+                    },
+                    "originPixel": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "x": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        },
+                        "y": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "object"
+                    },
+                    "staggerAxis": {
+                      "enum": [
+                        "x",
+                        "y"
+                      ],
+                      "type": "string"
+                    },
+                    "staggerIndex": {
+                      "enum": [
+                        "odd",
+                        "even"
+                      ],
+                      "type": "string"
+                    },
+                    "tileHeight": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "tileWidth": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "orientation",
+                    "tileWidth",
+                    "tileHeight",
+                    "staggerAxis",
+                    "staggerIndex",
+                    "hexSideLength",
+                    "originPixel"
+                  ],
+                  "type": "object"
+                },
+                "region": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "height": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "y": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "renderProfile": {
+                  "const": "staggered-hexagonal-tile-layers-v1",
+                  "type": "string"
+                },
+                "scale": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "snapshotConsistency": {
+                  "const": "non-atomic-read-set",
+                  "type": "string"
+                },
+                "sources": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
                       "image": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "format": {
-                            "enum": [
-                              "jpeg",
-                              "png",
-                              "svg",
-                              "webp"
-                            ],
-                            "type": "string"
-                          },
-                          "path": {
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "pixelSize": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "height": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              },
-                              "width": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "width",
-                              "height"
-                            ],
-                            "type": "object"
-                          },
-                          "revision": {
-                            "pattern": "^sha256:[0-9a-f]{64}$",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "path",
-                          "revision",
-                          "format",
-                          "pixelSize"
-                        ],
-                        "type": "object"
-                      },
-                      "tileset": {
                         "additionalProperties": false,
                         "properties": {
                           "path": {
@@ -97989,83 +94662,60 @@ Output schema:
                           "revision"
                         ],
                         "type": "object"
+                      },
+                      "tileset": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "pattern": "^asset_[0-9a-f]{24}$",
+                            "type": "string"
+                          },
+                          "path": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "revision": {
+                            "pattern": "^sha256:[0-9a-f]{64}$",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assetId",
+                          "path",
+                          "revision"
+                        ],
+                        "type": "object"
                       }
                     },
                     "required": [
-                      "embedded",
                       "tileset",
                       "image"
                     ],
                     "type": "object"
-                  }
-                ]
-              },
-              "maxItems": 64,
-              "type": "array"
-            },
-            "tileRegion": {
-              "additionalProperties": false,
-              "properties": {
-                "height": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "width": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "x": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "y": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
                 }
               },
               "required": [
-                "x",
-                "y",
-                "width",
-                "height"
+                "mimeType",
+                "pixelSize",
+                "byteLength",
+                "sha256",
+                "map",
+                "dependencyRevisions",
+                "region",
+                "scale",
+                "projection",
+                "layers",
+                "omittedObjectLayerIds",
+                "sources",
+                "renderProfile",
+                "snapshotConsistency"
               ],
               "type": "object"
-            },
-            "truncated": {
-              "const": false,
-              "type": "boolean"
             }
-          },
-          "required": [
-            "mimeType",
-            "pixelSize",
-            "byteLength",
-            "sha256",
-            "map",
-            "dependencyRevisions",
-            "sources",
-            "tileRegion",
-            "coordinateTransform",
-            "contentPixelRect",
-            "layerIds",
-            "layerSelection",
-            "omittedLayers",
-            "omittedLayerCount",
-            "omittedLayersTruncated",
-            "partial",
-            "snapshotConsistency",
-            "scale",
-            "overlays",
-            "objectLayers",
-            "objectLayerRendering",
-            "renderProfile",
-            "truncated"
-          ],
-          "type": "object"
+          ]
         },
         {
           "additionalProperties": false,

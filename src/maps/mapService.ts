@@ -6862,7 +6862,7 @@ export class MapService {
     if (context.orientation !== "isometric") {
       throw new TiledMcpError(
         "INVALID_ARGUMENT",
-        "tiled_render_isometric renders isometric maps; use tiled_render_preview for orthogonal maps.",
+        "tiled_render_preview renders isometric maps only when the map itself is isometric.",
         { orientation: context.orientation },
       );
     }
@@ -7227,7 +7227,7 @@ export class MapService {
     ) {
       throw new TiledMcpError(
         "INVALID_ARGUMENT",
-        "tiled_render_hexagonal renders staggered and hexagonal maps; use tiled_render_preview or tiled_render_isometric otherwise.",
+        "tiled_render_preview renders staggered and hexagonal maps only when the map itself uses that projection.",
         { orientation: context.orientation },
       );
     }

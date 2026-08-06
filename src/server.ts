@@ -201,6 +201,7 @@ import {
   preparedCheckpointCommitPreviewToolOutputSchema,
   preparedCheckpointDiscardPreviewToolOutputSchema,
   previewEditsToolOutputSchema,
+  previewShapeToolOutputSchema,
   previewTransactionToolOutputSchema,
   worldEditPreviewToolOutputSchema,
   wangEditPreviewToolOutputSchema,
@@ -280,11 +281,9 @@ import {
   mapSummaryToolOutputSchema,
   listPropertyTypesToolOutputSchema,
   renderDiffToolOutputSchema,
-  renderIsometricToolOutputSchema,
-  renderHexagonalToolOutputSchema,
   listTileNamesToolOutputSchema,
   selectCellsToolOutputSchema,
-  nativePreviewToolOutputSchema,
+  renderPreviewToolOutputSchema,
   objectDetailsToolOutputSchema,
   objectListToolOutputSchema,
   rasterMapToolOutputSchema,
@@ -1798,8 +1797,6 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_render_tiles",
     "tiled_render_preview",
     "tiled_render_diff",
-    "tiled_render_isometric",
-    "tiled_render_hexagonal",
     "tiled_list_objects",
     "tiled_get_object",
     "tiled_validate",
@@ -4288,12 +4285,52 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
         })
         .strict(),
       outputSchema:
-        nativePreviewToolOutputSchema,
+        renderPreviewToolOutputSchema,
       annotations: READ_ONLY,
     },
     async ({ mapPath, region, layerIds, scale, overlays }) =>
       renderMutex.runExclusive("sharp-render", async () => {
         try {
+          // Dispatch on the map's own orientation rather than making the
+          // caller pick a projection-specific tool. The probe read and the
+          // renderer's read are separate, but each renderer re-asserts the
+          // orientation it requires, so a map that changes projection between
+          // the two fails closed instead of rendering through the wrong
+          // placement math.
+          const { orientation } =
+            await maps.getSummary(mapPath);
+          if (orientation !== "orthogonal") {
+            if (overlays !== undefined) {
+              throw new TiledMcpError(
+                "INVALID_ARGUMENT",
+                `overlays are implemented for orthogonal maps only; ${mapPath} is ${orientation}.`,
+              );
+            }
+            if (region === undefined) {
+              throw new TiledMcpError(
+                "INVALID_ARGUMENT",
+                `region is required for ${orientation} maps; only orthogonal rendering may default it.`,
+              );
+            }
+            const projected =
+              orientation === "isometric"
+                ? await maps.renderIsometric({
+                    mapPath,
+                    region,
+                    layerIds,
+                    scale,
+                  })
+                : await maps.renderHexagonal({
+                    mapPath,
+                    region,
+                    layerIds,
+                    scale,
+                  });
+            return imageToolResult(
+              projected.result,
+              projected.png,
+            );
+          }
           const normalizedOverlays =
             overlays === undefined
               ? undefined
@@ -4408,154 +4445,6 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
           rendered.png,
         );
       }),
-  );
-
-  toolRegistrars["tiled_render_isometric"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_render_isometric",
-    {
-      title:
-        "Render an isometric tile-layer preview",
-      description:
-        "Renders a bounded region of one finite isometric TMJ map using the exact Tiled 1.12.2 IsometricRenderer placement math — the region paints as its own diamond, cells composite in the editor's diagonal scanline order, and tile images anchor bottom-left like the official CellRenderer. The strict profile covers external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, anti-diagonal flips, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Orthogonal maps belong to tiled_render_preview. Read-only.",
-      inputSchema: z
-        .object({
-          mapPath: projectPathSchema,
-          region: z
-            .object({
-              x: z.number().int().min(0),
-              y: z.number().int().min(0),
-              width: z
-                .number()
-                .int()
-                .positive(),
-              height: z
-                .number()
-                .int()
-                .positive(),
-            })
-            .strict(),
-          layerIds: z
-            .array(
-              z.number().int().positive(),
-            )
-            .min(1)
-            .max(128)
-            .optional(),
-          scale: z
-            .number()
-            .int()
-            .min(1)
-            .max(4)
-            .optional(),
-        })
-        .strict(),
-      outputSchema:
-        renderIsometricToolOutputSchema,
-      annotations: READ_ONLY,
-    },
-    async ({
-      mapPath,
-      region,
-      layerIds,
-      scale,
-    }) =>
-      renderMutex.runExclusive(
-        "sharp-render",
-        async () => {
-          try {
-            const rendered =
-              await maps.renderIsometric({
-                mapPath,
-                region,
-                layerIds,
-                scale,
-              });
-            return imageToolResult(
-              rendered.result,
-              rendered.png,
-            );
-          } catch (error) {
-            return toolError(error);
-          }
-        },
-      ),
-  );
-
-  toolRegistrars["tiled_render_hexagonal"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_render_hexagonal",
-    {
-      title:
-        "Render a staggered/hexagonal preview",
-      description:
-        "Renders a bounded region of one finite staggered or hexagonal TMJ map using the exact Tiled 1.12.2 HexagonalRenderer transform — staggered maps are the hexSideLength=0 degenerate case, matching the official class hierarchy — with cells compositing in the editor's row order on both stagger axes. Same strict profile as tiled_render_isometric: external atlas tilesets whose tile size matches the grid; image-collection tilesets, transparent-color keying, hexagonal rotation flags, and image or group layers fail closed, and object layers are skipped with their ids disclosed. Read-only.",
-      inputSchema: z
-        .object({
-          mapPath: projectPathSchema,
-          region: z
-            .object({
-              x: z.number().int().min(0),
-              y: z.number().int().min(0),
-              width: z
-                .number()
-                .int()
-                .positive(),
-              height: z
-                .number()
-                .int()
-                .positive(),
-            })
-            .strict(),
-          layerIds: z
-            .array(
-              z.number().int().positive(),
-            )
-            .min(1)
-            .max(128)
-            .optional(),
-          scale: z
-            .number()
-            .int()
-            .min(1)
-            .max(4)
-            .optional(),
-        })
-        .strict(),
-      outputSchema:
-        renderHexagonalToolOutputSchema,
-      annotations: READ_ONLY,
-    },
-    async ({
-      mapPath,
-      region,
-      layerIds,
-      scale,
-    }) =>
-      renderMutex.runExclusive(
-        "sharp-render",
-        async () => {
-          try {
-            const rendered =
-              await maps.renderHexagonal({
-                mapPath,
-                region,
-                layerIds,
-                scale,
-              });
-            return imageToolResult(
-              rendered.result,
-              rendered.png,
-            );
-          } catch (error) {
-            return toolError(error);
-          }
-        },
-      ),
   );
 
   toolRegistrars["tiled_list_objects"] = () =>
@@ -5686,7 +5575,7 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
             dependencyRevisionsSchema,
         })
         .strict(),
-      outputSchema: previewEditsToolOutputSchema,
+      outputSchema: previewShapeToolOutputSchema,
       annotations: PREVIEW_ONLY,
     },
     async ({

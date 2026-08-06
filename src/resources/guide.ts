@@ -643,7 +643,7 @@ expanded with \`tiled_get_object\`.
 
 ## Render isometric maps
 
-\`tiled_render_isometric\` renders a bounded region of one finite
+\`tiled_render_preview\` renders a bounded region of one finite
 isometric TMJ map as a PNG using the exact Tiled 1.12.2
 IsometricRenderer placement math: the region paints as its own
 diamond, cells composite in the editor's diagonal scanline order, and
@@ -668,7 +668,7 @@ bits decoded as rotate60/rotate120); edits and renders fail closed.
 
 ## Render staggered and hexagonal maps
 
-\`tiled_render_hexagonal\` renders a bounded region of one staggered
+\`tiled_render_preview\` renders a bounded region of one staggered
 or hexagonal map with the exact Tiled 1.12.2 HexagonalRenderer
 transform — staggered maps are the hexSideLength=0 degenerate case,
 matching the official class hierarchy — compositing cells in the

@@ -430,6 +430,11 @@ describe("native preview object debug server contract", () => {
     const maps = {
       initializeAssetRegistry:
         vi.fn(async () => undefined),
+      // tiled_render_preview probes orientation before dispatching to the
+      // orthogonal, isometric, or hexagonal renderer.
+      getSummary: vi.fn(async () => ({
+        orientation: "orthogonal" as const,
+      })),
       renderPreview,
     } as unknown as MapService;
     const store = {
@@ -517,7 +522,9 @@ describe("native preview object debug server contract", () => {
     // existing operation performs.
     // 56 again: `tiled_preview_checkpoint_prune` folded into
     // `tiled_preview_checkpoint_prune_batch`, which now accepts 1..32 ids.
-    expect(registeredTools).toHaveLength(56);
+    // 54: `tiled_render_isometric` and `tiled_render_hexagonal` folded into
+    // `tiled_render_preview`, which dispatches on the map's orientation.
+    expect(registeredTools).toHaveLength(54);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",

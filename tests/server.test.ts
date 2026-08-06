@@ -183,8 +183,6 @@ const CORE_TOOLS = [
   "tiled_render_tiles",
   "tiled_render_preview",
   "tiled_render_diff",
-  "tiled_render_isometric",
-  "tiled_render_hexagonal",
   "tiled_list_objects",
   "tiled_get_object",
   "tiled_validate",

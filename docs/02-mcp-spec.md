@@ -267,9 +267,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 
 | Tool | Purpose |
 |---|---|
-| `tiled_render_preview` | native orthogonal tile-layer preview with overlays |
-| `tiled_render_isometric` | native isometric render |
-| `tiled_render_hexagonal` | native staggered and hexagonal render |
+| `tiled_render_preview` | native render; dispatches on map orientation (orthogonal, isometric, staggered, hexagonal) |
 | `tiled_render_tileset_sheet` | paginated tileset sheet labeled with local ids |
 | `tiled_render_tiles` | enlarge and label an explicit sparse tile selection |
 | `tiled_render_diff` | pixel-level diff of two renders of the same region |

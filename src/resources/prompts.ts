@@ -250,8 +250,8 @@ at them. Do at least one of:
   operation in their change set.
 
 ## 8. Look at what you built
-- \`tiled_render_map\` or \`tiled_render_preview\` (\`tiled_render_isometric\`
-  or \`tiled_render_hexagonal\` for those projections) and actually inspect the
+- \`tiled_render_map\` or \`tiled_render_preview\` (which dispatches on the
+  map's own projection) and actually inspect the
   image.
 - \`tiled_analyze_usage\` to confirm the cell counts are what you intended, and
   \`tiled_validate\` to catch anything malformed.
