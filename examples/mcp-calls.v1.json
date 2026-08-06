@@ -889,34 +889,14 @@
       }
     },
     {
-      "name": "tiled_preview_write_tmx",
+      "name": "tiled_preview_write_xml",
       "profile": "core",
-      "purpose": "Serialize a restricted-profile .tmj map to byte-exact Tiled 1.12.2 TMX as a new sibling file, without the Tiled CLI.",
       "arguments": {
-        "mapPath": "maps/example.tmj",
+        "sourcePath": "maps/example.tmj",
         "targetPath": "maps/example.tmx",
-        "expectedMapRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
-    },
-    {
-      "name": "tiled_preview_write_tsx",
-      "profile": "core",
-      "purpose": "Serialize a restricted-profile .tsj atlas tileset to byte-exact Tiled 1.12.2 TSX as a new sibling file, without the Tiled CLI.",
-      "arguments": {
-        "tilesetPath": "tiles/terrain.tsj",
-        "targetPath": "tiles/terrain.tsx",
-        "expectedTilesetRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
-    },
-    {
-      "name": "tiled_preview_write_tx",
-      "profile": "core",
-      "purpose": "Serialize a restricted-profile .tj object template to Tiled 1.12.2 TX as a new sibling file, without the Tiled CLI.",
-      "arguments": {
-        "templatePath": "templates/crate.tj",
-        "targetPath": "templates/crate.tx",
-        "expectedTemplateRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      }
+        "expectedRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "purpose": "预览把一个受限档案的 .tmj 原生序列化为字节级一致的 .tmx；写入器由源扩展名 (.tmj/.tsj/.tj) 选择。"
     },
     {
       "name": "tiled_select",

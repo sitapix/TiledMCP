@@ -308,9 +308,7 @@ Authoritative list, availability, and schemas: `contracts/mcp-contract.v1.json` 
 
 | Tool | Purpose |
 |---|---|
-| `tiled_preview_write_tmx` | byte-exact `.tmx` from a restricted-profile `.tmj` |
-| `tiled_preview_write_tsx` | byte-exact `.tsx` from a `.tsj` atlas |
-| `tiled_preview_write_tx` | byte-exact `.tx` from a `.tj` template |
+| `tiled_preview_write_xml` | byte-exact `.tmx`/`.tsx`/`.tx`, writer chosen by source extension |
 | `tiled_preview_export` | *optional*: conversion through the official Tiled CLI |
 
 **Checkpoints, transactions, commit**

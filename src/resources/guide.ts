@@ -678,7 +678,7 @@ with disclosure.
 
 ## Write TMX natively
 
-\`tiled_preview_write_tmx\` serializes one restricted-profile \`.tmj\`
+\`tiled_preview_write_xml\` serializes one restricted-profile \`.tmj\`
 map to TMX bytes that match Tiled 1.12.2's own writer byte for byte —
 no CLI involved. The profile covers finite orthogonal maps, external
 tileset references, CSV tile layers, and top-level tile/object layers
@@ -701,7 +701,7 @@ the approved content hash.
 
 ## Write TSX natively
 
-\`tiled_preview_write_tsx\` serializes one restricted-profile
+\`tiled_preview_write_xml\` serializes one restricted-profile
 \`.tsj\` atlas tileset to TSX bytes matching Tiled 1.12.2's own
 writer, as a new sibling \`.tsx\` file. The declared grid must be
 derivable from the declared image size, margin, and spacing — the
@@ -710,7 +710,7 @@ closed rather than drifting — and per-tile metadata, wang sets,
 and unknown members fail closed (tileset-level scalar properties
 serialize before the image, byte-exact). Apply re-serializes
 under the pinned revision and hash-verifies, like
-\`tiled_preview_write_tmx\`.
+\`tiled_preview_write_xml\`.
 
 ## Fix validation issues mechanically
 
@@ -724,7 +724,7 @@ but never auto-fixed.
 
 ## Write TX templates natively
 
-\`tiled_preview_write_tx\` serializes one restricted-profile \`.tj\`
+\`tiled_preview_write_xml\` serializes one restricted-profile \`.tj\`
 object template to TX bytes following Tiled's writeObjectTemplate: a
 bare \`<template>\` root and the base object without id, x, or y,
 through the same object writer verified byte-exactly against official

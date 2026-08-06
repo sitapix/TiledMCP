@@ -1820,9 +1820,7 @@ export const TILED_MCP_CORE_TOOL_NAMES =
     "tiled_preview_import_image",
     "tiled_preview_prefab",
     "tiled_preview_template",
-    "tiled_preview_write_tmx",
-    "tiled_preview_write_tsx",
-    "tiled_preview_write_tx",
+    "tiled_preview_write_xml",
     "tiled_select",
     "tiled_list_tile_names",
     "tiled_preview_tile_names",
@@ -6142,20 +6140,20 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       }),
   );
 
-  toolRegistrars["tiled_preview_write_tmx"] = () =>
+  toolRegistrars["tiled_preview_write_xml"] = () =>
   register(
     server,
     registeredTools,
-    "tiled_preview_write_tmx",
+    "tiled_preview_write_xml",
     {
-      title: "Preview a native TMX write",
+      title: "Preview a native XML write",
       description:
-        "Serializes one restricted-profile project .tmj map to TMX bytes matching Tiled 1.12.2's own writer byte for byte — finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands; embedded tilesets, image and group layers, custom properties, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. Tileset references and GIDs carry verbatim, so the .tmx target must live in the source map's directory and must be a new file. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
+        "Serializes one restricted-profile project document to Tiled 1.12.2's own XML bytes, byte for byte, choosing the writer from the source extension: .tmj -> TMX, .tsj -> TSX, .tj -> TX. Any other extension fails closed. TMX covers finite orthogonal maps, external tileset references, CSV tile layers, and top-level tile/object layers the serializer fully understands; embedded tilesets, image and group layers, custom properties, template instances, unknown members, and floats whose six-significant-digit rendering would lose precision all fail closed. TSX requires the declared grid to be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, custom properties, and unknown members also fail closed. TX follows Tiled's writeObjectTemplate exactly. References and GIDs carry verbatim in every case, so the target must be a new file in the source document's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
       inputSchema: z
         .object({
-          mapPath: projectPathSchema,
+          sourcePath: projectPathSchema,
           targetPath: projectPathSchema,
-          expectedMapRevision: revisionSchema,
+          expectedRevision: revisionSchema,
           projectFilePath:
             projectPathSchema.optional(),
         })
@@ -6165,99 +6163,51 @@ export async function createTiledMcpServerFromCapabilitySnapshot(
       annotations: PREVIEW_ONLY,
     },
     async ({
-      mapPath,
+      sourcePath,
       targetPath,
-      expectedMapRevision,
+      expectedRevision,
       projectFilePath,
     }) =>
       executeTool(async () => {
-        const plan = await maps.planWriteTmx({
-          mapPath,
-          targetPath,
-          expectedMapRevision,
-          projectFilePath,
-        });
-        return changeSets.put(plan);
-      }),
-  );
-
-  toolRegistrars["tiled_preview_write_tsx"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_preview_write_tsx",
-    {
-      title: "Preview a native TSX write",
-      description:
-        "Serializes one restricted-profile project .tsj atlas tileset to TSX bytes matching Tiled 1.12.2's own writer byte for byte. The declared grid must be derivable from the declared image size, margin, and spacing (the official exporter recomputes it, so a disagreeing declaration fails closed rather than drifting); per-tile metadata, wang sets, custom properties, and unknown members also fail closed. The image reference carries verbatim, so the .tsx target must be a new file in the source tileset's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
-      inputSchema: z
-        .object({
-          tilesetPath: projectPathSchema,
-          targetPath: projectPathSchema,
-          expectedTilesetRevision:
-            revisionSchema,
-          projectFilePath:
-            projectPathSchema.optional(),
-        })
-        .strict(),
-      outputSchema:
-        fileExportPreviewToolOutputSchema,
-      annotations: PREVIEW_ONLY,
-    },
-    async ({
-      tilesetPath,
-      targetPath,
-      expectedTilesetRevision,
-      projectFilePath,
-    }) =>
-      executeTool(async () => {
-        const plan = await maps.planWriteTsx({
-          tilesetPath,
-          targetPath,
-          expectedTilesetRevision,
-          projectFilePath,
-        });
-        return changeSets.put(plan);
-      }),
-  );
-
-  toolRegistrars["tiled_preview_write_tx"] = () =>
-  register(
-    server,
-    registeredTools,
-    "tiled_preview_write_tx",
-    {
-      title: "Preview a native TX write",
-      description:
-        "Serializes one restricted-profile project .tj object template to TX bytes following Tiled 1.12.2's writeObjectTemplate exactly: a bare <template> root with the base object serialized without id, x, or y, through the same object writer verified byte-exactly against official TMX exports. Tile templates (which carry a tileset) and nested templates fail closed, matching the template reading profile. The .tx target must be a new file in the source template's directory. Returns an expiring fileExport change set whose producer is the native serializer; apply re-serializes under the pinned source revision and fails closed unless the bytes exactly match the approved content hash. No Tiled CLI is involved.",
-      inputSchema: z
-        .object({
-          templatePath: projectPathSchema,
-          targetPath: projectPathSchema,
-          expectedTemplateRevision:
-            revisionSchema,
-          projectFilePath:
-            projectPathSchema.optional(),
-        })
-        .strict(),
-      outputSchema:
-        fileExportPreviewToolOutputSchema,
-      annotations: PREVIEW_ONLY,
-    },
-    async ({
-      templatePath,
-      targetPath,
-      expectedTemplateRevision,
-      projectFilePath,
-    }) =>
-      executeTool(async () => {
-        const plan = await maps.planWriteTx({
-          templatePath,
-          targetPath,
-          expectedTemplateRevision,
-          projectFilePath,
-        });
-        return changeSets.put(plan);
+        // The writer is chosen by source extension rather than by three
+        // separate tools: those took identical shapes and differed only in
+        // what their path and revision fields were named.
+        if (sourcePath.endsWith(".tmj")) {
+          return changeSets.put(
+            await maps.planWriteTmx({
+              mapPath: sourcePath,
+              targetPath,
+              expectedMapRevision: expectedRevision,
+              projectFilePath,
+            }),
+          );
+        }
+        if (sourcePath.endsWith(".tsj")) {
+          return changeSets.put(
+            await maps.planWriteTsx({
+              tilesetPath: sourcePath,
+              targetPath,
+              expectedTilesetRevision:
+                expectedRevision,
+              projectFilePath,
+            }),
+          );
+        }
+        if (sourcePath.endsWith(".tj")) {
+          return changeSets.put(
+            await maps.planWriteTx({
+              templatePath: sourcePath,
+              targetPath,
+              expectedTemplateRevision:
+                expectedRevision,
+              projectFilePath,
+            }),
+          );
+        }
+        throw new TiledMcpError(
+          "INVALID_ARGUMENT",
+          `sourcePath must end in .tmj, .tsj, or .tj; got ${sourcePath}.`,
+        );
       }),
   );
 

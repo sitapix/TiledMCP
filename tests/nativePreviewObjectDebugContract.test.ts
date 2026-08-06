@@ -524,7 +524,9 @@ describe("native preview object debug server contract", () => {
     // `tiled_preview_checkpoint_prune_batch`, which now accepts 1..32 ids.
     // 54: `tiled_render_isometric` and `tiled_render_hexagonal` folded into
     // `tiled_render_preview`, which dispatches on the map's orientation.
-    expect(registeredTools).toHaveLength(54);
+    // 52: the three native XML writers folded into `tiled_preview_write_xml`,
+    // which picks its writer from the source extension.
+    expect(registeredTools).toHaveLength(52);
 
     const response = (await client.callTool({
       name: "tiled_get_capabilities",
