@@ -768,6 +768,22 @@ const createLayerInputSchema = z
     }
   });
 
+/**
+ * Shared input sub-schemas carry a registry `id`.
+ *
+ * Zod inlines a reused schema at every use site, so the tile-reference family
+ * alone was repeated fifteen times across the advertised input schemas. An
+ * `id` makes the SDK's converter emit one `definitions` entry and a `$ref` per
+ * use instead, which is what an agent carries in context for a whole session.
+ *
+ * Only worth doing where a schema is reused *within* one tool's document: MCP
+ * gives every tool its own schema, so a single-use `$ref` costs more than the
+ * inlining it replaces. Tagging the output schemas the same way measured as a
+ * net loss and was reverted.
+ *
+ * The ids are part of the published contract, so renaming one means rerunning
+ * `pnpm contract:generate`.
+ */
 const tileTransformSchema = z
   .object({
     kind: z.literal("orthogonal").optional(),
@@ -776,7 +792,8 @@ const tileTransformSchema = z
     flipD: z.boolean().optional(),
     rawFlags: uint32Schema.optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "TileTransform" });
 
 const tileRefSchema = z
   .object({
@@ -789,18 +806,21 @@ const tileRefSchema = z
     localId: z.number().int().min(0).max(0x0fffffff),
     transform: tileTransformSchema.optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "TileRef" });
 
-const namedTileRefSchema = z.union([
-  tileRefSchema,
-  z
-    .object({
-      name: z
-        .string()
-        .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
-    })
-    .strict(),
-]);
+const namedTileRefSchema = z
+  .union([
+    tileRefSchema,
+    z
+      .object({
+        name: z
+          .string()
+          .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/u),
+      })
+      .strict(),
+  ])
+  .meta({ id: "NamedTileRef" });
 
 const setTilesSchema = z
   .object({
@@ -1202,7 +1222,8 @@ const tilePropertiesPatchSchema = z
       message:
         "Tile properties patch must contain set, remove, setClassMembers, or setListElements entries",
     },
-  );
+  )
+  .meta({ id: "TilePropertiesPatch" });
 
 const objectPatchSchema = z
   .object({

@@ -4803,6 +4803,73 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "from": {
       "additionalProperties": false,
@@ -4862,62 +4929,7 @@ Input schema:
             },
             "tiles": {
               "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "localId": {
-                    "maximum": 268435455,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "tileset": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "kind": {
-                        "const": "external",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "assetId"
-                    ],
-                    "type": "object"
-                  },
-                  "transform": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "flipD": {
-                        "type": "boolean"
-                      },
-                      "flipH": {
-                        "type": "boolean"
-                      },
-                      "flipV": {
-                        "type": "boolean"
-                      },
-                      "kind": {
-                        "const": "orthogonal",
-                        "type": "string"
-                      },
-                      "rawFlags": {
-                        "maximum": 4294967295,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "tileset",
-                  "localId"
-                ],
-                "type": "object"
+                "$ref": "#/definitions/TileRef"
               },
               "maxItems": 64,
               "minItems": 1,
@@ -29591,6 +29603,305 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -29761,62 +30072,7 @@ Input schema:
                     "tile": {
                       "anyOf": [
                         {
-                          "additionalProperties": false,
-                          "properties": {
-                            "localId": {
-                              "maximum": 268435455,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "tileset": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "assetId": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "const": "external",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "assetId"
-                              ],
-                              "type": "object"
-                            },
-                            "transform": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "flipD": {
-                                  "type": "boolean"
-                                },
-                                "flipH": {
-                                  "type": "boolean"
-                                },
-                                "flipV": {
-                                  "type": "boolean"
-                                },
-                                "kind": {
-                                  "const": "orthogonal",
-                                  "type": "string"
-                                },
-                                "rawFlags": {
-                                  "maximum": 4294967295,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "tileset",
-                            "localId"
-                          ],
-                          "type": "object"
+                          "$ref": "#/definitions/TileRef"
                         },
                         {
                           "type": "null"
@@ -29878,62 +30134,7 @@ Input schema:
               "tile": {
                 "anyOf": [
                   {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    "$ref": "#/definitions/TileRef"
                   },
                   {
                     "type": "null"
@@ -29984,62 +30185,7 @@ Input schema:
                   "items": {
                     "anyOf": [
                       {
-                        "additionalProperties": false,
-                        "properties": {
-                          "localId": {
-                            "maximum": 268435455,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileset": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "assetId": {
-                                "maxLength": 128,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "kind": {
-                                "const": "external",
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "assetId"
-                            ],
-                            "type": "object"
-                          },
-                          "transform": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "flipD": {
-                                "type": "boolean"
-                              },
-                              "flipH": {
-                                "type": "boolean"
-                              },
-                              "flipV": {
-                                "type": "boolean"
-                              },
-                              "kind": {
-                                "const": "orthogonal",
-                                "type": "string"
-                              },
-                              "rawFlags": {
-                                "maximum": 4294967295,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "tileset",
-                          "localId"
-                        ],
-                        "type": "object"
+                        "$ref": "#/definitions/TileRef"
                       },
                       {
                         "type": "null"
@@ -30089,62 +30235,7 @@ Input schema:
               "tile": {
                 "anyOf": [
                   {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    "$ref": "#/definitions/TileRef"
                   },
                   {
                     "type": "null"
@@ -30267,122 +30358,12 @@ Input schema:
                   "additionalProperties": false,
                   "properties": {
                     "from": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "localId": {
-                          "maximum": 268435455,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "tileset": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "assetId": {
-                              "maxLength": 128,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "kind": {
-                              "const": "external",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "assetId"
-                          ],
-                          "type": "object"
-                        },
-                        "transform": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "flipD": {
-                              "type": "boolean"
-                            },
-                            "flipH": {
-                              "type": "boolean"
-                            },
-                            "flipV": {
-                              "type": "boolean"
-                            },
-                            "kind": {
-                              "const": "orthogonal",
-                              "type": "string"
-                            },
-                            "rawFlags": {
-                              "maximum": 4294967295,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "type": "object"
-                        }
-                      },
-                      "required": [
-                        "tileset",
-                        "localId"
-                      ],
-                      "type": "object"
+                      "$ref": "#/definitions/TileRef"
                     },
                     "to": {
                       "anyOf": [
                         {
-                          "additionalProperties": false,
-                          "properties": {
-                            "localId": {
-                              "maximum": 268435455,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "tileset": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "assetId": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "const": "external",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "kind",
-                                "assetId"
-                              ],
-                              "type": "object"
-                            },
-                            "transform": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "flipD": {
-                                  "type": "boolean"
-                                },
-                                "flipH": {
-                                  "type": "boolean"
-                                },
-                                "flipV": {
-                                  "type": "boolean"
-                                },
-                                "kind": {
-                                  "const": "orthogonal",
-                                  "type": "string"
-                                },
-                                "rawFlags": {
-                                  "maximum": 4294967295,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "tileset",
-                            "localId"
-                          ],
-                          "type": "object"
+                          "$ref": "#/definitions/TileRef"
                         },
                         {
                           "type": "null"
@@ -30953,62 +30934,7 @@ Input schema:
                         "type": "string"
                       },
                       "tile": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "localId": {
-                            "maximum": 268435455,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "tileset": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "assetId": {
-                                "maxLength": 128,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "kind": {
-                                "const": "external",
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "kind",
-                              "assetId"
-                            ],
-                            "type": "object"
-                          },
-                          "transform": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "flipD": {
-                                "type": "boolean"
-                              },
-                              "flipH": {
-                                "type": "boolean"
-                              },
-                              "flipV": {
-                                "type": "boolean"
-                              },
-                              "kind": {
-                                "const": "orthogonal",
-                                "type": "string"
-                              },
-                              "rawFlags": {
-                                "maximum": 4294967295,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "type": "object"
-                          }
-                        },
-                        "required": [
-                          "tileset",
-                          "localId"
-                        ],
-                        "type": "object"
+                        "$ref": "#/definitions/TileRef"
                       },
                       "visible": {
                         "type": "boolean"
@@ -31140,236 +31066,11 @@ Input schema:
                     "type": "array"
                   },
                   "properties": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "remove": {
-                        "items": {
-                          "maxLength": 512,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "set": {
-                        "items": {
-                          "oneOf": [
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "enum": [
-                                    "string",
-                                    "file"
-                                  ],
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "int",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": -9007199254740991,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "float",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "number"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "bool",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "color",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            }
-                          ]
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setClassMembers": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "path": {
-                              "items": {
-                                "maxLength": 512,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "maxItems": 8,
-                              "minItems": 1,
-                              "type": "array"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "path",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setListElements": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "index": {
-                              "maximum": 100000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "index",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TilePropertiesPatch"
                       }
-                    },
-                    "type": "object"
+                    ]
                   },
                   "rotation": {
                     "maximum": 1000000000,
@@ -31384,62 +31085,11 @@ Input schema:
                     "type": "string"
                   },
                   "tile": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TileRef"
                       }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
+                    ]
                   },
                   "underline": {
                     "type": "boolean"
@@ -37836,6 +37486,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -37966,79 +37703,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -43740,6 +43405,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedDependencyRevisions": {
       "additionalProperties": {
@@ -43787,79 +43539,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -58061,6 +57741,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "choices": {
       "items": {
@@ -58069,79 +57836,7 @@ Input schema:
           "tile": {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               {
                 "type": "null"
@@ -63870,6 +63565,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "draw": {
       "oneOf": [
@@ -64044,79 +63826,7 @@ Input schema:
     "tile": {
       "anyOf": [
         {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "localId": {
-                  "maximum": 268435455,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "tileset": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "assetId": {
-                      "maxLength": 128,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "kind": {
-                      "const": "external",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "assetId"
-                  ],
-                  "type": "object"
-                },
-                "transform": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "flipD": {
-                      "type": "boolean"
-                    },
-                    "flipH": {
-                      "type": "boolean"
-                    },
-                    "flipV": {
-                      "type": "boolean"
-                    },
-                    "kind": {
-                      "const": "orthogonal",
-                      "type": "string"
-                    },
-                    "rawFlags": {
-                      "maximum": 4294967295,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "type": "object"
-                }
-              },
-              "required": [
-                "tileset",
-                "localId"
-              ],
-              "type": "object"
-            },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "name": {
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
-            }
-          ]
+          "$ref": "#/definitions/NamedTileRef"
         },
         {
           "type": "null"
@@ -95129,6 +94839,93 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "NamedTileRef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TileRef"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TileRef": {
+      "additionalProperties": false,
+      "properties": {
+        "localId": {
+          "maximum": 268435455,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tileset": {
+          "additionalProperties": false,
+          "properties": {
+            "assetId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "external",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "assetId"
+          ],
+          "type": "object"
+        },
+        "transform": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileTransform"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tileset",
+        "localId"
+      ],
+      "type": "object"
+    },
+    "TileTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "flipD": {
+          "type": "boolean"
+        },
+        "flipH": {
+          "type": "boolean"
+        },
+        "flipV": {
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "orthogonal",
+          "type": "string"
+        },
+        "rawFlags": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "layerId": {
       "exclusiveMinimum": 0,
@@ -95152,79 +94949,7 @@ Input schema:
             },
             "tiles": {
               "items": {
-                "anyOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "localId": {
-                        "maximum": 268435455,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "tileset": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "maxLength": 128,
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          "kind": {
-                            "const": "external",
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "assetId"
-                        ],
-                        "type": "object"
-                      },
-                      "transform": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "flipD": {
-                            "type": "boolean"
-                          },
-                          "flipH": {
-                            "type": "boolean"
-                          },
-                          "flipV": {
-                            "type": "boolean"
-                          },
-                          "kind": {
-                            "const": "orthogonal",
-                            "type": "string"
-                          },
-                          "rawFlags": {
-                            "maximum": 4294967295,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "type": "object"
-                      }
-                    },
-                    "required": [
-                      "tileset",
-                      "localId"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name"
-                    ],
-                    "type": "object"
-                  }
-                ]
+                "$ref": "#/definitions/NamedTileRef"
               },
               "maxItems": 16,
               "minItems": 1,
@@ -95358,79 +95083,7 @@ Input schema:
                           },
                           "tiles": {
                             "items": {
-                              "anyOf": [
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "localId": {
-                                      "maximum": 268435455,
-                                      "minimum": 0,
-                                      "type": "integer"
-                                    },
-                                    "tileset": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "assetId": {
-                                          "maxLength": 128,
-                                          "minLength": 1,
-                                          "type": "string"
-                                        },
-                                        "kind": {
-                                          "const": "external",
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "kind",
-                                        "assetId"
-                                      ],
-                                      "type": "object"
-                                    },
-                                    "transform": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "flipD": {
-                                          "type": "boolean"
-                                        },
-                                        "flipH": {
-                                          "type": "boolean"
-                                        },
-                                        "flipV": {
-                                          "type": "boolean"
-                                        },
-                                        "kind": {
-                                          "const": "orthogonal",
-                                          "type": "string"
-                                        },
-                                        "rawFlags": {
-                                          "maximum": 4294967295,
-                                          "minimum": 0,
-                                          "type": "integer"
-                                        }
-                                      },
-                                      "type": "object"
-                                    }
-                                  },
-                                  "required": [
-                                    "tileset",
-                                    "localId"
-                                  ],
-                                  "type": "object"
-                                },
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "name": {
-                                      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "name"
-                                  ],
-                                  "type": "object"
-                                }
-                              ]
+                              "$ref": "#/definitions/NamedTileRef"
                             },
                             "maxItems": 16,
                             "minItems": 1,
@@ -96062,6 +95715,240 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "embeddedIndex": {
       "maximum": 4095,
@@ -96395,236 +96282,11 @@ Input schema:
                     ]
                   },
                   "properties": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "remove": {
-                        "items": {
-                          "maxLength": 512,
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "set": {
-                        "items": {
-                          "oneOf": [
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "enum": [
-                                    "string",
-                                    "file"
-                                  ],
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maxLength": 2048,
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "int",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": -9007199254740991,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "float",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "number"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "bool",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            },
-                            {
-                              "additionalProperties": false,
-                              "properties": {
-                                "name": {
-                                  "maxLength": 512,
-                                  "minLength": 1,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "color",
-                                  "type": "string"
-                                },
-                                "value": {
-                                  "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "type",
-                                "value"
-                              ],
-                              "type": "object"
-                            }
-                          ]
-                        },
-                        "maxItems": 32,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setClassMembers": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "path": {
-                              "items": {
-                                "maxLength": 512,
-                                "minLength": 1,
-                                "type": "string"
-                              },
-                              "maxItems": 8,
-                              "minItems": 1,
-                              "type": "array"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "path",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "setListElements": {
-                        "items": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "index": {
-                              "maximum": 100000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "property": {
-                              "maxLength": 512,
-                              "minLength": 1,
-                              "type": "string"
-                            },
-                            "value": {
-                              "anyOf": [
-                                {
-                                  "maxLength": 4096,
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "number"
-                                },
-                                {
-                                  "type": "boolean"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "property",
-                            "index",
-                            "value"
-                          ],
-                          "type": "object"
-                        },
-                        "maxItems": 16,
-                        "minItems": 1,
-                        "type": "array"
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/TilePropertiesPatch"
                       }
-                    },
-                    "type": "object"
+                    ]
                   }
                 },
                 "type": "object"
@@ -97720,6 +97382,240 @@ Input schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "TilePropertiesPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "set": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "string",
+                      "file"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "int",
+                    "type": "string"
+                  },
+                  "value": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "float",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "bool",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "color",
+                    "type": "string"
+                  },
+                  "value": {
+                    "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "value"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setClassMembers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "setListElements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "index": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "property": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "property",
+              "index",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
   "properties": {
     "expectedMapRevision": {
       "description": "SHA-256 revision returned by a read or preview",
@@ -97829,236 +97725,11 @@ Input schema:
           ]
         },
         "properties": {
-          "additionalProperties": false,
-          "properties": {
-            "remove": {
-              "items": {
-                "maxLength": 512,
-                "minLength": 1,
-                "type": "string"
-              },
-              "maxItems": 32,
-              "minItems": 1,
-              "type": "array"
-            },
-            "set": {
-              "items": {
-                "oneOf": [
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 512,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "enum": [
-                          "string",
-                          "file"
-                        ],
-                        "type": "string"
-                      },
-                      "value": {
-                        "maxLength": 2048,
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 512,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "const": "int",
-                        "type": "string"
-                      },
-                      "value": {
-                        "maximum": 9007199254740991,
-                        "minimum": -9007199254740991,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 512,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "const": "float",
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 512,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "const": "bool",
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "name": {
-                        "maxLength": 512,
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": {
-                        "const": "color",
-                        "type": "string"
-                      },
-                      "value": {
-                        "pattern": "^#(?:[0-9a-f]{6}|[0-9a-f]{8})$",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "name",
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
-                  }
-                ]
-              },
-              "maxItems": 32,
-              "minItems": 1,
-              "type": "array"
-            },
-            "setClassMembers": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "path": {
-                    "items": {
-                      "maxLength": 512,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "maxItems": 8,
-                    "minItems": 1,
-                    "type": "array"
-                  },
-                  "property": {
-                    "maxLength": 512,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "value": {
-                    "anyOf": [
-                      {
-                        "maxLength": 4096,
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "property",
-                  "path",
-                  "value"
-                ],
-                "type": "object"
-              },
-              "maxItems": 16,
-              "minItems": 1,
-              "type": "array"
-            },
-            "setListElements": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "index": {
-                    "maximum": 100000,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "property": {
-                    "maxLength": 512,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "value": {
-                    "anyOf": [
-                      {
-                        "maxLength": 4096,
-                        "type": "string"
-                      },
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "property",
-                  "index",
-                  "value"
-                ],
-                "type": "object"
-              },
-              "maxItems": 16,
-              "minItems": 1,
-              "type": "array"
+          "allOf": [
+            {
+              "$ref": "#/definitions/TilePropertiesPatch"
             }
-          },
-          "type": "object"
+          ]
         },
         "tileOffset": {
           "anyOf": [
