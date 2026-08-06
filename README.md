@@ -1,5 +1,9 @@
 # TiledMCP
 
+[![npm](https://img.shields.io/npm/v/tiled-mcp-server)](https://www.npmjs.com/package/tiled-mcp-server)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node](https://img.shields.io/node/v/tiled-mcp-server)](https://nodejs.org)
+
 An MCP server for [Tiled](https://www.mapeditor.org) map projects. A model can read,
 edit, generate, render, and validate `.tmj` / `.tsj` assets on disk without opening the
 editor.
